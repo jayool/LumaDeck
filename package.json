@@ -1,6 +1,6 @@
 {
   "name": "decktools",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Decky Loader plugin for game library and configuration management on Steam Deck",
   "type": "module",
   "scripts": {

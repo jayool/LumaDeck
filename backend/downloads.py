@@ -1158,6 +1158,75 @@ def _find_ddm_executable() -> tuple[list[str], str]:
     return [], ""
 
 
+async def _auto_download_ddm() -> str:
+    """Download the latest self-contained DepotDownloader binary from GitHub if not found.
+
+    Returns the path to the downloaded executable, or "" on failure.
+    """
+    import zipfile
+    import tempfile
+
+    dest_exe = os.path.join(_DDM_CACHE_DIR, "DepotDownloaderMod")
+    if os.path.exists(dest_exe):
+        return dest_exe
+
+    try:
+        client = await ensure_http_client("DDM-downloader")
+        resp = await client.get(
+            "https://api.github.com/repos/SteamRE/DepotDownloader/releases/latest",
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.warning(f"DeckTools: GitHub API returned {resp.status_code} for DepotDownloader release")
+            return ""
+
+        data = resp.json()
+        asset_url = ""
+        for asset in data.get("assets", []):
+            name = asset.get("name", "")
+            if "linux" in name.lower() and "x64" in name.lower() and name.endswith(".zip"):
+                asset_url = asset["browser_download_url"]
+                break
+
+        if not asset_url:
+            logger.warning("DeckTools: No linux-x64 asset found in DepotDownloader release")
+            return ""
+
+        logger.info(f"DeckTools: Downloading DepotDownloader from {asset_url}")
+        dl_resp = await client.get(asset_url, timeout=120, follow_redirects=True)
+        if dl_resp.status_code != 200:
+            logger.warning(f"DeckTools: Failed to download DepotDownloader: {dl_resp.status_code}")
+            return ""
+
+        os.makedirs(_DDM_CACHE_DIR, exist_ok=True)
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp.write(dl_resp.content)
+            tmp_path = tmp.name
+
+        try:
+            with zipfile.ZipFile(tmp_path) as zf:
+                for member in zf.namelist():
+                    basename = os.path.basename(member)
+                    if basename in ("DepotDownloader", "DepotDownloaderMod") and not member.endswith("/"):
+                        with zf.open(member) as src, open(dest_exe, "wb") as dst:
+                            dst.write(src.read())
+                        os.chmod(dest_exe, 0o755)
+                        logger.info(f"DeckTools: DepotDownloader extracted to {dest_exe}")
+                        return dest_exe
+            logger.warning("DeckTools: DepotDownloader executable not found inside zip")
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+    except Exception as exc:
+        logger.warning(f"DeckTools: Auto-download of DepotDownloader failed: {exc}")
+
+    return ""
+
+
 def _parse_lua_depots(lua_path: str) -> list[dict]:
     """Parse a stplug-in lua file to extract depot/manifest info.
 
@@ -1222,6 +1291,13 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
     import tempfile
 
     cmd_prefix, ddm_desc = _find_ddm_executable()
+    if not cmd_prefix:
+        logger.info("DeckTools: DDM not found locally, attempting auto-download from GitHub...")
+        _set_download_state(appid, {"depotProgress": "Downloading DepotDownloader..."})
+        downloaded = await _auto_download_ddm()
+        if downloaded:
+            cmd_prefix, ddm_desc = _find_ddm_executable()
+
     if not cmd_prefix:
         appimage = _find_accela_appimage()
         if appimage:
@@ -2011,6 +2087,16 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                                         logger.warning(f"DeckTools: Could not set compat tool for {appid}")
                                 except Exception as proton_exc:
                                     logger.warning(f"DeckTools: set_compat_tool error: {proton_exc}")
+
+                            # Re-verify SLSsteam config after all game files are in place.
+                            # Avoids the race condition where Steam restarts before SLSsteam
+                            # has processed the lua, causing the game to fail to launch.
+                            try:
+                                from slssteam_ops import reconfigure_slssteam
+                                await reconfigure_slssteam(appid)
+                                logger.info(f"DeckTools: SLSsteam config re-verified for {appid}")
+                            except Exception as reconf_exc:
+                                logger.warning(f"DeckTools: SLSsteam re-verify failed: {reconf_exc}")
                         else:
                             logger.info(f"DeckTools: No depots found in lua for {appid}, skipping game file download")
                     except RuntimeError:
