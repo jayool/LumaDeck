@@ -19,6 +19,7 @@ from config import (
     LOADED_APPS_FILE,
     USER_AGENT,
     APPLIST_URL,
+    APPLIST_URL_FALLBACK,
     APPLIST_FILE_NAME,
     APPLIST_DOWNLOAD_TIMEOUT,
     GAMES_DB_FILE_NAME,
@@ -84,6 +85,24 @@ def _appid_log_path() -> str:
 # App name resolution
 # ---------------------------------------------------------------------------
 
+def _extract_applist_entries(data):
+    """Return the list of {appid, name} entries from either of the two shapes
+    the applist endpoints serve:
+      - Steam Web API: {"applist": {"apps": [{"appid": N, "name": "..."}, ...]}}
+      - Legacy Morrenus/Hubcap: [{"appid": N, "name": "..."}, ...]
+    Any malformed input → empty list, so callers don't need to defend further."""
+    if isinstance(data, dict):
+        applist = data.get("applist")
+        if isinstance(applist, dict):
+            apps = applist.get("apps")
+            if isinstance(apps, list):
+                return apps
+        return []
+    if isinstance(data, list):
+        return data
+    return []
+
+
 def _load_applist_into_memory() -> None:
     global APPLIST_DATA, APPLIST_LOADED
     if APPLIST_LOADED:
@@ -95,13 +114,12 @@ def _load_applist_into_memory() -> None:
     try:
         with open(file_path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
-        if isinstance(data, list):
-            for entry in data:
-                if isinstance(entry, dict):
-                    appid = entry.get("appid")
-                    name = entry.get("name")
-                    if appid and name and isinstance(name, str) and name.strip():
-                        APPLIST_DATA[int(appid)] = name.strip()
+        for entry in _extract_applist_entries(data):
+            if isinstance(entry, dict):
+                appid = entry.get("appid")
+                name = entry.get("name")
+                if appid and name and isinstance(name, str) and name.strip():
+                    APPLIST_DATA[int(appid)] = name.strip()
         APPLIST_LOADED = True
     except Exception:
         APPLIST_LOADED = True
@@ -402,16 +420,26 @@ def _log_appid_event(action: str, appid: int, name: str) -> None:
 async def init_applist() -> None:
     file_path = os.path.join(ensure_temp_download_dir(), APPLIST_FILE_NAME)
     if not os.path.exists(file_path):
-        try:
-            client = await ensure_http_client("DownloadApplist")
-            resp = await client.get(APPLIST_URL, follow_redirects=True, timeout=APPLIST_DOWNLOAD_TIMEOUT)
-            resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, list):
-                with open(file_path, "w", encoding="utf-8") as handle:
-                    json.dump(data, handle)
-        except Exception as exc:
-            logger.warning(f"DeckTools: Failed to download applist: {exc}")
+        client = await ensure_http_client("DownloadApplist")
+        urls = [u for u in (APPLIST_URL, APPLIST_URL_FALLBACK) if u]
+        for url in urls:
+            try:
+                resp = await client.get(url, follow_redirects=True, timeout=APPLIST_DOWNLOAD_TIMEOUT)
+                resp.raise_for_status()
+                data = resp.json()
+                # Validate before persisting so a malformed response doesn't
+                # poison the cache. We accept either of the two known shapes
+                # (Steam Web API or legacy Morrenus/Hubcap — see
+                # _extract_applist_entries) and require at least one entry.
+                if _extract_applist_entries(data):
+                    with open(file_path, "w", encoding="utf-8") as handle:
+                        json.dump(data, handle)
+                    break
+                logger.warning(f"LumaDeck: applist from {url} parsed but had no entries")
+            except Exception as exc:
+                logger.warning(f"LumaDeck: applist fetch from {url} failed: {exc}")
+        else:
+            logger.warning("LumaDeck: applist unavailable from all sources — search/name resolution will be limited")
     _load_applist_into_memory()
 
 

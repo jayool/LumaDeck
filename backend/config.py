@@ -1,4 +1,4 @@
-"""Central configuration constants for the DeckTools backend."""
+"""Central configuration constants for the LumaDeck backend."""
 
 DEFAULT_HEADERS = {
     "Accept": "application/json",
@@ -17,12 +17,18 @@ API_JSON_FILE = "api.json"
 HTTP_TIMEOUT_SECONDS = 15
 HTTP_PROXY_TIMEOUT_SECONDS = 15
 
-USER_AGENT = "decktools-v1-decky"
+USER_AGENT = "lumadeck-v0-decky"
 
 LOADED_APPS_FILE = "loadedappids.txt"
 APPID_LOG_FILE = "appidlogs.txt"
 
-APPLIST_URL = "https://applist.morrenus.xyz/"
+# Steam's official endpoint for the full app list. Returns
+#   {"applist": {"apps": [{"appid": N, "name": "..."}, ...]}}
+# Primary because it never goes down. We fall back to the legacy Morrenus
+# applist (now under the Hubcap rebrand) if the official endpoint fails for
+# some reason — and that fallback returns the bare list, no wrapper.
+APPLIST_URL = "https://api.steampowered.com/ISteamApps/GetAppList/v2/"
+APPLIST_URL_FALLBACK = "https://applist.morrenus.xyz/"
 APPLIST_FILE_NAME = "all-appids.json"
 APPLIST_DOWNLOAD_TIMEOUT = 300
 
