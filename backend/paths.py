@@ -1,5 +1,5 @@
 """
-Platform detection and path resolution for DeckTools (Linux/SteamOS).
+Platform detection and path resolution for LumaDeck (Linux/SteamOS).
 
 Centralises all platform-specific logic. On Steam Deck, Decky runs as root
 so ~ expands to /root/. We include explicit /home/deck/ paths to handle this.
@@ -216,6 +216,114 @@ def get_steam_appcache_stats_dir() -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# lumalinux paths (32-bit hook library injected via LD_PRELOAD)
+# ---------------------------------------------------------------------------
+
+_LUMALINUX_CANDIDATES = [
+    "/home/deck/.local/share/lumalinux",
+    os.path.expanduser("~/.local/share/lumalinux"),
+]
+
+
+def find_lumalinux_root() -> Optional[str]:
+    """Return the directory containing liblumalinux.so, or None."""
+    for path in _LUMALINUX_CANDIDATES:
+        if os.path.isdir(path) and os.path.isfile(os.path.join(path, "liblumalinux.so")):
+            return path
+    return None
+
+
+def check_lumalinux_installed() -> bool:
+    return find_lumalinux_root() is not None
+
+
+def get_lumalinux_so_path() -> Optional[str]:
+    root = find_lumalinux_root()
+    return os.path.join(root, "liblumalinux.so") if root else None
+
+
+def get_lumalinux_keys_path() -> str:
+    """Path to lumalinux's keys.txt — config lives under ~/.config/, not the
+    deploy directory. Returns the path even if the file doesn't exist yet so
+    callers can use it as a target."""
+    deck_path = "/home/deck/.config/lumalinux/keys.txt"
+    if os.path.isfile(deck_path) or os.path.isdir(os.path.dirname(deck_path)):
+        return deck_path
+    return os.path.expanduser("~/.config/lumalinux/keys.txt")
+
+
+def get_steamidra_lite_script() -> Optional[str]:
+    """Find the bundled steamidra_lite.py tool. Looks under tools/ inside the
+    lumalinux deploy root (next to liblumalinux.so)."""
+    root = find_lumalinux_root()
+    if not root:
+        return None
+    candidate = os.path.join(root, "tools", "steamidra_lite.py")
+    return candidate if os.path.isfile(candidate) else None
+
+
+def check_lumalinux_active() -> bool:
+    """True if liblumalinux.so is mapped into any running process (= the
+    LD_PRELOAD inside Steam took effect). Mirrors _check_process_injected
+    for SLSsteam."""
+    try:
+        import glob as _glob
+        for maps_path in _glob.glob("/proc/*/maps"):
+            try:
+                with open(maps_path, "r", errors="replace") as f:
+                    if "liblumalinux.so" in f.read():
+                        return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
+# CloudRedirect paths (32-bit cloud-save RPC hook library, also via LD_PRELOAD)
+# ---------------------------------------------------------------------------
+
+_CLOUDREDIRECT_CANDIDATES = [
+    "/home/deck/.local/share/CloudRedirect",
+    os.path.expanduser("~/.local/share/CloudRedirect"),
+]
+
+
+def find_cloudredirect_root() -> Optional[str]:
+    """Return the directory containing cloud_redirect.so, or None."""
+    for path in _CLOUDREDIRECT_CANDIDATES:
+        if os.path.isdir(path) and os.path.isfile(os.path.join(path, "cloud_redirect.so")):
+            return path
+    return None
+
+
+def check_cloudredirect_installed() -> bool:
+    return find_cloudredirect_root() is not None
+
+
+def get_cloudredirect_so_path() -> Optional[str]:
+    root = find_cloudredirect_root()
+    return os.path.join(root, "cloud_redirect.so") if root else None
+
+
+def check_cloudredirect_active() -> bool:
+    """True if cloud_redirect.so is mapped into any running process."""
+    try:
+        import glob as _glob
+        for maps_path in _glob.glob("/proc/*/maps"):
+            try:
+                with open(maps_path, "r", errors="replace") as f:
+                    if "cloud_redirect.so" in f.read():
+                        return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
 # SLSsteam injection verification
 # ---------------------------------------------------------------------------
 #
@@ -404,6 +512,12 @@ def get_platform_summary() -> dict:
         "accela_dir": find_accela_root(),
         "slscheevo_installed": find_slscheevo_binary() is not None,
         "slscheevo_login_ready": get_slscheevo_login_token_path() is not None,
+        "lumalinux_installed": check_lumalinux_installed(),
+        "lumalinux_root": find_lumalinux_root(),
+        "lumalinux_active": check_lumalinux_active(),
+        "cloudredirect_installed": check_cloudredirect_installed(),
+        "cloudredirect_root": find_cloudredirect_root(),
+        "cloudredirect_active": check_cloudredirect_active(),
     }
     if summary["slssteam_installed"]:
         summary["slssteam_injection"] = verify_slssteam_injected()
