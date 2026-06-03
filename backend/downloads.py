@@ -43,6 +43,99 @@ DOWNLOAD_TASKS: Dict[int, asyncio.Task] = {}
 # Cache for app names
 APP_NAME_CACHE: Dict[int, str] = {}
 
+
+# ---------------------------------------------------------------------------
+# lumalinux backend integration
+# ---------------------------------------------------------------------------
+#
+# LumaDeck replaces the DDL-based install flow with a delegation to
+# tools/steamidra_lite.py from the jayool/lumalinux project. The script does
+# everything DDL used to do plus the SLSsteam config edits the plugin used to
+# do separately (config.yaml AdditionalApps, depot keys into config.vdf, .acf
+# stub, ACCELA markers, etc.). After invoking it we just shut Steam down so
+# SteamOS Game Mode auto-relaunches it with the hooks reading the fresh
+# config — Steam itself handles the actual game download natively.
+#
+# The two helpers below resolve the script path and the Python interpreter
+# that should run it. The interpreter lives in a venv the user creates once
+# (`python3 -m venv ~/venvs/lumalinux && ~/venvs/lumalinux/bin/pip install vdf`)
+# because SteamOS' python3 has PEP 668 enabled and can't install vdf without
+# --break-system-packages. We never run as root, but the venv path under
+# /home/deck/ is checked explicitly first because Decky's `~` resolves to
+# /root/.
+
+
+def _find_steamidra_lite_script() -> str:
+    """Locate tools/steamidra_lite.py from the deployed lumalinux directory.
+    Returns the path, or "" if lumalinux isn't installed."""
+    from paths import get_steamidra_lite_script
+    return get_steamidra_lite_script() or ""
+
+
+def _find_lumalinux_venv_python() -> str:
+    """Pick the Python interpreter to run steamidra_lite with. Prefers a
+    user-created venv at ~/venvs/lumalinux/ (which has the vdf module
+    installed); falls back to system python3 (likely missing vdf — the
+    script will skip the config.vdf step with a warning)."""
+    candidates = [
+        "/home/deck/venvs/lumalinux/bin/python3",
+        os.path.expanduser("~/venvs/lumalinux/bin/python3"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return "python3"
+
+
+async def _invoke_steamidra_lite(
+    input_path: str, manifests_dir: str = "", appid_for_log: int = 0,
+) -> tuple[bool, str]:
+    """Run steamidra_lite.py on `input_path` (a Hubcap zip, or — when
+    `manifests_dir` is supplied — a bare .lua file alongside an extracted
+    manifest directory). Returns (success, combined_stdout_stderr).
+
+    Combined stream so the user gets the script's progress narrative in one
+    block if it fails. We stream the script's output through the plugin's
+    DOWNLOAD_STATE if `appid_for_log` is set so the frontend can show the
+    current step while the script is running."""
+    script = _find_steamidra_lite_script()
+    if not script:
+        return False, (
+            "lumalinux not installed (steamidra_lite.py not found). "
+            "Install lumalinux first."
+        )
+    python = _find_lumalinux_venv_python()
+
+    cmd = [python, script, input_path]
+    if manifests_dir:
+        cmd.extend(["--manifests-dir", manifests_dir])
+
+    logger.info(f"DeckTools: invoking steamidra_lite: {' '.join(cmd)}")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except FileNotFoundError as exc:
+        return False, f"Could not start steamidra_lite: {exc}"
+
+    output_chunks: list[str] = []
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        text = line.decode("utf-8", errors="replace").rstrip()
+        output_chunks.append(text)
+        logger.info(f"steamidra_lite[{appid_for_log}]: {text}")
+        if appid_for_log:
+            _set_download_state(appid_for_log, {"steamidraStep": text})
+
+    await proc.wait()
+    output = "\n".join(output_chunks)
+    return proc.returncode == 0, output
+
+
 # Rate limiting for Steam API calls
 _LAST_API_CALL_TIME = 0.0
 _API_CALL_MIN_INTERVAL = 0.3  # 300ms between calls
@@ -562,112 +655,125 @@ async def _enrich_lua_with_linux_depot(appid: int, lua_text: str) -> tuple[str, 
 
 
 async def _process_and_install_lua(appid: int, zip_path: str) -> None:
-    """Process downloaded zip: extract manifests and lua files."""
+    """Process the downloaded Hubcap zip via lumalinux's steamidra_lite.
+
+    Approach (LumaDeck flow):
+      1. Extract the zip to a temp directory.
+      2. Locate the <appid>.lua and (optionally) enrich it with the Linux
+         depot — done in the plugin because steamidra_lite doesn't query
+         PICS. The enrichment runs ONLY if the corresponding .manifest is
+         already in the extracted tree (no point adding a depot we can't
+         decrypt).
+      3. Invoke steamidra_lite with the (possibly enriched) .lua and the
+         directory of extracted manifests. The script writes:
+           - manifests into depotcache + config/depotcache
+           - keys.txt for lumalinux
+           - DecryptionKey entries into config.vdf
+           - AdditionalApps entry in SLSsteam config.yaml
+           - clean .acf stub
+           - .lua copied to stplug-in (interop with the rest of the ecosystem)
+           - ACCELA / ASSella markers (.DepotDownloader/, <accela>/depots/*.depot)
+      4. Steam itself does the actual download once Game Mode relaunches it
+         (handled outside this function, in _download_zip_for_app).
+
+    Notes:
+      - setManifestid() lines are NOT commented out. The plugin upstream
+        does that to defeat manifest pinning; in LumaDeck we WANT the pinned
+        version (lumalinux's BuildDep hook patches Steam's pDepotInfo with
+        the manifest_gid from keys.txt) because Hubcap's pin is the
+        tested combination against the current SLSsteam.
+      - No ACCELA launcher integration. If the user wants ACCELA to handle
+        the zip instead, they can run it manually from Desktop Mode.
+    """
     import zipfile
+    import shutil as _shutil
+    import tempfile
 
     if _is_download_cancelled(appid):
         raise RuntimeError("cancelled")
 
     base_path = detect_steam_install_path()
-    target_dir = os.path.join(base_path or "", "config", "stplug-in")
-    os.makedirs(target_dir, exist_ok=True)
+    if not base_path:
+        raise RuntimeError("Steam install path not found")
 
-    # ACCELA/Bifrost launcher integration (skip AppImage - it's a GUI app)
-    launcher_bin = _load_launcher_path()
-    if os.path.exists(launcher_bin) and not launcher_bin.endswith(".AppImage"):
-        logger.info(f"DeckTools: Sending {zip_path} to launcher at {launcher_bin}")
-        try:
-            if not os.access(launcher_bin, os.X_OK):
-                os.chmod(launcher_bin, 0o755)
-            clean_env = os.environ.copy()
-            clean_env.pop("LD_LIBRARY_PATH", None)
-            clean_env.pop("LD_PRELOAD", None)
-            clean_env.pop("STEAM_RUNTIME", None)
-
-            import subprocess
-            proc = subprocess.Popen(
-                [launcher_bin, zip_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=clean_env,
-            )
-            stdout, stderr = proc.communicate()
-            if proc.returncode != 0:
-                logger.warning(f"Launcher exited with code {proc.returncode}")
-            if stderr:
-                logger.warning(f"Launcher stderr: {stderr[:200]}")
-        except Exception as e:
-            logger.error(f"DeckTools: Failed to run launcher: {e}")
-
-    # Extract manifests and lua from zip
-    with zipfile.ZipFile(zip_path, "r") as archive:
-        names = archive.namelist()
-        logger.info(f"DeckTools: Zip contains {len(names)} entries: {names}")
-
-        # Extract .manifest files to depotcache
-        depotcache_dir = os.path.join(base_path or "", "depotcache")
-        os.makedirs(depotcache_dir, exist_ok=True)
-        for name in names:
-            if _is_download_cancelled(appid):
-                raise RuntimeError("cancelled")
-            if name.lower().endswith(".manifest"):
-                pure = _zip_basename(name)
-                data = archive.read(name)
-                out_path = os.path.join(depotcache_dir, pure)
-                with open(out_path, "wb") as mf:
-                    mf.write(data)
-                logger.info(f"DeckTools: Extracted manifest -> {out_path}")
-
-        # Find and process .lua file
-        candidates = [n for n in names if re.fullmatch(r"\d+\.lua", _zip_basename(n))]
+    tmp_dir = tempfile.mkdtemp(prefix=f"lumadeck_{appid}_")
+    try:
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            archive.extractall(tmp_dir)
 
         if _is_download_cancelled(appid):
             raise RuntimeError("cancelled")
 
-        chosen = None
-        preferred = f"{appid}.lua"
-        for name in candidates:
-            if _zip_basename(name) == preferred:
-                chosen = name
-                break
-        if chosen is None and candidates:
-            chosen = candidates[0]
-        if not chosen:
+        # Locate the .lua. Prefer <appid>.lua, fall back to any numeric .lua
+        # file found anywhere in the extracted tree.
+        from pathlib import Path
+        lua_candidates = [
+            p for p in Path(tmp_dir).rglob("*.lua")
+            if re.fullmatch(r"\d+", p.stem)
+        ]
+        if not lua_candidates:
             raise RuntimeError("No numeric .lua file found in zip")
+        preferred = next(
+            (p for p in lua_candidates if p.stem == str(appid)),
+            lua_candidates[0],
+        )
+        lua_path = preferred
 
-        data = archive.read(chosen)
+        # Optional enrichment with Linux depot (consults PICS via
+        # api.steamcmd.net). Updates the file in-place if it adds anything.
         try:
-            text = data.decode("utf-8")
-        except Exception:
-            text = data.decode("utf-8", errors="replace")
-
-        # Comment out setManifestid() calls to prevent Steam from locking
-        # manifest versions and showing an "Update" button (LuaToolsLinux approach)
-        processed_lines = []
-        for line in text.splitlines(True):
-            if re.match(r"^\s*setManifestid\(", line) and not re.match(r"^\s*--", line):
-                line = re.sub(r"^(\s*)", r"\1--", line)
-            processed_lines.append(line)
-        processed_text = "".join(processed_lines)
-
-        # Enrich lua with missing Linux depot if manifest is already in depotcache
-        processed_text, has_linux_depot = await _enrich_lua_with_linux_depot(appid, processed_text)
+            lua_text = lua_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            lua_text = lua_path.read_bytes().decode("utf-8", errors="replace")
+        enriched_text, has_linux_depot = await _enrich_lua_with_linux_depot(
+            appid, lua_text,
+        )
+        if enriched_text != lua_text:
+            lua_path.write_text(enriched_text, encoding="utf-8")
         _set_download_state(appid, {"hasLinuxDepot": has_linux_depot})
 
-        _set_download_state(appid, {"status": "installing"})
-        dest_file = os.path.join(target_dir, f"{appid}.lua")
         if _is_download_cancelled(appid):
             raise RuntimeError("cancelled")
-        with open(dest_file, "w", encoding="utf-8") as output:
-            output.write(processed_text)
-        logger.info(f"DeckTools: Installed lua -> {dest_file}")
-        _set_download_state(appid, {"installedPath": dest_file})
 
-    try:
-        os.remove(zip_path)
-    except Exception:
-        pass
+        # Pick the directory that holds the manifest files (usually the
+        # same dir as the lua, but ZIPs sometimes ship them in a subfolder).
+        manifests_dir = lua_path.parent
+        if not any(p.suffix.lower() == ".manifest" for p in manifests_dir.iterdir()):
+            for cand in Path(tmp_dir).rglob("*.manifest"):
+                manifests_dir = cand.parent
+                break
+
+        # Run steamidra_lite. It handles everything: depotcache,
+        # keys.txt, config.vdf, config.yaml, .acf stub, stplug-in lua,
+        # ACCELA markers, .depot tracker.
+        _set_download_state(appid, {"status": "installing"})
+        ok, output = await _invoke_steamidra_lite(
+            str(lua_path),
+            manifests_dir=str(manifests_dir),
+            appid_for_log=appid,
+        )
+        if not ok:
+            raise RuntimeError(
+                f"steamidra_lite failed:\n{output[-2000:]}"  # last 2KB is plenty
+            )
+
+        # Record the installed lua path for any downstream code that looks
+        # it up (the canonical place is stplug-in, written by the script).
+        _set_download_state(appid, {
+            "installedPath": os.path.join(
+                base_path, "config", "stplug-in", f"{appid}.lua"
+            ),
+        })
+    finally:
+        try:
+            _shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+        # Drop the original zip too — we've consumed it.
+        try:
+            os.remove(zip_path)
+        except Exception:
+            pass
 
 
 def _load_launcher_path() -> str:
@@ -2022,7 +2128,14 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                 except FileNotFoundError:
                     continue
 
-                # Process and install
+                # Process and install via steamidra_lite (LumaDeck flow).
+                # The script writes everything we used to do across the
+                # plugin: depotcache, keys.txt, config.vdf DecryptionKeys,
+                # AdditionalApps in SLSsteam config.yaml, the .acf stub, the
+                # .lua copy into stplug-in, ACCELA markers, and the .depot
+                # update tracker. After that, we trigger `steam -shutdown` so
+                # SteamOS Game Mode relaunches Steam with the hooks reading
+                # the fresh config; Steam itself downloads the game natively.
                 try:
                     if _is_download_cancelled(appid):
                         raise RuntimeError("cancelled")
@@ -2037,120 +2150,51 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                         _append_loaded_app(appid, fetched_name)
                         _log_appid_event(f"ADDED - {name}", appid, fetched_name)
                     except Exception:
-                        pass
+                        fetched_name = f"Unknown ({appid})"
 
-                    # Auto-configure SLSsteam so the game appears in Steam library
+                    # Best-effort SLSsteam DLC enrichment. steamidra_lite has
+                    # already written AdditionalApps + DecryptionKeys, so the
+                    # only thing left from the upstream "configure SLSsteam"
+                    # block that wasn't covered is the DLC list (we'd query
+                    # Steam Web API to discover DLC ids and add them to
+                    # DlcData). Token and AdditionalApps are intentionally
+                    # NOT called again here — they're idempotent inside the
+                    # script anyway.
                     _set_download_state(appid, {"status": "configuring"})
                     try:
-                        from slssteam_ops import add_game_token, add_game_dlcs, add_to_additional_apps, write_depot_decryption_keys
-                        r0 = add_to_additional_apps(appid)
-                        logger.info(f"DeckTools: SLSsteam add_to_additional_apps({appid}): {r0}")
-                        r2 = add_game_token(appid)
-                        logger.info(f"DeckTools: SLSsteam add_game_token({appid}): {r2}")
+                        from slssteam_ops import add_game_dlcs
+                        dlc_result = await add_game_dlcs(appid)
+                        logger.info(f"DeckTools: SLSsteam add_game_dlcs({appid}): {dlc_result}")
+                    except Exception as dlc_exc:
+                        logger.warning(f"DeckTools: SLSsteam DLC enrichment failed: {dlc_exc}")
 
-                        # Write DecryptionKey entries from the installed lua into config.vdf
-                        # so Steam can decrypt the depot without needing SLSsteam injected
+                    # Force Proton if no Linux depot was added during the
+                    # enrich pass — Steam wouldn't otherwise launch a Windows
+                    # binary on the Deck without explicit compat tool.
+                    if not _get_download_state(appid).get("hasLinuxDepot", False):
                         try:
-                            lua_path_now = _get_download_state(appid).get("installedPath", "")
-                            if not lua_path_now:
-                                _steam_base = detect_steam_install_path()
-                                lua_path_now = os.path.join(_steam_base or "", "config", "stplug-in", f"{appid}.lua")
-                            if os.path.exists(lua_path_now):
-                                import re as _re
-                                with open(lua_path_now, "r", encoding="utf-8") as _lf:
-                                    _lua = _lf.read()
-                                _depot_keys = {}
-                                for _m in _re.finditer(r'addappid\(\s*(\d+)\s*,\s*\d+\s*,\s*"([0-9a-fA-F]{64})"', _lua):
-                                    _depot_keys[_m.group(1)] = _m.group(2)
-                                if _depot_keys:
-                                    _dk_result = write_depot_decryption_keys(_depot_keys)
-                                    logger.info(f"DeckTools: write_depot_decryption_keys: {_dk_result}")
-                        except Exception as _dk_exc:
-                            logger.warning(f"DeckTools: DecryptionKey write failed: {_dk_exc}")
+                            from steam_utils import set_compat_tool_for_app
+                            if set_compat_tool_for_app(appid):
+                                logger.info(f"DeckTools: Forced proton_experimental for {appid} (Windows-only depot)")
+                        except Exception as proton_exc:
+                            logger.warning(f"DeckTools: set_compat_tool error: {proton_exc}")
 
-                        r3 = await add_game_dlcs(appid)
-                        logger.info(f"DeckTools: SLSsteam add_game_dlcs({appid}): {r3}")
-                    except Exception as sls_exc:
-                        logger.warning(f"DeckTools: SLSsteam config partial: {sls_exc}")
+                    # Trigger Steam restart so Game Mode reloads it with the
+                    # fresh config + hooks active. SteamOS auto-relaunches.
+                    # See _restart_steam_delayed: it sleeps `delay` seconds
+                    # so the frontend sees the "restarting" state before the
+                    # shutdown actually fires. The actual game download is
+                    # native Steam after the restart — progress shows in the
+                    # Steam library UI itself, not in this plugin.
+                    _set_download_state(appid, {
+                        "status": "restarting_steam",
+                        "message": "Restarting Steam to start the download…",
+                    })
+                    asyncio.create_task(_restart_steam_delayed(delay=5))
 
-                    # Download actual game files via DepotDownloader
-                    if _is_download_cancelled(appid):
-                        raise RuntimeError("cancelled")
-
-                    _set_download_state(appid, {"status": "depot_download", "depotProgress": "Preparing..."})
-                    try:
-                        lua_path = _get_download_state(appid).get("installedPath", "")
-                        if not lua_path:
-                            steam_base = detect_steam_install_path()
-                            lua_path = os.path.join(steam_base or "", "config", "stplug-in", f"{appid}.lua")
-
-                        depots = _parse_lua_depots(lua_path) if os.path.exists(lua_path) else []
-                        if depots:
-                            install_dir = await _determine_install_dir(appid, fetched_name, target_library_path)
-                            logger.info(f"DeckTools: Starting depot download - {len(depots)} depot(s) -> {install_dir}")
-                            await _run_depot_download(appid, depots, install_dir)
-
-                            if _is_download_cancelled(appid):
-                                raise RuntimeError("cancelled")
-
-                            # Check if depot download failed
-                            cur_state = _get_download_state(appid)
-                            if cur_state.get("status") == "failed":
-                                return
-
-                            # Create/overwrite appmanifest so Steam recognizes the game as installed
-                            try:
-                                _create_or_update_appmanifest(appid, install_dir, depots, fetched_name, target_library_path)
-                            except Exception as acf_exc:
-                                logger.warning(f"DeckTools: appmanifest update error: {acf_exc}")
-
-                            # If no Linux depot was available, force Proton so Steam
-                            # doesn't refuse to launch the Windows executable
-                            if not _get_download_state(appid).get("hasLinuxDepot", False):
-                                try:
-                                    from steam_utils import set_compat_tool_for_app
-                                    if set_compat_tool_for_app(appid):
-                                        logger.info(f"DeckTools: Forced proton_experimental for {appid} (Windows-only depot)")
-                                    else:
-                                        logger.warning(f"DeckTools: Could not set compat tool for {appid}")
-                                except Exception as proton_exc:
-                                    logger.warning(f"DeckTools: set_compat_tool error: {proton_exc}")
-
-                            # Re-verify SLSsteam config after all game files are in place.
-                            # Avoids the race condition where Steam restarts before SLSsteam
-                            # has processed the lua, causing the game to fail to launch.
-                            try:
-                                from slssteam_ops import reconfigure_slssteam
-                                await reconfigure_slssteam(appid)
-                                logger.info(f"DeckTools: SLSsteam config re-verified for {appid}")
-                            except Exception as reconf_exc:
-                                logger.warning(f"DeckTools: SLSsteam re-verify failed: {reconf_exc}")
-                        else:
-                            logger.info(f"DeckTools: No depots found in lua for {appid}, skipping game file download")
-                    except RuntimeError:
-                        raise
-                    except Exception as depot_exc:
-                        logger.warning(f"DeckTools: Depot download error: {depot_exc}")
-                        _set_download_state(appid, {"status": "failed", "error": f"Game download failed: {depot_exc}"})
-                        return
-
-                    # Save depot snapshot for update checking.
-                    # Use exact manifest IDs from the API response (what DDM was told to download).
-                    # Scanning depotcache with a numeric tiebreak is unreliable because Steam
-                    # manifest GIDs are content hashes, not sequential version numbers.
-                    try:
-                        from api_manifest import _depot_snapshot_path
-                        snap_manifests = {str(d["depot"]): str(d["manifest"]) for d in depots if d.get("manifest")}
-                        if snap_manifests:
-                            import json as _json
-                            snap_path = _depot_snapshot_path(appid)
-                            with open(snap_path, "w", encoding="utf-8") as _sf:
-                                _json.dump({"appid": appid, "manifests": snap_manifests}, _sf)
-                            logger.info(f"DeckTools: Saved depot snapshot for {appid} ({len(snap_manifests)} depots)")
-                    except Exception as snap_exc:
-                        logger.warning(f"DeckTools: depot snapshot save error: {snap_exc}")
-
-                    _set_download_state(appid, {"status": "done", "success": True, "api": name})
+                    _set_download_state(appid, {
+                        "status": "done", "success": True, "api": name,
+                    })
                     return
                 except Exception as install_exc:
                     if isinstance(install_exc, RuntimeError) and str(install_exc) == "cancelled":
