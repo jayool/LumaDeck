@@ -191,11 +191,19 @@ def update_morrenus_key(key_content: str) -> dict:
             root_data["api_list"] = []
 
         api_list = root_data["api_list"]
-        new_url = f"https://manifest.morrenus.xyz/api/v1/manifest/<appid>?api_key={key_content}"
+        # Morrenus rebranded to Hubcap (hubcapmanifest.com). The endpoint still
+        # accepts the legacy ?api_key= querystring (Star123451's upstream
+        # api.json uses this form), so we keep the URL shape, only the host
+        # changes. Old api.json entries with manifest.morrenus.xyz are matched
+        # below by the legacy substring so they get rewritten on first edit.
+        new_url = f"https://hubcapmanifest.com/api/v1/manifest/<appid>?api_key={key_content}"
         found = False
 
         for api in api_list:
-            if "morrenus" in api.get("name", "").lower() or "morrenus.xyz" in api.get("url", ""):
+            name = api.get("name", "").lower()
+            url = api.get("url", "")
+            if ("morrenus" in name or "hubcap" in name
+                    or "morrenus.xyz" in url or "hubcapmanifest.com" in url):
                 api["url"] = new_url
                 api["enabled"] = True
                 found = True
@@ -219,7 +227,9 @@ def update_morrenus_key(key_content: str) -> dict:
 
 
 def _get_morrenus_key() -> str:
-    """Extract the Morrenus API key from api.json."""
+    """Extract the Morrenus / Hubcap API key from api.json. Accepts both the
+    legacy host (manifest.morrenus.xyz) and the new one (hubcapmanifest.com)
+    in case an older api.json file is still cached locally."""
     try:
         path = data_path(API_JSON_FILE)
         if not os.path.exists(path):
@@ -228,7 +238,8 @@ def _get_morrenus_key() -> str:
             data = json.loads(f.read())
         for api in data.get("api_list", []):
             url = api.get("url", "")
-            if "morrenus.xyz" in url and "api_key=" in url:
+            host_match = "hubcapmanifest.com" in url or "morrenus.xyz" in url
+            if host_match and "api_key=" in url:
                 return url.split("api_key=")[-1].strip()
         return ""
     except Exception:
@@ -253,8 +264,12 @@ async def search_morrenus(query: str) -> dict:
         from urllib.parse import urlencode
         client = await ensure_http_client("MorrenusSearch")
         qs = urlencode({"q": query.strip(), "limit": 50})
+        # Morrenus → Hubcap rebrand. Endpoint still accepts Bearer auth (same
+        # mechanism SFF uses, see sff/lua/endpoints.py:181). Querystring api_key
+        # is the alternative the manifest endpoint accepts, but /search wants
+        # the header form.
         resp = await client.get(
-            f"https://manifest.morrenus.xyz/api/v1/search?{qs}",
+            f"https://hubcapmanifest.com/api/v1/search?{qs}",
             headers={"Authorization": f"Bearer {key}"},
             timeout=15,
         )
