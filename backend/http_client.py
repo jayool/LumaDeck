@@ -14,14 +14,14 @@ import urllib.error
 import urllib.request
 from typing import Any, AsyncIterator, Dict, Optional
 
-from config import HTTP_TIMEOUT_SECONDS
+from config import HTTP_TIMEOUT_SECONDS, USER_AGENT
 
 try:
     import decky  # type: ignore
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ class _StreamContext:
 
     def _open(self) -> Any:
         req = urllib.request.Request(self._url, method="GET")
-        req.add_header("User-Agent", "DeckTools/0.1")
+        req.add_header("User-Agent", USER_AGENT)
         for k, v in self._headers.items():
             req.add_header(k, v)
         ctx = self._ssl_ctx if self._url.startswith("https") else None
@@ -258,7 +258,7 @@ class NativeAsyncClient:
         follow_redirects: bool, headers: Dict[str, str],
     ) -> NativeResponse:
         req = urllib.request.Request(url, method=method)
-        req.add_header("User-Agent", "DeckTools/0.1")
+        req.add_header("User-Agent", USER_AGENT)
         for k, v in headers.items():
             req.add_header(k, v)
         ctx = self._ssl_ctx if url.startswith("https") else None
