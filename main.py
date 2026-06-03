@@ -47,7 +47,7 @@ class Plugin:
         logger.info("DeckTools: Plugin loaded")
         try:
             from api_manifest import init_apis
-            from downloads import init_applist, init_games_db, validate_ddm_cache
+            from downloads import init_applist, init_games_db
             from paths import get_platform_summary, verify_slssteam_injected
 
             # Check + auto-repair SLSsteam injection before anything else
@@ -67,7 +67,6 @@ class Plugin:
             logger.info(f"DeckTools: Platform summary: {json.dumps(summary)}")
 
             await init_apis()
-            await validate_ddm_cache()
             await init_applist()
             await init_games_db()
         except Exception as exc:

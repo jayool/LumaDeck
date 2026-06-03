@@ -1972,11 +1972,18 @@ def _create_or_update_appmanifest(appid: int, install_dir: str, depots: list[dic
     _chmod_linux_binaries(install_dir)
 
 
-async def repair_appmanifest(appid: int) -> dict:
-    """Repair a broken appmanifest ACF for an existing game (without re-downloading).
+async def _legacy_repair_appmanifest_ddl_flow(appid: int) -> dict:
+    """[DEAD CODE — block B] DDL-era repair_appmanifest implementation.
 
-    This mirrors what ACCELA does: create a correct ACF from scratch,
-    set Linux binary permissions, and restart Steam.
+    Renamed (was `repair_appmanifest`) so it doesn't shadow the LumaDeck
+    replacement defined below the dead-code block. Restore by renaming
+    back if you also revive the DDL flow as a whole.
+
+    Original behaviour: reconstruct a fully-populated .acf with the right
+    InstalledDepots / SizeOnDisk computed from the game folder, then
+    chmod it 0444 so Steam couldn't rewrite it — that read-only step is
+    why this is incompatible with LumaDeck (Steam needs to maintain its
+    own bookkeeping during the native download).
     """
     from steam_utils import get_steam_libraries
     libraries = get_steam_libraries()
@@ -2073,6 +2080,66 @@ async def repair_appmanifest(appid: int) -> dict:
 # ============================================================================
 # DEAD CODE END (block B) — back to live code below.
 # ============================================================================
+
+
+async def repair_appmanifest(appid: int) -> dict:
+    """Repair the .acf for an installed game by deleting it so Steam
+    recreates it on its next refresh.
+
+    Rationale: in the LumaDeck flow Steam writes the .acf itself during
+    the native download (after steamidra_lite seeds the stub). Manually
+    reconstructing it the way the upstream DDL flow did — with a fixed
+    InstalledDepots / SizeOnDisk and chmod 0444 to lock Steam out — would
+    prevent Steam from maintaining its own bookkeeping after the repair.
+    The simplest, conflict-free recovery is therefore to delete the
+    current .acf and let Steam regenerate it.
+
+    Looks across every Steam library (some users move games to a SD card
+    or external drive). Removes the read-only bit first in case the .acf
+    being repaired was written by the legacy chmod 0444 path. Returns
+    the list of removed paths.
+
+    Does NOT auto-restart Steam — Repair is a per-game operation and
+    silently restarting Steam would surprise the user. They can pair this
+    with the existing 'Restart Steam' action when they're ready.
+    """
+    from steam_utils import get_steam_libraries, detect_steam_install_path
+
+    libs = get_steam_libraries() or [{"path": detect_steam_install_path() or ""}]
+    removed_paths: list[str] = []
+    for lib in libs:
+        lib_path = lib.get("path") if isinstance(lib, dict) else str(lib)
+        if not lib_path:
+            continue
+        acf_path = os.path.join(lib_path, "steamapps", f"appmanifest_{appid}.acf")
+        if not os.path.exists(acf_path):
+            continue
+        try:
+            # Legacy DDL-era repairs chmod'd to 0444 — unlock before unlink.
+            os.chmod(acf_path, 0o644)
+        except Exception:
+            pass
+        try:
+            os.remove(acf_path)
+            removed_paths.append(acf_path)
+            logger.info(f"DeckTools: removed stale .acf {acf_path}")
+        except Exception as exc:
+            logger.warning(f"DeckTools: could not remove {acf_path}: {exc}")
+
+    if not removed_paths:
+        return {
+            "success": True, "removed": False,
+            "message": f"No .acf found for AppID {appid}",
+        }
+    return {
+        "success": True, "removed": True,
+        "removed_paths": removed_paths,
+        "message": (
+            f"Removed {len(removed_paths)} .acf file(s). "
+            "Restart Steam so it regenerates them, then click Install/Update "
+            "on the game in your library."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
