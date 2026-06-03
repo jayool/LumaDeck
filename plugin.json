@@ -1,11 +1,11 @@
 {
-  "name": "DeckTools",
-  "author": "DeckTools",
+  "name": "LumaDeck",
+  "author": "jayool",
   "flags": ["root"],
   "api_version": 1,
   "publish": {
     "tags": ["gaming", "download-manager"],
-    "description": "Game library and configuration manager for Steam Deck",
+    "description": "Game library and configuration manager for Steam Deck — lumalinux backend (native Steam download instead of DepotDownloader)",
     "image": ""
   }
 }
