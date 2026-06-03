@@ -7,7 +7,18 @@ import os
 import tempfile
 from typing import Optional
 
-from paths import find_accela_root, find_slssteam_root, check_slssteam_installed, check_accela_installed
+from paths import (
+    find_accela_root,
+    find_slssteam_root,
+    check_slssteam_installed,
+    check_accela_installed,
+    find_lumalinux_root,
+    check_lumalinux_installed,
+    check_lumalinux_active,
+    find_cloudredirect_root,
+    check_cloudredirect_installed,
+    check_cloudredirect_active,
+)
 
 try:
     import decky  # type: ignore
@@ -67,6 +78,18 @@ def check_dependencies() -> dict:
         "slssteamPath": find_slssteam_root(),
         "dotnet": dotnet_available,
         "dotnetPath": dotnet_path,
+        # LumaDeck-specific: report on lumalinux + CloudRedirect too. These
+        # aren't installed by enter-the-wired (that only covers ACCELA + .NET
+        # + SLSsteam) — the user installs them manually. The plugin only
+        # detects and reports their state for the Settings UI to display.
+        # `*_active` is True when the .so is mapped into a running process
+        # (i.e. LD_PRELOAD actually took effect, not just present on disk).
+        "lumalinux": check_lumalinux_installed(),
+        "lumalinuxPath": find_lumalinux_root(),
+        "lumalinuxActive": check_lumalinux_active(),
+        "cloudredirect": check_cloudredirect_installed(),
+        "cloudredirectPath": find_cloudredirect_root(),
+        "cloudredirectActive": check_cloudredirect_active(),
     }
 
 
