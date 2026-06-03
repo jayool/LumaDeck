@@ -776,6 +776,28 @@ async def _process_and_install_lua(appid: int, zip_path: str) -> None:
             pass
 
 
+# ============================================================================
+# DEAD CODE — legacy DDL-based download flow (block A: launcher passthrough,
+# install-dir resolution, DepotDownloader extraction + execution).
+# ============================================================================
+#
+# Everything between this marker and the matching "DEAD CODE END (block A)"
+# below is part of the original DeckTools download pipeline based on
+# DepotDownloaderMod (DDL). LumaDeck replaced this with a steamidra_lite +
+# steam-shutdown flow (commit f63bd6e); nothing in the active flow calls
+# these functions anymore.
+#
+# They're kept INTENTIONALLY here so we can roll back if the new flow ever
+# turns out to have a blocker — restore by re-importing these symbols
+# from _download_zip_for_app and putting back the manifest / snapshot blocks
+# removed in that commit.
+#
+# Don't delete unless you've confirmed the new flow is stable across the
+# install scenarios you care about. Block B (further down, also marked)
+# carries the related .acf-writing / size-computing helpers.
+# ============================================================================
+
+
 def _load_launcher_path() -> str:
     default_path = os.path.expanduser("~/.local/share/Bifrost/bin/Bifrost")
     # Also check /home/deck path for Steam Deck root context
@@ -1718,6 +1740,11 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
         logger.warning(f"DeckTools: chown failed for {install_dir}: {chown_exc}")
 
 
+# ============================================================================
+# DEAD CODE END (block A) — back to live code below.
+# ============================================================================
+
+
 async def _restart_steam_delayed(delay: int = 5) -> None:
     """Restart Steam after a delay. On Steam Deck Game Mode, Steam auto-restarts.
     Also restarts plugin_loader afterwards so Decky comes back cleanly."""
@@ -1734,6 +1761,23 @@ async def _restart_steam_delayed(delay: int = 5) -> None:
         logger.warning(f"DeckTools: Failed to restart Steam: {e}")
         return
 
+
+
+# ============================================================================
+# DEAD CODE — legacy DDL-based download flow (block B: post-download
+# helpers — size accounting, chmod, .acf writing, .acf repair endpoint).
+# ============================================================================
+#
+# Same story as block A above: these helpers fired immediately after DDL
+# finished extracting a game and shaped what Steam would see (custom .acf
+# with InstalledDepots / SizeOnDisk, executable bits on the binaries, etc.).
+# In the LumaDeck flow Steam does the actual download natively, so it
+# writes those fields itself; we don't need to.
+#
+# `repair_appmanifest` is the only public-facing one — it was the backend
+# of a Settings button. If you want to bring that button back, point it at
+# a new function that re-runs steamidra_lite on the cached zip instead.
+# ============================================================================
 
 
 def _get_dir_size(path: str) -> int:
@@ -2024,6 +2068,11 @@ async def repair_appmanifest(appid: int) -> dict:
         "game_name": game_name,
         "message": "Appmanifest repaired.",
     }
+
+
+# ============================================================================
+# DEAD CODE END (block B) — back to live code below.
+# ============================================================================
 
 
 # ---------------------------------------------------------------------------
