@@ -83,18 +83,59 @@ def _parse_vdf_simple(content: str) -> Dict[str, any]:
     return result
 
 
-def has_lua_for_app(appid: int) -> bool:
-    try:
-        base_path = detect_steam_install_path()
-        if not base_path:
-            return False
-        stplug_path = os.path.join(base_path, "config", "stplug-in")
-        lua_file = os.path.join(stplug_path, f"{appid}.lua")
-        disabled_file = os.path.join(stplug_path, f"{appid}.lua.disabled")
-        return os.path.exists(lua_file) or os.path.exists(disabled_file)
-    except Exception as exc:
-        logger.error(f"DeckTools: Error checking Lua scripts for app {appid}: {exc}")
+def _appid_in_lumalinux_keys(appid: int, keys_path: str) -> bool:
+    """Look for `appid` in lumalinux's keys.txt. It can appear in two shapes:
+      - dummy line for the app itself: '<appid>;<hex>'
+      - parent_app_id in a depot line:  '<depot>;<appid>;<gid>;<size>;<key>'
+    Blank lines and lines starting with '#' are ignored. Best-effort: any
+    read error → False, never raises."""
+    if not os.path.isfile(keys_path):
         return False
+    appid_str = str(appid)
+    try:
+        with open(keys_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                fields = line.split(";")
+                if fields[0] == appid_str:
+                    return True
+                if len(fields) >= 2 and fields[1] == appid_str:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def has_lua_for_app(appid: int) -> bool:
+    """Return True if the appid is registered with EITHER backend the plugin
+    understands. Despite the historical name (kept for compat with the
+    upstream API and the frontend `hasLua` field), the semantics is now
+    "this game is managed by the plugin", not strictly "has a .lua".
+
+    Sources, ORed:
+      - Legacy SteaMidra-style: <steam>/config/stplug-in/<appid>.lua  (or .disabled)
+      - lumalinux flow:         <appid> referenced in ~/.config/lumalinux/keys.txt
+
+    Either presence is enough — the two flows are independent and the plugin
+    supports them side by side. False only if neither has the app."""
+    try:
+        # Legacy stplug-in check (DDL / SteaMidra path)
+        base_path = detect_steam_install_path()
+        if base_path:
+            stplug_path = os.path.join(base_path, "config", "stplug-in")
+            lua_file = os.path.join(stplug_path, f"{appid}.lua")
+            disabled_file = os.path.join(stplug_path, f"{appid}.lua.disabled")
+            if os.path.exists(lua_file) or os.path.exists(disabled_file):
+                return True
+        # lumalinux keys.txt check (native Steam download path)
+        from paths import get_lumalinux_keys_path
+        if _appid_in_lumalinux_keys(int(appid), get_lumalinux_keys_path()):
+            return True
+    except Exception as exc:
+        logger.error(f"DeckTools: Error checking managed status for app {appid}: {exc}")
+    return False
 
 
 def get_game_install_path_response(appid: int) -> Dict[str, any]:
