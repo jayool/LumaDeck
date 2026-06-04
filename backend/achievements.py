@@ -10,7 +10,7 @@ import asyncio
 import os
 import stat
 import tarfile
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from paths import (
     find_slscheevo_binary,

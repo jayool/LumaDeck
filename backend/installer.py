@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
-from typing import Optional
 
 from paths import (
     find_accela_root,

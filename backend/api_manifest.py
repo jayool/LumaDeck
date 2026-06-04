@@ -13,7 +13,7 @@ from config import (
     HTTP_PROXY_TIMEOUT_SECONDS,
 )
 from http_client import ensure_http_client
-from paths import backend_path, data_path
+from paths import data_path
 from utils import count_apis, normalize_manifest_text, read_text, write_text
 
 try:
@@ -348,6 +348,24 @@ async def _fetch_steamcmd_manifests(appid: int) -> dict:
             result[depot_id] = str(gid)
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Depot snapshot helpers — currently orphaned in the LumaDeck flow.
+#
+# These two functions are kept callable but nothing in the live code path
+# invokes them. The download flow used to call save_depot_snapshot at the end
+# of an install (commit f63bd6e removed that call), and check_game_update
+# below only uses save_depot_snapshot_from_depotcache as a fallback when no
+# baseline exists. The design (see DESIGN.md decision #11) is to migrate
+# check_game_update to read ACCELA's <accela_root>/depots/<appid>.depot
+# tracker as the single source of truth across the ecosystem; once that
+# migration lands, these two helpers can come out entirely.
+#
+# Left here on purpose for the time being so the rollback / comparison path
+# stays intact and DESIGN.md's "TODO migrate to .depot" reference points at
+# something concrete.
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 async def save_depot_snapshot(appid: int) -> dict:

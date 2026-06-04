@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-from paths import get_slssteam_config_path, get_slssteam_config_dir
+from paths import get_slssteam_config_path
 
 try:
     import decky  # type: ignore
