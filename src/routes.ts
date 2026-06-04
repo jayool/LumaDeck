@@ -1,4 +1,4 @@
-export const ROUTE_GAME_LIST = "/decktools";
-export const ROUTE_GAME_DETAIL = "/decktools/game";
-export const ROUTE_SETTINGS = "/decktools/settings";
-export const ROUTE_DOWNLOADS = "/decktools/downloads";
+export const ROUTE_GAME_LIST = "/lumadeck";
+export const ROUTE_GAME_DETAIL = "/lumadeck/game";
+export const ROUTE_SETTINGS = "/lumadeck/settings";
+export const ROUTE_DOWNLOADS = "/lumadeck/downloads";
