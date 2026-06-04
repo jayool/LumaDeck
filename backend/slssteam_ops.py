@@ -18,7 +18,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 
 def _config_path() -> str:
@@ -668,17 +668,17 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
             if install_path:
                 from steam_utils import detect_steam_install_path
                 library_path = library_path or detect_steam_install_path()
-                logger.info(f"DeckTools: Found game dir via fallback: {install_path}")
+                logger.info(f"LumaDeck: Found game dir via fallback: {install_path}")
 
         if install_path and os.path.exists(install_path):
             shutil.rmtree(install_path, ignore_errors=True)
             if not os.path.exists(install_path):
                 removed.append("game_files")
-                logger.info(f"DeckTools: Removed game directory: {install_path}")
+                logger.info(f"LumaDeck: Removed game directory: {install_path}")
             else:
                 errors.append("Failed to fully remove game directory")
         else:
-            logger.info(f"DeckTools: No game directory found for {appid}, skipping file removal")
+            logger.info(f"LumaDeck: No game directory found for {appid}, skipping file removal")
 
         # 1b. Remove appmanifest — always, independent of whether game dir was found.
         # Search all known library paths so orphan ACFs are always cleaned up.
@@ -694,11 +694,11 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                         os.remove(acf_file)
                         if "appmanifest" not in removed:
                             removed.append("appmanifest")
-                        logger.info(f"DeckTools: Removed ACF: {acf_file}")
+                        logger.info(f"LumaDeck: Removed ACF: {acf_file}")
                     except Exception as e:
                         errors.append(f"Failed to remove appmanifest: {e}")
         except Exception as e:
-            logger.warning(f"DeckTools: ACF removal error: {e}")
+            logger.warning(f"LumaDeck: ACF removal error: {e}")
 
         # 1b. Remove compatdata/proton prefix if requested
         if remove_compatdata:
@@ -711,7 +711,7 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                         shutil.rmtree(compatdata_path, ignore_errors=True)
                         if not os.path.exists(compatdata_path):
                             removed.append("compatdata")
-                            logger.info(f"DeckTools: Removed compatdata: {compatdata_path}")
+                            logger.info(f"LumaDeck: Removed compatdata: {compatdata_path}")
                         else:
                             errors.append("Failed to fully remove compatdata")
                     # Also check other library paths
@@ -723,7 +723,7 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                                 if "compatdata" not in removed:
                                     removed.append("compatdata")
             except Exception as e:
-                logger.warning(f"DeckTools: Compatdata cleanup error: {e}")
+                logger.warning(f"LumaDeck: Compatdata cleanup error: {e}")
 
         # 2. Remove depotcache manifests for this game's depots
         try:
@@ -742,13 +742,13 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                         if os.path.exists(manifest_file):
                             try:
                                 os.remove(manifest_file)
-                                logger.info(f"DeckTools: Removed manifest: {manifest_file}")
+                                logger.info(f"LumaDeck: Removed manifest: {manifest_file}")
                             except Exception:
                                 pass
                     if depots:
                         removed.append("depot_manifests")
         except Exception as e:
-            logger.warning(f"DeckTools: Depotcache cleanup error: {e}")
+            logger.warning(f"LumaDeck: Depotcache cleanup error: {e}")
 
         # 3. Remove lua script
         try:
@@ -779,7 +779,7 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
         except Exception:
             pass
 
-        logger.info(f"DeckTools: Uninstall {appid} complete. Removed: {removed}")
+        logger.info(f"LumaDeck: Uninstall {appid} complete. Removed: {removed}")
         return {"success": True, "removed": removed, "errors": errors}
     except Exception as e:  # noqa: E722 (kept for symmetry with original)
         return {"success": False, "error": str(e)}
@@ -842,11 +842,11 @@ def write_depot_decryption_keys(depot_token_map: dict) -> dict:
             )
             if existing_re.search(content):
                 content = existing_re.sub(new_block.rstrip("\n"), content)
-                logger.info(f"DeckTools: Updated DecryptionKey for depot {depot_str}")
+                logger.info(f"LumaDeck: Updated DecryptionKey for depot {depot_str}")
             else:
                 insert_pos = m.end()
                 content = content[:insert_pos] + "\n" + new_block + content[insert_pos:]
-                logger.info(f"DeckTools: Added DecryptionKey for depot {depot_str}")
+                logger.info(f"LumaDeck: Added DecryptionKey for depot {depot_str}")
 
             written.append(depot_str)
 
@@ -858,7 +858,7 @@ def write_depot_decryption_keys(depot_token_map: dict) -> dict:
         return {"success": True, "written": written}
 
     except Exception as exc:
-        logger.warning(f"DeckTools: write_depot_decryption_keys failed: {exc}")
+        logger.warning(f"LumaDeck: write_depot_decryption_keys failed: {exc}")
         return {"success": False, "error": str(exc)}
 
 

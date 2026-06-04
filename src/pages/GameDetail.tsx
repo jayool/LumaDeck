@@ -694,6 +694,10 @@ export function GameDetail({ appid }: GameDetailProps) {
           <>
             <PanelSectionRow>
               <div style={{ fontSize: "12px", color: "#dcdedf" }}>
+                {/* depot_download is dead code (DDL backend no longer runs)
+                    but the branch + progress bar below stay so a rollback
+                    keeps working. The active flow goes through downloading →
+                    processing → installing → configuring → restarting_steam → done. */}
                 {downloadState.status === "depot_download"
                   ? (downloadState.depotProgress || t("statusDownloadingGame"))
                   : (<>
@@ -704,8 +708,9 @@ export function GameDetail({ appid }: GameDetailProps) {
                         : downloadState.status === "configuring" ? t("statusConfiguring")
                           : downloadState.status === "installing" ? t("statusInstalling")
                             : downloadState.status === "queued" ? t("statusQueued")
-                              : downloadState.status === "checking" ? `${t("statusChecking")} ${downloadState.currentApi || ""}...`
-                                : downloadState.status}
+                              : downloadState.status === "restarting_steam" ? t("statusRestartingSteam")
+                                : downloadState.status === "checking" ? `${t("statusChecking")} ${downloadState.currentApi || ""}...`
+                                  : downloadState.status}
                     {downloadState.speed > 0 &&
                       ` — ${formatSpeed(downloadState.speed)}`}
                   </>)

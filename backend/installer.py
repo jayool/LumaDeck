@@ -25,7 +25,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 INSTALL_STATE = {
     "status": "idle",
@@ -103,7 +103,7 @@ async def install_dependencies() -> dict:
         BASE_URL = "https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main"
         # enter-the-wired requires accela and fix-deps in the same directory.
         # Download all three into a temp dir so local-execution branch works.
-        tmp_dir = tempfile.mkdtemp(prefix="decktools_etw_")
+        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_etw_")
         scripts = {
             "enter-the-wired": f"{BASE_URL}/enter-the-wired",
             "accela": f"{BASE_URL}/accela",

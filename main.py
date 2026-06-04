@@ -1,4 +1,4 @@
-"""DeckTools — Decky Loader Plugin entry point.
+"""LumaDeck — Decky Loader Plugin entry point.
 
 Exposes all backend functions as async methods callable from the frontend
 via serverAPI.callPluginMethod().
@@ -19,7 +19,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 
 def _j(obj) -> str:
@@ -44,7 +44,7 @@ class Plugin:
 
     async def _main(self):
         global _injection_repaired_on_startup
-        logger.info("DeckTools: Plugin loaded")
+        logger.info("LumaDeck: Plugin loaded")
         try:
             from api_manifest import init_apis
             from downloads import init_applist, init_games_db
@@ -55,25 +55,25 @@ class Plugin:
                 inj = verify_slssteam_injected()
                 if inj.get("patched"):
                     _injection_repaired_on_startup = True
-                    logger.info("DeckTools: SLSsteam injection was missing — patched steam.sh. Steam restart required.")
+                    logger.info("LumaDeck: SLSsteam injection was missing — patched steam.sh. Steam restart required.")
                 elif inj.get("already_ok"):
-                    logger.info("DeckTools: SLSsteam injection OK")
+                    logger.info("LumaDeck: SLSsteam injection OK")
                 else:
-                    logger.warning(f"DeckTools: SLSsteam injection check: {inj}")
+                    logger.warning(f"LumaDeck: SLSsteam injection check: {inj}")
             except Exception as exc:
-                logger.warning(f"DeckTools: SLSsteam injection check failed: {exc}")
+                logger.warning(f"LumaDeck: SLSsteam injection check failed: {exc}")
 
             summary = get_platform_summary()
-            logger.info(f"DeckTools: Platform summary: {json.dumps(summary)}")
+            logger.info(f"LumaDeck: Platform summary: {json.dumps(summary)}")
 
             await init_apis()
             await init_applist()
             await init_games_db()
         except Exception as exc:
-            logger.error(f"DeckTools: _main init error: {exc}")
+            logger.error(f"LumaDeck: _main init error: {exc}")
 
     async def _unload(self):
-        logger.info("DeckTools: Plugin unloading")
+        logger.info("LumaDeck: Plugin unloading")
         try:
             from http_client import close_http_client
             from downloads import DOWNLOAD_TASKS
@@ -83,7 +83,7 @@ class Plugin:
                     task.cancel()
             await close_http_client("unload")
         except Exception as exc:
-            logger.error(f"DeckTools: _unload error: {exc}")
+            logger.error(f"LumaDeck: _unload error: {exc}")
 
     # ==========================================================================
     # Platform & Paths
@@ -167,17 +167,17 @@ class Plugin:
         cookie = load_ryu_cookie()
         return _j({"success": True, "cookie": cookie})
 
-    async def update_morrenus_key(self, key_content: str) -> str:
-        from api_manifest import update_morrenus_key
-        return _j(update_morrenus_key(key_content))
+    async def update_hubcap_key(self, key_content: str) -> str:
+        from api_manifest import update_hubcap_key
+        return _j(update_hubcap_key(key_content))
 
-    async def load_morrenus_key(self) -> str:
-        from api_manifest import load_morrenus_key
-        return _j({"success": True, "key": load_morrenus_key()})
+    async def load_hubcap_key(self) -> str:
+        from api_manifest import load_hubcap_key
+        return _j({"success": True, "key": load_hubcap_key()})
 
-    async def search_morrenus(self, query: str) -> str:
-        from api_manifest import search_morrenus
-        return _j(await search_morrenus(query))
+    async def search_hubcap(self, query: str) -> str:
+        from api_manifest import search_hubcap
+        return _j(await search_hubcap(query))
 
     async def check_game_update(self, appid: int) -> str:
         from api_manifest import check_game_update
@@ -188,14 +188,14 @@ class Plugin:
     # ==========================================================================
 
     async def start_download(self, appid: int, target_library_path: str = "") -> str:
-        logger.info(f"DeckTools: start_download called, appid={appid}, library={target_library_path or '(default)'}")
+        logger.info(f"LumaDeck: start_download called, appid={appid}, library={target_library_path or '(default)'}")
         try:
             from downloads import start_download
             result = await start_download(appid, target_library_path)
-            logger.info(f"DeckTools: start_download result={result}")
+            logger.info(f"LumaDeck: start_download result={result}")
             return _j(result)
         except Exception as exc:
-            logger.error(f"DeckTools: start_download error: {exc}")
+            logger.error(f"LumaDeck: start_download error: {exc}")
             return _j({"success": False, "error": str(exc)})
 
     async def get_download_status(self, appid: int) -> str:
@@ -513,7 +513,7 @@ class Plugin:
                             return _j({"success": True, "appid": appid, "title": title, "source": source})
             return _j({"success": False, "error": "No store page found"})
         except Exception as exc:
-            logger.debug(f"DeckTools: detect_store_appid error: {exc}")
+            logger.debug(f"LumaDeck: detect_store_appid error: {exc}")
             return _j({"success": False, "error": str(exc)})
 
     # ==========================================================================

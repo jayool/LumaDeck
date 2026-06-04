@@ -11,8 +11,8 @@ import { toaster } from "@decky/api";
 import {
   saveRyuCookie,
   loadRyuCookie,
-  updateMorrenusKey,
-  loadMorrenusKey,
+  updateHubcapKey,
+  loadHubcapKey,
   fetchFreeApisNow,
   checkDependencies,
   installDependencies,
@@ -30,7 +30,7 @@ import { useT, getLanguage, setLanguage } from "../i18n";
 export function Settings() {
   const t = useT();
   const [ryuCookie, setRyuCookie] = useState("");
-  const [morrenusKey, setMorrenusKey] = useState("");
+  const [hubcapKey, setHubcapKey] = useState("");
   const [deps, setDeps] = useState<any>(null);
   const [platform, setPlatform] = useState<any>(null);
   const [playNotOwned, setPlayNotOwned] = useState(false);
@@ -50,9 +50,9 @@ export function Settings() {
         setRyuCookie(cookieResult.cookie);
       }
 
-      const keyResult = await loadMorrenusKey();
+      const keyResult = await loadHubcapKey();
       if (keyResult.success && keyResult.key) {
-        setMorrenusKey(keyResult.key);
+        setHubcapKey(keyResult.key);
       }
 
       const depsResult = await checkDependencies();
@@ -82,8 +82,8 @@ export function Settings() {
     }
   };
 
-  const handleSaveMorrenusKey = async () => {
-    const result = await updateMorrenusKey(morrenusKey);
+  const handleSaveHubcapKey = async () => {
+    const result = await updateHubcapKey(hubcapKey);
     if (result.success || result.message) {
       toast(t("toastApiKeySaved"));
     } else {
@@ -163,15 +163,15 @@ export function Settings() {
 
         <PanelSectionRow>
           <TextField
-            label={t("morrenusApiKey")}
-            value={morrenusKey}
-            onChange={(e: any) => setMorrenusKey(e?.target?.value ?? "")}
+            label={t("hubcapApiKey")}
+            value={hubcapKey}
+            onChange={(e: any) => setHubcapKey(e?.target?.value ?? "")}
             bIsPassword
           />
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleSaveMorrenusKey}>
-            {t("saveMorrenusKey")}
+          <ButtonItem layout="below" onClick={handleSaveHubcapKey}>
+            {t("saveHubcapKey")}
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>

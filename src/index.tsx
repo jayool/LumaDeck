@@ -74,7 +74,7 @@ export default definePlugin(() => {
   routerHook.addRoute(ROUTE_SETTINGS, () => <Settings />);
   routerHook.addRoute(ROUTE_DOWNLOADS, () => <Downloads />);
 
-  // Patch library app detail page to show "Added via DeckTools" badge
+  // Patch library app detail page to show "Added via LumaDeck" badge
   const libraryPatch = patchLibraryApp();
 
   return {

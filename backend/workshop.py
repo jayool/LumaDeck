@@ -16,7 +16,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 # Workshop download state
 workshop_state = {

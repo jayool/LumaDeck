@@ -43,9 +43,12 @@ export function Downloads() {
     if (status === "checking") return t("statusChecking");
     if (status === "processing") return t("statusProcessing");
     if (status === "configuring") return t("statusConfiguring");
+    // depot_download is dead code (the DDL backend no longer runs); kept
+    // so a rollback would still have the matching UI label.
     if (status === "depot_download") return t("statusDownloadingGame");
     if (status === "installing") return t("statusInstalling");
     if (status === "queued") return t("statusQueued");
+    if (status === "restarting_steam") return t("statusRestartingSteam");
     if (status === "done") return t("downloadComplete");
     if (status === "failed") return t("downloadFailed");
     if (status === "cancelled") return t("downloadCancelled");

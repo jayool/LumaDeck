@@ -1,4 +1,4 @@
-"""Goldberg Steam Emulator management for DeckTools.
+"""Goldberg Steam Emulator management for LumaDeck.
 
 Applies/removes Goldberg emulator DLLs to game directories.
 Uses Goldberg files bundled with ACCELA AppImage.
@@ -17,7 +17,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 _GOLDBERG_CACHE_DIR = None
 
@@ -51,7 +51,7 @@ def _get_goldberg_dir() -> str | None:
 
     try:
         # Extract only the Goldberg directory
-        extract_dir = "/tmp/decktools_appimage_extract"
+        extract_dir = "/tmp/lumadeck_appimage_extract"
         if os.path.exists(extract_dir):
             shutil.rmtree(extract_dir, ignore_errors=True)
 
@@ -77,7 +77,7 @@ def _get_goldberg_dir() -> str | None:
             _copy_goldberg_to_cache(extracted, cache_dir)
             return cache_dir
     except Exception as e:
-        logger.warning(f"DeckTools: Failed to extract Goldberg from AppImage: {e}")
+        logger.warning(f"LumaDeck: Failed to extract Goldberg from AppImage: {e}")
 
     return None
 
@@ -94,7 +94,7 @@ def _copy_goldberg_to_cache(src_dir: str, cache_dir: str) -> None:
         else:
             shutil.copy2(src_path, dst_path)
     _GOLDBERG_CACHE_DIR = cache_dir
-    logger.info(f"DeckTools: Goldberg files cached at {cache_dir}")
+    logger.info(f"LumaDeck: Goldberg files cached at {cache_dir}")
 
 
 def check_goldberg_status(install_path: str) -> dict:
@@ -174,7 +174,7 @@ def apply_goldberg(install_path: str, appid: int) -> dict:
 
             modified_count += 1
 
-        logger.info(f"DeckTools: Applied Goldberg to {modified_count} dir(s) in {install_path}")
+        logger.info(f"LumaDeck: Applied Goldberg to {modified_count} dir(s) in {install_path}")
         return {"success": True, "message": f"Goldberg applied to {modified_count} location(s)"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -244,7 +244,7 @@ def remove_goldberg(install_path: str, appid: int) -> dict:
 
             modified_count += 1
 
-        logger.info(f"DeckTools: Removed Goldberg from {modified_count} dir(s) in {install_path}")
+        logger.info(f"LumaDeck: Removed Goldberg from {modified_count} dir(s) in {install_path}")
         return {"success": True, "message": f"Goldberg removed from {modified_count} location(s)"}
     except Exception as e:
         return {"success": False, "error": str(e)}

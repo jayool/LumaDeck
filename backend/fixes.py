@@ -20,7 +20,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 FIX_DOWNLOAD_STATE: Dict[int, Dict[str, Any]] = {}
 UNFIX_STATE: Dict[int, Dict[str, Any]] = {}
@@ -127,7 +127,7 @@ async def _download_and_extract_fix(appid: int, download_url: str, install_path:
                 pass
             _set_fix_download_state(appid, {"status": "cancelled", "success": False, "error": "Cancelled by user"})
             return
-        logger.warning(f"DeckTools: Failed to apply fix: {exc}")
+        logger.warning(f"LumaDeck: Failed to apply fix: {exc}")
         _set_fix_download_state(appid, {"status": "failed", "error": str(exc)})
 
 
@@ -479,7 +479,7 @@ def apply_linux_native_fix(install_path: str) -> dict:
                 timeout=120, capture_output=True,
             )
         except Exception as chown_exc:
-            logger.warning(f"DeckTools: chown failed for {install_path}: {chown_exc}")
+            logger.warning(f"LumaDeck: chown failed for {install_path}: {chown_exc}")
 
         count = 0
         for root, dirs, files in os.walk(install_path):

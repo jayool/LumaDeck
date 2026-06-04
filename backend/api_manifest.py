@@ -1,4 +1,4 @@
-"""Management of the DeckTools API manifest (free API list)."""
+"""Management of the LumaDeck API manifest (free API list)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 _APIS_INIT_DONE = False
 _INIT_APIS_LAST_MESSAGE = ""
@@ -137,7 +137,7 @@ def load_api_manifest() -> List[Dict[str, Any]]:
         apis = data.get("api_list", [])
         return [api for api in apis if api.get("enabled", False)]
     except Exception as exc:
-        logger.error(f"DeckTools: Failed to parse api.json: {exc}")
+        logger.error(f"LumaDeck: Failed to parse api.json: {exc}")
         return []
 
 
@@ -169,8 +169,8 @@ def load_ryu_cookie() -> str:
     return ""
 
 
-def update_morrenus_key(key_content: str) -> dict:
-    """Update the Morrenus API key in api.json."""
+def update_hubcap_key(key_content: str) -> dict:
+    """Update the Hubcap API key in api.json."""
     try:
         path = data_path(API_JSON_FILE)
         key_content = key_content.strip()
@@ -191,7 +191,7 @@ def update_morrenus_key(key_content: str) -> dict:
             root_data["api_list"] = []
 
         api_list = root_data["api_list"]
-        # Morrenus rebranded to Hubcap (hubcapmanifest.com). The endpoint still
+        # Hubcap (formerly Morrenus, the API rebranded) (hubcapmanifest.com). The endpoint still
         # accepts the legacy ?api_key= querystring (Star123451's upstream
         # api.json uses this form), so we keep the URL shape, only the host
         # changes. Old api.json entries with manifest.morrenus.xyz are matched
@@ -211,7 +211,7 @@ def update_morrenus_key(key_content: str) -> dict:
 
         if not found:
             api_list.insert(0, {
-                "name": "Morrenus (Official ACCELA)",
+                "name": "Hubcap (Official ACCELA)",
                 "url": new_url,
                 "success_code": 200,
                 "unavailable_code": 404,
@@ -221,13 +221,13 @@ def update_morrenus_key(key_content: str) -> dict:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(root_data, f, indent=4)
 
-        return {"success": True, "message": "Morrenus key updated successfully"}
+        return {"success": True, "message": "Hubcap key updated successfully"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-def _get_morrenus_key() -> str:
-    """Extract the Morrenus / Hubcap API key from api.json. Accepts both the
+def _get_hubcap_key() -> str:
+    """Extract the Hubcap API key from api.json. Accepts both the
     legacy host (manifest.morrenus.xyz) and the new one (hubcapmanifest.com)
     in case an older api.json file is still cached locally."""
     try:
@@ -246,23 +246,23 @@ def _get_morrenus_key() -> str:
         return ""
 
 
-def load_morrenus_key() -> str:
-    """Return the current Morrenus API key."""
-    return _get_morrenus_key()
+def load_hubcap_key() -> str:
+    """Return the current Hubcap API key."""
+    return _get_hubcap_key()
 
 
-async def search_morrenus(query: str) -> dict:
-    """Search for games by name using the Morrenus API."""
+async def search_hubcap(query: str) -> dict:
+    """Search for games by name using the Hubcap API."""
     try:
-        key = _get_morrenus_key()
+        key = _get_hubcap_key()
         if not key:
-            return {"success": False, "error": "Morrenus API key not configured. Set it in Settings."}
+            return {"success": False, "error": "Hubcap API key not configured. Set it in Settings."}
 
         if len(query.strip()) < 2:
             return {"success": False, "error": "Search query must be at least 2 characters"}
 
         from urllib.parse import urlencode
-        client = await ensure_http_client("MorrenusSearch")
+        client = await ensure_http_client("HubcapSearch")
         qs = urlencode({"q": query.strip(), "limit": 50})
         # Morrenus → Hubcap rebrand. Endpoint still accepts Bearer auth (same
         # mechanism SFF uses, see sff/lua/endpoints.py:181). Querystring api_key
@@ -361,10 +361,10 @@ async def save_depot_snapshot(appid: int) -> dict:
         path = _depot_snapshot_path(appid)
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"appid": appid, "manifests": remote}, f)
-        logger.info(f"DeckTools: Saved depot snapshot for {appid} ({len(remote)} depots)")
+        logger.info(f"LumaDeck: Saved depot snapshot for {appid} ({len(remote)} depots)")
         return {"success": True}
     except Exception as e:
-        logger.warning(f"DeckTools: Failed to save depot snapshot for {appid}: {e}")
+        logger.warning(f"LumaDeck: Failed to save depot snapshot for {appid}: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -394,16 +394,16 @@ def save_depot_snapshot_from_depotcache(appid: int, depot_ids: list, depotcache_
                         manifests[depot_id] = manifest_id
 
         if not manifests:
-            logger.warning(f"DeckTools: No manifest files found in depotcache for {appid}, depot_ids={depot_ids}")
+            logger.warning(f"LumaDeck: No manifest files found in depotcache for {appid}, depot_ids={depot_ids}")
             return {"success": False, "error": "No manifest files found in depotcache"}
 
         path = _depot_snapshot_path(appid)
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"appid": appid, "manifests": manifests}, f)
-        logger.info(f"DeckTools: Saved depot snapshot for {appid} from depotcache ({len(manifests)} depots)")
+        logger.info(f"LumaDeck: Saved depot snapshot for {appid} from depotcache ({len(manifests)} depots)")
         return {"success": True}
     except Exception as e:
-        logger.warning(f"DeckTools: Failed to save depot snapshot from depotcache for {appid}: {e}")
+        logger.warning(f"LumaDeck: Failed to save depot snapshot from depotcache for {appid}: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -429,10 +429,10 @@ async def check_game_update(appid: int) -> dict:
             if depot_ids and os.path.isdir(depotcache_dir):
                 result = save_depot_snapshot_from_depotcache(appid, depot_ids, depotcache_dir)
                 if result.get("success") and os.path.exists(snapshot_path):
-                    logger.info(f"DeckTools: Built update baseline for {appid} from depotcache")
+                    logger.info(f"LumaDeck: Built update baseline for {appid} from depotcache")
                     # Fall through to comparison below using the just-saved snapshot
                 else:
-                    # No manifest files in depotcache — game was not installed via DeckTools
+                    # No manifest files in depotcache — game was not installed via LumaDeck
                     return {"success": False, "error": "No update baseline. Re-download the game first."}
             else:
                 return {"success": False, "error": "No update baseline. Re-download the game first."}

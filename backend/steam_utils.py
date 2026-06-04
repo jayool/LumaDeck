@@ -1,4 +1,4 @@
-"""Steam-related utilities used across DeckTools backend modules."""
+"""Steam-related utilities used across LumaDeck backend modules."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 _STEAM_INSTALL_PATH: Optional[str] = None
 
@@ -41,7 +41,7 @@ def detect_steam_install_path() -> str:
                 path = candidate
                 break
     _STEAM_INSTALL_PATH = path
-    logger.info(f"DeckTools: Steam install path set to {_STEAM_INSTALL_PATH}")
+    logger.info(f"LumaDeck: Steam install path set to {_STEAM_INSTALL_PATH}")
     return _STEAM_INSTALL_PATH or ""
 
 
@@ -134,7 +134,7 @@ def has_lua_for_app(appid: int) -> bool:
         if _appid_in_lumalinux_keys(int(appid), get_lumalinux_keys_path()):
             return True
     except Exception as exc:
-        logger.error(f"DeckTools: Error checking managed status for app {appid}: {exc}")
+        logger.error(f"LumaDeck: Error checking managed status for app {appid}: {exc}")
     return False
 
 
@@ -352,12 +352,12 @@ def set_compat_tool_for_app(appid: int, tool_name: str = "proton_experimental") 
     """
     steam_path = detect_steam_install_path()
     if not steam_path:
-        logger.warning("DeckTools: set_compat_tool — Steam path not found")
+        logger.warning("LumaDeck: set_compat_tool — Steam path not found")
         return False
 
     userdata_dir = os.path.join(steam_path, "userdata")
     if not os.path.isdir(userdata_dir):
-        logger.warning(f"DeckTools: set_compat_tool — userdata dir not found: {userdata_dir}")
+        logger.warning(f"LumaDeck: set_compat_tool — userdata dir not found: {userdata_dir}")
         return False
 
     appid_str = str(appid)
@@ -380,7 +380,7 @@ def set_compat_tool_for_app(appid: int, tool_name: str = "proton_experimental") 
                 steam_re = re.compile(r'^([ \t]*)"Steam"[ \t]*\n[ \t]*\{', re.MULTILINE)
                 steam_match = steam_re.search(content)
                 if not steam_match:
-                    logger.warning(f"DeckTools: Steam section not found in {config_path} — skipping")
+                    logger.warning(f"LumaDeck: Steam section not found in {config_path} — skipping")
                     continue
 
                 steam_indent = steam_match.group(1)
@@ -430,10 +430,10 @@ def set_compat_tool_for_app(appid: int, tool_name: str = "proton_experimental") 
             with open(config_path, "w", encoding="utf-8") as fh:
                 fh.write(content)
 
-            logger.info(f"DeckTools: Set compat tool '{tool_name}' for app {appid} (user {user_id})")
+            logger.info(f"LumaDeck: Set compat tool '{tool_name}' for app {appid} (user {user_id})")
             success = True
 
         except Exception as exc:
-            logger.warning(f"DeckTools: set_compat_tool failed for user {user_id}: {exc}")
+            logger.warning(f"LumaDeck: set_compat_tool failed for user {user_id}: {exc}")
 
     return success

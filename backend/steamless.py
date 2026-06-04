@@ -15,7 +15,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 # Utility executables to skip (by filename)
 _SKIP_EXE_NAMES = {
@@ -122,7 +122,7 @@ async def _extract_task(appimage: str):
 
         # Run AppImage extraction in executor (blocking)
         tmp_dir = tempfile.mkdtemp(prefix="steamless_extract_")
-        logger.info(f"[DeckTools/Steamless] Extracting from AppImage to {tmp_dir}")
+        logger.info(f"[LumaDeck/Steamless] Extracting from AppImage to {tmp_dir}")
 
         proc = await asyncio.create_subprocess_exec(
             appimage, "--appimage-extract", "bin/src/deps/Steamless/*",
@@ -144,16 +144,16 @@ async def _extract_task(appimage: str):
 
         cli = _find_steamless_cli()
         if cli:
-            logger.info(f"[DeckTools/Steamless] Installed at: {cli}")
+            logger.info(f"[LumaDeck/Steamless] Installed at: {cli}")
             _download_state = {"status": "done"}
         else:
             _download_state = {"status": "error", "error": "Steamless.CLI.dll not found after extraction."}
 
     except asyncio.TimeoutError:
         _download_state = {"status": "error", "error": "AppImage extraction timed out."}
-        logger.error("[DeckTools/Steamless] Extraction timeout")
+        logger.error("[LumaDeck/Steamless] Extraction timeout")
     except Exception as e:
-        logger.error(f"[DeckTools/Steamless] Extraction error: {e}")
+        logger.error(f"[LumaDeck/Steamless] Extraction error: {e}")
         _download_state = {"status": "error", "error": str(e)}
     finally:
         if tmp_dir and os.path.isdir(tmp_dir):
@@ -244,7 +244,7 @@ def _scan_executables(game_dir: str) -> list:
                 continue
             fpath = os.path.join(root, fname)
             if _should_skip(fname, fpath):
-                logger.debug(f"[DeckTools/Steamless] Skipping: {fname}")
+                logger.debug(f"[LumaDeck/Steamless] Skipping: {fname}")
                 continue
             found.append((fpath, _exe_priority(fname, game_name, fpath)))
     found.sort(key=lambda x: x[1], reverse=True)
@@ -323,17 +323,17 @@ async def _run_task(dotnet: str, cli: str, exes: list):
             no_drm = rc == 1
             results.append({"file": fname, "success": success})
             if success:
-                logger.info(f"[DeckTools/Steamless] unpacked: {fname}")
+                logger.info(f"[LumaDeck/Steamless] unpacked: {fname}")
             elif no_drm:
-                logger.info(f"[DeckTools/Steamless] no DRM: {fname}")
+                logger.info(f"[LumaDeck/Steamless] no DRM: {fname}")
             else:
-                logger.warning(f"[DeckTools/Steamless] error (rc={rc}): {fname} — {output[:200]}")
+                logger.warning(f"[LumaDeck/Steamless] error (rc={rc}): {fname} — {output[:200]}")
         except asyncio.TimeoutError:
             results.append({"file": fname, "success": False, "error": "timeout"})
-            logger.warning(f"[DeckTools/Steamless] Timeout: {fname}")
+            logger.warning(f"[LumaDeck/Steamless] Timeout: {fname}")
         except Exception as e:
             results.append({"file": fname, "success": False, "error": str(e)})
-            logger.error(f"[DeckTools/Steamless] Error on {fname}: {e}")
+            logger.error(f"[LumaDeck/Steamless] Error on {fname}: {e}")
 
     success_count = sum(1 for r in results if r["success"])
     _steamless_state = {
@@ -344,7 +344,7 @@ async def _run_task(dotnet: str, cli: str, exes: list):
         "current": "",
         "results": results,
     }
-    logger.info(f"[DeckTools/Steamless] Done: {success_count}/{len(exes)} unpacked")
+    logger.info(f"[LumaDeck/Steamless] Done: {success_count}/{len(exes)} unpacked")
 
 
 def get_steamless_status() -> str:

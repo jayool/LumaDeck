@@ -13,7 +13,7 @@ import {
   getActiveDownloads,
   startDownload,
   detectStoreAppid,
-  searchMorrenus,
+  searchHubcap,
   checkSlscheevoInstalled,
   checkAllAchievementsStatus,
   generateAllAchievements,
@@ -50,7 +50,7 @@ export function GameList() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [sortMode, setSortMode] = useState<"name" | "appid" | "recent">("name");
 
-  // Morrenus search state
+  // Hubcap search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -369,7 +369,7 @@ export function GameList() {
     doStartDownload(id);
   };
 
-  const handleSearchMorrenus = async () => {
+  const handleSearchHubcap = async () => {
     if (searchQuery.trim().length < 2) {
       setSearchError(t("enterAtLeast2Chars"));
       return;
@@ -379,7 +379,7 @@ export function GameList() {
     setSearchResults([]);
     setShowMoreResults(false);
     try {
-      const result = await searchMorrenus(searchQuery.trim());
+      const result = await searchHubcap(searchQuery.trim());
       if (result.success) {
         setSearchResults(result.results || []);
         if ((result.results || []).length === 0) {
@@ -693,7 +693,7 @@ export function GameList() {
         )}
       </PanelSection>
 
-      {/* Morrenus Search — extra bottom padding so keyboard doesn't hide the field */}
+      {/* Hubcap Search — extra bottom padding so keyboard doesn't hide the field */}
       <div style={{ paddingBottom: "280px" }}>
       <PanelSection title={t("searchByName")}>
         <PanelSectionRow>
@@ -706,10 +706,10 @@ export function GameList() {
         <PanelSectionRow>
           <ButtonItem
             layout="below"
-            onClick={handleSearchMorrenus}
+            onClick={handleSearchHubcap}
             disabled={searching}
           >
-            {searching ? t("searching") : t("searchMorrenus")}
+            {searching ? t("searching") : t("searchHubcap")}
           </ButtonItem>
         </PanelSectionRow>
         {searchError && (

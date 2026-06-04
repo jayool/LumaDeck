@@ -43,14 +43,14 @@ export const saveRyuCookie = async (cookie: string) =>
 export const loadRyuCookie = async () =>
   parseResult(await call<[], string>("load_ryu_cookie"));
 
-export const updateMorrenusKey = async (key: string) =>
-  parseResult(await call<[string], string>("update_morrenus_key", key));
+export const updateHubcapKey = async (key: string) =>
+  parseResult(await call<[string], string>("update_hubcap_key", key));
 
-export const loadMorrenusKey = async () =>
-  parseResult(await call<[], string>("load_morrenus_key"));
+export const loadHubcapKey = async () =>
+  parseResult(await call<[], string>("load_hubcap_key"));
 
-export const searchMorrenus = async (query: string) =>
-  parseResult(await call<[string], string>("search_morrenus", query));
+export const searchHubcap = async (query: string) =>
+  parseResult(await call<[string], string>("search_hubcap", query));
 
 export const checkGameUpdate = async (appid: number) =>
   parseResult(await call<[number], string>("check_game_update", appid));

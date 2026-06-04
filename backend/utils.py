@@ -1,4 +1,4 @@
-"""Generic helpers for file and data handling in the DeckTools backend."""
+"""Generic helpers for file and data handling in the LumaDeck backend."""
 
 from __future__ import annotations
 

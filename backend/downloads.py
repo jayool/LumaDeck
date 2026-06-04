@@ -35,7 +35,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 DOWNLOAD_STATE: Dict[int, Dict[str, Any]] = {}
 DOWNLOAD_TASKS: Dict[int, asyncio.Task] = {}
@@ -110,7 +110,7 @@ async def _invoke_steamidra_lite(
     if manifests_dir:
         cmd.extend(["--manifests-dir", manifests_dir])
 
-    logger.info(f"DeckTools: invoking steamidra_lite: {' '.join(cmd)}")
+    logger.info(f"LumaDeck: invoking steamidra_lite: {' '.join(cmd)}")
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -477,7 +477,7 @@ def _append_loaded_app(appid: int, name: str) -> None:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
     except Exception as exc:
-        logger.warning(f"DeckTools: _append_loaded_app failed for {appid}: {exc}")
+        logger.warning(f"LumaDeck: _append_loaded_app failed for {appid}: {exc}")
 
 
 def _remove_loaded_app(appid: int) -> None:
@@ -549,7 +549,7 @@ async def init_games_db() -> None:
         GAMES_DB_DATA = data
         GAMES_DB_LOADED = True
     except Exception as exc:
-        logger.warning(f"DeckTools: Failed to download Games DB: {exc}")
+        logger.warning(f"LumaDeck: Failed to download Games DB: {exc}")
         if os.path.exists(file_path):
             try:
                 with open(file_path, "r", encoding="utf-8") as handle:
@@ -625,7 +625,7 @@ async def _enrich_lua_with_linux_depot(appid: int, lua_text: str) -> tuple[str, 
             manifest_file = os.path.join(depotcache_dir, f"{linux_depot_id}_{linux_manifest}.manifest")
             if not os.path.exists(manifest_file):
                 logger.info(
-                    f"DeckTools: Linux depot {linux_depot_id} found for {appid} "
+                    f"LumaDeck: Linux depot {linux_depot_id} found for {appid} "
                     f"but manifest {linux_manifest} not in depotcache — skipping enrichment"
                 )
                 return lua_text, False
@@ -642,15 +642,15 @@ async def _enrich_lua_with_linux_depot(appid: int, lua_text: str) -> tuple[str, 
             linux_line = f'addappid({linux_depot_id},1,"{windows_token}")\n'
             linux_manifest_line = f'--setManifestid({linux_depot_id},"{linux_manifest}",{linux_size})\n'
             lua_text = lua_text.rstrip() + "\n" + linux_line + linux_manifest_line
-            logger.info(f"DeckTools: Added Linux depot {linux_depot_id} (manifest in depotcache) for {appid}")
+            logger.info(f"LumaDeck: Added Linux depot {linux_depot_id} (manifest in depotcache) for {appid}")
             return lua_text, True
 
         except Exception as exc:
-            logger.warning(f"DeckTools: Failed to enrich lua with Linux depot: {exc}")
+            logger.warning(f"LumaDeck: Failed to enrich lua with Linux depot: {exc}")
             return lua_text, False
 
     except Exception as exc:
-        logger.warning(f"DeckTools: Error in _enrich_lua_with_linux_depot: {exc}")
+        logger.warning(f"LumaDeck: Error in _enrich_lua_with_linux_depot: {exc}")
         return lua_text, False
 
 
@@ -835,10 +835,10 @@ async def _fetch_installdir_from_api(appid: int) -> str:
             if app_data.get("success"):
                 install_dir = app_data.get("data", {}).get("install_dir")
                 if install_dir:
-                    logger.info(f"DeckTools: installdir from Steam API: {install_dir}")
+                    logger.info(f"LumaDeck: installdir from Steam API: {install_dir}")
                     return install_dir
     except Exception as e:
-        logger.debug(f"DeckTools: Failed to fetch installdir from API: {e}")
+        logger.debug(f"LumaDeck: Failed to fetch installdir from API: {e}")
     return ""
 
 
@@ -860,7 +860,7 @@ async def _determine_install_dir(appid: int, game_name: str, target_library_path
     api_installdir = await _fetch_installdir_from_api(appid)
     if api_installdir:
         full_path = os.path.join(common_path, api_installdir)
-        logger.info(f"DeckTools: Install dir from Steam API: {full_path}")
+        logger.info(f"LumaDeck: Install dir from Steam API: {full_path}")
         return full_path
 
     # 2. Check if a directory already exists on disk matching the game
@@ -876,10 +876,10 @@ async def _determine_install_dir(appid: int, game_name: str, target_library_path
                     acf_dir = m.group(1)
                     full_path = os.path.join(common_path, acf_dir)
                     if os.path.isdir(full_path):
-                        logger.info(f"DeckTools: Install dir from ACF (verified on disk): {full_path}")
+                        logger.info(f"LumaDeck: Install dir from ACF (verified on disk): {full_path}")
                         return full_path
                     # ACF dir doesn't exist — scan for similar directories
-                    logger.info(f"DeckTools: ACF installdir '{acf_dir}' not found on disk, scanning...")
+                    logger.info(f"LumaDeck: ACF installdir '{acf_dir}' not found on disk, scanning...")
             except Exception:
                 pass
 
@@ -889,7 +889,7 @@ async def _determine_install_dir(appid: int, game_name: str, target_library_path
             if d.lower().startswith(game_lower[:20]) or game_lower.startswith(d.lower()[:20]):
                 candidate = os.path.join(common_path, d)
                 if os.path.isdir(candidate):
-                    logger.info(f"DeckTools: Install dir matched on disk: {candidate}")
+                    logger.info(f"LumaDeck: Install dir matched on disk: {candidate}")
                     return candidate
 
     # 3. Fallback: use game name as directory name
@@ -897,7 +897,7 @@ async def _determine_install_dir(appid: int, game_name: str, target_library_path
     if not safe_name:
         safe_name = f"app_{appid}"
     full_path = os.path.join(common_path, safe_name)
-    logger.info(f"DeckTools: Install dir from game name: {full_path}")
+    logger.info(f"LumaDeck: Install dir from game name: {full_path}")
     return full_path
 
 
@@ -955,7 +955,7 @@ def _write_ddm_cache_marker(appimage_path: str) -> None:
         with open(_DDM_CACHE_MARKER, "w", encoding="utf-8") as f:
             json.dump(marker, f)
     except Exception as exc:
-        logger.warning(f"DeckTools: Failed to write DDM cache marker: {exc}")
+        logger.warning(f"LumaDeck: Failed to write DDM cache marker: {exc}")
 
 
 def _is_ddm_cache_valid() -> bool:
@@ -990,9 +990,9 @@ def _invalidate_ddm_cache() -> None:
     try:
         if os.path.isdir(_DDM_CACHE_DIR):
             shutil.rmtree(_DDM_CACHE_DIR, ignore_errors=True)
-            logger.info("DeckTools: DDM cache invalidated (AppImage changed)")
+            logger.info("LumaDeck: DDM cache invalidated (AppImage changed)")
     except Exception as exc:
-        logger.warning(f"DeckTools: Failed to invalidate DDM cache: {exc}")
+        logger.warning(f"LumaDeck: Failed to invalidate DDM cache: {exc}")
 
 
 async def validate_ddm_cache() -> None:
@@ -1000,7 +1000,7 @@ async def validate_ddm_cache() -> None:
     loop = asyncio.get_event_loop()
     valid = await loop.run_in_executor(None, _is_ddm_cache_valid)
     if not valid:
-        logger.info("DeckTools: ACCELA AppImage changed, invalidating DDM cache")
+        logger.info("LumaDeck: ACCELA AppImage changed, invalidating DDM cache")
         await loop.run_in_executor(None, _invalidate_ddm_cache)
 
 
@@ -1056,7 +1056,7 @@ def _copy_ddm_from_tree(root_dir: str) -> str:
                 dotnet_found = os.path.join(dirpath, fname)
 
     if not ddm_found and not ddm_dll_found:
-        logger.warning("DeckTools: DepotDownloaderMod not found in tree")
+        logger.warning("LumaDeck: DepotDownloaderMod not found in tree")
         return ""
 
     os.makedirs(_DDM_CACHE_DIR, exist_ok=True)
@@ -1065,7 +1065,7 @@ def _copy_ddm_from_tree(root_dir: str) -> str:
         dest = os.path.join(_DDM_CACHE_DIR, "DepotDownloaderMod")
         shutil.copy2(ddm_found, dest)
         os.chmod(dest, 0o755)
-        logger.info(f"DeckTools: Cached DDM executable -> {dest}")
+        logger.info(f"LumaDeck: Cached DDM executable -> {dest}")
         return dest
 
     # Copy ALL files from DDM directory (runtimeconfig.json, deps, etc.)
@@ -1096,9 +1096,9 @@ def _copy_ddm_from_tree(root_dir: str) -> str:
         if os.path.isdir(dotnet_src_dir):
             shutil.copytree(dotnet_src_dir, dotnet_dest_dir, dirs_exist_ok=True)
             os.chmod(os.path.join(dotnet_dest_dir, "dotnet"), 0o755)
-            logger.info(f"DeckTools: Cached dotnet runtime -> {dotnet_dest_dir}")
+            logger.info(f"LumaDeck: Cached dotnet runtime -> {dotnet_dest_dir}")
 
-    logger.info(f"DeckTools: Cached DDM directory ({len(os.listdir(ddm_src_dir))} files) -> {_DDM_CACHE_DIR}")
+    logger.info(f"LumaDeck: Cached DDM directory ({len(os.listdir(ddm_src_dir))} files) -> {_DDM_CACHE_DIR}")
     return dest
 
 
@@ -1116,14 +1116,14 @@ def _extract_ddm_via_mount(appimage: str) -> str:
         )
         mount_point = proc.stdout.readline().decode("utf-8").strip()
         if not mount_point or not os.path.isdir(mount_point):
-            logger.warning(f"DeckTools: AppImage mount returned invalid path: {mount_point!r}")
+            logger.warning(f"LumaDeck: AppImage mount returned invalid path: {mount_point!r}")
             return ""
 
-        logger.info(f"DeckTools: AppImage FUSE-mounted at {mount_point}")
+        logger.info(f"LumaDeck: AppImage FUSE-mounted at {mount_point}")
         return _copy_ddm_from_tree(mount_point)
 
     except Exception as exc:
-        logger.warning(f"DeckTools: AppImage FUSE mount failed: {exc}")
+        logger.warning(f"LumaDeck: AppImage FUSE mount failed: {exc}")
         return ""
     finally:
         if proc and proc.poll() is None:
@@ -1155,18 +1155,18 @@ def _extract_ddm_via_full_extract(appimage: str) -> str:
             capture_output=True, text=True, timeout=120,
         )
         if proc.returncode != 0:
-            logger.warning(f"DeckTools: AppImage extraction failed: {proc.stderr[:200]}")
+            logger.warning(f"LumaDeck: AppImage extraction failed: {proc.stderr[:200]}")
             return ""
 
         squashfs_root = os.path.join(extract_dir, "squashfs-root")
         if not os.path.isdir(squashfs_root):
-            logger.warning("DeckTools: squashfs-root not found after extraction")
+            logger.warning("LumaDeck: squashfs-root not found after extraction")
             return ""
 
         return _copy_ddm_from_tree(squashfs_root)
 
     except Exception as exc:
-        logger.warning(f"DeckTools: AppImage full extraction failed: {exc}")
+        logger.warning(f"LumaDeck: AppImage full extraction failed: {exc}")
         return ""
     finally:
         try:
@@ -1188,7 +1188,7 @@ def _extract_ddm_from_appimage() -> str:
     if not appimage:
         return ""
 
-    logger.info(f"DeckTools: Found ACCELA AppImage at {appimage}, extracting DDM...")
+    logger.info(f"LumaDeck: Found ACCELA AppImage at {appimage}, extracting DDM...")
 
     try:
         st = os.stat(appimage)
@@ -1203,7 +1203,7 @@ def _extract_ddm_from_appimage() -> str:
         return result
 
     # Fallback: full extraction
-    logger.info("DeckTools: FUSE mount failed, falling back to --appimage-extract")
+    logger.info("LumaDeck: FUSE mount failed, falling back to --appimage-extract")
     result = _extract_ddm_via_full_extract(appimage)
     if result:
         _write_ddm_cache_marker(appimage)
@@ -1286,7 +1286,7 @@ def _find_ddm_executable() -> tuple[list[str], str]:
                 if os.path.exists(rc_path):
                     return [dotnet, path], f"dotnet+dll: {path}"
                 else:
-                    logger.warning(f"DeckTools: DDM DLL found at {path} but missing runtimeconfig.json, skipping")
+                    logger.warning(f"LumaDeck: DDM DLL found at {path} but missing runtimeconfig.json, skipping")
 
         bundled_dll = os.path.join(base, "deps", "DepotDownloaderMod.dll")
         if os.path.exists(bundled_dll):
@@ -1334,7 +1334,7 @@ async def _auto_download_ddm() -> str:
             timeout=15,
         )
         if resp.status_code != 200:
-            logger.warning(f"DeckTools: GitHub API returned {resp.status_code} for DepotDownloader release")
+            logger.warning(f"LumaDeck: GitHub API returned {resp.status_code} for DepotDownloader release")
             return ""
 
         data = resp.json()
@@ -1346,13 +1346,13 @@ async def _auto_download_ddm() -> str:
                 break
 
         if not asset_url:
-            logger.warning("DeckTools: No linux-x64 asset found in DepotDownloader release")
+            logger.warning("LumaDeck: No linux-x64 asset found in DepotDownloader release")
             return ""
 
-        logger.info(f"DeckTools: Downloading DepotDownloader from {asset_url}")
+        logger.info(f"LumaDeck: Downloading DepotDownloader from {asset_url}")
         dl_resp = await client.get(asset_url, timeout=120, follow_redirects=True)
         if dl_resp.status_code != 200:
-            logger.warning(f"DeckTools: Failed to download DepotDownloader: {dl_resp.status_code}")
+            logger.warning(f"LumaDeck: Failed to download DepotDownloader: {dl_resp.status_code}")
             return ""
 
         os.makedirs(_DDM_CACHE_DIR, exist_ok=True)
@@ -1368,9 +1368,9 @@ async def _auto_download_ddm() -> str:
                         with zf.open(member) as src, open(dest_exe, "wb") as dst:
                             dst.write(src.read())
                         os.chmod(dest_exe, 0o755)
-                        logger.info(f"DeckTools: DepotDownloader extracted to {dest_exe}")
+                        logger.info(f"LumaDeck: DepotDownloader extracted to {dest_exe}")
                         return dest_exe
-            logger.warning("DeckTools: DepotDownloader executable not found inside zip")
+            logger.warning("LumaDeck: DepotDownloader executable not found inside zip")
         finally:
             try:
                 os.remove(tmp_path)
@@ -1378,7 +1378,7 @@ async def _auto_download_ddm() -> str:
                 pass
 
     except Exception as exc:
-        logger.warning(f"DeckTools: Auto-download of DepotDownloader failed: {exc}")
+        logger.warning(f"LumaDeck: Auto-download of DepotDownloader failed: {exc}")
 
     return ""
 
@@ -1438,7 +1438,7 @@ async def _fetch_depot_os_map(appid: int) -> dict:
             os_map[int(depot_id_str)] = oslist if (oslist and "," not in oslist) else ""
         return os_map
     except Exception as e:
-        logger.warning(f"DeckTools: Could not fetch depot OS map for {appid}: {e}")
+        logger.warning(f"LumaDeck: Could not fetch depot OS map for {appid}: {e}")
         return {}
 
 
@@ -1448,7 +1448,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
 
     cmd_prefix, ddm_desc = _find_ddm_executable()
     if not cmd_prefix:
-        logger.info("DeckTools: DDM not found locally, attempting auto-download from GitHub...")
+        logger.info("LumaDeck: DDM not found locally, attempting auto-download from GitHub...")
         _set_download_state(appid, {"depotProgress": "Downloading DepotDownloader..."})
         downloaded = await _auto_download_ddm()
         if downloaded:
@@ -1458,7 +1458,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
         appimage = _find_accela_appimage()
         if appimage:
             logger.error(
-                f"DeckTools: ACCELA AppImage found at {appimage} but DepotDownloaderMod "
+                f"LumaDeck: ACCELA AppImage found at {appimage} but DepotDownloaderMod "
                 "could not be extracted. Try reinstalling dependencies in Settings."
             )
             error_msg = (
@@ -1466,7 +1466,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
                 "Go to Settings > Install Dependencies to fix."
             )
         else:
-            logger.error("DeckTools: DepotDownloaderMod not found (no executable or dotnet+dll)")
+            logger.error("LumaDeck: DepotDownloaderMod not found (no executable or dotnet+dll)")
             error_msg = (
                 "DepotDownloaderMod not found. "
                 "Go to Settings > Install Dependencies or set the workshop tool path."
@@ -1474,14 +1474,14 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
         _set_download_state(appid, {"status": "failed", "error": error_msg})
         return
 
-    logger.info(f"DeckTools: Using DDM: {ddm_desc}")
+    logger.info(f"LumaDeck: Using DDM: {ddm_desc}")
 
     os.makedirs(install_dir, exist_ok=True)
     total_depots = len(depots)
-    logger.info(f"DeckTools: Starting depot download for {appid}: {total_depots} depot(s) -> {install_dir}")
+    logger.info(f"LumaDeck: Starting depot download for {appid}: {total_depots} depot(s) -> {install_dir}")
 
     depot_os_map = await _fetch_depot_os_map(appid)
-    logger.info(f"DeckTools: Depot OS map for {appid}: {depot_os_map}")
+    logger.info(f"LumaDeck: Depot OS map for {appid}: {depot_os_map}")
 
     # Generate depot keys file (mistwalker_keys.vdf format: "depot_id;key\n")
     temp_dir = tempfile.gettempdir()
@@ -1492,9 +1492,9 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
                 token = depot_info.get("token", "")
                 if token:
                     kf.write(f"{depot_info['depot']};{token}\n")
-        logger.info(f"DeckTools: Wrote depot keys to {keys_path}")
+        logger.info(f"LumaDeck: Wrote depot keys to {keys_path}")
     except Exception as e:
-        logger.error(f"DeckTools: Failed to write depot keys: {e}")
+        logger.error(f"LumaDeck: Failed to write depot keys: {e}")
         _set_download_state(appid, {"status": "failed", "error": f"Failed to write depot keys: {e}"})
         return
 
@@ -1549,7 +1549,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
 
         if has_local_manifest:
             cmd.extend(["-manifestfile", manifest_file])
-            logger.info(f"DeckTools: Using manifest file: {manifest_file}")
+            logger.info(f"LumaDeck: Using manifest file: {manifest_file}")
 
         try:
             if os.path.getsize(keys_path) > 0:
@@ -1565,7 +1565,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
         for attempt in range(_DEPOT_MAX_RETRIES):
             if attempt > 0:
                 delay = _DEPOT_RETRY_DELAYS[min(attempt - 1, len(_DEPOT_RETRY_DELAYS) - 1)]
-                logger.info(f"DeckTools: Retrying depot {depot_id} (attempt {attempt + 1}/{_DEPOT_MAX_RETRIES}) after {delay}s")
+                logger.info(f"LumaDeck: Retrying depot {depot_id} (attempt {attempt + 1}/{_DEPOT_MAX_RETRIES}) after {delay}s")
                 _set_download_state(appid, {
                     "depotProgress": f"Depot {idx+1}/{total_depots}: retry {attempt+1} in {delay}s...",
                 })
@@ -1581,7 +1581,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
                 "depotPercent": 0,
             })
 
-            logger.info(f"DeckTools: DepotDownloader cmd{attempt_label}: {' '.join(cmd)}")
+            logger.info(f"LumaDeck: DepotDownloader cmd{attempt_label}: {' '.join(cmd)}")
 
             depot_output = []
 
@@ -1613,13 +1613,13 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
                         last_line = clean_line
                         clean_lower = clean_line.lower()
                         depot_output.append(clean_lower)
-                        logger.info(f"DeckTools: DDM[{depot_id}]: {clean_line}")
+                        logger.info(f"LumaDeck: DDM[{depot_id}]: {clean_line}")
 
                         if "padding is invalid" in clean_lower:
                             padding_error_count += 1
                             if padding_error_count >= _PADDING_ERROR_THRESHOLD:
                                 logger.warning(
-                                    f"DeckTools: Depot {depot_id} — too many decryption errors "
+                                    f"LumaDeck: Depot {depot_id} — too many decryption errors "
                                     f"({padding_error_count}), killing DDM early"
                                 )
                                 killed_for_padding = True
@@ -1639,7 +1639,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
 
                 await process.wait()
                 rc = process.returncode
-                logger.info(f"DeckTools: DepotDownloader depot {depot_id} exit code: {rc}, last output: {last_line}")
+                logger.info(f"LumaDeck: DepotDownloader depot {depot_id} exit code: {rc}, last output: {last_line}")
 
                 # Give the OS a moment to release file handles after a killed process
                 if killed_for_padding:
@@ -1654,7 +1654,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
                 if decryption_error:
                     # Wrong depot key — retrying won't help, skip and continue with others
                     logger.warning(
-                        f"DeckTools: Depot {depot_id} skipped — decryption failed (wrong key from API). "
+                        f"LumaDeck: Depot {depot_id} skipped — decryption failed (wrong key from API). "
                         f"Game will run via Proton if Windows depot succeeded."
                     )
                     break
@@ -1664,7 +1664,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
                     # -validate would hit the same lock. Skip this depot as non-fatal — the
                     # partially downloaded files are still usable via Proton.
                     logger.warning(
-                        f"DeckTools: Depot {depot_id} skipped — file locked by another process "
+                        f"LumaDeck: Depot {depot_id} skipped — file locked by another process "
                         f"(Steam may be indexing the game directory). Proton fallback active."
                     )
                     break
@@ -1673,23 +1673,23 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
                     if not has_local_manifest:
                         # Enriched depot (added from SteamCMD, no local manifest) — non-fatal
                         logger.warning(
-                            f"DeckTools: Depot {depot_id} skipped — manifest not available anonymously "
+                            f"LumaDeck: Depot {depot_id} skipped — manifest not available anonymously "
                             f"(enriched depot, game will run via Proton)"
                         )
                         break  # skip this depot, continue with others
                     error_msg = f"Access denied for depot {depot_id} (auth required)"
-                    logger.warning(f"DeckTools: {error_msg} — not retrying")
+                    logger.warning(f"LumaDeck: {error_msg} — not retrying")
                     _set_download_state(appid, {"status": "failed", "error": f"Depot {depot_id} failed: {error_msg}"})
                     return
 
                 if rc != 0:
                     error_msg = last_line if last_line else f"exit code {rc}"
-                    logger.warning(f"DeckTools: Depot {depot_id} failed (attempt {attempt+1}): {error_msg}")
+                    logger.warning(f"LumaDeck: Depot {depot_id} failed (attempt {attempt+1}): {error_msg}")
                     if attempt < _DEPOT_MAX_RETRIES - 1:
                         continue  # retry
                     if not has_local_manifest:
                         # Enriched depot without local manifest — non-fatal
-                        logger.warning(f"DeckTools: Depot {depot_id} skipped after {_DEPOT_MAX_RETRIES} attempts (enriched, non-fatal)")
+                        logger.warning(f"LumaDeck: Depot {depot_id} skipped after {_DEPOT_MAX_RETRIES} attempts (enriched, non-fatal)")
                         break
                     _set_download_state(appid, {
                         "status": "failed",
@@ -1704,7 +1704,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.error(f"DeckTools: Depot {depot_id} error (attempt {attempt+1}): {e}")
+                logger.error(f"LumaDeck: Depot {depot_id} error (attempt {attempt+1}): {e}")
                 if attempt < _DEPOT_MAX_RETRIES - 1:
                     continue
                 _set_download_state(appid, {
@@ -1723,7 +1723,7 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
     except Exception:
         pass
 
-    logger.info(f"DeckTools: All depots downloaded for {appid} -> {install_dir}")
+    logger.info(f"LumaDeck: All depots downloaded for {appid} -> {install_dir}")
 
     # NOTE: DDM creates subdirectories like "GameName_windows/" — do NOT flatten them.
     # Steam's launch config expects executables inside those subdirectories.
@@ -1735,9 +1735,9 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
             ["chown", "-R", "deck:deck", install_dir],
             timeout=120, capture_output=True,
         )
-        logger.info(f"DeckTools: Fixed ownership of {install_dir} to deck:deck")
+        logger.info(f"LumaDeck: Fixed ownership of {install_dir} to deck:deck")
     except Exception as chown_exc:
-        logger.warning(f"DeckTools: chown failed for {install_dir}: {chown_exc}")
+        logger.warning(f"LumaDeck: chown failed for {install_dir}: {chown_exc}")
 
 
 # ============================================================================
@@ -1751,14 +1751,14 @@ async def _restart_steam_delayed(delay: int = 5) -> None:
     await asyncio.sleep(delay)
     try:
         import subprocess
-        logger.info("DeckTools: Restarting Steam...")
+        logger.info("LumaDeck: Restarting Steam...")
         subprocess.Popen(
             ["steam", "-shutdown"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
     except Exception as e:
-        logger.warning(f"DeckTools: Failed to restart Steam: {e}")
+        logger.warning(f"LumaDeck: Failed to restart Steam: {e}")
         return
 
 
@@ -1827,7 +1827,7 @@ def _chmod_linux_binaries(install_dir: str) -> None:
             except Exception:
                 pass
     if chmod_count > 0:
-        logger.info(f"DeckTools: Set executable permissions on {chmod_count} files in {install_dir}")
+        logger.info(f"LumaDeck: Set executable permissions on {chmod_count} files in {install_dir}")
 
 
 def _create_or_update_appmanifest(appid: int, install_dir: str, depots: list[dict], game_name: str = "", target_library_path: str = "") -> None:
@@ -1877,9 +1877,9 @@ def _create_or_update_appmanifest(appid: int, install_dir: str, depots: list[dic
                 bid = data.get("data", {}).get(str(appid), {}).get("depots", {}).get("branches", {}).get("public", {}).get("buildid")
                 if bid:
                     buildid = str(bid)
-                    logger.info(f"DeckTools: Fetched buildid {buildid} for {appid}")
+                    logger.info(f"LumaDeck: Fetched buildid {buildid} for {appid}")
     except Exception as exc:
-        logger.warning(f"DeckTools: Failed to fetch buildid for {appid}: {exc}")
+        logger.warning(f"LumaDeck: Failed to fetch buildid for {appid}: {exc}")
 
     # InstalledDepots — populate with real depot/manifest data.
     # Empty causes UpdateResult 8 ("content still encrypted").
@@ -1961,12 +1961,12 @@ def _create_or_update_appmanifest(appid: int, install_dir: str, depots: list[dic
         except Exception:
             pass
         logger.info(
-            f"DeckTools: Created appmanifest {acf_path}: "
+            f"LumaDeck: Created appmanifest {acf_path}: "
             f"installdir={install_folder_name}, StateFlags=4, "
             f"SizeOnDisk={size_on_disk}, platform={'windows_override' if has_exe and not has_linux_binary else 'native'}"
         )
     except Exception as e:
-        logger.error(f"DeckTools: Failed to write appmanifest: {e}")
+        logger.error(f"LumaDeck: Failed to write appmanifest: {e}")
 
     # Set executable permissions for Linux binaries (like ACCELA's _set_linux_binary_permissions)
     _chmod_linux_binaries(install_dir)
@@ -2015,7 +2015,7 @@ async def _legacy_repair_appmanifest_ddl_flow(appid: int) -> dict:
             if os.path.exists(candidate):
                 install_dir = candidate
                 found_lib_path = lib_path
-                logger.info(f"DeckTools: repair - found dir via API: {install_dir}")
+                logger.info(f"LumaDeck: repair - found dir via API: {install_dir}")
 
         if os.path.exists(acf_path) and not install_dir:
             try:
@@ -2031,7 +2031,7 @@ async def _legacy_repair_appmanifest_ddl_flow(appid: int) -> dict:
                     if os.path.exists(candidate):
                         install_dir = candidate
                         found_lib_path = lib_path
-                        logger.info(f"DeckTools: repair - found dir via ACF: {install_dir}")
+                        logger.info(f"LumaDeck: repair - found dir via ACF: {install_dir}")
             except Exception:
                 pass
 
@@ -2043,7 +2043,7 @@ async def _legacy_repair_appmanifest_ddl_flow(appid: int) -> dict:
                     if os.path.exists(candidate):
                         install_dir = candidate
                         found_lib_path = lib_path
-                        logger.info(f"DeckTools: repair - found dir via scanning: {install_dir}")
+                        logger.info(f"LumaDeck: repair - found dir via scanning: {install_dir}")
                         break
 
         if install_dir:
@@ -2122,9 +2122,9 @@ async def repair_appmanifest(appid: int) -> dict:
         try:
             os.remove(acf_path)
             removed_paths.append(acf_path)
-            logger.info(f"DeckTools: removed stale .acf {acf_path}")
+            logger.info(f"LumaDeck: removed stale .acf {acf_path}")
         except Exception as exc:
-            logger.warning(f"DeckTools: could not remove {acf_path}: {exc}")
+            logger.warning(f"LumaDeck: could not remove {acf_path}: {exc}")
 
     if not removed_paths:
         return {
@@ -2198,7 +2198,7 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     headers["Authorization"] = f"Bearer {_hubcap_token}"
 
             # Log AFTER scrubbing the URL so the api_key never lands here.
-            logger.info(f"DeckTools: Trying API '{name}' -> {url}")
+            logger.info(f"LumaDeck: Trying API '{name}' -> {url}")
 
             # Ryuu cookie injection
             if "ryuu.lol" in url:
@@ -2213,19 +2213,19 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     headers["Sec-Fetch-Mode"] = "navigate"
                     headers["Sec-Fetch-Site"] = "same-origin"
                 else:
-                    logger.warning("DeckTools: Ryuu API detected but ryuu_cookie.txt not found or empty!")
+                    logger.warning("LumaDeck: Ryuu API detected but ryuu_cookie.txt not found or empty!")
 
             if _is_download_cancelled(appid):
                 return
 
             async with client.stream("GET", url, headers=headers, follow_redirects=True, timeout=30) as resp:
                 code = resp.status_code
-                logger.info(f"DeckTools: API '{name}' status={code}")
+                logger.info(f"LumaDeck: API '{name}' status={code}")
                 if code == unavailable_code:
                     continue
                 if code != success_code:
                     if "ryuu.lol" in url and code in (401, 403):
-                        logger.warning(f"DeckTools: Ryuu access denied ({code}). Check if cookie expired.")
+                        logger.warning(f"LumaDeck: Ryuu access denied ({code}). Check if cookie expired.")
                     continue
 
                 total = int(resp.headers.get("Content-Length", "0") or "0")
@@ -2256,10 +2256,10 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                                 preview = check_f.read(512)
                                 content_preview = preview[:100].decode("utf-8", errors="ignore")
                             logger.warning(
-                                f"DeckTools: API '{name}' returned non-zip (magic={magic.hex()}, size={file_size}, preview={content_preview[:50]})"
+                                f"LumaDeck: API '{name}' returned non-zip (magic={magic.hex()}, size={file_size}, preview={content_preview[:50]})"
                             )
                             if "Login required" in content_preview or "Sign in" in content_preview:
-                                logger.error("DeckTools: Ryuu site asked for login. Cookie is invalid or expired.")
+                                logger.error("LumaDeck: Ryuu site asked for login. Cookie is invalid or expired.")
                             try:
                                 os.remove(dest_path)
                             except Exception:
@@ -2304,9 +2304,9 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     try:
                         from slssteam_ops import add_game_dlcs
                         dlc_result = await add_game_dlcs(appid)
-                        logger.info(f"DeckTools: SLSsteam add_game_dlcs({appid}): {dlc_result}")
+                        logger.info(f"LumaDeck: SLSsteam add_game_dlcs({appid}): {dlc_result}")
                     except Exception as dlc_exc:
-                        logger.warning(f"DeckTools: SLSsteam DLC enrichment failed: {dlc_exc}")
+                        logger.warning(f"LumaDeck: SLSsteam DLC enrichment failed: {dlc_exc}")
 
                     # Force Proton if no Linux depot was added during the
                     # enrich pass — Steam wouldn't otherwise launch a Windows
@@ -2315,9 +2315,9 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                         try:
                             from steam_utils import set_compat_tool_for_app
                             if set_compat_tool_for_app(appid):
-                                logger.info(f"DeckTools: Forced proton_experimental for {appid} (Windows-only depot)")
+                                logger.info(f"LumaDeck: Forced proton_experimental for {appid} (Windows-only depot)")
                         except Exception as proton_exc:
-                            logger.warning(f"DeckTools: set_compat_tool error: {proton_exc}")
+                            logger.warning(f"LumaDeck: set_compat_tool error: {proton_exc}")
 
                     # Trigger Steam restart so Game Mode reloads it with the
                     # fresh config + hooks active. SteamOS auto-relaunches.
@@ -2344,7 +2344,7 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                         except Exception:
                             pass
                         return
-                    logger.warning(f"DeckTools: Processing failed -> {install_exc}")
+                    logger.warning(f"LumaDeck: Processing failed -> {install_exc}")
                     _set_download_state(appid, {"status": "failed", "error": f"Processing failed: {install_exc}"})
                     try:
                         os.remove(dest_path)
@@ -2363,7 +2363,7 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
             _set_download_state(appid, {"status": "failed", "error": str(cancel_exc)})
             return
         except Exception as err:
-            logger.warning(f"DeckTools: API '{name}' failed: {err}")
+            logger.warning(f"LumaDeck: API '{name}' failed: {err}")
             continue
 
     _set_download_state(appid, {"status": "failed", "error": "Not available on any API"})
@@ -2375,7 +2375,7 @@ async def start_download(appid: int, target_library_path: str = "") -> dict:
     except Exception:
         return {"success": False, "error": "Invalid appid"}
 
-    logger.info(f"DeckTools: start_download appid={appid} library={target_library_path or '(default)'}")
+    logger.info(f"LumaDeck: start_download appid={appid} library={target_library_path or '(default)'}")
     _set_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0})
     task = asyncio.create_task(_download_zip_for_app(appid, target_library_path))
     DOWNLOAD_TASKS[appid] = task
@@ -2445,7 +2445,7 @@ def delete_luatools_for_app(appid: int) -> dict:
                 os.remove(path)
                 deleted.append(path)
         except Exception as exc:
-            logger.warning(f"DeckTools: Failed to delete {path}: {exc}")
+            logger.warning(f"LumaDeck: Failed to delete {path}: {exc}")
     try:
         name = _get_loaded_app_name(appid) or f"Unknown ({appid})"
         _remove_loaded_app(appid)

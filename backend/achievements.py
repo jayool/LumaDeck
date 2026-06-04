@@ -1,4 +1,4 @@
-"""SLScheevo achievement generation for DeckTools.
+"""SLScheevo achievement generation for LumaDeck.
 
 Downloads, manages, and runs the SLScheevo binary as an async subprocess
 to generate achievement files for SLSsteam-managed games.
@@ -24,7 +24,7 @@ try:
     logger = decky.logger
 except ImportError:
     import logging
-    logger = logging.getLogger("decktools")
+    logger = logging.getLogger("lumadeck")
 
 
 # ---------------------------------------------------------------------------
@@ -160,9 +160,9 @@ async def _run_slscheevo(appid: int) -> None:
                     f.write(tmpl_data)
                 import subprocess
                 subprocess.run(["chown", "deck:deck", template_path], timeout=5, capture_output=True)
-                logger.info(f"DeckTools: Downloaded missing template ({len(tmpl_data)} bytes)")
+                logger.info(f"LumaDeck: Downloaded missing template ({len(tmpl_data)} bytes)")
             except Exception as exc:
-                logger.warning(f"DeckTools: Failed to download template: {exc}")
+                logger.warning(f"LumaDeck: Failed to download template: {exc}")
 
         clean_env = os.environ.copy()
         clean_env.pop("LD_LIBRARY_PATH", None)
@@ -177,7 +177,7 @@ async def _run_slscheevo(appid: int) -> None:
         # Run as deck user so SLScheevo can decrypt login tokens
         # (tokens are encrypted per-UID; Decky runs as root but tokens were saved as deck)
         cmd = ["runuser", "-u", "deck", "--", binary, "--appid", str(appid), "--silent"]
-        logger.info(f"DeckTools: Running SLScheevo: {' '.join(cmd)}")
+        logger.info(f"LumaDeck: Running SLScheevo: {' '.join(cmd)}")
 
         ACHIEVEMENT_STATE[appid] = {
             "status": "running",
@@ -203,12 +203,12 @@ async def _run_slscheevo(appid: int) -> None:
             if clean_line:
                 last_line = clean_line
                 ACHIEVEMENT_STATE[appid]["progress"] = clean_line
-                logger.info(f"DeckTools: SLScheevo[{appid}]: {clean_line}")
+                logger.info(f"LumaDeck: SLScheevo[{appid}]: {clean_line}")
 
         await process.wait()
         rc = process.returncode
 
-        logger.info(f"DeckTools: SLScheevo exit code: {rc} ({_EXIT_CODES.get(rc or -1, 'unknown')})")
+        logger.info(f"LumaDeck: SLScheevo exit code: {rc} ({_EXIT_CODES.get(rc or -1, 'unknown')})")
 
         if rc == 0:
             stats_dir = get_steam_appcache_stats_dir()
@@ -220,7 +220,7 @@ async def _run_slscheevo(appid: int) -> None:
                         timeout=30, capture_output=True,
                     )
                 except Exception as chown_exc:
-                    logger.warning(f"DeckTools: chown failed for stats dir: {chown_exc}")
+                    logger.warning(f"LumaDeck: chown failed for stats dir: {chown_exc}")
 
             ACHIEVEMENT_STATE[appid] = {
                 "status": "done",
@@ -234,7 +234,7 @@ async def _run_slscheevo(appid: int) -> None:
             ACHIEVEMENT_STATE[appid] = {"status": "error", "error": error_msg}
 
     except Exception as exc:
-        logger.error(f"DeckTools: SLScheevo error: {exc}")
+        logger.error(f"LumaDeck: SLScheevo error: {exc}")
         ACHIEVEMENT_STATE[appid] = {"status": "error", "error": str(exc)}
 
 
@@ -330,7 +330,7 @@ async def _run_sync_all(appids: list) -> None:
             errors.append({"appid": appid, "error": state.get("error", "Unknown")})
 
     ACHIEVEMENT_SYNC_STATE = {"status": "done", "done": total, "total": total, "errors": errors}
-    logger.info(f"DeckTools: Sync all complete. {total} games, {len(errors)} errors")
+    logger.info(f"LumaDeck: Sync all complete. {total} games, {len(errors)} errors")
 
 
 def generate_all_achievements(appids: list) -> dict:
@@ -434,9 +434,9 @@ async def _download_slscheevo_binary() -> None:
                 tmpl_data2: bytes = tmpl_resp.content  # type: ignore[attr-defined]
                 with open(template_path, "wb") as f:
                     f.write(tmpl_data2)
-                logger.info(f"DeckTools: Downloaded UserGameStats_TEMPLATE.bin ({len(tmpl_data2)} bytes)")
+                logger.info(f"LumaDeck: Downloaded UserGameStats_TEMPLATE.bin ({len(tmpl_data2)} bytes)")
             except Exception as tmpl_exc:
-                logger.warning(f"DeckTools: Failed to download template: {tmpl_exc}")
+                logger.warning(f"LumaDeck: Failed to download template: {tmpl_exc}")
 
         binary_path = os.path.join(dest_dir, "SLScheevo")
         if not os.path.isfile(binary_path):
@@ -453,7 +453,7 @@ async def _download_slscheevo_binary() -> None:
                 timeout=10, capture_output=True,
             )
         except Exception as chown_exc:
-            logger.warning(f"DeckTools: chown failed for SLScheevo dir: {chown_exc}")
+            logger.warning(f"LumaDeck: chown failed for SLScheevo dir: {chown_exc}")
 
         try:
             os.remove(tmp_archive)
@@ -461,10 +461,10 @@ async def _download_slscheevo_binary() -> None:
             pass
 
         SLSCHEEVO_DOWNLOAD_STATE = {"status": "done", "progress": "SLScheevo installed!", "error": None}
-        logger.info(f"DeckTools: SLScheevo installed to {dest_dir}")
+        logger.info(f"LumaDeck: SLScheevo installed to {dest_dir}")
 
     except Exception as exc:
-        logger.error(f"DeckTools: SLScheevo download failed: {exc}")
+        logger.error(f"LumaDeck: SLScheevo download failed: {exc}")
         SLSCHEEVO_DOWNLOAD_STATE = {"status": "error", "error": str(exc)}
 
 
