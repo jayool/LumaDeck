@@ -261,6 +261,32 @@ export function Settings() {
                 .NET Runtime: {deps.dotnet ? t("installed") : t("notFound")}
               </div>
             </PanelSectionRow>
+            <PanelSectionRow>
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: deps.lumalinux ? "#00cc00" : "#ff4444",
+                }}
+              >
+                lumalinux:{" "}
+                {deps.lumalinux
+                  ? `${t("installed")} (${deps.lumalinuxPath})`
+                  : t("notFound")}
+              </div>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: deps.cloudredirect ? "#00cc00" : "#ff4444",
+                }}
+              >
+                CloudRedirect:{" "}
+                {deps.cloudredirect
+                  ? `${t("installed")} (${deps.cloudredirectPath})`
+                  : t("notFound")}
+              </div>
+            </PanelSectionRow>
           </>
         )}
         <PanelSectionRow>
