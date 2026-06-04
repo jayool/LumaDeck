@@ -29,10 +29,11 @@ Track progress in the [issues](https://github.com/jayool/LumaDeck/issues) or the
 | [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) | **Required** | Plugin host on Steam Deck |
 | [SLSsteam](https://github.com/AceSLS/SLSsteam) | **Required** | Steam ownership / licensing layer (`LD_AUDIT`) |
 | [lumalinux](https://github.com/jayool/lumalinux) | **Required** | Native depot-key / manifest hooks for `steamclient.so` (`LD_PRELOAD`) |
-| Python venv with `vdf` module | **Required** | The `steamidra_lite.py` script the plugin invokes uses it to write `DecryptionKey` entries into Steam's `config.vdf` |
 | [CloudRedirect](https://github.com/Selectively11/CloudRedirect) | Recommended | Cloud saves for non-owned games (extra `LD_PRELOAD`) |
 | [ACCELA](https://github.com/nichelimux/ACCELA) | Optional | Only needed if you want the plugin's fixes / Steamless / Goldberg / Workshop features. The install flow itself doesn't touch ACCELA |
 | .NET 9 runtime | Optional | Same scope as ACCELA (Steamless and the Workshop downloader use .NET) |
+
+Note: earlier drafts of this README listed a Python `vdf` venv as required — that's **no longer the case**. The script (`steamidra_lite.py`) does its own VDF editing with regex now, so SteamOS' system `python3` is enough.
 
 ## Installation
 
@@ -59,18 +60,7 @@ sudo chmod -R 755 /home/deck/homebrew/plugins/LumaDeck
 sudo systemctl restart plugin_loader
 ```
 
-### 3. Create the Python venv
-
-The `steamidra_lite.py` script that the plugin invokes needs the `vdf` Python module to write `DecryptionKey` entries into Steam's `config.vdf`. SteamOS uses [PEP 668](https://peps.python.org/pep-0668/) which blocks system-wide `pip install`, so a virtualenv is the clean way to provide that module:
-
-```bash
-python3 -m venv ~/venvs/lumalinux
-~/venvs/lumalinux/bin/pip install vdf
-```
-
-The plugin auto-detects this path. If the venv is missing, the script falls back to system `python3` and silently skips the `config.vdf` step — most installs still work because the lumalinux DepotKey hook serves keys at runtime, but Steam's pre-download manifest-signature validation will fail for some games. The venv is the supported path.
-
-### 4. Lumalinux + SLSsteam injection
+### 3. Lumalinux + SLSsteam injection
 
 Make sure `/usr/bin/steam` includes the `LD_AUDIT` line (SLSsteam) and the `LD_PRELOAD` line (lumalinux + optionally CloudRedirect). See the [lumalinux README](https://github.com/jayool/lumalinux) for the exact lines and the `steamos-readonly disable / enable` dance.
 
