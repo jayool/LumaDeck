@@ -45,7 +45,7 @@ export const AppPageButton: FC = () => {
           textAlign: "center",
         }}
       >
-        {t("addedViaDeckTools")}
+        {t("addedViaLumaDeck")}
       </div>
     </div>
   );

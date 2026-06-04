@@ -1,5 +1,5 @@
 /**
- * Simple i18n system for DeckTools.
+ * Simple i18n system for LumaDeck.
  * Detects Steam/browser locale and provides translated strings.
  * Uses a React hook (useT) so components re-render on language change.
  */
@@ -197,7 +197,7 @@ const strings: Record<Lang, Record<string, string>> = {
     progress: "Progress",
 
     // AppPageButton (library badge)
-    addedViaDeckTools: "Added via DeckTools",
+    addedViaLumaDeck: "Added via LumaDeck",
 
     // Toasts
     toastCheckingUpdates: "Checking for Updates",
@@ -456,7 +456,7 @@ const strings: Record<Lang, Record<string, string>> = {
     progress: "Progresso",
 
     // AppPageButton (library badge)
-    addedViaDeckTools: "Adicionado via DeckTools",
+    addedViaLumaDeck: "Adicionado via LumaDeck",
 
     // Toasts
     toastCheckingUpdates: "Verificando Atualizações",
@@ -544,7 +544,7 @@ function detectLanguage(): Lang {
 
 // Try to load saved preference, fallback to auto-detect
 try {
-  const saved = localStorage.getItem("decktools_lang") as Lang | null;
+  const saved = localStorage.getItem("lumadeck_lang") as Lang | null;
   currentLang =
     saved && (saved === "en" || saved === "pt-BR") ? saved : detectLanguage();
 } catch {
@@ -554,7 +554,7 @@ try {
 export function setLanguage(lang: Lang) {
   currentLang = lang;
   try {
-    localStorage.setItem("decktools_lang", lang);
+    localStorage.setItem("lumadeck_lang", lang);
   } catch { }
   listeners.forEach((fn) => fn());
 }
