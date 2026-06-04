@@ -2171,10 +2171,34 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
             "status": "checking", "currentApi": name,
             "bytesRead": 0, "totalBytes": 0,
         })
-        logger.info(f"DeckTools: Trying API '{name}' -> {url}")
-
         try:
             headers = {"User-Agent": USER_AGENT}
+
+            # Hubcap auth: the api.json template embeds the key in the URL
+            # as ?api_key=... because that's the shape Star123451's upstream
+            # api.json publishes. Hubcap also accepts the same key via
+            # Authorization: Bearer; we extract it from the URL and move it
+            # to the header so the cleaned URL we log doesn't contain the
+            # key. Backports the upstream DeckTools d557f2a fix to LumaDeck.
+            if "hubcapmanifest.com" in url or "morrenus.xyz" in url:
+                from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+                _parts = urlsplit(url)
+                _remaining_qs = []
+                _hubcap_token = None
+                for _k, _v in parse_qsl(_parts.query, keep_blank_values=True):
+                    if _k == "api_key":
+                        _hubcap_token = _v
+                    else:
+                        _remaining_qs.append((_k, _v))
+                url = urlunsplit((
+                    _parts.scheme, _parts.netloc, _parts.path,
+                    urlencode(_remaining_qs), _parts.fragment,
+                ))
+                if _hubcap_token:
+                    headers["Authorization"] = f"Bearer {_hubcap_token}"
+
+            # Log AFTER scrubbing the URL so the api_key never lands here.
+            logger.info(f"DeckTools: Trying API '{name}' -> {url}")
 
             # Ryuu cookie injection
             if "ryuu.lol" in url:
