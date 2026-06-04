@@ -50,7 +50,7 @@ function patchLibraryApp() {
               );
             }
           } catch (e) {
-            console.error("DeckTools: library patch error", e);
+            console.error("LumaDeck: library patch error", e);
           }
           return ret;
         },
@@ -78,8 +78,8 @@ export default definePlugin(() => {
   const libraryPatch = patchLibraryApp();
 
   return {
-    name: "DeckTools",
-    title: <div className={staticClasses.Title}>DeckTools</div>,
+    name: "LumaDeck",
+    title: <div className={staticClasses.Title}>LumaDeck</div>,
     content: <GameList />,
     icon: <FaDownload />,
     onDismount() {
