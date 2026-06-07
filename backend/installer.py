@@ -18,6 +18,7 @@ from paths import (
     check_cloudredirect_installed,
     check_cloudredirect_active,
 )
+from dotnet import find_dotnet_path, ensure_dotnet_available
 
 try:
     import decky  # type: ignore
@@ -39,35 +40,13 @@ def check_dependencies() -> dict:
     slssteam_installed = check_slssteam_installed()
     accela_root = find_accela_root()
 
-    # Check for .NET runtime - try multiple locations since Decky runs as root
-    dotnet_available = False
-    dotnet_path = None
-    import subprocess
-
-    # Candidate dotnet binary paths (SteamOS / Decky runs as root, so ~ is /root/)
-    dotnet_candidates = [
-        "dotnet",  # system PATH
-        "/home/deck/.dotnet/dotnet",
-        "/home/deck/.local/share/dotnet/dotnet",
-        os.path.expanduser("~/.dotnet/dotnet"),
-    ]
-    # Also check inside ACCELA directory
-    if accela_root:
-        dotnet_candidates.append(os.path.join(accela_root, "dotnet", "dotnet"))
-        dotnet_candidates.append(os.path.join(accela_root, "dotnet"))
-
-    for candidate in dotnet_candidates:
-        try:
-            result = subprocess.run(
-                [candidate, "--list-runtimes"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                dotnet_available = True
-                dotnet_path = candidate
-                break
-        except Exception:
-            continue
+    # .NET 9 detection — delegated to backend/dotnet.py so the path list and
+    # the version check (--list-runtimes must mention "Microsoft.NETCore.App 9.")
+    # live in one place. Same lookup used by ensure_dotnet_available() during
+    # install, so the Dependencies panel and the installer agree on what
+    # "installed" means.
+    dotnet_path = find_dotnet_path()
+    dotnet_available = dotnet_path is not None
 
     return {
         "success": True,
@@ -157,8 +136,26 @@ async def install_dependencies() -> dict:
         await process.wait()
 
         if process.returncode == 0:
-            INSTALL_STATE["status"] = "done"
-            INSTALL_STATE["progress"] = "Installation complete!"
+            # enter-the-wired installed SLSsteam + ACCELA but does NOT install
+            # .NET 9. ACCELA's depot downloads and Steamless features need it,
+            # so we install it here in the same "Install / Reinstall" click.
+            # ensure_dotnet_available() is a no-op if .NET 9 is already there.
+            INSTALL_STATE["progress"] = "Installing .NET 9 runtime if missing..."
+            loop = asyncio.get_event_loop()
+            dotnet_ok = await loop.run_in_executor(None, ensure_dotnet_available)
+            if dotnet_ok:
+                INSTALL_STATE["status"] = "done"
+                INSTALL_STATE["progress"] = "Installation complete!"
+            else:
+                # SLSsteam + ACCELA succeeded; only .NET failed. Don't fail
+                # the whole operation — the user can hit Install/Reinstall
+                # again to retry just the .NET step (the no-op short-circuit
+                # in ensure_dotnet_available skips re-installing what's there).
+                INSTALL_STATE["status"] = "done"
+                INSTALL_STATE["progress"] = (
+                    "SLSsteam and ACCELA installed. .NET 9 install failed — "
+                    "click Install / Reinstall Dependencies again to retry."
+                )
         else:
             INSTALL_STATE["status"] = "failed"
             INSTALL_STATE["error"] = f"Installer exited with code {process.returncode}"
