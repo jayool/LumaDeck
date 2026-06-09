@@ -35,6 +35,7 @@ export function Settings() {
   const [platform, setPlatform] = useState<any>(null);
   const [playNotOwned, setPlayNotOwned] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [confirmInstallDeps, setConfirmInstallDeps] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [unknownHash, setUnknownHash] = useState(false);
   const [lang, setLang] = useState(getLanguage());
@@ -102,6 +103,18 @@ export function Settings() {
   };
 
   const handleInstallDeps = async () => {
+    // Two-click confirm pattern (same as the uninstall flow in
+    // GameDetail.tsx): first click flips a flag and arms a 5 s timeout to
+    // reset it, second click within that window triggers the actual
+    // install. Justified here because enter-the-wired → headcrab.sh runs
+    // `killall steam` unconditionally early in its flow, so pulling the
+    // trigger drops the user's gamemode session.
+    if (!confirmInstallDeps) {
+      setConfirmInstallDeps(true);
+      setTimeout(() => setConfirmInstallDeps(false), 5000);
+      return;
+    }
+    setConfirmInstallDeps(false);
     setInstalling(true);
     toast(t("installingDeps"), "", 2000);
     await installDependencies();
@@ -294,8 +307,13 @@ export function Settings() {
             layout="below"
             onClick={handleInstallDeps}
             disabled={installing}
+            description={confirmInstallDeps ? t("installDepsConfirmDesc") : undefined}
           >
-            {installing ? t("installing") : t("installReinstallDeps")}
+            {installing
+              ? t("installing")
+              : confirmInstallDeps
+                ? t("installDepsConfirm")
+                : t("installReinstallDeps")}
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>

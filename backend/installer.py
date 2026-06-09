@@ -118,8 +118,17 @@ async def install_dependencies() -> dict:
             return {"success": False}
 
         INSTALL_STATE["progress"] = "Running installer..."
-        process = await asyncio.create_subprocess_exec(
-            "bash", main_script,
+        # Pipe `yes y` into bash so any interactive prompt that survives the
+        # script chain (the ACCELAINSTALL binary inside the ACCELA tarball
+        # is the one known case — it asks "Do you want to proceed with the
+        # installation? [y/N]" and reads stdin) gets auto-confirmed. None
+        # of the bash scripts in the chain (enter-the-wired, accela,
+        # fix-deps, headcrab) use `read` themselves, and every pacman call
+        # is already --noconfirm, so the y's are absorbed only by
+        # ACCELAINSTALL. No destructive prompts exist in this chain that a
+        # blanket "y" would answer incorrectly.
+        process = await asyncio.create_subprocess_shell(
+            f"yes y | bash {main_script}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=tmp_dir,
