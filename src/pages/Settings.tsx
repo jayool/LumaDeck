@@ -16,6 +16,7 @@ import {
   fetchFreeApisNow,
   checkDependencies,
   installDependencies,
+  installCloudredirect,
   getPlatformSummary,
   verifySlssteamInjected,
   getSlsPlayStatus,
@@ -36,6 +37,8 @@ export function Settings() {
   const [playNotOwned, setPlayNotOwned] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [confirmInstallDeps, setConfirmInstallDeps] = useState(false);
+  const [installingCR, setInstallingCR] = useState(false);
+  const [confirmInstallCR, setConfirmInstallCR] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [unknownHash, setUnknownHash] = useState(false);
   const [lang, setLang] = useState(getLanguage());
@@ -122,6 +125,36 @@ export function Settings() {
     if (result.success) setDeps(result);
     setInstalling(false);
     toast(t("toastDepsInstalled"));
+  };
+
+  const handleEnableCR = async () => {
+    // Same two-click pattern as the deps install — headcrab.pages.dev's
+    // nuketheclient() calls `killall steam` unconditionally, so this also
+    // drops the user's gamemode session.
+    if (!confirmInstallCR) {
+      setConfirmInstallCR(true);
+      setTimeout(() => setConfirmInstallCR(false), 5000);
+      return;
+    }
+    setConfirmInstallCR(false);
+    setInstallingCR(true);
+    toast(t("installingCR"), "", 2000);
+    const result = await installCloudredirect();
+    const depsResult = await checkDependencies();
+    if (depsResult.success) setDeps(depsResult);
+    setInstallingCR(false);
+    if (result.success) {
+      // Provider sign-in is GUI-only — surface the desktop-mode step.
+      // If the user already had tokens from a previous setup, suppress
+      // the nudge (re-running the install shouldn't ask them again).
+      if (!depsResult.cloudredirectAuthed) {
+        toast(t("crInstalled"), t("crInstalledBody"), 8000);
+      } else {
+        toast(t("crInstalled"));
+      }
+    } else {
+      toast(t("toastError"), "", 4000);
+    }
   };
 
   const handleVerifyInjection = async () => {
@@ -300,6 +333,21 @@ export function Settings() {
                   : t("notFound")}
               </div>
             </PanelSectionRow>
+            {deps.cloudredirect && (
+              <PanelSectionRow>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: deps.cloudredirectAuthed ? "#00cc00" : "#ffaa00",
+                  }}
+                >
+                  {t("cloudredirectProvider")}:{" "}
+                  {deps.cloudredirectAuthed
+                    ? t("providerConfigured")
+                    : t("providerNotConfigured")}
+                </div>
+              </PanelSectionRow>
+            )}
           </>
         )}
         <PanelSectionRow>
@@ -314,6 +362,20 @@ export function Settings() {
               : confirmInstallDeps
                 ? t("installDepsConfirm")
                 : t("installReinstallDeps")}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={handleEnableCR}
+            disabled={installingCR}
+            description={confirmInstallCR ? t("enableCRConfirmDesc") : undefined}
+          >
+            {installingCR
+              ? t("installingCR")
+              : confirmInstallCR
+                ? t("enableCRConfirm")
+                : t("enableCloudRedirect")}
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>

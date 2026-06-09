@@ -284,3 +284,9 @@ export const checkDependencies = async () =>
 
 export const installDependencies = async () =>
   parseResult(await call<[], string>("install_dependencies"));
+
+export const installCloudredirect = async () =>
+  parseResult(await call<[], string>("install_cloudredirect"));
+
+export const getCrInstallStatus = async () =>
+  parseResult(await call<[], string>("get_cr_install_status"));

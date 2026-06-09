@@ -531,3 +531,11 @@ class Plugin:
     async def get_install_status(self) -> str:
         from installer import get_install_status
         return _j(get_install_status())
+
+    async def install_cloudredirect(self) -> str:
+        from installer import install_cloudredirect
+        return _j(await install_cloudredirect())
+
+    async def get_cr_install_status(self) -> str:
+        from installer import get_cr_install_status
+        return _j(get_cr_install_status())

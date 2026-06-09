@@ -323,6 +323,30 @@ def check_cloudredirect_active() -> bool:
     return False
 
 
+_CLOUDREDIRECT_TOKEN_DIRS = [
+    "/home/deck/.config/CloudRedirect",
+    os.path.expanduser("~/.config/CloudRedirect"),
+]
+
+
+def check_cloudredirect_authed() -> bool:
+    """True if a CloudRedirect provider token file exists. The CR Flatpak ships
+    --filesystem=home and its realHomePath() escapes the sandbox, so tokens land
+    on the host home as ~/.config/CloudRedirect/tokens_<provider>.json (gdrive,
+    onedrive, ...), not under ~/.var/app/. We only check for presence — token
+    contents are CR's business."""
+    for path in _CLOUDREDIRECT_TOKEN_DIRS:
+        if not os.path.isdir(path):
+            continue
+        try:
+            for entry in os.listdir(path):
+                if entry.startswith("tokens_") and entry.endswith(".json"):
+                    return True
+        except Exception:
+            continue
+    return False
+
+
 # ---------------------------------------------------------------------------
 # SLSsteam injection verification
 # ---------------------------------------------------------------------------

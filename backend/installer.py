@@ -17,6 +17,8 @@ from paths import (
     find_cloudredirect_root,
     check_cloudredirect_installed,
     check_cloudredirect_active,
+    check_cloudredirect_authed,
+    get_slssteam_config_path,
 )
 from dotnet import find_dotnet_path, ensure_dotnet_available
 
@@ -28,6 +30,12 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 INSTALL_STATE = {
+    "status": "idle",
+    "progress": "",
+    "error": None,
+}
+
+CR_INSTALL_STATE = {
     "status": "idle",
     "progress": "",
     "error": None,
@@ -68,6 +76,11 @@ def check_dependencies() -> dict:
         "cloudredirect": check_cloudredirect_installed(),
         "cloudredirectPath": find_cloudredirect_root(),
         "cloudredirectActive": check_cloudredirect_active(),
+        # True if ~/.config/CloudRedirect/tokens_<provider>.json exists. The
+        # provider sign-in flow is GUI-only inside the CR Flatpak — gamemode
+        # can't drive it, so the UI uses this to nudge the user to desktop
+        # mode after we drop the .so + flatpak in place.
+        "cloudredirectAuthed": check_cloudredirect_authed(),
     }
 
 
@@ -185,3 +198,145 @@ async def install_dependencies() -> dict:
 
 def get_install_status() -> dict:
     return INSTALL_STATE.copy()
+
+
+def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
+    """Flip `DisableCloud: yes` -> `DisableCloud: no` in SLSsteam's config.yaml.
+
+    headcrab.pages.dev gates CloudRedirect on this exact line (crconfigcheck
+    in the upstream script greps for `DisableCloud: no`), so we have to
+    flip it before invoking headcrab — the script doesn't do it itself.
+
+    Returns (ok, message). ok=False only when the config is missing or the
+    DisableCloud line is absent entirely (= SLSsteam wasn't initialised
+    via enter-the-wired yet, which is the user's prerequisite to install).
+    """
+    import re
+
+    if not os.path.isfile(config_path):
+        return False, f"SLSsteam config not found at {config_path} — install dependencies first"
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as exc:
+        return False, f"Cannot read SLSsteam config: {exc}"
+
+    new_content, n = re.subn(
+        r"^(\s*DisableCloud\s*:\s*)yes\s*$",
+        r"\1no",
+        content,
+        flags=re.MULTILINE,
+    )
+
+    if n > 0:
+        try:
+            tmp = config_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            os.replace(tmp, config_path)
+            return True, "DisableCloud flipped to no"
+        except Exception as exc:
+            return False, f"Cannot write SLSsteam config: {exc}"
+
+    if re.search(r"^\s*DisableCloud\s*:\s*no\s*$", content, flags=re.MULTILINE):
+        return True, "DisableCloud already set to no"
+
+    return False, "DisableCloud line missing from SLSsteam config — reinstall dependencies"
+
+
+async def install_cloudredirect() -> dict:
+    """Run headcrab.pages.dev with DisableCloud flipped to `no`.
+
+    headcrab installs CloudRedirect conditionally: the script greps the
+    SLSsteam config and only invokes its crinstall() when it finds
+    `DisableCloud: no`. We flip the line, then invoke the same shell
+    chain enter-the-wired uses, with `yes y` piped in defensively (same
+    rationale as install_dependencies — ACCELAINSTALL is the one known
+    interactive binary in the chain).
+
+    The script overwrites ~/.local/share/Steam/steam.sh with the cr-test
+    variant that includes LD_PRELOAD=cloud_redirect.so — lumalinux's
+    install.sh must be re-run separately to reapply its line.
+    """
+    global CR_INSTALL_STATE
+    CR_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
+
+    tmp_dir = None
+    try:
+        config_path = get_slssteam_config_path()
+        CR_INSTALL_STATE["progress"] = "Enabling DisableCloud: no in SLSsteam config..."
+        ok, msg = _set_disablecloud_no(config_path)
+        if not ok:
+            CR_INSTALL_STATE["status"] = "failed"
+            CR_INSTALL_STATE["error"] = msg
+            return {"success": False}
+
+        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_cr_")
+        script_path = os.path.join(tmp_dir, "headcrab")
+        CR_INSTALL_STATE["progress"] = "Downloading headcrab installer..."
+        dl = await asyncio.create_subprocess_exec(
+            "curl", "-fsSL", "-o", script_path, "https://headcrab.pages.dev",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        await dl.wait()
+        if dl.returncode != 0:
+            CR_INSTALL_STATE["status"] = "failed"
+            CR_INSTALL_STATE["error"] = "Failed to download headcrab installer"
+            return {"success": False}
+        os.chmod(script_path, 0o700)
+
+        try:
+            with open(script_path, "r", encoding="utf-8", errors="replace") as f:
+                first_line = f.readline(256)
+            if not first_line.startswith("#"):
+                CR_INSTALL_STATE["status"] = "failed"
+                CR_INSTALL_STATE["error"] = "Downloaded file does not look like a shell script"
+                return {"success": False}
+        except Exception as read_exc:
+            CR_INSTALL_STATE["status"] = "failed"
+            CR_INSTALL_STATE["error"] = f"Cannot read installer script: {read_exc}"
+            return {"success": False}
+
+        CR_INSTALL_STATE["progress"] = "Running installer (this will close Steam)..."
+        process = await asyncio.create_subprocess_shell(
+            f"yes y | bash {script_path}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=tmp_dir,
+        )
+
+        async def _read_output():
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                CR_INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
+
+        asyncio.create_task(_read_output())
+        await process.wait()
+
+        if process.returncode == 0:
+            CR_INSTALL_STATE["status"] = "done"
+            CR_INSTALL_STATE["progress"] = "CloudRedirect installed!"
+        else:
+            CR_INSTALL_STATE["status"] = "failed"
+            CR_INSTALL_STATE["error"] = f"Installer exited with code {process.returncode}"
+
+    except Exception as exc:
+        CR_INSTALL_STATE["status"] = "failed"
+        CR_INSTALL_STATE["error"] = str(exc)
+    finally:
+        if tmp_dir:
+            import shutil
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+    return {"success": CR_INSTALL_STATE["status"] == "done"}
+
+
+def get_cr_install_status() -> dict:
+    return CR_INSTALL_STATE.copy()
