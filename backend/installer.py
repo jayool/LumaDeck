@@ -41,6 +41,12 @@ CR_INSTALL_STATE = {
     "error": None,
 }
 
+LL_INSTALL_STATE = {
+    "status": "idle",
+    "progress": "",
+    "error": None,
+}
+
 
 def check_dependencies() -> dict:
     """Check if ACCELA, SLSsteam, and .NET runtime are available."""
@@ -340,3 +346,100 @@ async def install_cloudredirect() -> dict:
 
 def get_cr_install_status() -> dict:
     return CR_INSTALL_STATE.copy()
+
+
+async def install_lumalinux() -> dict:
+    """Run lumalinux/install.sh from the jayool/lumalinux repo.
+
+    Unlike enter-the-wired and headcrab, this one does NOT touch Steam at
+    runtime: it only patches ~/.local/share/Steam/steam.sh (idempotent
+    managed-block insert before `source $STEAM_CLIENT`) and drops the .so +
+    keys dir. No killall, no exec of Steam with env vars, no downgrade.
+
+    Also serves as the recovery path after a Headcrab Updater run: Headcrab
+    regenerates steam.sh from scratch, wiping the lumalinux block, so
+    re-invoking this is how the user gets back to a loaded state.
+
+    The user must restart Steam manually after this returns — we surface
+    that as a toast, not as an automatic action, because gamemode = killing
+    Steam = killing whatever the user is doing.
+    """
+    global LL_INSTALL_STATE
+    LL_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
+
+    tmp_dir = None
+    try:
+        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_ll_")
+        script_path = os.path.join(tmp_dir, "install.sh")
+        LL_INSTALL_STATE["progress"] = "Downloading lumalinux installer..."
+        dl = await asyncio.create_subprocess_exec(
+            "curl", "-fsSL", "-o", script_path,
+            "https://raw.githubusercontent.com/jayool/lumalinux/main/install.sh",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        await dl.wait()
+        if dl.returncode != 0:
+            LL_INSTALL_STATE["status"] = "failed"
+            LL_INSTALL_STATE["error"] = "Failed to download lumalinux installer"
+            return {"success": False}
+        os.chmod(script_path, 0o700)
+
+        try:
+            with open(script_path, "r", encoding="utf-8", errors="replace") as f:
+                first_line = f.readline(256)
+            if not first_line.startswith("#"):
+                LL_INSTALL_STATE["status"] = "failed"
+                LL_INSTALL_STATE["error"] = "Downloaded file does not look like a shell script"
+                return {"success": False}
+        except Exception as read_exc:
+            LL_INSTALL_STATE["status"] = "failed"
+            LL_INSTALL_STATE["error"] = f"Cannot read installer script: {read_exc}"
+            return {"success": False}
+
+        # No `yes y |` — lumalinux/install.sh contains zero `read` prompts
+        # (only curl/sed/awk/install), so there's nothing to auto-confirm.
+        LL_INSTALL_STATE["progress"] = "Running installer..."
+        process = await asyncio.create_subprocess_exec(
+            "bash", script_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=tmp_dir,
+        )
+
+        async def _read_output():
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                LL_INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
+
+        asyncio.create_task(_read_output())
+        await process.wait()
+
+        if process.returncode == 0:
+            LL_INSTALL_STATE["status"] = "done"
+            LL_INSTALL_STATE["progress"] = "lumalinux installed!"
+        else:
+            LL_INSTALL_STATE["status"] = "failed"
+            LL_INSTALL_STATE["error"] = (
+                f"Installer exited with code {process.returncode} — "
+                f"last line: {LL_INSTALL_STATE['progress']}"
+            )
+
+    except Exception as exc:
+        LL_INSTALL_STATE["status"] = "failed"
+        LL_INSTALL_STATE["error"] = str(exc)
+    finally:
+        if tmp_dir:
+            import shutil
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+    return {"success": LL_INSTALL_STATE["status"] == "done"}
+
+
+def get_ll_install_status() -> dict:
+    return LL_INSTALL_STATE.copy()

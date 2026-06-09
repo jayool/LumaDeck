@@ -17,6 +17,7 @@ import {
   checkDependencies,
   installDependencies,
   installCloudredirect,
+  installLumalinux,
   getPlatformSummary,
   verifySlssteamInjected,
   getSlsPlayStatus,
@@ -39,6 +40,7 @@ export function Settings() {
   const [confirmInstallDeps, setConfirmInstallDeps] = useState(false);
   const [installingCR, setInstallingCR] = useState(false);
   const [confirmInstallCR, setConfirmInstallCR] = useState(false);
+  const [installingLL, setInstallingLL] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [unknownHash, setUnknownHash] = useState(false);
   const [lang, setLang] = useState(getLanguage());
@@ -152,6 +154,25 @@ export function Settings() {
       } else {
         toast(t("crInstalled"));
       }
+    } else {
+      toast(t("toastError"), "", 4000);
+    }
+  };
+
+  const handleInstallLumalinux = async () => {
+    // No two-click confirm here: lumalinux/install.sh only patches steam.sh
+    // (idempotent managed-block insert) and drops the .so — it doesn't kill
+    // Steam, doesn't downgrade, doesn't exec Steam with env vars. The user
+    // sees no disruption; the .so loads on the next Steam restart, which
+    // they trigger on their own via the existing Restart Steam button.
+    setInstallingLL(true);
+    toast(t("installingLL"), "", 2000);
+    const result = await installLumalinux();
+    const depsResult = await checkDependencies();
+    if (depsResult.success) setDeps(depsResult);
+    setInstallingLL(false);
+    if (result.success) {
+      toast(t("llInstalled"), t("llInstalledBody"), 6000);
     } else {
       toast(t("toastError"), "", 4000);
     }
@@ -376,6 +397,15 @@ export function Settings() {
               : confirmInstallCR
                 ? t("enableCRConfirm")
                 : t("enableCloudRedirect")}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={handleInstallLumalinux}
+            disabled={installingLL}
+          >
+            {installingLL ? t("installingLL") : t("installLumalinux")}
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>

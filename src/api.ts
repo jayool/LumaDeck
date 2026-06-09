@@ -290,3 +290,9 @@ export const installCloudredirect = async () =>
 
 export const getCrInstallStatus = async () =>
   parseResult(await call<[], string>("get_cr_install_status"));
+
+export const installLumalinux = async () =>
+  parseResult(await call<[], string>("install_lumalinux"));
+
+export const getLlInstallStatus = async () =>
+  parseResult(await call<[], string>("get_ll_install_status"));
