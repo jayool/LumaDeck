@@ -50,33 +50,54 @@ export function Settings() {
     toaster.toast({ title, body: body || "", duration });
 
   useEffect(() => {
+    let cancelled = false;
+
+    const refreshDeps = async () => {
+      if (cancelled) return;
+      const depsResult = await checkDependencies();
+      if (!cancelled && depsResult.success) setDeps(depsResult);
+    };
+
     const load = async () => {
       const cookieResult = await loadRyuCookie();
-      if (cookieResult.success && cookieResult.cookie) {
+      if (!cancelled && cookieResult.success && cookieResult.cookie) {
         setRyuCookie(cookieResult.cookie);
       }
 
       const keyResult = await loadHubcapKey();
-      if (keyResult.success && keyResult.key) {
+      if (!cancelled && keyResult.success && keyResult.key) {
         setHubcapKey(keyResult.key);
       }
 
-      const depsResult = await checkDependencies();
-      if (depsResult.success) setDeps(depsResult);
+      await refreshDeps();
 
       const platformResult = await getPlatformSummary();
-      setPlatform(platformResult);
+      if (!cancelled) setPlatform(platformResult);
 
       const playResult = await getSlsPlayStatus();
-      if (playResult.success) setPlayNotOwned(playResult.enabled);
+      if (!cancelled && playResult.success) setPlayNotOwned(playResult.enabled);
 
       const hashResult = await checkSlssteamHashStatus();
-      if (hashResult.success) setUnknownHash(hashResult.unknown_hash);
+      if (!cancelled && hashResult.success) setUnknownHash(hashResult.unknown_hash);
 
       const libResult = await getSteamLibraries();
-      if (libResult.success && libResult.libraries) setLibraries(libResult.libraries);
+      if (!cancelled && libResult.success && libResult.libraries) setLibraries(libResult.libraries);
     };
+
     load();
+
+    // Issue #18: when an install button kicks `steam -shutdown` mid-flight,
+    // the plugin UI gets torn down and re-mounted before the backend chain
+    // has finished (flatpak install can take 30 s). The initial useEffect
+    // fetches deps too early and the panel sticks on stale "not found".
+    // Poll a few times after mount so the eventual finished state lands.
+    const retries = [3000, 7000, 12000];
+    const timers = retries.map((delay) => setTimeout(refreshDeps, delay));
+
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
   }, []);
 
   const handleSaveCookie = async () => {
@@ -164,11 +185,13 @@ export function Settings() {
   };
 
   const handleInstallLumalinux = async () => {
-    // No two-click confirm here: lumalinux/install.sh only patches steam.sh
-    // (idempotent managed-block insert) and drops the .so — it doesn't kill
-    // Steam, doesn't downgrade, doesn't exec Steam with env vars. The user
-    // sees no disruption; the .so loads on the next Steam restart, which
-    // they trigger on their own via the existing Restart Steam button.
+    // lumalinux/install.sh only patches steam.sh + drops the .so. It doesn't
+    // kill Steam by itself. We do trigger a clean `steam -shutdown` after
+    // success though, to mirror the deps/CR buttons: the user gets a "one
+    // tap → done" flow instead of having to remember to restart Steam
+    // separately to actually load lumalinux. `steam -shutdown` is the same
+    // IPC the Restart Steam button uses, and gamescope-session treats it
+    // as a clean exit (no recovery loop).
     setInstallingLL(true);
     toast(t("installingLL"), "", 2000);
     const result = await installLumalinux();
@@ -176,7 +199,8 @@ export function Settings() {
     if (depsResult.success) setDeps(depsResult);
     setInstallingLL(false);
     if (result.success) {
-      toast(t("llInstalled"), t("llInstalledBody"), 6000);
+      toast(t("llInstalled"), t("llInstalledBody"), 4000);
+      await restartSteam();
     } else {
       toast(t("toastError"), "", 4000);
     }
