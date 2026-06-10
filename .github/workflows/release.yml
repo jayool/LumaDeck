@@ -34,21 +34,21 @@ jobs:
 
       - name: Create plugin zip
         run: |
-          mkdir -p DeckTools
-          cp plugin.json DeckTools/
-          cp main.py DeckTools/
-          cp package.json DeckTools/
-          cp -r dist DeckTools/
-          cp -r backend DeckTools/
+          mkdir -p LumaDeck
+          cp plugin.json LumaDeck/
+          cp main.py LumaDeck/
+          cp package.json LumaDeck/
+          cp -r dist LumaDeck/
+          cp -r backend LumaDeck/
           # Remove __pycache__ and .pyc files
-          find DeckTools -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
-          find DeckTools -name '*.pyc' -delete 2>/dev/null || true
-          zip -r DeckTools.zip DeckTools/
+          find LumaDeck -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+          find LumaDeck -name '*.pyc' -delete 2>/dev/null || true
+          zip -r LumaDeck.zip LumaDeck/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: DeckTools.zip
+          files: LumaDeck.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
