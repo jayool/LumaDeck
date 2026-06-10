@@ -43,6 +43,11 @@ jobs:
           # Remove __pycache__ and .pyc files
           find LumaDeck -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
           find LumaDeck -name '*.pyc' -delete 2>/dev/null || true
+          # backend/data/ has to be writable by the plugin runtime (the _root
+          # flag doesn't elevate the actual python process — Decky still
+          # spawns it as `deck`). 777 lets the plugin create api.json on
+          # first init even though Decky deploys plugins as root:root 755.
+          chmod 777 LumaDeck/backend/data
           zip -r LumaDeck.zip LumaDeck/
 
       - name: Create GitHub Release

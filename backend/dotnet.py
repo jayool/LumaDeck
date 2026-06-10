@@ -24,6 +24,8 @@ import shutil
 import subprocess
 from typing import Optional
 
+from subprocess_env import clean_env
+
 try:
     import decky  # type: ignore
     logger = decky.logger
@@ -63,7 +65,7 @@ def find_dotnet_path() -> Optional[str]:
                 capture_output=True,
                 text=True,
                 timeout=10,
-                env={**os.environ, "DOTNET_ROOT": os.path.dirname(path)},
+                env=clean_env(DOTNET_ROOT=os.path.dirname(path)),
             )
             if "Microsoft.NETCore.App 9." in result.stdout:
                 logger.info("dotnet: found .NET 9 runtime at %s", path)
@@ -84,9 +86,7 @@ def _install_dotnet_9_linux() -> bool:
     try:
         os.makedirs(DOTNET_ROOT, exist_ok=True)
 
-        env = os.environ.copy()
-        env["DOTNET_ROOT"] = DOTNET_ROOT
-        env["HOME"] = "/home/deck"
+        env = clean_env(DOTNET_ROOT=DOTNET_ROOT, HOME="/home/deck")
 
         install_script = os.path.join(DOTNET_ROOT, "dotnet-install.sh")
 
@@ -145,6 +145,7 @@ def _install_dotnet_9_linux() -> bool:
             capture_output=True,
             text=True,
             timeout=30,
+            env=env,
         )
         if chown.returncode != 0:
             logger.warning(

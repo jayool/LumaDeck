@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
 
 from paths import (
@@ -21,6 +22,7 @@ from paths import (
     get_slssteam_config_path,
 )
 from dotnet import find_dotnet_path, ensure_dotnet_available
+from subprocess_env import clean_env
 
 try:
     import decky  # type: ignore
@@ -46,6 +48,107 @@ LL_INSTALL_STATE = {
     "progress": "",
     "error": None,
 }
+
+
+# Upstream Headcrab is hosted at Deadboy666/h3adcr-b. The `headcrab.pages.dev`
+# alias serves the same file from main. We fetch the raw GitHub URL directly
+# so we can guarantee what we patch.
+_HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh"
+
+# String replacements applied to the downloaded headcrab.sh BEFORE we run it.
+# Reason: in SteamOS Game Mode, gamescope-session-plus counts 5 Steam exits
+# of < 60 s each as a crash loop and triggers `short_session_recover` which
+# wipes ~/.local/share/Steam and drops the user to OOBE. Headcrab's `killall
+# steam` (in nuketheclient) and its `wheresteam -exitsteam` (in clientinstall
+# / clientdowngrade) each register as a sub-60s session. Replacing them with
+# either a clean `steam -shutdown` or a no-op keeps the counter at zero;
+# SLSsteam still loads when the user reboots Steam with the new steam.sh.
+#
+# If upstream changes the wording of these lines, the patch fails and the
+# user gets an explicit "headcrab format changed" error instead of a silent
+# half-broken install.
+_HEADCRAB_PATCHES: tuple[tuple[str, str, str], ...] = (
+    (
+        r"killall steam \| true",
+        "steam -shutdown 2>/dev/null; sleep 3",
+        "nuketheclient",
+    ),
+    (
+        r"wheresteam -exitsteam",
+        ": # LumaDeck: skipped short-session relaunch",
+        "exitsteam-A",
+    ),
+    (
+        r"wheresteam -clearbeta steam://exit",
+        ": # LumaDeck: skipped short-session relaunch",
+        "exitsteam-B",
+    ),
+    (
+        r"wheresteam -clearbeta -exitsteam",
+        ": # LumaDeck: skipped short-session relaunch",
+        "exitsteam-C",
+    ),
+)
+
+_SESSION_TRACKER_RESET = (
+    "# LumaDeck: reset gamescope-session short-session counter so even if a "
+    "patched call slips through it can't accumulate towards recovery.\n"
+    "rm -f /tmp/steamos-short-session-tracker 2>/dev/null\n"
+)
+
+
+def _patch_headcrab_script(content: str) -> str:
+    """Apply the Game-Mode safety patches to a freshly downloaded headcrab.sh.
+
+    Raises RuntimeError if any patch fails to apply — that means upstream
+    changed the wording of a line we patch, and the user needs an updated
+    plugin rather than a silently broken install.
+    """
+    failed: list[str] = []
+    for pattern, replacement, label in _HEADCRAB_PATCHES:
+        content, n = re.subn(pattern, replacement, content)
+        if n == 0:
+            failed.append(label)
+    if failed:
+        raise RuntimeError(
+            "headcrab.sh format changed upstream — these LumaDeck patches "
+            f"failed to apply: {failed}. Update _HEADCRAB_PATCHES."
+        )
+    # Prepend the tracker reset so it runs before anything else in the script.
+    # We keep the shebang on line 1 and inject right after it.
+    if content.startswith("#!"):
+        first_nl = content.find("\n")
+        if first_nl != -1:
+            content = content[: first_nl + 1] + _SESSION_TRACKER_RESET + content[first_nl + 1:]
+        else:
+            content = content + "\n" + _SESSION_TRACKER_RESET
+    else:
+        content = _SESSION_TRACKER_RESET + content
+    return content
+
+
+# enter-the-wired (ciscosweater) downloads headcrab.sh via curl right before
+# executing it. We rewrite those curl calls to `cp` from our pre-patched local
+# copy so the in-place patches survive the indirection.
+_ENTER_THE_WIRED_HEADCRAB_PATTERN = re.compile(
+    r'curl -fsSL --retry 3 --retry-delay 2 (?:"\$SLS_URL"|"https://raw\.githubusercontent\.com/Deadboy666/h3adcr-b/main/headcrab\.sh\?t=\$\(date \+%s\)") -o "\$tmp_headcrab_script"'
+)
+
+
+def _patch_enter_the_wired(content: str, patched_headcrab_path: str) -> str:
+    """Rewrite enter-the-wired so it copies our patched headcrab instead of curl'ing.
+
+    Raises RuntimeError if no occurrence of the curl line was found (upstream
+    has been refactored and the patch needs an update).
+    """
+    replacement = f'cp "{patched_headcrab_path}" "$tmp_headcrab_script"'
+    new_content, n = _ENTER_THE_WIRED_HEADCRAB_PATTERN.subn(replacement, content)
+    if n == 0:
+        raise RuntimeError(
+            "enter-the-wired format changed upstream — could not find the "
+            "headcrab fetch line to redirect. Update _ENTER_THE_WIRED_HEADCRAB_PATTERN."
+        )
+    return new_content
 
 
 def check_dependencies() -> dict:
@@ -90,16 +193,43 @@ def check_dependencies() -> dict:
     }
 
 
+async def _download(url: str, dest: str) -> bool:
+    """Download `url` to `dest` with curl. Returns True on success."""
+    dl = await asyncio.create_subprocess_exec(
+        "curl", "-fsSL", "-o", dest, url,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        env=clean_env(),
+    )
+    await dl.wait()
+    return dl.returncode == 0
+
+
 async def install_dependencies() -> dict:
-    """Run the enter-the-wired installer script."""
+    """Run the Game-Mode-safe variant of enter-the-wired.
+
+    enter-the-wired chains ACCELA + SLSsteam + headcrab.sh. Headcrab as-is
+    kills Steam several times in quick succession; in gamemode that trips
+    the gamescope-session crash-loop detector and SteamOS wipes the Steam
+    install. We:
+      1. Download enter-the-wired + accela + fix-deps as usual.
+      2. Download headcrab.sh ourselves and apply _HEADCRAB_PATCHES (replace
+         killall with steam -shutdown, skip the short-cycle relaunches).
+      3. Patch enter-the-wired so its internal curl(headcrab.sh) becomes
+         cp(our_patched_copy).
+      4. Run the patched enter-the-wired exactly like upstream meant to —
+         ACCELA, SLSsteam, the patched headcrab, then .NET 9 on our end.
+
+    If upstream wording of any patched line changes, the install fails fast
+    with a clear "format changed" error instead of bricking Steam.
+    """
     global INSTALL_STATE
     INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
+    logger.info("LumaDeck: install_dependencies() entered")
 
     tmp_dir = None
     try:
         BASE_URL = "https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main"
-        # enter-the-wired requires accela and fix-deps in the same directory.
-        # Download all three into a temp dir so local-execution branch works.
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_etw_")
         scripts = {
             "enter-the-wired": f"{BASE_URL}/enter-the-wired",
@@ -109,20 +239,15 @@ async def install_dependencies() -> dict:
 
         for name, url in scripts.items():
             INSTALL_STATE["progress"] = f"Downloading {name}..."
+            logger.info("LumaDeck: downloading %s", name)
             dest = os.path.join(tmp_dir, name)
-            dl = await asyncio.create_subprocess_exec(
-                "curl", "-fsSL", "-o", dest, url,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            await dl.wait()
-            if dl.returncode != 0:
+            if not await _download(url, dest):
                 INSTALL_STATE["status"] = "failed"
                 INSTALL_STATE["error"] = f"Failed to download {name}"
+                logger.error("LumaDeck: download failed: %s", name)
                 return {"success": False}
             os.chmod(dest, 0o700)
 
-        # Verify main script looks like a shell script
         main_script = os.path.join(tmp_dir, "enter-the-wired")
         try:
             with open(main_script, "r", encoding="utf-8", errors="replace") as f:
@@ -136,21 +261,53 @@ async def install_dependencies() -> dict:
             INSTALL_STATE["error"] = f"Cannot read installer script: {read_exc}"
             return {"success": False}
 
+        # Pre-fetch headcrab.sh and apply our Game-Mode safety patches.
+        INSTALL_STATE["progress"] = "Downloading + patching headcrab.sh..."
+        logger.info("LumaDeck: fetching headcrab.sh")
+        headcrab_path = os.path.join(tmp_dir, "headcrab_patched.sh")
+        if not await _download(_HEADCRAB_RAW_URL, headcrab_path):
+            INSTALL_STATE["status"] = "failed"
+            INSTALL_STATE["error"] = "Failed to download headcrab.sh"
+            return {"success": False}
+        try:
+            with open(headcrab_path, "r", encoding="utf-8") as f:
+                hc_content = f.read()
+            hc_content = _patch_headcrab_script(hc_content)
+            with open(headcrab_path, "w", encoding="utf-8") as f:
+                f.write(hc_content)
+            os.chmod(headcrab_path, 0o700)
+            logger.info("LumaDeck: headcrab.sh patched OK (%d bytes)", len(hc_content))
+        except RuntimeError as exc:
+            INSTALL_STATE["status"] = "failed"
+            INSTALL_STATE["error"] = str(exc)
+            logger.error("LumaDeck: headcrab patch failed: %s", exc)
+            return {"success": False}
+
+        # Patch enter-the-wired so it cp's our patched headcrab instead of curl'ing.
+        try:
+            with open(main_script, "r", encoding="utf-8") as f:
+                etw_content = f.read()
+            etw_content = _patch_enter_the_wired(etw_content, headcrab_path)
+            with open(main_script, "w", encoding="utf-8") as f:
+                f.write(etw_content)
+            logger.info("LumaDeck: enter-the-wired patched OK")
+        except RuntimeError as exc:
+            INSTALL_STATE["status"] = "failed"
+            INSTALL_STATE["error"] = str(exc)
+            logger.error("LumaDeck: enter-the-wired patch failed: %s", exc)
+            return {"success": False}
+
         INSTALL_STATE["progress"] = "Running installer..."
         # Pipe `yes y` into bash so any interactive prompt that survives the
-        # script chain (the ACCELAINSTALL binary inside the ACCELA tarball
-        # is the one known case — it asks "Do you want to proceed with the
-        # installation? [y/N]" and reads stdin) gets auto-confirmed. None
-        # of the bash scripts in the chain (enter-the-wired, accela,
-        # fix-deps, headcrab) use `read` themselves, and every pacman call
-        # is already --noconfirm, so the y's are absorbed only by
-        # ACCELAINSTALL. No destructive prompts exist in this chain that a
-        # blanket "y" would answer incorrectly.
+        # script chain (ACCELAINSTALL is the only known case) gets confirmed.
+        # None of the bash scripts use `read` themselves and pacman calls are
+        # --noconfirm, so the y's are absorbed only by ACCELAINSTALL.
         process = await asyncio.create_subprocess_shell(
             f"yes y | bash {main_script}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=tmp_dir,
+            env=clean_env(),
         )
 
         async def _read_output():
@@ -175,10 +332,6 @@ async def install_dependencies() -> dict:
                 INSTALL_STATE["status"] = "done"
                 INSTALL_STATE["progress"] = "Installation complete!"
             else:
-                # SLSsteam + ACCELA succeeded; only .NET failed. Don't fail
-                # the whole operation — the user can hit Install/Reinstall
-                # again to retry just the .NET step (the no-op short-circuit
-                # in ensure_dotnet_available skips re-installing what's there).
                 INSTALL_STATE["status"] = "done"
                 INSTALL_STATE["progress"] = (
                     "SLSsteam and ACCELA installed. .NET 9 install failed — "
@@ -191,6 +344,7 @@ async def install_dependencies() -> dict:
     except Exception as exc:
         INSTALL_STATE["status"] = "failed"
         INSTALL_STATE["error"] = str(exc)
+        logger.exception("LumaDeck: install_dependencies crashed: %s", exc)
     finally:
         if tmp_dir:
             import shutil
@@ -199,6 +353,7 @@ async def install_dependencies() -> dict:
             except Exception:
                 pass
 
+    logger.info("LumaDeck: install_dependencies finished, state=%s", INSTALL_STATE)
     return {"success": INSTALL_STATE["status"] == "done"}
 
 
@@ -209,16 +364,14 @@ def get_install_status() -> dict:
 def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
     """Flip `DisableCloud: yes` -> `DisableCloud: no` in SLSsteam's config.yaml.
 
-    headcrab.pages.dev gates CloudRedirect on this exact line (crconfigcheck
-    in the upstream script greps for `DisableCloud: no`), so we have to
-    flip it before invoking headcrab — the script doesn't do it itself.
+    headcrab gates CloudRedirect on this exact line (`crconfigcheck` greps
+    for `DisableCloud: no`), so we have to flip it before invoking headcrab —
+    the script doesn't do it itself.
 
     Returns (ok, message). ok=False only when the config is missing or the
-    DisableCloud line is absent entirely (= SLSsteam wasn't initialised
-    via enter-the-wired yet, which is the user's prerequisite to install).
+    DisableCloud line is absent entirely (= SLSsteam wasn't initialised via
+    enter-the-wired yet).
     """
-    import re
-
     if not os.path.isfile(config_path):
         return False, f"SLSsteam config not found at {config_path} — install dependencies first"
 
@@ -252,21 +405,15 @@ def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
 
 
 async def install_cloudredirect() -> dict:
-    """Run headcrab.pages.dev with DisableCloud flipped to `no`.
+    """Run the Game-Mode-safe variant of headcrab with DisableCloud: no.
 
-    headcrab installs CloudRedirect conditionally: the script greps the
-    SLSsteam config and only invokes its crinstall() when it finds
-    `DisableCloud: no`. We flip the line, then invoke the same shell
-    chain enter-the-wired uses, with `yes y` piped in defensively (same
-    rationale as install_dependencies — ACCELAINSTALL is the one known
-    interactive binary in the chain).
-
-    The script overwrites ~/.local/share/Steam/steam.sh with the cr-test
-    variant that includes LD_PRELOAD=cloud_redirect.so — lumalinux's
-    install.sh must be re-run separately to reapply its line.
+    Headcrab gates CR install on `grep "DisableCloud: no" config.yaml`. We
+    flip the line, download headcrab.sh, apply _HEADCRAB_PATCHES so the
+    install doesn't trip the gamescope-session crash detector, then run it.
     """
     global CR_INSTALL_STATE
     CR_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
+    logger.info("LumaDeck: install_cloudredirect() entered")
 
     tmp_dir = None
     try:
@@ -279,38 +426,34 @@ async def install_cloudredirect() -> dict:
             return {"success": False}
 
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_cr_")
-        script_path = os.path.join(tmp_dir, "headcrab")
-        CR_INSTALL_STATE["progress"] = "Downloading headcrab installer..."
-        dl = await asyncio.create_subprocess_exec(
-            "curl", "-fsSL", "-o", script_path, "https://headcrab.pages.dev",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        await dl.wait()
-        if dl.returncode != 0:
+        script_path = os.path.join(tmp_dir, "headcrab_patched.sh")
+        CR_INSTALL_STATE["progress"] = "Downloading + patching headcrab.sh..."
+        logger.info("LumaDeck: fetching headcrab.sh for CR")
+        if not await _download(_HEADCRAB_RAW_URL, script_path):
             CR_INSTALL_STATE["status"] = "failed"
-            CR_INSTALL_STATE["error"] = "Failed to download headcrab installer"
+            CR_INSTALL_STATE["error"] = "Failed to download headcrab.sh"
             return {"success": False}
-        os.chmod(script_path, 0o700)
 
         try:
-            with open(script_path, "r", encoding="utf-8", errors="replace") as f:
-                first_line = f.readline(256)
-            if not first_line.startswith("#"):
-                CR_INSTALL_STATE["status"] = "failed"
-                CR_INSTALL_STATE["error"] = "Downloaded file does not look like a shell script"
-                return {"success": False}
-        except Exception as read_exc:
+            with open(script_path, "r", encoding="utf-8") as f:
+                hc_content = f.read()
+            hc_content = _patch_headcrab_script(hc_content)
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(hc_content)
+            os.chmod(script_path, 0o700)
+            logger.info("LumaDeck: headcrab.sh patched OK (%d bytes)", len(hc_content))
+        except RuntimeError as exc:
             CR_INSTALL_STATE["status"] = "failed"
-            CR_INSTALL_STATE["error"] = f"Cannot read installer script: {read_exc}"
+            CR_INSTALL_STATE["error"] = str(exc)
             return {"success": False}
 
-        CR_INSTALL_STATE["progress"] = "Running installer (this will close Steam)..."
+        CR_INSTALL_STATE["progress"] = "Running installer..."
         process = await asyncio.create_subprocess_shell(
             f"yes y | bash {script_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=tmp_dir,
+            env=clean_env(),
         )
 
         async def _read_output():
@@ -333,6 +476,7 @@ async def install_cloudredirect() -> dict:
     except Exception as exc:
         CR_INSTALL_STATE["status"] = "failed"
         CR_INSTALL_STATE["error"] = str(exc)
+        logger.exception("LumaDeck: install_cloudredirect crashed: %s", exc)
     finally:
         if tmp_dir:
             import shutil
@@ -341,6 +485,7 @@ async def install_cloudredirect() -> dict:
             except Exception:
                 pass
 
+    logger.info("LumaDeck: install_cloudredirect finished, state=%s", CR_INSTALL_STATE)
     return {"success": CR_INSTALL_STATE["status"] == "done"}
 
 
@@ -359,27 +504,20 @@ async def install_lumalinux() -> dict:
     Also serves as the recovery path after a Headcrab Updater run: Headcrab
     regenerates steam.sh from scratch, wiping the lumalinux block, so
     re-invoking this is how the user gets back to a loaded state.
-
-    The user must restart Steam manually after this returns — we surface
-    that as a toast, not as an automatic action, because gamemode = killing
-    Steam = killing whatever the user is doing.
     """
     global LL_INSTALL_STATE
     LL_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
+    logger.info("LumaDeck: install_lumalinux() entered")
 
     tmp_dir = None
     try:
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_ll_")
         script_path = os.path.join(tmp_dir, "install.sh")
         LL_INSTALL_STATE["progress"] = "Downloading lumalinux installer..."
-        dl = await asyncio.create_subprocess_exec(
-            "curl", "-fsSL", "-o", script_path,
+        if not await _download(
             "https://raw.githubusercontent.com/jayool/lumalinux/main/install.sh",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        await dl.wait()
-        if dl.returncode != 0:
+            script_path,
+        ):
             LL_INSTALL_STATE["status"] = "failed"
             LL_INSTALL_STATE["error"] = "Failed to download lumalinux installer"
             return {"success": False}
@@ -405,6 +543,7 @@ async def install_lumalinux() -> dict:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=tmp_dir,
+            env=clean_env(),
         )
 
         async def _read_output():
@@ -430,6 +569,7 @@ async def install_lumalinux() -> dict:
     except Exception as exc:
         LL_INSTALL_STATE["status"] = "failed"
         LL_INSTALL_STATE["error"] = str(exc)
+        logger.exception("LumaDeck: install_lumalinux crashed: %s", exc)
     finally:
         if tmp_dir:
             import shutil
@@ -438,6 +578,7 @@ async def install_lumalinux() -> dict:
             except Exception:
                 pass
 
+    logger.info("LumaDeck: install_lumalinux finished, state=%s", LL_INSTALL_STATE)
     return {"success": LL_INSTALL_STATE["status"] == "done"}
 
 

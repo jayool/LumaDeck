@@ -122,11 +122,15 @@ export function Settings() {
     setConfirmInstallDeps(false);
     setInstalling(true);
     toast(t("installingDeps"), "", 2000);
-    await installDependencies();
+    const installResult = await installDependencies();
     const result = await checkDependencies();
     if (result.success) setDeps(result);
     setInstalling(false);
-    toast(t("toastDepsInstalled"));
+    if (installResult.success) {
+      toast(t("toastDepsInstalled"));
+    } else {
+      toast(t("toastError"), installResult.error || "", 6000);
+    }
   };
 
   const handleEnableCR = async () => {
