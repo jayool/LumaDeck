@@ -42,6 +42,7 @@ export function Settings() {
   const [installingCR, setInstallingCR] = useState(false);
   const [confirmInstallCR, setConfirmInstallCR] = useState(false);
   const [installingLL, setInstallingLL] = useState(false);
+  const [confirmInstallLL, setConfirmInstallLL] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [unknownHash, setUnknownHash] = useState(false);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
@@ -190,13 +191,18 @@ export function Settings() {
   };
 
   const handleInstallLumalinux = async () => {
-    // lumalinux/install.sh only patches steam.sh + drops the .so. It doesn't
-    // kill Steam by itself. We do trigger a clean `steam -shutdown` after
-    // success though, to mirror the deps/CR buttons: the user gets a "one
-    // tap → done" flow instead of having to remember to restart Steam
-    // separately to actually load lumalinux. `steam -shutdown` is the same
-    // IPC the Restart Steam button uses, and gamescope-session treats it
-    // as a clean exit (no recovery loop).
+    // Two-click confirm pattern (consistent with handleInstallDeps and
+    // handleEnableCR): first tap arms the confirm + a 5 s reset timer,
+    // second tap inside that window triggers the actual install. Same
+    // reason as the other two: after success this handler fires a
+    // controlled `steam -shutdown`, so the user gets a single
+    // intentional Steam restart instead of being surprised by one.
+    if (!confirmInstallLL) {
+      setConfirmInstallLL(true);
+      setTimeout(() => setConfirmInstallLL(false), 5000);
+      return;
+    }
+    setConfirmInstallLL(false);
     setInstallingLL(true);
     const result = await installLumalinux();
     const depsResult = await checkDependencies();
@@ -503,8 +509,13 @@ export function Settings() {
             layout="below"
             onClick={handleInstallLumalinux}
             disabled={installingLL}
+            description={confirmInstallLL ? <div style={{ textAlign: "center" }}>{t("installLumalinuxConfirmDesc")}</div> : undefined}
           >
-            {installingLL ? t("installingLL") : t("installLumalinux")}
+            {installingLL
+              ? t("installingLL")
+              : confirmInstallLL
+                ? t("installLumalinuxConfirm")
+                : t("installLumalinux")}
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
