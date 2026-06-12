@@ -60,9 +60,15 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 # of < 60 s each as a crash loop and triggers `short_session_recover` which
 # wipes ~/.local/share/Steam and drops the user to OOBE. Headcrab's `killall
 # steam` (in nuketheclient) and its `wheresteam -exitsteam` (in clientinstall
-# / clientdowngrade) each register as a sub-60s session. Replacing them with
-# either a clean `steam -shutdown` or a no-op keeps the counter at zero;
-# SLSsteam still loads when the user reboots Steam with the new steam.sh.
+# / clientdowngrade) each register as a sub-60s session.
+#
+# We no-op all of them. Steam stays alive for the full install (the work the
+# script does — file copies, steam.sh rewrite, flatpak install — is
+# independent of Steam being up). After install_dependencies() /
+# install_cloudredirect() returns success, the caller fires a single
+# controlled `steam -shutdown` so gamescope respawns Steam exactly once,
+# with the new steam.sh in place and all .so files already on disk. Race
+# between the script and gamescope is eliminated.
 #
 # If upstream changes the wording of these lines, the patch fails and the
 # user gets an explicit "headcrab format changed" error instead of a silent
@@ -70,7 +76,7 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 _HEADCRAB_PATCHES: tuple[tuple[str, str, str], ...] = (
     (
         r"killall steam \| true",
-        "steam -shutdown 2>/dev/null; sleep 3",
+        ": # LumaDeck: skip mid-install Steam kill (restart fires at end of install_*)",
         "nuketheclient",
     ),
     (

@@ -144,12 +144,13 @@ export function Settings() {
   };
 
   const handleInstallDeps = async () => {
-    // Two-click confirm pattern (same as the uninstall flow in
-    // GameDetail.tsx): first click flips a flag and arms a 5 s timeout to
-    // reset it, second click within that window triggers the actual
-    // install. Justified here because enter-the-wired → headcrab.sh runs
-    // `killall steam` unconditionally early in its flow, so pulling the
-    // trigger drops the user's gamemode session.
+    // Two-click confirm pattern (same as handleEnableCR / handleUninstall):
+    // first click flips a flag and arms a 5 s timeout to reset it, second
+    // click within that window triggers the actual install. The confirm is
+    // not because the install kills Steam mid-flight (we patch the killall
+    // out and only restart at the end), but because the install does a
+    // single controlled Steam restart at the very end — same one-tap flow
+    // as Install lumalinux.
     if (!confirmInstallDeps) {
       setConfirmInstallDeps(true);
       setTimeout(() => setConfirmInstallDeps(false), 5000);
@@ -164,15 +165,18 @@ export function Settings() {
     setInstalling(false);
     if (installResult.success) {
       toast(t("toastDepsInstalled"));
+      await restartSteam();
     } else {
       toast(t("toastError"), installResult.error || "", 6000);
     }
   };
 
   const handleEnableCR = async () => {
-    // Same two-click pattern as the deps install — headcrab.pages.dev's
-    // nuketheclient() calls `killall steam` unconditionally, so this also
-    // drops the user's gamemode session.
+    // Two-click confirm pattern. Install runs with Steam alive (we no-op
+    // the killall in _HEADCRAB_PATCHES) so the Flatpak download finishes
+    // cleanly. After success we fire one controlled `steam -shutdown` to
+    // let gamescope respawn Steam with the new steam.sh + CR LD_PRELOAD
+    // already in place.
     if (!confirmInstallCR) {
       setConfirmInstallCR(true);
       setTimeout(() => setConfirmInstallCR(false), 5000);
@@ -194,6 +198,7 @@ export function Settings() {
       } else {
         toast(t("crInstalled"));
       }
+      await restartSteam();
     } else {
       toast(t("toastError"), "", 4000);
     }
@@ -461,7 +466,7 @@ export function Settings() {
             layout="below"
             onClick={handleInstallDeps}
             disabled={installing || (headcrabCompat ? !headcrabCompat.compatible : false)}
-            description={confirmInstallDeps ? t("installDepsConfirmDesc") : undefined}
+            description={confirmInstallDeps ? <div style={{ textAlign: "center" }}>{t("installDepsConfirmDesc")}</div> : undefined}
           >
             {installing
               ? t("installing")
@@ -503,7 +508,7 @@ export function Settings() {
             layout="below"
             onClick={handleEnableCR}
             disabled={installingCR}
-            description={confirmInstallCR ? t("enableCRConfirmDesc") : undefined}
+            description={confirmInstallCR ? <div style={{ textAlign: "center" }}>{t("enableCRConfirmDesc")}</div> : undefined}
           >
             {installingCR
               ? t("installingCR")
