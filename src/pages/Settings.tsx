@@ -46,7 +46,7 @@ export function Settings() {
   const [unknownHash, setUnknownHash] = useState(false);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
-    target: number;
+    target: number | null;
     compatible: boolean;
   } | null>(null);
   const [lang, setLang] = useState(getLanguage());
@@ -452,7 +452,7 @@ export function Settings() {
             >
               {headcrabCompat.compatible
                 ? t("steamBuildOk", headcrabCompat.current_build ?? "?")
-                : t("steamBuildMismatch", headcrabCompat.current_build ?? "?", headcrabCompat.target)}
+                : t("steamBuildMismatch", headcrabCompat.current_build ?? "?", headcrabCompat.target ?? "?")}
             </div>
           </PanelSectionRow>
         )}
