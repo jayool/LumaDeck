@@ -26,11 +26,9 @@ Everything else (SLSsteam config management, Goldberg, SLScheevo achievements, c
 
    - **Install / Reinstall Dependencies** — runs [`enter-the-wired`](https://github.com/ciscosweater/enter-the-wired) in the background. Installs ACCELA, SLSsteam, the .NET 9 runtime, and patches Steam.
    - **Enable CloudRedirect** *(optional)* — flips `DisableCloud: yes` → `no` in SLSsteam's config and runs [`headcrab.pages.dev`](https://headcrab.pages.dev), which installs the CloudRedirect Flatpak + `cloud_redirect.so`.
-   - **Install / Reapply lumalinux** — runs [lumalinux's `install.sh`](https://github.com/jayool/lumalinux/blob/main/install.sh): downloads `liblumalinux.so`, deploys it, and patches Headcrab's `~/.local/share/Steam/steam.sh` with the `LD_PRELOAD` block. The `.so` loads on the next restart.
+   - **Install / Reapply lumalinux** — runs [lumalinux's `install.sh`](https://github.com/jayool/lumalinux/blob/main/install.sh): downloads `liblumalinux.so`, deploys it alongside `tools/steamidra_lite.py` + `tools/vdf_inject_keys.py`, and patches Headcrab's `~/.local/share/Steam/steam.sh` with the `LD_PRELOAD` block. The `.so` loads on the next restart.
 
-4. **Restart Steam.**
-
-5. **(Optional) Sign into your cloud provider.**
+4. **(Optional) Sign into your cloud provider.**
 
    If you enabled CloudRedirect in step 3, the *library* is in place but no provider is signed in. The CloudRedirect Flatpak's sign-in opens a real browser, which gamemode can't drive — switch to desktop mode once, open the **CloudRedirect** app from the application menu, and sign into Google Drive / OneDrive / Dropbox. The Dependencies panel will then show *CloudRedirect provider: Configured* once tokens exist at `~/.config/CloudRedirect/tokens_<provider>.json`.
 
