@@ -27,6 +27,9 @@ export const getInjectionStatus = async () =>
 export const checkSlssteamHashStatus = async () =>
   parseResult(await call<[], string>("check_slssteam_hash_status"));
 
+export const checkHeadcrabCompat = async () =>
+  parseResult(await call<[], string>("check_headcrab_compat"));
+
 export const repairSlssteamHeadcrab = async () =>
   parseResult(await call<[], string>("repair_slssteam_headcrab"));
 

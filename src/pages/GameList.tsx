@@ -23,7 +23,6 @@ import {
   getInjectionStatus,
   restartSteam,
   checkSlssteamHashStatus,
-  repairSlssteamHeadcrab,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { ROUTE_GAME_DETAIL, ROUTE_SETTINGS, ROUTE_DOWNLOADS } from "../routes";
@@ -470,16 +469,8 @@ export function GameList() {
 
   const handleRestartSteam = async () => {
     setRestartingStream(true);
-    if (unknownHash) {
-      const result = await repairSlssteamHeadcrab();
-      if (result.success) {
-        setUnknownHash(false);
-        setInjectionWarning(false);
-      }
-    } else {
-      await restartSteam();
-      setInjectionWarning(false);
-    }
+    await restartSteam();
+    setInjectionWarning(false);
     setRestartingStream(false);
   };
 
@@ -497,28 +488,32 @@ export function GameList() {
             <div style={{ fontWeight: 600, color: "#ffaa33", fontSize: "13px", marginBottom: "4px" }}>
               {unknownHash ? t("slssteamUnknownHash") : t("slssteamInjectionMissing")}
             </div>
-            <div style={{ fontSize: "12px", color: "#aaa", marginBottom: "10px" }}>
-              {unknownHash ? t("repairingHeadcrabBody") : t("slssteamInjectionRepairedBody")}
+            <div style={{
+              fontSize: "12px",
+              color: "#aaa",
+              marginBottom: unknownHash ? "0" : "10px",
+            }}>
+              {unknownHash ? t("slssteamUnknownHashBody") : t("slssteamInjectionRepairedBody")}
             </div>
-            <button
-              onClick={handleRestartSteam}
-              disabled={restartingStream}
-              style={{
-                background: restartingStream ? "#555" : "#ff8c00",
-                color: "#fff",
-                border: "none",
-                borderRadius: "4px",
-                padding: "6px 14px",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: restartingStream ? "default" : "pointer",
-                width: "100%",
-              }}
-            >
-              {restartingStream
-                ? (unknownHash ? t("repairingHeadcrab") : t("restarting"))
-                : (unknownHash ? t("repairSlssteamHeadcrab") : t("restartSteam"))}
-            </button>
+            {!unknownHash && (
+              <button
+                onClick={handleRestartSteam}
+                disabled={restartingStream}
+                style={{
+                  background: restartingStream ? "#555" : "#ff8c00",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "6px 14px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: restartingStream ? "default" : "pointer",
+                  width: "100%",
+                }}
+              >
+                {restartingStream ? t("restarting") : t("restartSteam")}
+              </button>
+            )}
           </div>
         </PanelSection>
       )}

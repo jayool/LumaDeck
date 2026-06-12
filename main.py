@@ -138,6 +138,10 @@ class Plugin:
         from slssteam_ops import check_slssteam_hash_status
         return _j(check_slssteam_hash_status())
 
+    async def check_headcrab_compat(self) -> str:
+        from headcrab_compat import check_headcrab_compat
+        return _j(check_headcrab_compat())
+
     async def repair_slssteam_headcrab(self) -> str:
         from slssteam_ops import repair_slssteam_headcrab
         return _j(await repair_slssteam_headcrab())

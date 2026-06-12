@@ -25,6 +25,7 @@ import {
   getSteamLibraries,
   restartSteam,
   checkSlssteamHashStatus,
+  checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
@@ -43,6 +44,11 @@ export function Settings() {
   const [installingLL, setInstallingLL] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [unknownHash, setUnknownHash] = useState(false);
+  const [headcrabCompat, setHeadcrabCompat] = useState<{
+    current_build: number | null;
+    target: number;
+    compatible: boolean;
+  } | null>(null);
   const [lang, setLang] = useState(getLanguage());
   const [libraries, setLibraries] = useState<any[]>([]);
 
@@ -79,6 +85,15 @@ export function Settings() {
 
       const hashResult = await checkSlssteamHashStatus();
       if (!cancelled && hashResult.success) setUnknownHash(hashResult.unknown_hash);
+
+      const compatResult = await checkHeadcrabCompat();
+      if (!cancelled && compatResult.success) {
+        setHeadcrabCompat({
+          current_build: compatResult.current_build,
+          target: compatResult.target,
+          compatible: compatResult.compatible,
+        });
+      }
 
       const libResult = await getSteamLibraries();
       if (!cancelled && libResult.success && libResult.libraries) setLibraries(libResult.libraries);
@@ -308,11 +323,39 @@ export function Settings() {
               <ButtonItem
                 layout="below"
                 onClick={handleRepairHeadcrab}
-                disabled={repairing}
+                disabled={repairing || (headcrabCompat ? !headcrabCompat.compatible : false)}
               >
                 {repairing ? t("repairingHeadcrab") : t("repairSlssteamHeadcrab")}
               </ButtonItem>
             </PanelSectionRow>
+            {headcrabCompat && !headcrabCompat.compatible && (
+              <PanelSectionRow>
+                <div style={{
+                  fontSize: "11px",
+                  color: "#aaa",
+                  lineHeight: "1.4",
+                  padding: "4px 0",
+                }}>
+                  <div style={{ color: "#ff8c00", fontWeight: 600, marginBottom: "4px" }}>
+                    ⚠ {t("headcrabGameModeBlockTitle")}
+                  </div>
+                  <div style={{ marginBottom: "6px" }}>
+                    {t("headcrabGameModeBlockBody")}
+                  </div>
+                  <div style={{
+                    fontFamily: "monospace",
+                    fontSize: "10px",
+                    color: "#ccc",
+                    background: "rgba(0,0,0,0.3)",
+                    padding: "4px 6px",
+                    borderRadius: "3px",
+                    wordBreak: "break-all",
+                  }}>
+                    {t("headcrabGameModeBlockCommand")}
+                  </div>
+                </div>
+              </PanelSectionRow>
+            )}
           </>
         )}
       </PanelSection>
@@ -399,11 +442,25 @@ export function Settings() {
             )}
           </>
         )}
+        {headcrabCompat && (
+          <PanelSectionRow>
+            <div
+              style={{
+                fontSize: "12px",
+                color: headcrabCompat.compatible ? "#00cc00" : "#ff8c00",
+              }}
+            >
+              {headcrabCompat.compatible
+                ? t("steamBuildOk", headcrabCompat.current_build ?? "?")
+                : t("steamBuildMismatch", headcrabCompat.current_build ?? "?", headcrabCompat.target)}
+            </div>
+          </PanelSectionRow>
+        )}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
             onClick={handleInstallDeps}
-            disabled={installing}
+            disabled={installing || (headcrabCompat ? !headcrabCompat.compatible : false)}
             description={confirmInstallDeps ? t("installDepsConfirmDesc") : undefined}
           >
             {installing
@@ -413,6 +470,34 @@ export function Settings() {
                 : t("installReinstallDeps")}
           </ButtonItem>
         </PanelSectionRow>
+        {headcrabCompat && !headcrabCompat.compatible && (
+          <PanelSectionRow>
+            <div style={{
+              fontSize: "11px",
+              color: "#aaa",
+              lineHeight: "1.4",
+              padding: "4px 0",
+            }}>
+              <div style={{ color: "#ff8c00", fontWeight: 600, marginBottom: "4px" }}>
+                ⚠ {t("headcrabGameModeBlockTitle")}
+              </div>
+              <div style={{ marginBottom: "6px" }}>
+                {t("headcrabGameModeBlockBody")}
+              </div>
+              <div style={{
+                fontFamily: "monospace",
+                fontSize: "10px",
+                color: "#ccc",
+                background: "rgba(0,0,0,0.3)",
+                padding: "4px 6px",
+                borderRadius: "3px",
+                wordBreak: "break-all",
+              }}>
+                {t("headcrabGameModeBlockCommand")}
+              </div>
+            </div>
+          </PanelSectionRow>
+        )}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
