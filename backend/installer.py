@@ -56,19 +56,32 @@ LL_INSTALL_STATE = {
 _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh"
 
 # String replacements applied to the downloaded headcrab.sh BEFORE we run it.
-# Reason: in SteamOS Game Mode, gamescope-session-plus counts 5 Steam exits
-# of < 60 s each as a crash loop and triggers `short_session_recover` which
-# wipes ~/.local/share/Steam and drops the user to OOBE. Headcrab's `killall
-# steam` (in nuketheclient) and its `wheresteam -exitsteam` (in clientinstall
-# / clientdowngrade) each register as a sub-60s session.
 #
-# We no-op all of them. Steam stays alive for the full install (the work the
-# script does — file copies, steam.sh rewrite, flatpak install — is
-# independent of Steam being up). After install_dependencies() /
-# install_cloudredirect() returns success, the caller fires a single
-# controlled `steam -shutdown` so gamescope respawns Steam exactly once,
-# with the new steam.sh in place and all .so files already on disk. Race
-# between the script and gamescope is eliminated.
+# Two classes of patch:
+#
+#   1) no-op the Steam-killing lines (killall steam | true,
+#      wheresteam -exitsteam variants) — in SteamOS Game Mode,
+#      gamescope-session-plus counts 5 Steam exits of < 60 s each as a
+#      crash loop and triggers `short_session_recover` which wipes
+#      ~/.local/share/Steam and drops the user to OOBE. Even outside that
+#      race, the kill mid-install is what forced our handlers' `restartSteam`
+#      to fire prematurely. We no-op all kill paths. Steam stays alive for
+#      the full install; the handler fires one controlled `steam -shutdown`
+#      after install_*() returns success.
+#
+#   2) atomic .so copies (atomic-so-copy) — upstream's wheresteamdir() uses
+#      `cp -f $InstallDir/<file>.so $...SLSsteamInstallDir/`, which truncates
+#      the destination file in place. On re-installs (Enable CR after Install
+#      Dependencies, or any later Repair) Steam is already running with those
+#      .so files mmap'd, and the in-place rewrite leaves the kernel serving
+#      pages from a file whose on-disk content has been swapped underneath —
+#      Steam crashes / its UI subsystem (CEF) disconnects mid-install, the
+#      handler's await never resolves, and the user sees "CloudRedirect: not
+#      found" because no restartSteam ever fired. Replacing `cp -f X DST/` with
+#      `cp -f X DST/X.lumadeck-new && mv -f DST/X.lumadeck-new DST/X` keeps
+#      the running Steam pinned to the old inode (it stays valid until Steam
+#      exits) and atomically swaps the path to a fresh inode for the next
+#      Steam launch.
 #
 # If upstream changes the wording of these lines, the patch fails and the
 # user gets an explicit "headcrab format changed" error instead of a silent
@@ -93,6 +106,11 @@ _HEADCRAB_PATCHES: tuple[tuple[str, str, str], ...] = (
         r"wheresteam -clearbeta -exitsteam",
         ": # LumaDeck: skipped short-session relaunch",
         "exitsteam-C",
+    ),
+    (
+        r"cp -f \$InstallDir/(\S+\.so) (\S+SLSsteamInstallDir)/",
+        r"cp -f $InstallDir/\1 \2/\1.lumadeck-new && mv -f \2/\1.lumadeck-new \2/\1",
+        "atomic-so-copy",
     ),
 )
 
