@@ -140,7 +140,7 @@ class Plugin:
 
     async def check_headcrab_compat(self) -> str:
         from headcrab_compat import check_headcrab_compat
-        return _j(check_headcrab_compat())
+        return _j(await check_headcrab_compat())
 
     async def repair_slssteam_headcrab(self) -> str:
         from slssteam_ops import repair_slssteam_headcrab
