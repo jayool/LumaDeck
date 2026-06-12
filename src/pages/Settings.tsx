@@ -158,16 +158,12 @@ export function Settings() {
     }
     setConfirmInstallDeps(false);
     setInstalling(true);
-    toast(t("installingDeps"), "", 2000);
     const installResult = await installDependencies();
     const result = await checkDependencies();
     if (result.success) setDeps(result);
     setInstalling(false);
     if (installResult.success) {
-      toast(t("toastDepsInstalled"));
       await restartSteam();
-    } else {
-      toast(t("toastError"), installResult.error || "", 6000);
     }
   };
 
@@ -184,23 +180,12 @@ export function Settings() {
     }
     setConfirmInstallCR(false);
     setInstallingCR(true);
-    toast(t("installingCR"), "", 2000);
     const result = await installCloudredirect();
     const depsResult = await checkDependencies();
     if (depsResult.success) setDeps(depsResult);
     setInstallingCR(false);
     if (result.success) {
-      // Provider sign-in is GUI-only — surface the desktop-mode step.
-      // If the user already had tokens from a previous setup, suppress
-      // the nudge (re-running the install shouldn't ask them again).
-      if (!depsResult.cloudredirectAuthed) {
-        toast(t("crInstalled"), t("crInstalledBody"), 8000);
-      } else {
-        toast(t("crInstalled"));
-      }
       await restartSteam();
-    } else {
-      toast(t("toastError"), "", 4000);
     }
   };
 
@@ -213,16 +198,12 @@ export function Settings() {
     // IPC the Restart Steam button uses, and gamescope-session treats it
     // as a clean exit (no recovery loop).
     setInstallingLL(true);
-    toast(t("installingLL"), "", 2000);
     const result = await installLumalinux();
     const depsResult = await checkDependencies();
     if (depsResult.success) setDeps(depsResult);
     setInstallingLL(false);
     if (result.success) {
-      toast(t("llInstalled"), t("llInstalledBody"), 4000);
       await restartSteam();
-    } else {
-      toast(t("toastError"), "", 4000);
     }
   };
 
