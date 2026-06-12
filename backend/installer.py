@@ -57,7 +57,7 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 
 # String replacements applied to the downloaded headcrab.sh BEFORE we run it.
 #
-# Two classes of patch:
+# Three classes of patch:
 #
 #   1) no-op the Steam-killing lines (killall steam | true,
 #      wheresteam -exitsteam variants) — in SteamOS Game Mode,
@@ -82,6 +82,17 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 #      the running Steam pinned to the old inode (it stays valid until Steam
 #      exits) and atomically swaps the path to a fresh inode for the next
 #      Steam launch.
+#
+#   3) atomic CR wget (atomic-cr-wget) — exactly the same bug class as (2)
+#      but for cloud_redirect.so, which upstream downloads via
+#      `wget -O cloud_redirect.so $CloudRedirectLib`. `wget -O` is also an
+#      in-place overwrite: open(O_TRUNC) + write. Same corruption window for
+#      a running Steam that has cloud_redirect.so mmap'd. Manifests as
+#      latent memory corruption that fires at unrelated code paths later
+#      (mz_zip_end → getpid PLT SEGV; libcrypto OPENSSL_cleanup abort; C++
+#      exception unwind abort during shutdown). Different crash signatures,
+#      same root cause. Fix mirrors (2): download to .lumadeck-new and only
+#      mv on success.
 #
 # If upstream changes the wording of these lines, the patch fails and the
 # user gets an explicit "headcrab format changed" error instead of a silent
@@ -111,6 +122,11 @@ _HEADCRAB_PATCHES: tuple[tuple[str, str, str], ...] = (
         r"cp -f \$InstallDir/(\S+\.so) (\S+SLSsteamInstallDir)/",
         r"cp -f $InstallDir/\1 \2/\1.lumadeck-new && mv -f \2/\1.lumadeck-new \2/\1",
         "atomic-so-copy",
+    ),
+    (
+        r'wget -O cloud_redirect\.so "\$CloudRedirectLib" &> /dev/null',
+        r'wget -O cloud_redirect.so.lumadeck-new "$CloudRedirectLib" &> /dev/null && mv -f cloud_redirect.so.lumadeck-new cloud_redirect.so',
+        "atomic-cr-wget",
     ),
 )
 
