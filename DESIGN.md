@@ -121,6 +121,9 @@ Backend scans:
 
 Per-game state: `installed`, `manifest available`, `pending`.
 
+The library-refresh entry point (`get_installed_lua_scripts`) doubles as the
+ACCELA marker self-heal trigger — see §3 (`_ensure_accela_mark`).
+
 ### 2. Manifest Auto-Discovery
 
 ```
@@ -157,14 +160,33 @@ plugin._download_zip_for_app(appid)
             → writes a clean .acf stub
             → copies the .lua to stplug-in/
             → drops ACCELA-compatible markers (.DepotDownloader dir +
-              <accela>/depots/<appid>.depot tracker)
+              <accela>/depots/<appid>.depot tracker) — BEST-EFFORT here:
+              at this point Steam has not downloaded the game yet, so the
+              in-game .DepotDownloader marker can't take effect (ACCELA only
+              lists folders that have real content). The authoritative
+              marking happens later, on library refresh (see below).
   → optional: add_game_dlcs (Steam Web API)
   → optional: set_compat_tool_for_app (force Proton if no Linux depot)
   → _restart_steam_delayed(delay=5)
         Steam shuts down cleanly; SteamOS Game Mode relaunches it.
+        Runs `steam -shutdown` AS THE deck USER (runuser -u deck, clean env,
+        XDG_RUNTIME_DIR=/run/user/1000): the plugin runs as root, and
+        `steam -shutdown` talks to the client over a per-user IPC — invoked
+        as root it never reaches the deck-user Steam and silently no-ops.
         On relaunch the lumalinux hooks read the fresh keys.txt and
         Steam's native download flow takes over.
 ```
+
+**ACCELA marker self-heal (post-download).** Because the install flow runs
+before Steam downloads the game, the in-game `.DepotDownloader` marker can't
+be placed authoritatively at install time. Instead, `get_installed_lua_scripts`
+(library refresh) calls `_ensure_accela_mark` for each installed game: if the
+game folder now has real content but no `.DepotDownloader`, it re-runs
+`steamidra_lite --accela-mark <appid> --steam-root <path>` (HOME=/home/deck so
+the marker + the `<accela>/depots/<appid>.depot` tracker land in the deck
+user's tree). Idempotent and non-blocking. Requires the deployed lumalinux
+`steamidra_lite` to support `--accela-mark` (lumalinux v0.11.0+).
+
 
 The legacy DDL pipeline (`_run_depot_download`,
 `_extract_ddm_from_appimage`, `_create_or_update_appmanifest`, …) is
@@ -332,3 +354,5 @@ the downloads-pipeline pass.)
 | 13  | Bearer header for Hubcap API key, never the URL                           | Keep `?api_key=` in URL                            | Prevents API key leaks in log files. Backports upstream DeckTools commit d557f2a |
 | 14  | Frontend routes moved from `/decktools/*` to `/lumadeck/*`                | Keep `/decktools/*`                                | Avoids router-namespace collision if both forks are installed side by side |
 | 15  | Identity strings + i18n keys renamed (DeckTools → LumaDeck, Morrenus → Hubcap, addedViaDeckTools → addedViaLumaDeck) | Leave legacy names                                 | Eliminates confusion in QAM, logs, localStorage key, badges; matches the upstream API rename |
+| 16  | `steam -shutdown` runs as the `deck` user (`runuser`), not root            | Call `steam -shutdown` directly (the old way)      | The plugin runs as root; `steam -shutdown` uses a per-user IPC, so as root it never reached the deck-user Steam and the restart silently no-op'd (v0.3.0 fix) |
+| 17  | ACCELA `.DepotDownloader` marker created via self-heal on library refresh, not at install time | Mark at install time only                          | At install time Steam hasn't downloaded the game yet, so an in-game marker can't take effect; refresh runs `steamidra_lite --accela-mark` once content exists (v0.3.0) |
