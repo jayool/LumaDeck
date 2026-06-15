@@ -2505,9 +2505,11 @@ def _ensure_accela_mark(appid: int, base_path: str) -> None:
     ~/.local/share/ACCELA/depots tracker land in the deck user's tree (the
     plugin runs as root, where ~ would otherwise be /root).
 
-    Requires the deployed lumalinux steamidra_lite to support --accela-mark
-    (v0.11.0+). Against an older script the spawn just no-ops (argparse error to
-    a discarded stderr)."""
+    Requires lumalinux v0.13.0+. --accela-mark itself landed in v0.11.0, but
+    the install flow this self-heal feeds off (Steam actually downloading the
+    game) only works once the package-0 finder is on by default, which
+    happened in v0.13.0. Against an older script the spawn just no-ops
+    (argparse error to a discarded stderr)."""
     try:
         import subprocess
         from subprocess_env import clean_env

@@ -184,8 +184,11 @@ be placed authoritatively at install time. Instead, `get_installed_lua_scripts`
 game folder now has real content but no `.DepotDownloader`, it re-runs
 `steamidra_lite --accela-mark <appid> --steam-root <path>` (HOME=/home/deck so
 the marker + the `<accela>/depots/<appid>.depot` tracker land in the deck
-user's tree). Idempotent and non-blocking. Requires the deployed lumalinux
-`steamidra_lite` to support `--accela-mark` (lumalinux v0.11.0+).
+user's tree). Idempotent and non-blocking. Requires lumalinux **v0.13.0+**:
+`--accela-mark` itself landed in v0.11.0, but the install flow this self-heal
+relies on (Steam actually downloading the game) only works once the package-0
+finder is on by default, which happened in v0.13.0. Against an older
+`steamidra_lite` the spawn no-ops (argparse error to a discarded stderr).
 
 
 The legacy DDL pipeline (`_run_depot_download`,
