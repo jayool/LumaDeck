@@ -40,6 +40,11 @@ except ImportError:
 DOWNLOAD_STATE: Dict[int, Dict[str, Any]] = {}
 DOWNLOAD_TASKS: Dict[int, asyncio.Task] = {}
 
+# Fire-and-forget background tasks (e.g. the delayed Steam restart). Keep a
+# strong reference so the event loop doesn't garbage-collect them mid-flight —
+# asyncio only holds a weak reference to tasks created via create_task().
+_BACKGROUND_TASKS: set = set()
+
 # Cache for app names
 APP_NAME_CACHE: Dict[int, str] = {}
 
@@ -1746,14 +1751,25 @@ async def _run_depot_download(appid: int, depots: list[dict], install_dir: str) 
 
 
 async def _restart_steam_delayed(delay: int = 5) -> None:
-    """Restart Steam after a delay. On Steam Deck Game Mode, Steam auto-restarts.
-    Also restarts plugin_loader afterwards so Decky comes back cleanly."""
+    """Ask Steam to shut down after a delay; on Steam Deck Game Mode the session
+    manager then auto-relaunches it, so SLSsteam/lumalinux read the fresh config
+    on the new start.
+
+    MUST run as the `deck` user. The Decky plugin runs as root, but Steam runs as
+    `deck`, and `steam -shutdown` talks to the running client over a per-user IPC
+    tied to that user's HOME / XDG_RUNTIME_DIR. Invoked as root it never reaches
+    the deck-user Steam, so the shutdown silently no-ops (this is why the restart
+    was never happening). We drop to `deck` via runuser, with a clean env (no
+    PyInstaller LD_LIBRARY_PATH), the deck user's runtime dir, and the full
+    /usr/bin/steam path."""
     await asyncio.sleep(delay)
     try:
         import subprocess
-        logger.info("LumaDeck: Restarting Steam...")
+        from subprocess_env import clean_env
+        logger.info("LumaDeck: Restarting Steam (steam -shutdown as deck)...")
         subprocess.Popen(
-            ["steam", "-shutdown"],
+            ["runuser", "-u", "deck", "--", "/usr/bin/steam", "-shutdown"],
+            env=clean_env(HOME="/home/deck", XDG_RUNTIME_DIR="/run/user/1000"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -2330,7 +2346,9 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                         "status": "restarting_steam",
                         "message": "Restarting Steam to start the download…",
                     })
-                    asyncio.create_task(_restart_steam_delayed(delay=5))
+                    _t = asyncio.create_task(_restart_steam_delayed(delay=5))
+                    _BACKGROUND_TASKS.add(_t)
+                    _t.add_done_callback(_BACKGROUND_TASKS.discard)
 
                     _set_download_state(appid, {
                         "status": "done", "success": True, "api": name,
@@ -2456,6 +2474,72 @@ def delete_luatools_for_app(appid: int) -> dict:
     return {"success": True, "deleted": deleted, "count": len(deleted)}
 
 
+def _dir_has_real_content(game_dir: str) -> bool:
+    """True if the game folder has any entry that isn't an ACCELA marker / OS
+    metadata / dotfile — i.e. Steam has actually finished downloading the game.
+    Mirrors ASSella game_manager._has_game_content."""
+    ignore = {".accela", ".depotdownloader", "desktop.ini", "thumbs.db"}
+    try:
+        for entry in os.scandir(game_dir):
+            name = entry.name
+            if name.lower() in ignore or name.startswith("."):
+                continue
+            return True
+    except OSError:
+        return False
+    return False
+
+
+def _ensure_accela_mark(appid: int, base_path: str) -> None:
+    """Best-effort: (re)create the ACCELA marker for a game that's fully
+    installed but not yet marked, by running `steamidra_lite --accela-mark`.
+
+    Why here (on library refresh): the download flow sets up Steam's config
+    BEFORE Steam downloads the game, so at that point the game folder is empty
+    and the in-game `.DepotDownloader` marker can't take effect (ACCELA only
+    lists folders with real content). Doing it on refresh means it fires once
+    the game has actually been installed. Idempotent, non-blocking, and a no-op
+    unless a marker is genuinely missing on a downloaded game.
+
+    Passes --steam-root and HOME=/home/deck explicitly so the marker and the
+    ~/.local/share/ACCELA/depots tracker land in the deck user's tree (the
+    plugin runs as root, where ~ would otherwise be /root).
+
+    Requires the deployed lumalinux steamidra_lite to support --accela-mark
+    (v0.11.0+). Against an older script the spawn just no-ops (argparse error to
+    a discarded stderr)."""
+    try:
+        import subprocess
+        from subprocess_env import clean_env
+
+        acf = os.path.join(base_path, "steamapps", f"appmanifest_{appid}.acf")
+        if not os.path.exists(acf):
+            return
+        with open(acf, "r", encoding="utf-8", errors="ignore") as fh:
+            m = re.search(r'"installdir"\s+"([^"]+)"', fh.read())
+        if not m:
+            return
+        installdir = m.group(1)
+        game_dir = os.path.join(base_path, "steamapps", "common", installdir)
+        if os.path.exists(os.path.join(game_dir, ".DepotDownloader")):
+            return  # already marked, nothing to do
+        if not _dir_has_real_content(game_dir):
+            return  # Steam hasn't finished downloading yet
+        script = _find_steamidra_lite_script()
+        python = _find_lumalinux_venv_python()
+        if not script or not python:
+            return
+        subprocess.Popen(
+            [python, script, "--accela-mark", str(appid), "--steam-root", base_path],
+            env=clean_env(HOME="/home/deck"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info(f"LumaDeck: self-heal ACCELA mark for {appid} (installdir='{installdir}')")
+    except Exception as exc:
+        logger.debug(f"LumaDeck: _ensure_accela_mark({appid}) skipped: {exc}")
+
+
 def get_installed_lua_scripts() -> dict:
     """Get list of all installed Lua scripts from stplug-in directory."""
     try:
@@ -2504,6 +2588,14 @@ def get_installed_lua_scripts() -> dict:
                     continue
                 except Exception:
                     continue
+
+        # Best-effort self-heal: ensure ACCELA markers for games that are fully
+        # installed. The download flow can't do this (Steam downloads the game
+        # AFTER our setup runs), so we do it here, on library refresh. Idempotent
+        # and non-blocking — only spawns steamidra_lite when a marker is missing.
+        for s in installed_scripts:
+            if s.get("hasGameFiles"):
+                _ensure_accela_mark(int(s["appid"]), base_path)
 
         installed_scripts.sort(key=lambda x: x["appid"])
         return {"success": True, "scripts": installed_scripts}
