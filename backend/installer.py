@@ -15,7 +15,6 @@ from paths import (
     find_lumalinux_root,
     check_lumalinux_installed,
     check_lumalinux_active,
-    read_lumalinux_status,
     find_cloudredirect_root,
     check_cloudredirect_installed,
     check_cloudredirect_active,
@@ -223,11 +222,10 @@ def check_dependencies() -> dict:
         "lumalinux": check_lumalinux_installed(),
         "lumalinuxPath": find_lumalinux_root(),
         "lumalinuxActive": check_lumalinux_active(),
-        # Per-session health snapshot from lumalinux >=0.13.4. None when the file
-        # isn't there (older build, or Steam never ran this session, or the
-        # process that wrote it has exited). Used by the Settings panel to show
-        # the loaded version + per-hook outcome.
-        "lumalinuxStatus": read_lumalinux_status(),
+        # Per-session health resolved into a single state — fetched separately
+        # via get_lumalinux_health() so the UI consumes the same shape as
+        # SLSsteam health (symmetric). Used by Settings → Dependencies and the
+        # main page HealthBanner.
         "cloudredirect": check_cloudredirect_installed(),
         "cloudredirectPath": find_cloudredirect_root(),
         "cloudredirectActive": check_cloudredirect_active(),

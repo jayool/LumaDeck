@@ -24,6 +24,7 @@ import {
   getSteamLibraries,
   restartSteam,
   getSlssteamHealth,
+  getLumalinuxHealth,
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
@@ -48,6 +49,12 @@ export function Settings() {
     cause: string | null;
     action: string | null;
   } | null>(null);
+  const [lumalinuxHealth, setLumalinuxHealth] = useState<{
+    state: string;
+    cause: string | null;
+    version: string | null;
+    action: string | null;
+  } | null>(null);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
     target: number | null;
@@ -66,8 +73,9 @@ export function Settings() {
       if (cancelled) return;
       const depsResult = await checkDependencies();
       if (!cancelled && depsResult.success) setDeps(depsResult);
-      const healthResult = await getSlssteamHealth();
-      if (!cancelled && healthResult.state) setSlssteamHealth(healthResult);
+      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+      if (!cancelled && sls.state) setSlssteamHealth(sls);
+      if (!cancelled && ll.state)  setLumalinuxHealth(ll);
     };
 
     const load = async () => {
@@ -89,8 +97,9 @@ export function Settings() {
       const playResult = await getSlsPlayStatus();
       if (!cancelled && playResult.success) setPlayNotOwned(playResult.enabled);
 
-      const healthResult = await getSlssteamHealth();
-      if (!cancelled && healthResult.state) setSlssteamHealth(healthResult);
+      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+      if (!cancelled && sls.state) setSlssteamHealth(sls);
+      if (!cancelled && ll.state)  setLumalinuxHealth(ll);
 
       const compatResult = await checkHeadcrabCompat();
       if (!cancelled && compatResult.success) {
@@ -229,8 +238,9 @@ export function Settings() {
     const result = await repairSlssteamHeadcrab();
     setRepairing(false);
     if (result.success) {
-      const healthResult = await getSlssteamHealth();
-      if (healthResult.state) setSlssteamHealth(healthResult);
+      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+      if (sls.state) setSlssteamHealth(sls);
+      if (ll.state)  setLumalinuxHealth(ll);
       toast(t("headcrabRepaired"), t("headcrabRepairedBody"), 6000);
     } else {
       toast(t("toastError"), result.error || `step: ${result.step}`, 6000);
@@ -416,27 +426,26 @@ export function Settings() {
                   : t("notFound")}
               </div>
             </PanelSectionRow>
-            {deps.lumalinux && deps.lumalinuxStatus && (() => {
-              // Per-session health from status.json. Only rendered when the file
-              // exists — i.e. a live Steam wrote it this session. If lumalinux
-              // is on disk but the file is missing (Steam not running, or never
-              // restarted after install), the parent "installed" dot is enough.
-              const st = deps.lumalinuxStatus;
-              const hooks = st.hooks || {};
-              const failed = (Object.entries(hooks) as [string, string][])
-                .filter(([, v]) => v === "failed")
-                .map(([k]) => k);
-              const allOk = failed.length === 0;
+            {deps.lumalinux && lumalinuxHealth && (() => {
+              const h = lumalinuxHealth;
+              if (h.state === "not_installed") return null;
+              const ver = h.version || "?";
+              let line: string | null = null;
+              switch (h.state) {
+                case "healthy":      line = t("llHealthAllOk", ver); break;
+                case "hooks_failed": line = t("llHealthDegraded", ver, h.cause || "?"); break;
+                case "hash_blocked": line = t("llHealthHashBlocked", ver); break;
+                case "not_active":   line = t("llHealthNotActive"); break;
+              }
+              if (!line) return null;
               return (
                 <PanelSectionRow>
                   <div style={{
                     fontSize: "11px",
-                    color: allOk ? "#00cc00" : "#ff8c00",
+                    color: h.state === "healthy" ? "#00cc00" : "#ff8c00",
                     paddingLeft: "8px",
                   }}>
-                    {allOk
-                      ? t("llHealthAllOk", st.version || "?")
-                      : t("llHealthDegraded", st.version || "?", failed.join(", "))}
+                    {line}
                   </div>
                 </PanelSectionRow>
               );

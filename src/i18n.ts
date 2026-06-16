@@ -188,12 +188,27 @@ const strings: Record<Lang, Record<string, string>> = {
     slssHealthInjectionMissing: "Installed — injection missing in steam.sh",
     slssHealthBrokenPatterns: "Loaded but inactive — patterns failed (Steam update?)",
     slssHealthBrokenHash: "Loaded but inactive — unknown hash (SafeMode)",
-    // SLSsteam QAM banner (main page)
+    // SLSsteam banner row (inside HealthBanner on main page)
     slssBannerTitle: "SLSsteam not active — games won't launch",
     slssBannerBodyNotActive: "Installed but not loaded. Restart Steam to activate.",
     slssBannerBodyInjectionMissing: "Injection lost from steam.sh. Repair to restore it.",
     slssBannerBodyBrokenPatterns: "Loaded but stopped working — Steam may have updated. Repair to fix.",
     slssBannerBodyBrokenHash: "Loaded but the steamclient.so hash is unknown (SafeMode). Repair to fix.",
+    slssBannerActionRepair: "Repair (Headcrab)",
+    slssBannerActionRestart: "Restart Steam",
+    // lumalinux banner row (inside HealthBanner on main page) — same frame as
+    // SLSsteam's. Wording softens the impact: installed games keep working.
+    llBannerTitle: "lumalinux not active — new downloads disabled",
+    llBannerBodyNotActive: "Installed but not loaded. Restart Steam to activate.",
+    llBannerBodyHashBlocked: "Steam updated past the verified hash list. Installed games keep working — reinstall lumalinux to enable new downloads.",
+    llBannerBodyHooksFailed: "A hook stopped working ({0}) — Steam may have updated. Installed games keep working — reinstall lumalinux to enable new downloads.",
+    llBannerActionReinstall: "Reinstall lumalinux",
+    llBannerActionRestart: "Restart Steam",
+    // Banner heading when more than one component is unhealthy at once.
+    healthBannerTitleMulti: "Some components aren't active",
+    // Health sub-row for lumalinux Dependencies (extends the existing v / failed):
+    llHealthHashBlocked: "v{0} loaded but blocked — Steam updated past verified hashes (reinstall lumalinux)",
+    llHealthNotActive: "Installed but not loaded — restart Steam to activate",
     steamBuildOk: "Steam build: {0}",
     steamBuildMismatch: "Steam build: {0} ⚠ (Headcrab target: {1})",
     headcrabGameModeBlockTitle: "Cannot run from Game Mode",
@@ -490,12 +505,24 @@ const strings: Record<Lang, Record<string, string>> = {
     slssHealthInjectionMissing: "Instalado — injeção ausente no steam.sh",
     slssHealthBrokenPatterns: "Carregado mas inativo — padrões falharam (atualização da Steam?)",
     slssHealthBrokenHash: "Carregado mas inativo — hash desconhecido (SafeMode)",
-    // SLSsteam QAM banner
+    // SLSsteam banner row
     slssBannerTitle: "SLSsteam não está ativo — os jogos não vão abrir",
     slssBannerBodyNotActive: "Instalado mas não carregado. Reinicie a Steam para ativar.",
     slssBannerBodyInjectionMissing: "Injeção perdida do steam.sh. Repare para restaurá-la.",
     slssBannerBodyBrokenPatterns: "Carregado mas parou de funcionar — a Steam pode ter atualizado. Repare para corrigir.",
     slssBannerBodyBrokenHash: "Carregado mas o hash do steamclient.so é desconhecido (SafeMode). Repare para corrigir.",
+    slssBannerActionRepair: "Reparar (Headcrab)",
+    slssBannerActionRestart: "Reiniciar Steam",
+    // lumalinux banner row
+    llBannerTitle: "lumalinux não está ativo — novos downloads desabilitados",
+    llBannerBodyNotActive: "Instalado mas não carregado. Reinicie a Steam para ativar.",
+    llBannerBodyHashBlocked: "A Steam atualizou além da lista de hashes verificados. Os jogos instalados continuam funcionando — reinstale o lumalinux para liberar novos downloads.",
+    llBannerBodyHooksFailed: "Um hook parou de funcionar ({0}) — a Steam pode ter atualizado. Os jogos instalados continuam funcionando — reinstale o lumalinux para liberar novos downloads.",
+    llBannerActionReinstall: "Reinstalar lumalinux",
+    llBannerActionRestart: "Reiniciar Steam",
+    healthBannerTitleMulti: "Alguns componentes não estão ativos",
+    llHealthHashBlocked: "v{0} carregado mas bloqueado — a Steam atualizou além dos hashes verificados (reinstale o lumalinux)",
+    llHealthNotActive: "Instalado mas não carregado — reinicie a Steam para ativar",
     dependencies: "Dependências",
     installReinstallDeps: "Instalar / Reinstalar Dependências",
     installDepsConfirm: "CONFIRMAR — Fechará a Steam",

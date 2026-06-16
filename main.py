@@ -101,6 +101,11 @@ class Plugin:
         from paths import read_slssteam_health
         return _j(read_slssteam_health())
 
+    async def get_lumalinux_health(self) -> str:
+        """Resolve lumalinux into a single UI state (healthy/hash_blocked/...)."""
+        from paths import read_lumalinux_health
+        return _j(read_lumalinux_health())
+
     async def restart_steam(self) -> str:
         """Shutdown Steam as deck user (Game Mode auto-restarts it)."""
         import subprocess, os

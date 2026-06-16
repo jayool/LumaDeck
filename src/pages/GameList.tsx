@@ -22,8 +22,11 @@ import {
   getGameNotices,
   restartSteam,
   getSlssteamHealth,
+  getLumalinuxHealth,
+  installLumalinux,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
+import { HealthBanner, HealthProblem } from "../components/HealthBanner";
 import { ROUTE_GAME_DETAIL, ROUTE_SETTINGS, ROUTE_DOWNLOADS } from "../routes";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
@@ -60,7 +63,14 @@ export function GameList() {
     cause: string | null;
     action: string | null;
   } | null>(null);
+  const [lumalinuxHealth, setLumalinuxHealth] = useState<{
+    state: string;
+    cause: string | null;
+    version: string | null;
+    action: string | null;
+  } | null>(null);
   const [restartingStream, setRestartingStream] = useState(false);
+  const [reinstallingLL, setReinstallingLL] = useState(false);
   const [syncState, setSyncState] = useState<any>(null);
   const [steamLibraries, setSteamLibraries] = useState<any[]>([]);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
@@ -249,13 +259,15 @@ export function GameList() {
       } catch { }
     })();
 
-    // SLSsteam health — drives the critical banner. SLSsteam does the ownership
-    // hook, so if it isn't working no not-owned game launches even when it's
-    // perfectly downloaded. The banner shows for every non-healthy state.
+    // SLSsteam + lumalinux health — drive the unified HealthBanner. SLSsteam
+    // = "games won't launch" (ownership hook), lumalinux = "new downloads
+    // disabled" (depot patching). Both can fail independently; if both do,
+    // the banner shows two rows in one frame.
     (async () => {
       try {
-        const health = await getSlssteamHealth();
-        if (health.state) setSlssteamHealth(health);
+        const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+        if (sls.state) setSlssteamHealth(sls);
+        if (ll.state) setLumalinuxHealth(ll);
       } catch { }
     })();
 
@@ -469,71 +481,82 @@ export function GameList() {
     await restartSteam();
     setRestartingStream(false);
     try {
-      const health = await getSlssteamHealth();
-      if (health.state) setSlssteamHealth(health);
+      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+      if (sls.state) setSlssteamHealth(sls);
+      if (ll.state) setLumalinuxHealth(ll);
     } catch { }
   };
 
-  // The banner fires for every non-healthy, installed state. Body per state.
-  const slssBannerBody = (h: { state: string; cause: string | null }): string => {
-    switch (h.state) {
-      case "not_active":        return t("slssBannerBodyNotActive");
-      case "injection_missing": return t("slssBannerBodyInjectionMissing");
-      case "broken":
-        return h.cause === "hash"
-          ? t("slssBannerBodyBrokenHash")
-          : t("slssBannerBodyBrokenPatterns");
-      default:                  return "";
+  const handleReinstallLumalinux = async () => {
+    setReinstallingLL(true);
+    const result = await installLumalinux();
+    setReinstallingLL(false);
+    if (result.success) {
+      toast(t("llInstalled"), t("llInstalledBody"), 6000);
+    } else {
+      toast(t("toastError"), result.error || "", 4000);
     }
   };
-  const showSlssBanner =
-    slssteamHealth != null &&
-    slssteamHealth.state !== "healthy" &&
-    slssteamHealth.state !== "not_installed";
+
+  // Translate each component's health into a HealthProblem row, or null when
+  // healthy / not installed (the banner only surfaces actionable failures —
+  // "not installed" belongs to the install flow in Settings, not here).
+  const slssProblem = ((): HealthProblem | null => {
+    if (!slssteamHealth) return null;
+    if (slssteamHealth.state === "healthy" || slssteamHealth.state === "not_installed") return null;
+    const body = (() => {
+      switch (slssteamHealth.state) {
+        case "not_active":        return t("slssBannerBodyNotActive");
+        case "injection_missing": return t("slssBannerBodyInjectionMissing");
+        case "broken":
+          return slssteamHealth.cause === "hash"
+            ? t("slssBannerBodyBrokenHash")
+            : t("slssBannerBodyBrokenPatterns");
+        default: return "";
+      }
+    })();
+    const isRestart = slssteamHealth.action === "restart";
+    return {
+      key: "slssteam",
+      title: t("slssBannerTitle"),
+      body,
+      actionLabel: isRestart
+        ? (restartingStream ? t("restarting") : t("slssBannerActionRestart"))
+        : undefined,  // repair states route through Settings (Headcrab + gamemode checks live there)
+      onAction: isRestart ? handleRestartSteam : undefined,
+      actionDisabled: isRestart ? restartingStream : false,
+    };
+  })();
+
+  const llProblem = ((): HealthProblem | null => {
+    if (!lumalinuxHealth) return null;
+    if (lumalinuxHealth.state === "healthy" || lumalinuxHealth.state === "not_installed") return null;
+    const body = (() => {
+      switch (lumalinuxHealth.state) {
+        case "not_active":    return t("llBannerBodyNotActive");
+        case "hash_blocked":  return t("llBannerBodyHashBlocked");
+        case "hooks_failed":  return t("llBannerBodyHooksFailed", lumalinuxHealth.cause || "?");
+        default: return "";
+      }
+    })();
+    const isRestart = lumalinuxHealth.action === "restart";
+    return {
+      key: "lumalinux",
+      title: t("llBannerTitle"),
+      body,
+      actionLabel: isRestart
+        ? (restartingStream ? t("restarting") : t("llBannerActionRestart"))
+        : (reinstallingLL ? t("installingLL") : t("llBannerActionReinstall")),
+      onAction: isRestart ? handleRestartSteam : handleReinstallLumalinux,
+      actionDisabled: isRestart ? restartingStream : reinstallingLL,
+    };
+  })();
+
+  const healthProblems = [slssProblem, llProblem].filter((p): p is HealthProblem => p !== null);
 
   return (
     <>
-      {showSlssBanner && slssteamHealth && (
-        <PanelSection>
-          <div style={{
-            background: "rgba(255, 140, 0, 0.1)",
-            border: "1px solid rgba(255, 140, 0, 0.4)",
-            borderLeft: "3px solid #ff8c00",
-            borderRadius: "6px",
-            padding: "10px 12px",
-          }}>
-            <div style={{ fontWeight: 600, color: "#ffaa33", fontSize: "13px", marginBottom: "4px" }}>
-              {t("slssBannerTitle")}
-            </div>
-            <div style={{
-              fontSize: "12px",
-              color: "#aaa",
-              marginBottom: slssteamHealth.action === "restart" ? "10px" : "0",
-            }}>
-              {slssBannerBody(slssteamHealth)}
-            </div>
-            {slssteamHealth.action === "restart" && (
-              <button
-                onClick={handleRestartSteam}
-                disabled={restartingStream}
-                style={{
-                  background: restartingStream ? "#555" : "#ff8c00",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "4px",
-                  padding: "6px 14px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  cursor: restartingStream ? "default" : "pointer",
-                  width: "100%",
-                }}
-              >
-                {restartingStream ? t("restarting") : t("restartSteam")}
-              </button>
-            )}
-          </div>
-        </PanelSection>
-      )}
+      <HealthBanner problems={healthProblems} multiTitle={t("healthBannerTitleMulti")} />
 
       <PanelSection title={t("addGame")}>
         <PanelSectionRow>

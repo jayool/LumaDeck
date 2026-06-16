@@ -33,6 +33,13 @@ export const checkSlssteamHashStatus = async () =>
 export const getSlssteamHealth = async () =>
   parseResult(await call<[], string>("get_slssteam_health"));
 
+// Resolved lumalinux state for the UI. Returns:
+//   { state: "not_installed"|"not_active"|"hash_blocked"|"hooks_failed"|"healthy",
+//     cause: null|string, version: null|string,
+//     action: null|"install"|"restart"|"reinstall" }
+export const getLumalinuxHealth = async () =>
+  parseResult(await call<[], string>("get_lumalinux_health"));
+
 export const checkHeadcrabCompat = async () =>
   parseResult(await call<[], string>("check_headcrab_compat"));
 

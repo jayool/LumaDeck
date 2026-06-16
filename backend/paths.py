@@ -336,6 +336,39 @@ def read_lumalinux_status() -> Optional[dict]:
         return None
 
 
+def read_lumalinux_health() -> dict:
+    """Resolve lumalinux into a single UI state. Symmetric to read_slssteam_health.
+
+    Shape: {"state": str, "cause": str|None, "version": str|None, "action": str|None}.
+    States:
+        not_installed  — .so not on disk                  → install
+        not_active     — installed, no live status.json   → restart Steam (or open it)
+        hash_blocked   — status: blocked=hash_unverified  → reinstall (newer lumalinux)
+        hooks_failed   — status: any hook in "failed"     → reinstall
+        healthy        — status present, no block, all hooks installed
+    """
+    if not check_lumalinux_installed():
+        return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
+
+    status = read_lumalinux_status()
+    if status is None:
+        # On disk but no live snapshot — Steam not running with lumalinux this
+        # session. Distinct from hash_blocked (which DOES write a snapshot).
+        return {"state": "not_active", "cause": None, "version": None, "action": "restart"}
+
+    version = status.get("version")
+    blocked = status.get("blocked")
+    if blocked:
+        return {"state": "hash_blocked", "cause": blocked, "version": version, "action": "reinstall"}
+
+    hooks = status.get("hooks") or {}
+    failed = [name for name, outcome in hooks.items() if outcome == "failed"]
+    if failed:
+        return {"state": "hooks_failed", "cause": ",".join(failed), "version": version, "action": "reinstall"}
+
+    return {"state": "healthy", "cause": None, "version": version, "action": None}
+
+
 # ---------------------------------------------------------------------------
 # CloudRedirect paths (32-bit cloud-save RPC hook library, also via LD_PRELOAD)
 # ---------------------------------------------------------------------------
