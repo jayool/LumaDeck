@@ -404,6 +404,43 @@ export function Settings() {
                   : t("notFound")}
               </div>
             </PanelSectionRow>
+            {deps.lumalinux && (() => {
+              // Per-session health from status.json. The file only exists if a
+              // live Steam wrote it — so its absence (with .so present on disk)
+              // = "user installed lumalinux but never restarted Steam".
+              const st = deps.lumalinuxStatus;
+              if (!st) {
+                if (!deps.lumalinuxActive) {
+                  return (
+                    <PanelSectionRow>
+                      <div style={{ fontSize: "11px", color: "#ffaa00", paddingLeft: "8px" }}>
+                        {t("llNotLoaded")}
+                      </div>
+                    </PanelSectionRow>
+                  );
+                }
+                return null;
+              }
+              const hooks = st.hooks || {};
+              const entries = Object.entries(hooks) as [string, string][];
+              const failed = entries.filter(([, v]) => v === "failed").map(([k]) => k);
+              const active = entries.filter(([, v]) => v === "installed").length;
+              const total = entries.filter(([, v]) => v !== "disabled").length;
+              const allOk = failed.length === 0;
+              return (
+                <PanelSectionRow>
+                  <div style={{
+                    fontSize: "11px",
+                    color: allOk ? "#00cc00" : "#ff8c00",
+                    paddingLeft: "8px",
+                  }}>
+                    {allOk
+                      ? t("llHealthAllOk", st.version || "?", active, total)
+                      : t("llHealthDegraded", st.version || "?", failed.join(", "))}
+                  </div>
+                </PanelSectionRow>
+              );
+            })()}
             <PanelSectionRow>
               <div
                 style={{

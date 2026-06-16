@@ -280,6 +280,62 @@ def check_lumalinux_active() -> bool:
     return False
 
 
+def find_lumalinux_status_path() -> Optional[str]:
+    """Return the path to lumalinux's status.json if it exists.
+
+    lumalinux writes this from inside the Steam process — XDG_RUNTIME_DIR is
+    primary (tmpfs, cleared at logout, so its presence = "Steam ran with
+    lumalinux in this session"), with $HOME/.cache as fallback. Decky runs as
+    root so we have to look under the deck user's runtime dir explicitly, not
+    just $XDG_RUNTIME_DIR (which under root is /run/user/0).
+    """
+    candidates = [
+        # Steam Deck default: deck user is uid 1000.
+        "/run/user/1000/lumalinux/status.json",
+        # Generic: try pwd.getpwnam('deck') for non-default UIDs.
+    ]
+    try:
+        import pwd as _pwd
+        try:
+            deck_uid = _pwd.getpwnam("deck").pw_uid
+            candidates.append(f"/run/user/{deck_uid}/lumalinux/status.json")
+        except KeyError:
+            pass
+    except Exception:
+        pass
+    # Cache fallbacks (lumalinux falls back here if XDG_RUNTIME_DIR is unset).
+    candidates += [
+        "/home/deck/.cache/lumalinux/status.json",
+        os.path.expanduser("~/.cache/lumalinux/status.json"),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def read_lumalinux_status() -> Optional[dict]:
+    """Parse status.json. Returns None if the file is missing or unreadable.
+
+    The pid field is cross-checked against /proc — if the writing process is
+    no longer running, the snapshot is stale (Steam exited) and we ignore it,
+    so the Settings panel doesn't surface zombie health from a previous run.
+    """
+    path = find_lumalinux_status_path()
+    if not path:
+        return None
+    try:
+        import json as _json
+        with open(path, "r") as f:
+            data = _json.load(f)
+        pid = data.get("pid")
+        if isinstance(pid, int) and pid > 0 and not os.path.isdir(f"/proc/{pid}"):
+            return None
+        return data
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # CloudRedirect paths (32-bit cloud-save RPC hook library, also via LD_PRELOAD)
 # ---------------------------------------------------------------------------
