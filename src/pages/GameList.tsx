@@ -25,6 +25,7 @@ import {
   getLumalinuxHealth,
   getCloudredirectHealth,
   checkCloudredirectUpdate,
+  checkLumalinuxUpdate,
   installLumalinux,
   installCloudredirect,
   checkHeadcrabCompat,
@@ -81,6 +82,11 @@ export function GameList() {
     action: string | null;
   } | null>(null);
   const [crUpdate, setCrUpdate] = useState<{
+    installed: string | null;
+    latest: string | null;
+    has_update: boolean;
+  } | null>(null);
+  const [llUpdate, setLlUpdate] = useState<{
     installed: string | null;
     latest: string | null;
     has_update: boolean;
@@ -286,12 +292,13 @@ export function GameList() {
     // surfaces routine updates separately.
     (async () => {
       try {
-        const [sls, ll, cr, hc, cru] = await Promise.all([
+        const [sls, ll, cr, hc, cru, llu] = await Promise.all([
           getSlssteamHealth(),
           getLumalinuxHealth(),
           getCloudredirectHealth(),
           checkHeadcrabCompat(),
           checkCloudredirectUpdate(),
+          checkLumalinuxUpdate(),
         ]);
         if (sls.state) setSlssteamHealth(sls);
         if (ll.state)  setLumalinuxHealth(ll);
@@ -305,6 +312,11 @@ export function GameList() {
           installed: cru.installed ?? null,
           latest: cru.latest ?? null,
           has_update: !!cru.has_update,
+        });
+        setLlUpdate({
+          installed: llu.installed ?? null,
+          latest: llu.latest ?? null,
+          has_update: !!llu.has_update,
         });
       } catch { }
     })();
@@ -660,6 +672,12 @@ export function GameList() {
     crHealth?.state === "healthy"
   ) {
     updates.push({ key: "cloudredirect", text: t("crUpdateAvailableMain") });
+  }
+  if (
+    llUpdate?.has_update &&
+    lumalinuxHealth?.state === "healthy"
+  ) {
+    updates.push({ key: "lumalinux", text: t("llUpdateAvailableMain") });
   }
 
   return (

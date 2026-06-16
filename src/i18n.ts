@@ -227,6 +227,8 @@ const strings: Record<Lang, Record<string, string>> = {
     // CloudRedirect — Updates (info, blue)
     crUpdateAvailableMain: "CloudRedirect update available",
     crUpdateAvailableSub: "Update available (v{0} → v{1})",
+    llUpdateAvailableMain: "lumalinux update available",
+    llUpdateAvailableSub: "Update available (v{0} → v{1})",
     // Health sub-row for lumalinux Dependencies (extends the existing v / failed):
     llHealthHashBlocked: "v{0} loaded but blocked — Steam updated past verified hashes (reinstall lumalinux)",
     llHealthNotActive: "Installed but not loaded — restart Steam to activate",
@@ -559,6 +561,8 @@ const strings: Record<Lang, Record<string, string>> = {
     crHealthKillSwitched: "Desabilitado (~/.config/CloudRedirect/disable presente)",
     crUpdateAvailableMain: "Atualização do CloudRedirect disponível",
     crUpdateAvailableSub: "Atualização disponível (v{0} → v{1})",
+    llUpdateAvailableMain: "Atualização do lumalinux disponível",
+    llUpdateAvailableSub: "Atualização disponível (v{0} → v{1})",
     llHealthHashBlocked: "v{0} carregado mas bloqueado — a Steam atualizou além dos hashes verificados (reinstale o lumalinux)",
     llHealthNotActive: "Instalado mas não carregado — reinicie a Steam para ativar",
     dependencies: "Dependências",

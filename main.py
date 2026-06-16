@@ -118,6 +118,13 @@ class Plugin:
         installed = read_cloudredirect_health().get("version")
         return _j(await has_update("Selectively11", "CloudRedirect", installed))
 
+    async def check_lumalinux_update(self) -> str:
+        """{installed, latest, has_update, url} via GitHub Releases (cached 6h)."""
+        from paths import read_lumalinux_health
+        from update_checks import has_update
+        installed = read_lumalinux_health().get("version")
+        return _j(await has_update("jayool", "lumalinux", installed))
+
     async def restart_steam(self) -> str:
         """Shutdown Steam as deck user (Game Mode auto-restarts it)."""
         import subprocess, os

@@ -51,6 +51,9 @@ export const getCloudredirectHealth = async () =>
 export const checkCloudredirectUpdate = async () =>
   parseResult(await call<[], string>("check_cloudredirect_update"));
 
+export const checkLumalinuxUpdate = async () =>
+  parseResult(await call<[], string>("check_lumalinux_update"));
+
 export const checkHeadcrabCompat = async () =>
   parseResult(await call<[], string>("check_headcrab_compat"));
 

@@ -27,6 +27,7 @@ import {
   getLumalinuxHealth,
   getCloudredirectHealth,
   checkCloudredirectUpdate,
+  checkLumalinuxUpdate,
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
@@ -68,6 +69,11 @@ export function Settings() {
     latest: string | null;
     has_update: boolean;
   } | null>(null);
+  const [llUpdate, setLlUpdate] = useState<{
+    installed: string | null;
+    latest: string | null;
+    has_update: boolean;
+  } | null>(null);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
     target: number | null;
@@ -86,9 +92,10 @@ export function Settings() {
       if (cancelled) return;
       const depsResult = await checkDependencies();
       if (!cancelled && depsResult.success) setDeps(depsResult);
-      const [sls, ll, cr, cru] = await Promise.all([
+      const [sls, ll, cr, cru, llu] = await Promise.all([
         getSlssteamHealth(), getLumalinuxHealth(),
         getCloudredirectHealth(), checkCloudredirectUpdate(),
+        checkLumalinuxUpdate(),
       ]);
       if (!cancelled && sls.state) setSlssteamHealth(sls);
       if (!cancelled && ll.state)  setLumalinuxHealth(ll);
@@ -97,6 +104,11 @@ export function Settings() {
         installed: cru.installed ?? null,
         latest: cru.latest ?? null,
         has_update: !!cru.has_update,
+      });
+      if (!cancelled) setLlUpdate({
+        installed: llu.installed ?? null,
+        latest: llu.latest ?? null,
+        has_update: !!llu.has_update,
       });
     };
 
@@ -119,9 +131,10 @@ export function Settings() {
       const playResult = await getSlsPlayStatus();
       if (!cancelled && playResult.success) setPlayNotOwned(playResult.enabled);
 
-      const [sls, ll, cr, cru] = await Promise.all([
+      const [sls, ll, cr, cru, llu] = await Promise.all([
         getSlssteamHealth(), getLumalinuxHealth(),
         getCloudredirectHealth(), checkCloudredirectUpdate(),
+        checkLumalinuxUpdate(),
       ]);
       if (!cancelled && sls.state) setSlssteamHealth(sls);
       if (!cancelled && ll.state)  setLumalinuxHealth(ll);
@@ -130,6 +143,11 @@ export function Settings() {
         installed: cru.installed ?? null,
         latest: cru.latest ?? null,
         has_update: !!cru.has_update,
+      });
+      if (!cancelled) setLlUpdate({
+        installed: llu.installed ?? null,
+        latest: llu.latest ?? null,
+        has_update: !!llu.has_update,
       });
 
       const compatResult = await checkHeadcrabCompat();
@@ -513,6 +531,15 @@ export function Settings() {
                 </PanelSectionRow>
               );
             })()}
+            {deps.lumalinux && lumalinuxHealth?.state === "healthy" && llUpdate?.has_update && (
+              <PanelSectionRow>
+                <div style={{ fontSize: "11px", color: "#9cc4ff", paddingLeft: "8px" }}>
+                  {t("llUpdateAvailableSub",
+                     llUpdate.installed ?? "?",
+                     llUpdate.latest ?? "?")}
+                </div>
+              </PanelSectionRow>
+            )}
             <PanelSectionRow>
               <div
                 style={{
