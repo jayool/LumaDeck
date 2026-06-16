@@ -19,12 +19,11 @@ import {
   installCloudredirect,
   installLumalinux,
   getPlatformSummary,
-  verifySlssteamInjected,
   getSlsPlayStatus,
   setSlsPlayStatus,
   getSteamLibraries,
   restartSteam,
-  checkSlssteamHashStatus,
+  getSlssteamHealth,
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
@@ -44,7 +43,11 @@ export function Settings() {
   const [installingLL, setInstallingLL] = useState(false);
   const [confirmInstallLL, setConfirmInstallLL] = useState(false);
   const [repairing, setRepairing] = useState(false);
-  const [unknownHash, setUnknownHash] = useState(false);
+  const [slssteamHealth, setSlssteamHealth] = useState<{
+    state: string;
+    cause: string | null;
+    action: string | null;
+  } | null>(null);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
     target: number | null;
@@ -63,6 +66,8 @@ export function Settings() {
       if (cancelled) return;
       const depsResult = await checkDependencies();
       if (!cancelled && depsResult.success) setDeps(depsResult);
+      const healthResult = await getSlssteamHealth();
+      if (!cancelled && healthResult.state) setSlssteamHealth(healthResult);
     };
 
     const load = async () => {
@@ -84,8 +89,8 @@ export function Settings() {
       const playResult = await getSlsPlayStatus();
       if (!cancelled && playResult.success) setPlayNotOwned(playResult.enabled);
 
-      const hashResult = await checkSlssteamHashStatus();
-      if (!cancelled && hashResult.success) setUnknownHash(hashResult.unknown_hash);
+      const healthResult = await getSlssteamHealth();
+      if (!cancelled && healthResult.state) setSlssteamHealth(healthResult);
 
       const compatResult = await checkHeadcrabCompat();
       if (!cancelled && compatResult.success) {
@@ -213,21 +218,6 @@ export function Settings() {
     }
   };
 
-  const handleVerifyInjection = async () => {
-    const result = await verifySlssteamInjected();
-    if (result.already_ok) {
-      toast(t("toastInjectionOk"));
-    } else if (result.patched) {
-      toast(t("toastInjectionPatched"));
-    } else {
-      toast(
-        t("toastError"),
-        `${t("slssteamInjection")}: ${result.error || "Failed"}`,
-        4000,
-      );
-    }
-  };
-
   const handleTogglePlayNotOwned = async (value: boolean) => {
     setPlayNotOwned(value);
     await setSlsPlayStatus(value);
@@ -239,10 +229,25 @@ export function Settings() {
     const result = await repairSlssteamHeadcrab();
     setRepairing(false);
     if (result.success) {
-      setUnknownHash(false);
+      const healthResult = await getSlssteamHealth();
+      if (healthResult.state) setSlssteamHealth(healthResult);
       toast(t("headcrabRepaired"), t("headcrabRepairedBody"), 6000);
     } else {
       toast(t("toastError"), result.error || `step: ${result.step}`, 6000);
+    }
+  };
+
+  // Map an SLSsteam health state to its Dependencies sub-row string.
+  const slssHealthLine = (h: { state: string; cause: string | null }): string | null => {
+    switch (h.state) {
+      case "healthy":           return t("slssHealthOk");
+      case "not_active":        return t("slssHealthNotActive");
+      case "injection_missing": return t("slssHealthInjectionMissing");
+      case "broken":
+        return h.cause === "hash"
+          ? t("slssHealthBrokenHash")
+          : t("slssHealthBrokenPatterns");
+      default:                  return null; // not_installed → red dot already says it
     }
   };
 
@@ -295,20 +300,16 @@ export function Settings() {
           />
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleVerifyInjection}>
-            {t("verifySlssteamInjection")}
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
           <ButtonItem layout="below" onClick={() => restartSteam()}>
             {t("restartSteam")}
           </ButtonItem>
         </PanelSectionRow>
-        {unknownHash && (
+        {slssteamHealth &&
+         (slssteamHealth.state === "broken" || slssteamHealth.state === "injection_missing") && (
           <>
             <PanelSectionRow>
               <div style={{ fontSize: "11px", color: "#ffaa00" }}>
-                ⚠ {t("slssteamUnknownHash")}
+                ⚠ {slssHealthLine(slssteamHealth)}
               </div>
             </PanelSectionRow>
             <PanelSectionRow>
@@ -381,6 +382,17 @@ export function Settings() {
                   : t("notFound")}
               </div>
             </PanelSectionRow>
+            {deps.slssteam && slssteamHealth && slssHealthLine(slssteamHealth) && (
+              <PanelSectionRow>
+                <div style={{
+                  fontSize: "11px",
+                  color: slssteamHealth.state === "healthy" ? "#00cc00" : "#ff8c00",
+                  paddingLeft: "8px",
+                }}>
+                  {slssHealthLine(slssteamHealth)}
+                </div>
+              </PanelSectionRow>
+            )}
             <PanelSectionRow>
               <div
                 style={{

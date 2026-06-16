@@ -96,6 +96,11 @@ class Plugin:
         result["was_repaired_on_startup"] = _injection_repaired_on_startup
         return _j(result)
 
+    async def get_slssteam_health(self) -> str:
+        """Resolve SLSsteam into a single UI state (healthy/broken/not_active/...)."""
+        from paths import read_slssteam_health
+        return _j(read_slssteam_health())
+
     async def restart_steam(self) -> str:
         """Shutdown Steam as deck user (Game Mode auto-restarts it)."""
         import subprocess, os

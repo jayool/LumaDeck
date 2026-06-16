@@ -20,9 +20,8 @@ import {
   getSyncAllStatus,
   getSteamLibraries,
   getGameNotices,
-  getInjectionStatus,
   restartSteam,
-  checkSlssteamHashStatus,
+  getSlssteamHealth,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { ROUTE_GAME_DETAIL, ROUTE_SETTINGS, ROUTE_DOWNLOADS } from "../routes";
@@ -56,8 +55,11 @@ export function GameList() {
   const [searchError, setSearchError] = useState("");
   const [showMoreResults, setShowMoreResults] = useState(false);
   const [slscheevoReady, setSlscheevoReady] = useState(false);
-  const [injectionWarning, setInjectionWarning] = useState(false);
-  const [unknownHash, setUnknownHash] = useState(false);
+  const [slssteamHealth, setSlssteamHealth] = useState<{
+    state: string;
+    cause: string | null;
+    action: string | null;
+  } | null>(null);
   const [restartingStream, setRestartingStream] = useState(false);
   const [syncState, setSyncState] = useState<any>(null);
   const [steamLibraries, setSteamLibraries] = useState<any[]>([]);
@@ -247,18 +249,13 @@ export function GameList() {
       } catch { }
     })();
 
-    // Check SLSsteam injection — auto-repairs steam.sh if missing
+    // SLSsteam health — drives the critical banner. SLSsteam does the ownership
+    // hook, so if it isn't working no not-owned game launches even when it's
+    // perfectly downloaded. The banner shows for every non-healthy state.
     (async () => {
       try {
-        const [injResult, hashResult] = await Promise.all([
-          getInjectionStatus(),
-          checkSlssteamHashStatus(),
-        ]);
-        const hasUnknownHash = hashResult.success && hashResult.unknown_hash;
-        setUnknownHash(hasUnknownHash);
-        if (injResult.patched || injResult.was_repaired_on_startup || hasUnknownHash) {
-          setInjectionWarning(true);
-        }
+        const health = await getSlssteamHealth();
+        if (health.state) setSlssteamHealth(health);
       } catch { }
     })();
 
@@ -470,13 +467,33 @@ export function GameList() {
   const handleRestartSteam = async () => {
     setRestartingStream(true);
     await restartSteam();
-    setInjectionWarning(false);
     setRestartingStream(false);
+    try {
+      const health = await getSlssteamHealth();
+      if (health.state) setSlssteamHealth(health);
+    } catch { }
   };
+
+  // The banner fires for every non-healthy, installed state. Body per state.
+  const slssBannerBody = (h: { state: string; cause: string | null }): string => {
+    switch (h.state) {
+      case "not_active":        return t("slssBannerBodyNotActive");
+      case "injection_missing": return t("slssBannerBodyInjectionMissing");
+      case "broken":
+        return h.cause === "hash"
+          ? t("slssBannerBodyBrokenHash")
+          : t("slssBannerBodyBrokenPatterns");
+      default:                  return "";
+    }
+  };
+  const showSlssBanner =
+    slssteamHealth != null &&
+    slssteamHealth.state !== "healthy" &&
+    slssteamHealth.state !== "not_installed";
 
   return (
     <>
-      {injectionWarning && (
+      {showSlssBanner && slssteamHealth && (
         <PanelSection>
           <div style={{
             background: "rgba(255, 140, 0, 0.1)",
@@ -486,16 +503,16 @@ export function GameList() {
             padding: "10px 12px",
           }}>
             <div style={{ fontWeight: 600, color: "#ffaa33", fontSize: "13px", marginBottom: "4px" }}>
-              {unknownHash ? t("slssteamUnknownHash") : t("slssteamInjectionMissing")}
+              {t("slssBannerTitle")}
             </div>
             <div style={{
               fontSize: "12px",
               color: "#aaa",
-              marginBottom: unknownHash ? "0" : "10px",
+              marginBottom: slssteamHealth.action === "restart" ? "10px" : "0",
             }}>
-              {unknownHash ? t("slssteamUnknownHashBody") : t("slssteamInjectionRepairedBody")}
+              {slssBannerBody(slssteamHealth)}
             </div>
-            {!unknownHash && (
+            {slssteamHealth.action === "restart" && (
               <button
                 onClick={handleRestartSteam}
                 disabled={restartingStream}

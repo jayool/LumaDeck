@@ -493,6 +493,93 @@ def verify_slssteam_injected() -> dict:
     return {"patched": False, "already_ok": False, "error": "steam.sh not found"}
 
 
+# ---------------------------------------------------------------------------
+# SLSsteam health — the single source of truth for the UI's SLSsteam state.
+# ---------------------------------------------------------------------------
+#
+# SLSsteam does the ownership hook: without it working, no not-owned game
+# launches even if it's perfectly downloaded. So the UI needs to tell apart
+# "working" from "loaded but broken" — and that's not trivial, because:
+#
+#   - SLSsteam writes no status file we can read (unlike lumalinux).
+#   - Its unload() does NOT unmap the .so (the munmap is commented out
+#     upstream, main.cpp:66). So "SLSsteam.so is mapped in /proc" stays TRUE
+#     even when SLSsteam aborted and installed zero hooks. The /proc scan
+#     cannot, on its own, separate healthy from broken.
+#
+# The only reliable discriminator is SLSsteam's own log (~/.SLSsteam.log),
+# which it truncates and rewrites on every Steam launch (std::ios::out), so
+# its lines always describe the current session when the .so is mapped. The
+# fatal outcomes each print a distinct "...Aborting..." line.
+#
+# Resulting states (see also the design in this PR):
+#   not_installed     — .so not on disk                         → install
+#   not_active        — not mapped, steam.sh has INJECT_SLS     → restart Steam
+#   injection_missing — not mapped, steam.sh lost INJECT_SLS    → repair
+#   broken            — mapped + an "Aborting" line in the log  → repair
+#                       (cause: "patterns" | "hash")
+#   healthy           — mapped + no abort line                  → nothing
+
+
+def _slssteam_log_path() -> Optional[str]:
+    """Path to SLSsteam's log (~/.SLSsteam.log). Decky runs as root, so the
+    deck user's home is checked explicitly first."""
+    for p in ("/home/deck/.SLSsteam.log", os.path.expanduser("~/.SLSsteam.log")):
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _slssteam_log_abort_cause() -> Optional[str]:
+    """Inspect the current-session log for a fatal abort line.
+
+    Returns "patterns" (byte patterns no longer match — the common breakage
+    after a Steam update, fatal regardless of config), "hash" (unknown
+    steamclient.so hash with SafeMode on), or None (no fatal line). The soft
+    "hash missmatch! Please update :)" warning is intentionally NOT treated as
+    fatal — SLSsteam keeps loading after it, so it isn't a broken state.
+    """
+    log = _slssteam_log_path()
+    if not log:
+        return None
+    try:
+        with open(log, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except Exception:
+        return None
+    if "Failed to find all patterns! Aborting..." in content:
+        return "patterns"
+    if "Unknown steamclient.so hash! Aborting..." in content:
+        return "hash"
+    return None
+
+
+def read_slssteam_health() -> dict:
+    """Resolve SLSsteam into one of the UI states. Read-only.
+
+    Shape: {"state": str, "cause": str|None, "action": str|None}. The frontend
+    maps state→display string (i18n) and action→button.
+    """
+    if not check_slssteam_installed():
+        return {"state": "not_installed", "cause": None, "action": "install"}
+
+    inj = verify_slssteam_injected()
+    mapped = inj.get("method") == "active"  # .so present in a running process
+
+    if not mapped:
+        if inj.get("method") == "steam_sh_configured":
+            # Configured, just not loaded yet (Steam not running / not restarted).
+            return {"state": "not_active", "cause": None, "action": "restart"}
+        # steam.sh has no INJECT_SLS line, or wasn't found — injection is lost.
+        return {"state": "injection_missing", "cause": None, "action": "repair"}
+
+    # Mapped — but mapped != working. The log is the only honest discriminator.
+    cause = _slssteam_log_abort_cause()
+    if cause:
+        return {"state": "broken", "cause": cause, "action": "repair"}
+    return {"state": "healthy", "cause": None, "action": None}
+
+
 def get_platform_summary() -> dict:
     summary = {
         "steam_root": find_steam_root(),

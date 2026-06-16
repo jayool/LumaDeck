@@ -27,6 +27,12 @@ export const getInjectionStatus = async () =>
 export const checkSlssteamHashStatus = async () =>
   parseResult(await call<[], string>("check_slssteam_hash_status"));
 
+// Resolved SLSsteam state for the UI. Returns:
+//   { state: "not_installed"|"not_active"|"injection_missing"|"broken"|"healthy",
+//     cause: null|"patterns"|"hash", action: null|"install"|"restart"|"repair" }
+export const getSlssteamHealth = async () =>
+  parseResult(await call<[], string>("get_slssteam_health"));
+
 export const checkHeadcrabCompat = async () =>
   parseResult(await call<[], string>("check_headcrab_compat"));
 
