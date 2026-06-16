@@ -25,6 +25,8 @@ import {
   restartSteam,
   getSlssteamHealth,
   getLumalinuxHealth,
+  getCloudredirectHealth,
+  checkCloudredirectUpdate,
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
@@ -55,6 +57,17 @@ export function Settings() {
     version: string | null;
     action: string | null;
   } | null>(null);
+  const [crHealth, setCrHealth] = useState<{
+    state: string;
+    cause: string | null;
+    version: string | null;
+    action: string | null;
+  } | null>(null);
+  const [crUpdate, setCrUpdate] = useState<{
+    installed: string | null;
+    latest: string | null;
+    has_update: boolean;
+  } | null>(null);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
     target: number | null;
@@ -73,9 +86,18 @@ export function Settings() {
       if (cancelled) return;
       const depsResult = await checkDependencies();
       if (!cancelled && depsResult.success) setDeps(depsResult);
-      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+      const [sls, ll, cr, cru] = await Promise.all([
+        getSlssteamHealth(), getLumalinuxHealth(),
+        getCloudredirectHealth(), checkCloudredirectUpdate(),
+      ]);
       if (!cancelled && sls.state) setSlssteamHealth(sls);
       if (!cancelled && ll.state)  setLumalinuxHealth(ll);
+      if (!cancelled && cr.state)  setCrHealth(cr);
+      if (!cancelled) setCrUpdate({
+        installed: cru.installed ?? null,
+        latest: cru.latest ?? null,
+        has_update: !!cru.has_update,
+      });
     };
 
     const load = async () => {
@@ -97,9 +119,18 @@ export function Settings() {
       const playResult = await getSlsPlayStatus();
       if (!cancelled && playResult.success) setPlayNotOwned(playResult.enabled);
 
-      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+      const [sls, ll, cr, cru] = await Promise.all([
+        getSlssteamHealth(), getLumalinuxHealth(),
+        getCloudredirectHealth(), checkCloudredirectUpdate(),
+      ]);
       if (!cancelled && sls.state) setSlssteamHealth(sls);
       if (!cancelled && ll.state)  setLumalinuxHealth(ll);
+      if (!cancelled && cr.state)  setCrHealth(cr);
+      if (!cancelled) setCrUpdate({
+        installed: cru.installed ?? null,
+        latest: cru.latest ?? null,
+        has_update: !!cru.has_update,
+      });
 
       const compatResult = await checkHeadcrabCompat();
       if (!cancelled && compatResult.success) {
@@ -495,6 +526,35 @@ export function Settings() {
                   : t("notFound")}
               </div>
             </PanelSectionRow>
+            {deps.cloudredirect && crHealth && (() => {
+              const ver = crHealth.version || "?";
+              let line: string | null = null;
+              let color = "#00cc00";
+              switch (crHealth.state) {
+                case "healthy":       line = t("crHealthOk", ver); break;
+                case "broken":        line = t("crHealthBroken", ver); color = "#ff8c00"; break;
+                case "not_active":    line = t("crHealthNotActive");   color = "#ff8c00"; break;
+                case "not_authed":    line = t("crHealthNotAuthed");   color = "#ffaa00"; break;
+                case "kill_switched": line = t("crHealthKillSwitched"); color = "#888"; break;
+              }
+              if (!line) return null;
+              return (
+                <PanelSectionRow>
+                  <div style={{ fontSize: "11px", color, paddingLeft: "8px" }}>
+                    {line}
+                  </div>
+                </PanelSectionRow>
+              );
+            })()}
+            {deps.cloudredirect && crHealth?.state === "healthy" && crUpdate?.has_update && (
+              <PanelSectionRow>
+                <div style={{ fontSize: "11px", color: "#9cc4ff", paddingLeft: "8px" }}>
+                  {t("crUpdateAvailableSub",
+                     crUpdate.installed ?? "?",
+                     crUpdate.latest ?? "?")}
+                </div>
+              </PanelSectionRow>
+            )}
             {deps.cloudredirect && (
               <PanelSectionRow>
                 <div

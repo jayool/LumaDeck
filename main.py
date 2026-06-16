@@ -106,6 +106,18 @@ class Plugin:
         from paths import read_lumalinux_health
         return _j(read_lumalinux_health())
 
+    async def get_cloudredirect_health(self) -> str:
+        """Resolve CloudRedirect into a single UI state (healthy/broken/not_authed/...)."""
+        from paths import read_cloudredirect_health
+        return _j(read_cloudredirect_health())
+
+    async def check_cloudredirect_update(self) -> str:
+        """{installed, latest, has_update, url} via GitHub Releases (cached 6h)."""
+        from paths import read_cloudredirect_health
+        from update_checks import has_update
+        installed = read_cloudredirect_health().get("version")
+        return _j(await has_update("Selectively11", "CloudRedirect", installed))
+
     async def restart_steam(self) -> str:
         """Shutdown Steam as deck user (Game Mode auto-restarts it)."""
         import subprocess, os

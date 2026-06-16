@@ -40,6 +40,17 @@ export const getSlssteamHealth = async () =>
 export const getLumalinuxHealth = async () =>
   parseResult(await call<[], string>("get_lumalinux_health"));
 
+// Resolved CloudRedirect state for the UI. Returns:
+//   { state: "not_installed"|"kill_switched"|"not_active"|"broken"|"not_authed"|"healthy",
+//     cause: null|"no_steam"|"incompatible"|"hook", version: null|string,
+//     action: null|"install"|"restart"|"reinstall"|"configure_desktop" }
+export const getCloudredirectHealth = async () =>
+  parseResult(await call<[], string>("get_cloudredirect_health"));
+
+// { installed, latest, has_update, url } — GitHub Releases, cached 6h.
+export const checkCloudredirectUpdate = async () =>
+  parseResult(await call<[], string>("check_cloudredirect_update"));
+
 export const checkHeadcrabCompat = async () =>
   parseResult(await call<[], string>("check_headcrab_compat"));
 

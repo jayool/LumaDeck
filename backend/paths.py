@@ -437,6 +437,112 @@ def check_cloudredirect_authed() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# CloudRedirect health — same shape as read_slssteam_health / read_lumalinux_health.
+# ---------------------------------------------------------------------------
+#
+# CR loads via LD_PRELOAD and hooks Steam's transport vtable for cloud RPCs. It
+# does NOT unmap on failure either, so /proc alone can't separate "loaded and
+# working" from "loaded but vtable hook failed". Its own log
+# (~/.config/CloudRedirect/cr_debug.log) is the honest discriminator:
+#
+#   - "CloudRedirect build X.Y.Z transport=external-curl"     → version (init OK so far)
+#   - "Init failed: steamclient.so not found"                  → broken/no_steam
+#   - "Init failed: transport vtable not found"                → broken/incompatible
+#   - "Init failed: slot N (...) outside steamclient range, incompatible client"
+#                                                              → broken/incompatible
+#   - "Init failed: transport hook installation failed"        → broken/hook
+#
+# Kill-switch (~/.config/CloudRedirect/disable) is a deliberate user opt-out,
+# not a failure — we surface it but don't nag.
+
+
+_CR_LOG_PATHS = (
+    "/home/deck/.config/CloudRedirect/cr_debug.log",
+    os.path.expanduser("~/.config/CloudRedirect/cr_debug.log"),
+)
+_CR_DISABLE_PATHS = (
+    "/home/deck/.config/CloudRedirect/disable",
+    os.path.expanduser("~/.config/CloudRedirect/disable"),
+)
+
+
+def _cloudredirect_log_path() -> Optional[str]:
+    for p in _CR_LOG_PATHS:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _cloudredirect_kill_switched() -> bool:
+    return any(os.path.isfile(p) for p in _CR_DISABLE_PATHS)
+
+
+def _cloudredirect_log_inspect() -> tuple[Optional[str], Optional[str]]:
+    """Return (version, abort_cause) from the live log, or (None, None) if the
+    file isn't there. abort_cause is "incompatible" when the vtable couldn't be
+    found or its slots are out of range, "no_steam" when steamclient.so wasn't
+    found, "hook" when the trampoline install failed. None = no abort line."""
+    log = _cloudredirect_log_path()
+    if not log:
+        return None, None
+    try:
+        with open(log, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except Exception:
+        return None, None
+
+    import re as _re
+    version: Optional[str] = None
+    m = _re.search(r"CloudRedirect build (\S+)", content)
+    if m:
+        version = m.group(1)
+
+    cause: Optional[str] = None
+    if "Init failed: steamclient.so not found" in content:
+        cause = "no_steam"
+    elif "Init failed: transport vtable not found" in content:
+        cause = "incompatible"
+    elif _re.search(r"Init failed: slot \d+ \([^)]+\) outside steamclient range", content):
+        cause = "incompatible"
+    elif "Init failed: transport hook installation failed" in content:
+        cause = "hook"
+
+    return version, cause
+
+
+def read_cloudredirect_health() -> dict:
+    """Resolve CloudRedirect into one UI state. Read-only.
+
+    States (action in parens):
+        not_installed   — .so not on disk                    (install)
+        kill_switched   — ~/.config/CloudRedirect/disable    (none — user choice)
+        not_active      — installed, .so not in /proc        (restart Steam)
+        broken          — mapped + log "Init failed: ..."    (reinstall)
+        not_authed      — healthy hooks + no provider tokens (configure in desktop)
+        healthy         — mapped + clean log + tokens present
+    """
+    if not check_cloudredirect_installed():
+        return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
+
+    if _cloudredirect_kill_switched():
+        return {"state": "kill_switched", "cause": None, "version": None, "action": None}
+
+    mapped = check_cloudredirect_active()
+    version, cause = _cloudredirect_log_inspect()
+
+    if not mapped:
+        return {"state": "not_active", "cause": None, "version": version, "action": "restart"}
+
+    if cause:
+        return {"state": "broken", "cause": cause, "version": version, "action": "reinstall"}
+
+    if not check_cloudredirect_authed():
+        return {"state": "not_authed", "cause": None, "version": version, "action": "configure_desktop"}
+
+    return {"state": "healthy", "cause": None, "version": version, "action": None}
+
+
+# ---------------------------------------------------------------------------
 # SLSsteam injection verification
 # ---------------------------------------------------------------------------
 #

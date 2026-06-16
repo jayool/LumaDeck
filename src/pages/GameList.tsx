@@ -23,7 +23,10 @@ import {
   restartSteam,
   getSlssteamHealth,
   getLumalinuxHealth,
+  getCloudredirectHealth,
+  checkCloudredirectUpdate,
   installLumalinux,
+  installCloudredirect,
   checkHeadcrabCompat,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
@@ -71,6 +74,17 @@ export function GameList() {
     version: string | null;
     action: string | null;
   } | null>(null);
+  const [crHealth, setCrHealth] = useState<{
+    state: string;
+    cause: string | null;
+    version: string | null;
+    action: string | null;
+  } | null>(null);
+  const [crUpdate, setCrUpdate] = useState<{
+    installed: string | null;
+    latest: string | null;
+    has_update: boolean;
+  } | null>(null);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
     target: number | null;
@@ -78,6 +92,7 @@ export function GameList() {
   } | null>(null);
   const [restartingStream, setRestartingStream] = useState(false);
   const [reinstallingLL, setReinstallingLL] = useState(false);
+  const [reinstallingCR, setReinstallingCR] = useState(false);
   const [syncState, setSyncState] = useState<any>(null);
   const [steamLibraries, setSteamLibraries] = useState<any[]>([]);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
@@ -266,22 +281,30 @@ export function GameList() {
       } catch { }
     })();
 
-    // SLSsteam + lumalinux health → HealthBanner (critical). headcrabCompat
-    // crossed with slssteamHealth → UpdatesBanner (info). The split keeps the
-    // critical lane uncluttered; updates are routine, not problems.
+    // Health (HealthBanner, critical) + updates (UpdatesBanner, info). Five
+    // signals fetched in parallel — keeps the critical lane uncluttered and
+    // surfaces routine updates separately.
     (async () => {
       try {
-        const [sls, ll, hc] = await Promise.all([
+        const [sls, ll, cr, hc, cru] = await Promise.all([
           getSlssteamHealth(),
           getLumalinuxHealth(),
+          getCloudredirectHealth(),
           checkHeadcrabCompat(),
+          checkCloudredirectUpdate(),
         ]);
         if (sls.state) setSlssteamHealth(sls);
         if (ll.state)  setLumalinuxHealth(ll);
+        if (cr.state)  setCrHealth(cr);
         if (hc.success) setHeadcrabCompat({
           current_build: hc.current_build,
           target: hc.target,
           compatible: hc.compatible,
+        });
+        setCrUpdate({
+          installed: cru.installed ?? null,
+          latest: cru.latest ?? null,
+          has_update: !!cru.has_update,
         });
       } catch { }
     })();
@@ -513,6 +536,21 @@ export function GameList() {
     }
   };
 
+  const handleReinstallCloudredirect = async () => {
+    setReinstallingCR(true);
+    const result = await installCloudredirect();
+    setReinstallingCR(false);
+    if (result.success) {
+      toast(t("crInstalled"), t("crInstalledBody"), 6000);
+      try {
+        const cr = await getCloudredirectHealth();
+        if (cr.state) setCrHealth(cr);
+      } catch { }
+    } else {
+      toast(t("toastError"), result.error || "", 4000);
+    }
+  };
+
   // Translate each component's health into a HealthProblem row, or null when
   // healthy / not installed (the banner only surfaces actionable failures —
   // "not installed" belongs to the install flow in Settings, not here).
@@ -567,7 +605,44 @@ export function GameList() {
     };
   })();
 
-  const healthProblems = [slssProblem, llProblem].filter((p): p is HealthProblem => p !== null);
+  // CloudRedirect rides in the HealthBanner for broken / not_active /
+  // not_authed. broken → Reinstall button (safe in gamemode, no downgrade
+  // involved). not_active → Restart Steam. not_authed → no button, the body
+  // tells the user to switch to Desktop and sign in. healthy / kill_switched
+  // / not_installed → silence at the banner level.
+  const crProblem = ((): HealthProblem | null => {
+    if (!crHealth) return null;
+    if (
+      crHealth.state === "healthy" ||
+      crHealth.state === "not_installed" ||
+      crHealth.state === "kill_switched"
+    ) return null;
+    const body = (() => {
+      switch (crHealth.state) {
+        case "broken":     return t("crBannerBodyBroken");
+        case "not_active": return t("crBannerBodyNotActive");
+        case "not_authed": return t("crBannerBodyNotAuthed");
+        default: return "";
+      }
+    })();
+    const isRestart  = crHealth.action === "restart";
+    const isReinstall = crHealth.action === "reinstall";
+    return {
+      key: "cloudredirect",
+      title: t("crBannerTitle"),
+      body,
+      // not_authed has action="configure_desktop" → no button (the body says it all).
+      actionLabel: isRestart
+        ? (restartingStream ? t("restarting") : t("crBannerActionRestart"))
+        : isReinstall
+          ? (reinstallingCR ? t("installingCR") : t("crBannerActionReinstall"))
+          : undefined,
+      onAction: isRestart ? handleRestartSteam : isReinstall ? handleReinstallCloudredirect : undefined,
+      actionDisabled: isRestart ? restartingStream : isReinstall ? reinstallingCR : false,
+    };
+  })();
+
+  const healthProblems = [slssProblem, llProblem, crProblem].filter((p): p is HealthProblem => p !== null);
 
   // Info-level updates (blue). Only surface for components that are HEALTHY
   // — a broken component already shouts via HealthBanner with its repair button,
@@ -579,6 +654,12 @@ export function GameList() {
     slssteamHealth?.state === "healthy"
   ) {
     updates.push({ key: "slssteam", text: t("slssUpdateAvailableMain") });
+  }
+  if (
+    crUpdate?.has_update &&
+    crHealth?.state === "healthy"
+  ) {
+    updates.push({ key: "cloudredirect", text: t("crUpdateAvailableMain") });
   }
 
   return (
