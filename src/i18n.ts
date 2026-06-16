@@ -206,6 +206,11 @@ const strings: Record<Lang, Record<string, string>> = {
     llBannerActionRestart: "Restart Steam",
     // Banner heading when more than one component is unhealthy at once.
     healthBannerTitleMulti: "Some components aren't active",
+    // Updates available (info, blue) — main page line + Settings sub-row + section notice.
+    slssUpdateAvailableMain: "SLSsteam update available — apply from Desktop Mode",
+    slssUpdateAvailableSub: "Update available (Steam build {0} → {1})",
+    slssUpdateApplyTitle: "Apply update from Desktop Mode",
+    slssUpdateApplyBody: "Updating SLSsteam requires Headcrab to change the Steam client version, which isn't safe in Game Mode. Switch to Desktop Mode and run:",
     // Health sub-row for lumalinux Dependencies (extends the existing v / failed):
     llHealthHashBlocked: "v{0} loaded but blocked — Steam updated past verified hashes (reinstall lumalinux)",
     llHealthNotActive: "Installed but not loaded — restart Steam to activate",
@@ -521,6 +526,10 @@ const strings: Record<Lang, Record<string, string>> = {
     llBannerActionReinstall: "Reinstalar lumalinux",
     llBannerActionRestart: "Reiniciar Steam",
     healthBannerTitleMulti: "Alguns componentes não estão ativos",
+    slssUpdateAvailableMain: "Atualização do SLSsteam disponível — aplique no Desktop Mode",
+    slssUpdateAvailableSub: "Atualização disponível (build da Steam {0} → {1})",
+    slssUpdateApplyTitle: "Aplique a atualização no Desktop Mode",
+    slssUpdateApplyBody: "Atualizar o SLSsteam exige que o Headcrab mude a versão do cliente Steam, o que não é seguro no Game Mode. Vá pro Desktop Mode e rode:",
     llHealthHashBlocked: "v{0} carregado mas bloqueado — a Steam atualizou além dos hashes verificados (reinstale o lumalinux)",
     llHealthNotActive: "Instalado mas não carregado — reinicie a Steam para ativar",
     dependencies: "Dependências",

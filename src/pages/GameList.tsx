@@ -24,9 +24,11 @@ import {
   getSlssteamHealth,
   getLumalinuxHealth,
   installLumalinux,
+  checkHeadcrabCompat,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { HealthBanner, HealthProblem } from "../components/HealthBanner";
+import { UpdatesBanner, UpdateNotice } from "../components/UpdatesBanner";
 import { ROUTE_GAME_DETAIL, ROUTE_SETTINGS, ROUTE_DOWNLOADS } from "../routes";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
@@ -68,6 +70,11 @@ export function GameList() {
     cause: string | null;
     version: string | null;
     action: string | null;
+  } | null>(null);
+  const [headcrabCompat, setHeadcrabCompat] = useState<{
+    current_build: number | null;
+    target: number | null;
+    compatible: boolean;
   } | null>(null);
   const [restartingStream, setRestartingStream] = useState(false);
   const [reinstallingLL, setReinstallingLL] = useState(false);
@@ -259,15 +266,23 @@ export function GameList() {
       } catch { }
     })();
 
-    // SLSsteam + lumalinux health — drive the unified HealthBanner. SLSsteam
-    // = "games won't launch" (ownership hook), lumalinux = "new downloads
-    // disabled" (depot patching). Both can fail independently; if both do,
-    // the banner shows two rows in one frame.
+    // SLSsteam + lumalinux health → HealthBanner (critical). headcrabCompat
+    // crossed with slssteamHealth → UpdatesBanner (info). The split keeps the
+    // critical lane uncluttered; updates are routine, not problems.
     (async () => {
       try {
-        const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
+        const [sls, ll, hc] = await Promise.all([
+          getSlssteamHealth(),
+          getLumalinuxHealth(),
+          checkHeadcrabCompat(),
+        ]);
         if (sls.state) setSlssteamHealth(sls);
-        if (ll.state) setLumalinuxHealth(ll);
+        if (ll.state)  setLumalinuxHealth(ll);
+        if (hc.success) setHeadcrabCompat({
+          current_build: hc.current_build,
+          target: hc.target,
+          compatible: hc.compatible,
+        });
       } catch { }
     })();
 
@@ -554,9 +569,22 @@ export function GameList() {
 
   const healthProblems = [slssProblem, llProblem].filter((p): p is HealthProblem => p !== null);
 
+  // Info-level updates (blue). Only surface for components that are HEALTHY
+  // — a broken component already shouts via HealthBanner with its repair button,
+  // doubling up would be noise. The text says where to apply the update; the
+  // button lives in Settings (intentional — keeps the QAM uncluttered).
+  const updates: UpdateNotice[] = [];
+  if (
+    headcrabCompat && !headcrabCompat.compatible &&
+    slssteamHealth?.state === "healthy"
+  ) {
+    updates.push({ key: "slssteam", text: t("slssUpdateAvailableMain") });
+  }
+
   return (
     <>
       <HealthBanner problems={healthProblems} multiTitle={t("healthBannerTitleMulti")} />
+      <UpdatesBanner updates={updates} />
 
       <PanelSection title={t("addGame")}>
         <PanelSectionRow>

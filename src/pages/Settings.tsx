@@ -314,53 +314,75 @@ export function Settings() {
             {t("restartSteam")}
           </ButtonItem>
         </PanelSectionRow>
-        {slssteamHealth &&
-         (slssteamHealth.state === "broken" || slssteamHealth.state === "injection_missing") && (
-          <>
-            <PanelSectionRow>
-              <div style={{ fontSize: "11px", color: "#ffaa00" }}>
-                ⚠ {slssHealthLine(slssteamHealth)}
-              </div>
-            </PanelSectionRow>
-            <PanelSectionRow>
-              <ButtonItem
-                layout="below"
-                onClick={handleRepairHeadcrab}
-                disabled={repairing || (headcrabCompat ? !headcrabCompat.compatible : false)}
-              >
-                {repairing ? t("repairingHeadcrab") : t("repairSlssteamHeadcrab")}
-              </ButtonItem>
-            </PanelSectionRow>
-            {headcrabCompat && !headcrabCompat.compatible && (
+        {/* Repair / Apply-Update zone — fires when SLSsteam is broken OR when an
+            update is available. Both use the same handler (headcrab.sh) and the
+            same gamemode gate (compat=false → must run from Desktop). The notice
+            colour changes per intent: orange for "broken", blue for "update". */}
+        {(() => {
+          const broken = slssteamHealth &&
+            (slssteamHealth.state === "broken" || slssteamHealth.state === "injection_missing");
+          const updateAvailable = slssteamHealth?.state === "healthy" &&
+            headcrabCompat && !headcrabCompat.compatible;
+          if (!broken && !updateAvailable) return null;
+          const gamemodeBlocked = headcrabCompat && !headcrabCompat.compatible;
+          return (
+            <>
               <PanelSectionRow>
                 <div style={{
                   fontSize: "11px",
-                  color: "#aaa",
-                  lineHeight: "1.4",
-                  padding: "4px 0",
+                  color: broken ? "#ffaa00" : "#9cc4ff",
                 }}>
-                  <div style={{ color: "#ff8c00", fontWeight: 600, marginBottom: "4px" }}>
-                    ⚠ {t("headcrabGameModeBlockTitle")}
-                  </div>
-                  <div style={{ marginBottom: "6px" }}>
-                    {t("headcrabGameModeBlockBody")}
-                  </div>
-                  <div style={{
-                    fontFamily: "monospace",
-                    fontSize: "10px",
-                    color: "#ccc",
-                    background: "rgba(0,0,0,0.3)",
-                    padding: "4px 6px",
-                    borderRadius: "3px",
-                    wordBreak: "break-all",
-                  }}>
-                    {t("headcrabGameModeBlockCommand")}
-                  </div>
+                  {broken
+                    ? <>⚠ {slssHealthLine(slssteamHealth!)}</>
+                    : t("slssUpdateAvailableSub",
+                         headcrabCompat?.current_build ?? "?",
+                         headcrabCompat?.target ?? "?")}
                 </div>
               </PanelSectionRow>
-            )}
-          </>
-        )}
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  onClick={handleRepairHeadcrab}
+                  disabled={repairing || !!gamemodeBlocked}
+                >
+                  {repairing ? t("repairingHeadcrab") : t("repairSlssteamHeadcrab")}
+                </ButtonItem>
+              </PanelSectionRow>
+              {gamemodeBlocked && (
+                <PanelSectionRow>
+                  <div style={{
+                    fontSize: "11px",
+                    color: "#aaa",
+                    lineHeight: "1.4",
+                    padding: "4px 0",
+                  }}>
+                    <div style={{
+                      color: broken ? "#ff8c00" : "#5b9eff",
+                      fontWeight: 600,
+                      marginBottom: "4px",
+                    }}>
+                      ⚠ {broken ? t("headcrabGameModeBlockTitle") : t("slssUpdateApplyTitle")}
+                    </div>
+                    <div style={{ marginBottom: "6px" }}>
+                      {broken ? t("headcrabGameModeBlockBody") : t("slssUpdateApplyBody")}
+                    </div>
+                    <div style={{
+                      fontFamily: "monospace",
+                      fontSize: "10px",
+                      color: "#ccc",
+                      background: "rgba(0,0,0,0.3)",
+                      padding: "4px 6px",
+                      borderRadius: "3px",
+                      wordBreak: "break-all",
+                    }}>
+                      {t("headcrabGameModeBlockCommand")}
+                    </div>
+                  </div>
+                </PanelSectionRow>
+              )}
+            </>
+          );
+        })()}
       </PanelSection>
 
       <PanelSection title={t("dependencies")}>
@@ -400,6 +422,16 @@ export function Settings() {
                   paddingLeft: "8px",
                 }}>
                   {slssHealthLine(slssteamHealth)}
+                </div>
+              </PanelSectionRow>
+            )}
+            {deps.slssteam && slssteamHealth?.state === "healthy" &&
+             headcrabCompat && !headcrabCompat.compatible && (
+              <PanelSectionRow>
+                <div style={{ fontSize: "11px", color: "#9cc4ff", paddingLeft: "8px" }}>
+                  {t("slssUpdateAvailableSub",
+                     headcrabCompat.current_build ?? "?",
+                     headcrabCompat.target ?? "?")}
                 </div>
               </PanelSectionRow>
             )}
