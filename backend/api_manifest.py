@@ -432,6 +432,16 @@ async def check_game_update(appid: int) -> dict:
     except Exception:
         return {"success": False, "error": "Invalid appid"}
 
+    # Pinned games are frozen on purpose (BuildDep holds them) — don't surface an
+    # update badge. Report it explicitly so the UI can say "pinned" vs "up to date".
+    try:
+        from downloads import get_pin_status
+        pin = await get_pin_status(appid)
+        if pin.get("pinned"):
+            return {"success": True, "updateAvailable": False, "pinned": True}
+    except Exception:
+        pass
+
     try:
         # 1. Read saved snapshot (created after last download)
         snapshot_path = _depot_snapshot_path(appid)

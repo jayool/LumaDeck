@@ -216,6 +216,18 @@ class Plugin:
         from api_manifest import check_game_update
         return _j(await check_game_update(appid))
 
+    async def pin_game(self, appid: int) -> str:
+        from downloads import pin_game
+        return _j(await pin_game(appid))
+
+    async def unpin_game(self, appid: int) -> str:
+        from downloads import unpin_game
+        return _j(await unpin_game(appid))
+
+    async def get_pin_status(self, appid: int) -> str:
+        from downloads import get_pin_status
+        return _j(await get_pin_status(appid))
+
     # ==========================================================================
     # Downloads
     # ==========================================================================

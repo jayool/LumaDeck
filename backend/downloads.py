@@ -141,6 +141,69 @@ async def _invoke_steamidra_lite(
     return proc.returncode == 0, output
 
 
+# ---------------------------------------------------------------------------
+# Per-game pin / unpin (auto-update toggle)
+# ---------------------------------------------------------------------------
+#
+# steamidra_lite's zip-less modes (--pin-installed / --unpin / --pin-status) do
+# the keys.txt surgery; LumaDeck just shells out to them. The change takes effect
+# on the next Steam restart — we do NOT force one (a toggle inside Game Mode
+# shouldn't kill Steam); the UI tells the user it applies on restart.
+
+
+async def _run_steamidra_mode(mode_args: list[str]) -> tuple[bool, str]:
+    """Run steamidra_lite in a zip-less mode (just flags, no input zip)."""
+    script = _find_steamidra_lite_script()
+    if not script:
+        return False, "lumalinux not installed (steamidra_lite.py not found)."
+    python = _find_lumalinux_venv_python()
+    cmd = [python, script, *mode_args]
+    logger.info(f"LumaDeck: invoking steamidra_lite: {' '.join(cmd)}")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except FileNotFoundError as exc:
+        return False, f"Could not start steamidra_lite: {exc}"
+    raw, _ = await proc.communicate()
+    return proc.returncode == 0, raw.decode("utf-8", errors="replace").strip()
+
+
+async def pin_game(appid: int) -> dict:
+    """Freeze a game at its installed version (steamidra_lite --pin-installed)."""
+    ok, out = await _run_steamidra_mode(["--pin-installed", str(int(appid))])
+    if not ok:
+        return {"success": False, "error": out or "pin failed"}
+    return {"success": True, "pinned": True}
+
+
+async def unpin_game(appid: int) -> dict:
+    """Return a game to auto-update (steamidra_lite --unpin)."""
+    ok, out = await _run_steamidra_mode(["--unpin", str(int(appid))])
+    if not ok:
+        return {"success": False, "error": out or "unpin failed"}
+    return {"success": True, "pinned": False}
+
+
+async def get_pin_status(appid: int) -> dict:
+    """Return {"success", "pinned", "depots"} (steamidra_lite --pin-status)."""
+    ok, out = await _run_steamidra_mode(["--pin-status", str(int(appid))])
+    if not ok:
+        return {"success": False, "error": out or "status failed", "pinned": False}
+    try:
+        line = out.splitlines()[-1] if out else "{}"
+        data = json.loads(line)
+        return {
+            "success": True,
+            "pinned": bool(data.get("pinned")),
+            "depots": data.get("depots", {}),
+        }
+    except Exception:
+        return {"success": False, "error": f"could not parse: {out}", "pinned": False}
+
+
 # Rate limiting for Steam API calls
 _LAST_API_CALL_TIME = 0.0
 _API_CALL_MIN_INTERVAL = 0.3  # 300ms between calls

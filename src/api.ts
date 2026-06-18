@@ -85,6 +85,17 @@ export const searchHubcap = async (query: string) =>
 export const checkGameUpdate = async (appid: number) =>
   parseResult(await call<[number], string>("check_game_update", appid));
 
+// Per-game pin (auto-update toggle). pinGame freezes the game at its installed
+// version; unpinGame returns it to auto-update; getPinStatus → { pinned, depots }.
+export const pinGame = async (appid: number) =>
+  parseResult(await call<[number], string>("pin_game", appid));
+
+export const unpinGame = async (appid: number) =>
+  parseResult(await call<[number], string>("unpin_game", appid));
+
+export const getPinStatus = async (appid: number) =>
+  parseResult(await call<[number], string>("get_pin_status", appid));
+
 // Downloads
 export const startDownload = async (appid: number, targetLibraryPath: string = "") =>
   parseResult(await call<[number, string], string>("start_download", appid, targetLibraryPath));

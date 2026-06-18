@@ -38,6 +38,9 @@ import {
   repairAppmanifest,
   reconfigureSlssteam,
   checkGameUpdate,
+  pinGame,
+  unpinGame,
+  getPinStatus,
   checkGoldbergStatus,
   applyGoldberg,
   removeGoldberg,
@@ -100,6 +103,7 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
   const [goldbergApplied, setGoldbergApplied] = useState(false);
   const [achievementStatus, setAchievementStatus] = useState("");
   const [achievementGenState, setAchievementGenState] = useState<any>(null);
@@ -191,6 +195,8 @@ export function GameDetail({ appid }: GameDetailProps) {
         setSteamlessDotnet(slResult.dotnetAvailable);
       }
 
+      const pinResult = await getPinStatus(appid);
+      if (pinResult.success) setIsPinned(pinResult.pinned);
 };
     load();
   }, [appid]);
@@ -483,6 +489,17 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
+  const handleTogglePin = async () => {
+    const result = isPinned ? await unpinGame(appid) : await pinGame(appid);
+    if (result.success) {
+      setIsPinned(!isPinned);
+      if (isPinned) setUpdateStatus(null); // re-allow update checks after unpin
+      toast(isPinned ? t("toastUnpinned") : t("toastPinned"), gameName);
+    } else {
+      toast(t("toastError"), result.error || "", 4000);
+    }
+  };
+
   const handleToggleGoldberg = async () => {
     if (!installPath) {
       toast(t("toastError"), t("installPathNotFound"), 4000);
@@ -747,14 +764,26 @@ export function GameDetail({ appid }: GameDetailProps) {
               onClick={handleDownload}
               variant="primary"
             />
-            {hasLua && updateStatus === "available" ? (
+            {hasLua && installPath ? (
+              <PanelSectionRow>
+                <ToggleField
+                  label={t("autoUpdate")}
+                  checked={!isPinned}
+                  onChange={() => handleTogglePin()}
+                  description={
+                    isPinned ? t("pinnedToCurrentDesc") : t("autoUpdateDesc")
+                  }
+                />
+              </PanelSectionRow>
+            ) : null}
+            {hasLua && !isPinned && updateStatus === "available" ? (
               <ActionButton
                 label={t("updateNow")}
                 onClick={handleDownload}
                 variant="primary"
                 description={t("redownloadDesc")}
               />
-            ) : hasLua ? (
+            ) : hasLua && !isPinned ? (
               <ActionButton
                 label={
                   updateStatus === "checking"
