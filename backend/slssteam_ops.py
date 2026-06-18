@@ -650,10 +650,125 @@ def _find_game_dir_fallback(appid: int) -> str:
     return ""
 
 
+def remove_from_lumalinux_keys(appid: int, extra_depot_ids=None) -> dict:
+    """Remove an app's lines from lumalinux's keys.txt.
+
+    Removes any non-comment line that is:
+      - the app's own dummy line:        '<appid>;<hex>'
+      - a depot line parented to appid:  '<depot>;<appid>;<gid>;<size>;<key>'
+      - a depot line for any id in extra_depot_ids (legacy/no-key shapes that
+        carry no parent field, recovered from the .lua before it's deleted)
+
+    Comments (#...) and blank lines are preserved verbatim. Best-effort: any
+    read/write error is reported but never raises. Returns the depot ids that
+    were removed (so the caller can clean the matching config.vdf keys) and a
+    count of removed lines.
+    """
+    from paths import get_lumalinux_keys_path
+
+    keys_path = get_lumalinux_keys_path()
+    if not os.path.isfile(keys_path):
+        return {"success": True, "removed": 0, "depot_ids": []}
+
+    appid_str = str(appid)
+    extra = {str(d) for d in (extra_depot_ids or [])}
+    removed_depot_ids = set()
+    kept_lines = []
+    removed = 0
+    try:
+        with open(keys_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        for raw in lines:
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("#"):
+                kept_lines.append(raw)
+                continue
+            fields = stripped.split(";")
+            depot = fields[0]
+            is_app_dummy = depot == appid_str
+            is_parented = len(fields) >= 2 and fields[1] == appid_str
+            is_extra = depot in extra
+            if is_app_dummy or is_parented or is_extra:
+                removed += 1
+                # The app's own dummy line is not a depot — don't list it as a
+                # depot id for the config.vdf follow-up.
+                if not is_app_dummy:
+                    removed_depot_ids.add(depot)
+                continue
+            kept_lines.append(raw)
+
+        if removed:
+            tmp = keys_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.writelines(kept_lines)
+            os.replace(tmp, keys_path)
+        return {"success": True, "removed": removed, "depot_ids": sorted(removed_depot_ids)}
+    except Exception as e:
+        logger.warning(f"LumaDeck: remove_from_lumalinux_keys failed: {e}")
+        return {"success": False, "error": str(e), "depot_ids": sorted(removed_depot_ids)}
+
+
+def remove_depot_decryption_keys(depot_ids) -> dict:
+    """Remove DecryptionKey blocks for the given depot ids from config.vdf.
+
+    Mirrors the block shape written by write_depot_decryption_keys:
+        "<depot>"
+        {
+            "DecryptionKey"  "<64 hex>"
+        }
+    The regex only matches a brace block with no nested braces, so it can't
+    eat a larger surrounding section. Best-effort; the rest of the file is
+    preserved. Returns the depot ids actually removed.
+    """
+    import re
+    from steam_utils import detect_steam_install_path
+
+    depot_ids = [str(d) for d in (depot_ids or [])]
+    if not depot_ids:
+        return {"success": True, "removed": []}
+
+    steam_path = detect_steam_install_path()
+    if not steam_path:
+        return {"success": False, "error": "Steam path not found"}
+    config_vdf = os.path.join(steam_path, "config", "config.vdf")
+    if not os.path.exists(config_vdf):
+        return {"success": True, "removed": []}
+
+    try:
+        with open(config_vdf, "r", encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+        removed = []
+        for depot_str in depot_ids:
+            # Consume the leading newline too so we don't leave a blank line.
+            block_re = re.compile(
+                rf'\n[ \t]*"{re.escape(depot_str)}"\s*\{{[^{{}}]*\}}',
+                re.DOTALL,
+            )
+            new_content, n = block_re.subn("", content)
+            if n:
+                content = new_content
+                removed.append(depot_str)
+                logger.info(f"LumaDeck: Removed DecryptionKey block for depot {depot_str}")
+        if removed:
+            tmp = config_vdf + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            os.replace(tmp, config_vdf)
+        return {"success": True, "removed": removed}
+    except Exception as e:
+        logger.warning(f"LumaDeck: remove_depot_decryption_keys failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
-    """Full uninstall: game files, appmanifest, depotcache manifests, lua, and all SLSsteam config entries."""
+    """Full uninstall: game files, appmanifest, depotcache manifests, lua, all
+    SLSsteam config entries, lumalinux keys.txt lines, and config.vdf keys."""
     removed = []
     errors = []
+    # Depot ids recovered from the .lua before it's deleted (step 3). Used to
+    # clean legacy/no-key keys.txt lines and config.vdf keys that carry no
+    # parent appid of their own.
+    lua_depot_ids: list = []
 
     try:
         # 1. Find and remove game files
@@ -735,6 +850,8 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                 actual_lua = lua_path if os.path.exists(lua_path) else (lua_path_disabled if os.path.exists(lua_path_disabled) else None)
                 if actual_lua:
                     depots = _parse_lua_depots(actual_lua)
+                    # Capture depot ids now — the .lua is deleted in step 3.
+                    lua_depot_ids = [d["depot"] for d in depots if "depot" in d]
                     depotcache_dir = os.path.join(steam_path, "depotcache")
                     for depot_info in depots:
                         manifest_file = os.path.join(depotcache_dir, f"{depot_info['depot']}_{depot_info['manifest']}.manifest")
@@ -777,6 +894,21 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
             removed.append("game_dlcs")
         except Exception:
             pass
+
+        # 5. Remove lumalinux keys.txt lines + the matching config.vdf
+        # DecryptionKey blocks. keys.txt parent==appid is the reliable source
+        # for the native/lumalinux flow; lua_depot_ids supplements it for
+        # legacy/no-key shapes recovered from the .lua before deletion.
+        try:
+            keys_res = remove_from_lumalinux_keys(appid, extra_depot_ids=lua_depot_ids)
+            if keys_res.get("removed"):
+                removed.append("lumalinux_keys")
+            depot_ids_for_vdf = set(str(d) for d in lua_depot_ids) | set(keys_res.get("depot_ids", []))
+            vdf_res = remove_depot_decryption_keys(depot_ids_for_vdf)
+            if vdf_res.get("removed"):
+                removed.append("decryption_keys")
+        except Exception as e:
+            logger.warning(f"LumaDeck: lumalinux/config.vdf cleanup error: {e}")
 
         logger.info(f"LumaDeck: Uninstall {appid} complete. Removed: {removed}")
         return {"success": True, "removed": removed, "errors": errors}

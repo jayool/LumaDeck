@@ -1126,6 +1126,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             t("uninstallItemManifest"),
             t("uninstallItemDepots"),
             t("uninstallItemSteamConfig"),
+            t("uninstallItemKeys"),
           ].map((item, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: "7px", fontSize: "12px", color: "#bbb", lineHeight: "1.9" }}>
               <span style={{ color: "#e07070", fontSize: "10px" }}>✕</span>
