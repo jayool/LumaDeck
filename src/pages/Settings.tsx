@@ -12,7 +12,6 @@ import {
   saveRyuCookie,
   loadRyuCookie,
   updateHubcapKey,
-  loadHubcapKey,
   fetchFreeApisNow,
   checkDependencies,
   installDependencies,
@@ -118,10 +117,8 @@ export function Settings() {
         setRyuCookie(cookieResult.cookie);
       }
 
-      const keyResult = await loadHubcapKey();
-      if (!cancelled && keyResult.success && keyResult.key) {
-        setHubcapKey(keyResult.key);
-      }
+      // Hubcap key field stays empty by default — the user pastes a freshly
+      // regenerated key each time rather than seeing the stored one prefilled.
 
       await refreshDeps();
 
@@ -203,7 +200,7 @@ export function Settings() {
     // desktop. They copy the key in the browser and paste it into the field
     // above. (We deliberately open the official site as-is — no scraping or
     // scripted regeneration, which the site bans.)
-    Navigation.NavigateToExternalWeb("https://hubcapmanifest.com/");
+    Navigation.NavigateToExternalWeb("https://hubcapmanifest.com/api-keys");
   };
 
   const handleUpdateApis = async () => {
@@ -337,15 +334,6 @@ export function Settings() {
         </PanelSectionRow>
 
         <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={handleOpenHubcap}
-            description={t("getHubcapKeyDesc")}
-          >
-            {t("getHubcapKey")}
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
           <TextField
             label={t("hubcapApiKey")}
             value={hubcapKey}
@@ -356,6 +344,15 @@ export function Settings() {
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSaveHubcapKey}>
             {t("saveHubcapKey")}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={handleOpenHubcap}
+            description={t("getHubcapKeyDesc")}
+          >
+            {t("getHubcapKey")}
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
