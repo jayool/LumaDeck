@@ -49,6 +49,17 @@ LL_INSTALL_STATE = {
     "error": None,
 }
 
+# Combined state for the "Quick Install" flow, which chains the three
+# installers below in dependency order.
+QUICK_INSTALL_STATE = {
+    "status": "idle",
+    "step": None,
+    "stepIndex": 0,
+    "totalSteps": 3,
+    "progress": "",
+    "error": None,
+}
+
 
 # Upstream Headcrab is hosted at Deadboy666/h3adcr-b. The `headcrab.pages.dev`
 # alias serves the same file from main. We fetch the raw GitHub URL directly
@@ -628,3 +639,86 @@ async def install_lumalinux() -> dict:
 
 def get_ll_install_status() -> dict:
     return LL_INSTALL_STATE.copy()
+
+
+async def quick_install() -> dict:
+    """Run the three installers in dependency order, stopping at the first
+    failure:
+
+        1. dependencies   — SLSsteam + ACCELA + .NET 9   (install_dependencies)
+        2. cloudredirect  — CloudRedirect via headcrab    (install_cloudredirect)
+        3. lumalinux      — liblumalinux.so + steam.sh patch (install_lumalinux)
+
+    Order matters: steps 1 and 2 both run headcrab, which regenerates steam.sh
+    from scratch — that would wipe lumalinux's managed block. lumalinux must
+    therefore run LAST so its steam.sh patch survives. This mirrors doing the
+    three existing buttons by hand, top to bottom.
+
+    Each sub-installer keeps updating its own state global with live progress;
+    get_quick_install_status() merges that in for the currently-running step.
+    The caller (frontend) does a single Steam restart at the end — the
+    sub-installers don't restart Steam themselves.
+    """
+    global QUICK_INSTALL_STATE
+
+    steps = [
+        ("dependencies", install_dependencies, get_install_status),
+        ("cloudredirect", install_cloudredirect, get_cr_install_status),
+        ("lumalinux", install_lumalinux, get_ll_install_status),
+    ]
+    QUICK_INSTALL_STATE = {
+        "status": "installing",
+        "step": steps[0][0],
+        "stepIndex": 0,
+        "totalSteps": len(steps),
+        "progress": "Starting Quick Install...",
+        "error": None,
+    }
+    logger.info("LumaDeck: quick_install() entered")
+
+    for i, (name, runner, status_getter) in enumerate(steps):
+        QUICK_INSTALL_STATE["step"] = name
+        QUICK_INSTALL_STATE["stepIndex"] = i
+        QUICK_INSTALL_STATE["progress"] = f"Installing {name} ({i + 1}/{len(steps)})..."
+        logger.info("LumaDeck: quick_install step %d/%d: %s", i + 1, len(steps), name)
+        try:
+            result = await runner()
+        except Exception as exc:
+            logger.exception("LumaDeck: quick_install step %s crashed: %s", name, exc)
+            QUICK_INSTALL_STATE["status"] = "failed"
+            QUICK_INSTALL_STATE["error"] = f"{name} crashed: {exc}"
+            return {"success": False, "failedStep": name}
+
+        if not (isinstance(result, dict) and result.get("success")):
+            # Surface the sub-installer's own error/progress for context.
+            sub = status_getter()
+            QUICK_INSTALL_STATE["status"] = "failed"
+            QUICK_INSTALL_STATE["error"] = sub.get("error") or f"{name} failed"
+            QUICK_INSTALL_STATE["progress"] = sub.get("progress", "")
+            logger.error("LumaDeck: quick_install failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
+            return {"success": False, "failedStep": name}
+
+    QUICK_INSTALL_STATE["status"] = "done"
+    QUICK_INSTALL_STATE["stepIndex"] = len(steps)
+    QUICK_INSTALL_STATE["progress"] = "Quick Install complete!"
+    logger.info("LumaDeck: quick_install finished OK")
+    return {"success": True}
+
+
+def get_quick_install_status() -> dict:
+    """Quick Install state, enriched with the live progress line of whichever
+    sub-installer is running right now (so the UI shows real activity)."""
+    state = QUICK_INSTALL_STATE.copy()
+    if state.get("status") == "installing":
+        live_getter = {
+            "dependencies": get_install_status,
+            "cloudredirect": get_cr_install_status,
+            "lumalinux": get_ll_install_status,
+        }.get(state.get("step"))
+        if live_getter:
+            sub = live_getter()
+            if sub.get("progress"):
+                state["progress"] = sub["progress"]
+            if sub.get("status") == "failed" and sub.get("error"):
+                state["error"] = sub["error"]
+    return state

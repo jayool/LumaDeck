@@ -29,6 +29,8 @@ import {
   installLumalinux,
   installCloudredirect,
   checkHeadcrabCompat,
+  quickInstall,
+  getQuickInstallStatus,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { HealthBanner, HealthProblem } from "../components/HealthBanner";
@@ -99,6 +101,9 @@ export function GameList() {
   const [restartingStream, setRestartingStream] = useState(false);
   const [reinstallingLL, setReinstallingLL] = useState(false);
   const [reinstallingCR, setReinstallingCR] = useState(false);
+  const [quickInstalling, setQuickInstalling] = useState(false);
+  const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
+  const [quickProgress, setQuickProgress] = useState("");
   const [syncState, setSyncState] = useState<any>(null);
   const [steamLibraries, setSteamLibraries] = useState<any[]>([]);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
@@ -563,6 +568,66 @@ export function GameList() {
     }
   };
 
+  const handleQuickInstall = async () => {
+    // First-run onboarding action. Two-click confirm like the individual
+    // installers in Settings. The backend chains dependencies → CloudRedirect
+    // → lumalinux (lumalinux last so headcrab doesn't wipe its steam.sh
+    // patch); none of them kill Steam mid-flight, so we fire a single
+    // controlled restart at the very end.
+    if (!confirmQuickInstall) {
+      setConfirmQuickInstall(true);
+      setTimeout(() => setConfirmQuickInstall(false), 5000);
+      return;
+    }
+    setConfirmQuickInstall(false);
+    setQuickInstalling(true);
+    setQuickProgress(t("quickInstallStarting"));
+
+    const poll = setInterval(async () => {
+      try {
+        const s = await getQuickInstallStatus();
+        const step = s.step
+          ? `[${(s.stepIndex ?? 0) + 1}/${s.totalSteps ?? 3}] ${s.step} — `
+          : "";
+        if (s.progress) setQuickProgress(`${step}${s.progress}`);
+      } catch { }
+    }, 1000);
+
+    const result = await quickInstall();
+    clearInterval(poll);
+    setQuickInstalling(false);
+    setQuickProgress("");
+
+    // Refresh health so the onboarding button hides once components land.
+    try {
+      const [sls, ll, cr] = await Promise.all([
+        getSlssteamHealth(),
+        getLumalinuxHealth(),
+        getCloudredirectHealth(),
+      ]);
+      if (sls.state) setSlssteamHealth(sls);
+      if (ll.state) setLumalinuxHealth(ll);
+      if (cr.state) setCrHealth(cr);
+    } catch { }
+
+    if (result.success) {
+      toast(t("toastQuickInstallDone"), "", 4000);
+      await restartSteam();
+    } else {
+      toast(t("toastQuickInstallFailed"), result.failedStep || "", 6000);
+    }
+  };
+
+  // First-run gate: show Quick Install only when NONE of the three components
+  // are installed and Steam's build is compatible. As soon as any one is
+  // present, this onboarding entry point disappears (reinstall/repair lives in
+  // Settings via the individual buttons).
+  const showQuickInstall =
+    slssteamHealth?.state === "not_installed" &&
+    crHealth?.state === "not_installed" &&
+    lumalinuxHealth?.state === "not_installed" &&
+    headcrabCompat?.compatible === true;
+
   // Translate each component's health into a HealthProblem row, or null when
   // healthy / not installed (the banner only surfaces actionable failures —
   // "not installed" belongs to the install flow in Settings, not here).
@@ -682,6 +747,43 @@ export function GameList() {
 
   return (
     <>
+      {showQuickInstall && (
+        <PanelSection title={t("quickInstallSectionTitle")}>
+          <PanelSectionRow>
+            <div style={{ fontSize: "12px", color: "#9aa4b2", lineHeight: "1.4" }}>
+              {t("quickInstallIntro")}
+            </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={handleQuickInstall}
+              disabled={quickInstalling}
+              description={
+                confirmQuickInstall ? (
+                  <div style={{ textAlign: "center" }}>{t("quickInstallConfirmDesc")}</div>
+                ) : (
+                  t("quickInstallDesc")
+                )
+              }
+            >
+              {quickInstalling
+                ? t("quickInstalling")
+                : confirmQuickInstall
+                  ? t("quickInstallConfirm")
+                  : t("quickInstall")}
+            </ButtonItem>
+          </PanelSectionRow>
+          {quickInstalling && quickProgress && (
+            <PanelSectionRow>
+              <div style={{ fontSize: "11px", color: "#1a9fff", wordBreak: "break-word" }}>
+                {quickProgress}
+              </div>
+            </PanelSectionRow>
+          )}
+        </PanelSection>
+      )}
+
       <HealthBanner problems={healthProblems} multiTitle={t("healthBannerTitleMulti")} />
       <UpdatesBanner updates={updates} />
 

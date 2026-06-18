@@ -337,3 +337,10 @@ export const installLumalinux = async () =>
 
 export const getLlInstallStatus = async () =>
   parseResult(await call<[], string>("get_ll_install_status"));
+
+// Quick Install — chains dependencies → CloudRedirect → lumalinux in order.
+export const quickInstall = async () =>
+  parseResult(await call<[], string>("quick_install"));
+
+export const getQuickInstallStatus = async () =>
+  parseResult(await call<[], string>("get_quick_install_status"));

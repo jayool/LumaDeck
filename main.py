@@ -592,3 +592,11 @@ class Plugin:
     async def get_ll_install_status(self) -> str:
         from installer import get_ll_install_status
         return _j(get_ll_install_status())
+
+    async def quick_install(self) -> str:
+        from installer import quick_install
+        return _j(await quick_install())
+
+    async def get_quick_install_status(self) -> str:
+        from installer import get_quick_install_status
+        return _j(get_quick_install_status())
