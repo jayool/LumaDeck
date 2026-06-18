@@ -197,6 +197,15 @@ export function Settings() {
     }
   };
 
+  const handleOpenHubcap = () => {
+    // Open Hubcap in Game Mode's built-in Steam browser so the user can log
+    // in with Discord and regenerate their API key without dropping to the
+    // desktop. They copy the key in the browser and paste it into the field
+    // above. (We deliberately open the official site as-is — no scraping or
+    // scripted regeneration, which the site bans.)
+    Navigation.NavigateToExternalWeb("https://hubcapmanifest.com/");
+  };
+
   const handleUpdateApis = async () => {
     toast(t("updatingApis"), "", 2000);
     const result = await fetchFreeApisNow();
@@ -327,6 +336,15 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
 
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={handleOpenHubcap}
+            description={t("getHubcapKeyDesc")}
+          >
+            {t("getHubcapKey")}
+          </ButtonItem>
+        </PanelSectionRow>
         <PanelSectionRow>
           <TextField
             label={t("hubcapApiKey")}
