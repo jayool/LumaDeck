@@ -12,6 +12,7 @@ import {
   saveRyuCookie,
   loadRyuCookie,
   updateHubcapKey,
+  loadHubcapKey,
   fetchFreeApisNow,
   checkDependencies,
   installDependencies,
@@ -117,8 +118,10 @@ export function Settings() {
         setRyuCookie(cookieResult.cookie);
       }
 
-      // Hubcap key field stays empty by default — the user pastes a freshly
-      // regenerated key each time rather than seeing the stored one prefilled.
+      const keyResult = await loadHubcapKey();
+      if (!cancelled && keyResult.success && keyResult.key) {
+        setHubcapKey(keyResult.key);
+      }
 
       await refreshDeps();
 

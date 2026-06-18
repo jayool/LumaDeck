@@ -240,7 +240,13 @@ def _get_hubcap_key() -> str:
             url = api.get("url", "")
             host_match = "hubcapmanifest.com" in url or "morrenus.xyz" in url
             if host_match and "api_key=" in url:
-                return url.split("api_key=")[-1].strip()
+                key = url.split("api_key=")[-1].strip()
+                # Skip template placeholders like `<moapikey>` left in default
+                # api.json files — they aren't real keys, and surfacing one as a
+                # prefilled value in the UI looks like junk default text.
+                if not key or "<" in key or ">" in key:
+                    continue
+                return key
         return ""
     except Exception:
         return ""
