@@ -61,13 +61,13 @@ APP_NAME_CACHE: Dict[int, str] = {}
 # SteamOS Game Mode auto-relaunches it with the hooks reading the fresh
 # config — Steam itself handles the actual game download natively.
 #
-# The two helpers below resolve the script path and the Python interpreter
-# that should run it. The interpreter lives in a venv the user creates once
-# (`python3 -m venv ~/venvs/lumalinux && ~/venvs/lumalinux/bin/pip install vdf`)
-# because SteamOS' python3 has PEP 668 enabled and can't install vdf without
-# --break-system-packages. We never run as root, but the venv path under
-# /home/deck/ is checked explicitly first because Decky's `~` resolves to
-# /root/.
+# The helper below resolves the script path. steamidra_lite runs on SteamOS'
+# system python3: lumalinux commit b2d3d11 dropped the 'vdf' module dependency
+# (the script does inline VDF text editing now), so the user-created venv that
+# used to be required (to get 'vdf' past SteamOS' PEP 668) is no longer needed.
+# Pin the absolute /usr/bin/python3 (always present on SteamOS) so we don't
+# depend on PATH, falling back to the bare name elsewhere.
+_LUMALINUX_PYTHON = "/usr/bin/python3" if os.path.isfile("/usr/bin/python3") else "python3"
 
 
 def _find_steamidra_lite_script() -> str:
@@ -75,21 +75,6 @@ def _find_steamidra_lite_script() -> str:
     Returns the path, or "" if lumalinux isn't installed."""
     from paths import get_steamidra_lite_script
     return get_steamidra_lite_script() or ""
-
-
-def _find_lumalinux_venv_python() -> str:
-    """Pick the Python interpreter to run steamidra_lite with. Prefers a
-    user-created venv at ~/venvs/lumalinux/ (which has the vdf module
-    installed); falls back to system python3 (likely missing vdf — the
-    script will skip the config.vdf step with a warning)."""
-    candidates = [
-        "/home/deck/venvs/lumalinux/bin/python3",
-        os.path.expanduser("~/venvs/lumalinux/bin/python3"),
-    ]
-    for c in candidates:
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
-    return "python3"
 
 
 async def _invoke_steamidra_lite(
@@ -109,7 +94,7 @@ async def _invoke_steamidra_lite(
             "lumalinux not installed (steamidra_lite.py not found). "
             "Install lumalinux first."
         )
-    python = _find_lumalinux_venv_python()
+    python = _LUMALINUX_PYTHON
 
     cmd = [python, script, input_path]
     if manifests_dir:
@@ -156,7 +141,7 @@ async def _run_steamidra_mode(mode_args: list[str]) -> tuple[bool, str]:
     script = _find_steamidra_lite_script()
     if not script:
         return False, "lumalinux not installed (steamidra_lite.py not found)."
-    python = _find_lumalinux_venv_python()
+    python = _LUMALINUX_PYTHON
     cmd = [python, script, *mode_args]
     logger.info(f"LumaDeck: invoking steamidra_lite: {' '.join(cmd)}")
     try:
@@ -2591,11 +2576,10 @@ def _ensure_accela_mark(appid: int, base_path: str) -> None:
         if not _dir_has_real_content(game_dir):
             return  # Steam hasn't finished downloading yet
         script = _find_steamidra_lite_script()
-        python = _find_lumalinux_venv_python()
-        if not script or not python:
+        if not script:
             return
         subprocess.Popen(
-            [python, script, "--accela-mark", str(appid), "--steam-root", base_path],
+            [_LUMALINUX_PYTHON, script, "--accela-mark", str(appid), "--steam-root", base_path],
             env=clean_env(HOME="/home/deck"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
