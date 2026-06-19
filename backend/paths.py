@@ -336,16 +336,46 @@ def read_lumalinux_status() -> Optional[dict]:
         return None
 
 
+_LUMALINUX_STEAM_SH_MARKER = "# >>> lumalinux launcher patch >>>"
+
+
+def _lumalinux_injected_in_steam_sh() -> bool:
+    """True if the user's steam.sh still carries lumalinux's managed LD_PRELOAD
+    block. Mirrors the INJECT_SLS check in verify_slssteam_injected.
+
+    install.sh inserts a marked block (`# >>> lumalinux launcher patch >>>`)
+    that exports LD_PRELOAD with liblumalinux.so before `source $STEAM_CLIENT`.
+    Headcrab regenerates steam.sh from scratch on its runs (e.g. a CloudRedirect
+    install), which wipes that block — so an on-disk .so can coexist with a
+    steam.sh that no longer injects it. Checks the first steam.sh found across
+    the known Steam locations; returns False if none has the block."""
+    for candidate in _STEAM_PATHS:
+        steam_sh = os.path.join(candidate, "steam.sh")
+        if not os.path.isfile(steam_sh):
+            continue
+        try:
+            with open(steam_sh, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            continue
+        return _LUMALINUX_STEAM_SH_MARKER in content or "liblumalinux.so" in content
+    return False
+
+
 def read_lumalinux_health() -> dict:
     """Resolve lumalinux into a single UI state. Symmetric to read_slssteam_health.
 
     Shape: {"state": str, "cause": str|None, "version": str|None, "action": str|None}.
     States:
-        not_installed  — .so not on disk                  → install
-        not_active     — installed, no live status.json   → restart Steam (or open it)
-        hash_blocked   — status: blocked=hash_unverified  → reinstall (newer lumalinux)
-        hooks_failed   — status: any hook in "failed"     → reinstall
-        healthy        — status present, no block, all hooks installed
+        not_installed     — .so not on disk                  → install
+        not_active        — installed, steam.sh still injects it, no live
+                            status.json                       → restart Steam
+        injection_missing — installed, but steam.sh lost the lumalinux block
+                            (e.g. a CloudRedirect/Headcrab run regenerated
+                            steam.sh)                          → reinstall
+        hash_blocked      — status: blocked=hash_unverified   → reinstall
+        hooks_failed      — status: any hook in "failed"      → reinstall
+        healthy           — status present, no block, all hooks installed
     """
     if not check_lumalinux_installed():
         return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
@@ -353,8 +383,14 @@ def read_lumalinux_health() -> dict:
     status = read_lumalinux_status()
     if status is None:
         # On disk but no live snapshot — Steam not running with lumalinux this
-        # session. Distinct from hash_blocked (which DOES write a snapshot).
-        return {"state": "not_active", "cause": None, "version": None, "action": "restart"}
+        # session. Mirror SLSsteam's not_active vs injection_missing split: a
+        # plain restart only helps if steam.sh STILL carries the lumalinux
+        # block. Headcrab regenerates steam.sh on its own runs (notably a
+        # CloudRedirect install), wiping the block — then a restart won't
+        # reload the .so and the user must reinstall to re-patch steam.sh.
+        if _lumalinux_injected_in_steam_sh():
+            return {"state": "not_active", "cause": None, "version": None, "action": "restart"}
+        return {"state": "injection_missing", "cause": "steam_sh", "version": None, "action": "reinstall"}
 
     version = status.get("version")
     blocked = status.get("blocked")

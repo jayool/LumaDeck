@@ -664,6 +664,7 @@ export function GameList() {
     const body = (() => {
       switch (lumalinuxHealth.state) {
         case "not_active":    return t("llBannerBodyNotActive");
+        case "injection_missing": return t("llBannerBodyInjectionMissing");
         case "hash_blocked":  return t("llBannerBodyHashBlocked");
         case "hooks_failed":  return t("llBannerBodyHooksFailed", lumalinuxHealth.cause || "?");
         default: return "";

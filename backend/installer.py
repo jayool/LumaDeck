@@ -20,6 +20,7 @@ from paths import (
     check_cloudredirect_active,
     check_cloudredirect_authed,
     get_slssteam_config_path,
+    get_slssteam_config_dir,
 )
 from dotnet import find_dotnet_path, ensure_dotnet_available
 from subprocess_env import clean_env
@@ -416,6 +417,129 @@ def get_install_status() -> dict:
     return INSTALL_STATE.copy()
 
 
+# SLSsteam's own default config, verbatim from AceSLS/SLSsteam res/config.yaml.
+# SLSsteam copies this to ~/.config/SLSsteam/config.yaml on its first injected
+# run. We seed the SAME bytes when it's missing so CloudRedirect can flip
+# DisableCloud without first waiting for a Steam restart (the gap that broke
+# Quick Install: CR ran before SLSsteam had ever run, so no config.yaml existed).
+# DisableCloud is left at the upstream default ("yes"); CR's _set_disablecloud_no
+# flips it to "no" right after. Identical to the normal first-run result.
+_SLSSTEAM_DEFAULT_CONFIG = """\
+#Disables Family Share license locking for self and others
+DisableFamilyShareLock: yes
+
+#Switches to whitelist instead of the default blacklist
+UseWhitelist: no
+
+#Automatically filter Apps in CheckAppOwnership. Filters everything but Games and Applications. Should not affect DLC checks
+#Overrides black-/whitelist. Gets overriden by AdditionalApps
+AutoFilterList: yes
+
+#List of AppIds to ex-/include
+AppIds:
+
+#Enables playing of not owned games. Respects black-/whitelist AppIds
+PlayNotOwnedGames: no
+
+#Additional AppIds to inject (Overrides your black-/whitelist & also overrides OwnerIds for apps you got shared!) Best to use this only on games NOT in your library.
+AdditionalApps:
+
+#Extra Data for Dlcs belonging to a specific AppId. Only needed
+#when the App you're playing is hit by Steams 64 DLC limit
+DlcData:
+
+#Used to retrieve ProductInfo from Steam servers for some games
+AppTokens:
+
+#Fake Steam being offline for specified AppIds. Same format as AppIds
+FakeOffline:
+
+#Change AppIds of games to enable networking features
+#Use 0 as a key to set for all unowned Apps
+#Keeps track of the proper AppIds via game launches, so please do not start multiple FakeAppId enabled games simultaneously
+FakeAppIds:
+
+#Custom ingame statuses. Set AppId to 0 to disable
+IdleStatus:
+  AppId: 0
+  Title: ""
+
+#Override game titles. Only works with owned appIds! For injected appIds use either UnownedStatus or combine them with FakeAppIds
+GameTitles:
+
+#Override purchase time stamps
+SubscriptionTimestamps:
+
+#Blocks games from unlocking on wrong accounts
+DenuvoGames:
+
+#Automatically disable SLSsteam when steamclient.so does not match a predefined file hash that is known to work
+#You should enable this if you're planing to use SLSsteam with Steam Deck's gamemode
+SafeMode: no
+
+#Toggles notifications via notify-send
+Notifications: yes
+
+#Warn user via notification when steamclient.so hash differs from known safe hash
+#Mostly useful for development so I don't accidentally miss an update
+WarnHashMissmatch: no
+
+#Notify when SLSsteam is done initializing
+NotifyInit: yes
+
+#Enable sending commands to SLSsteam via /tmp/SLSsteam.API
+API: no
+
+#Disable cloud saves for unlocked games. Set to "no" if using CloudRedirect or similar.
+DisableCloud: yes
+
+#Changes your account's E-Mail clientsided. Leave blank to disable
+FakeEmail: ""
+
+#Changes your wallet's balance clientsidedly. 0 to turn off
+FakeWalletBalance: 0
+
+#Log levels:
+#Once = 0
+#Debug = 1
+#Info = 2
+#NotifyShort = 3
+#NotifyLong = 4
+#Warn = 5
+#None = 6
+LogLevel: 2
+
+#Logs all calls to Steamworks (this makes the logfile huge! Only useful for debugging/analyzing
+ExtendedLogging: no
+"""
+
+
+def _seed_slssteam_config_if_missing() -> bool:
+    """Write SLSsteam's default config.yaml if it doesn't exist yet.
+
+    No-op (returns False) when the config already exists, or when SLSsteam
+    isn't installed (we must not create an orphan config for a missing
+    SLSsteam — that would mask the real "install dependencies first" error).
+    Returns True only when it actually seeded the file.
+    """
+    try:
+        if not check_slssteam_installed():
+            return False
+        config_path = get_slssteam_config_path()
+        if os.path.exists(config_path):
+            return False
+        os.makedirs(get_slssteam_config_dir(), exist_ok=True)
+        tmp = config_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(_SLSSTEAM_DEFAULT_CONFIG)
+        os.replace(tmp, config_path)
+        logger.info("LumaDeck: seeded default SLSsteam config.yaml at %s", config_path)
+        return True
+    except Exception as exc:
+        logger.warning("LumaDeck: failed to seed SLSsteam config.yaml: %s", exc)
+        return False
+
+
 def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
     """Flip `DisableCloud: yes` -> `DisableCloud: no` in SLSsteam's config.yaml.
 
@@ -473,6 +597,12 @@ async def install_cloudredirect() -> dict:
     tmp_dir = None
     try:
         config_path = get_slssteam_config_path()
+        # If SLSsteam is installed but hasn't run yet (no config.yaml — the
+        # Quick Install case, where CR runs right after deps without a Steam
+        # restart in between), seed SLSsteam's own default config so we can
+        # flip DisableCloud without waiting for SLSsteam to create it. No-op
+        # in the normal flow where a restart already made config.yaml exist.
+        _seed_slssteam_config_if_missing()
         CR_INSTALL_STATE["progress"] = "Enabling DisableCloud: no in SLSsteam config..."
         ok, msg = _set_disablecloud_no(config_path)
         if not ok:

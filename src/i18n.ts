@@ -208,6 +208,7 @@ const strings: Record<Lang, Record<string, string>> = {
     // SLSsteam's. Wording softens the impact: installed games keep working.
     llBannerTitle: "lumalinux not active — new downloads disabled",
     llBannerBodyNotActive: "Installed but not loaded. Restart Steam to activate.",
+    llBannerBodyInjectionMissing: "Installed but steam.sh no longer loads it (a CloudRedirect install overwrites steam.sh). Reinstall lumalinux to re-apply it.",
     llBannerBodyHashBlocked: "Steam updated past the verified hash list. Installed games keep working — reinstall lumalinux to enable new downloads.",
     llBannerBodyHooksFailed: "A hook stopped working ({0}) — Steam may have updated. Installed games keep working — reinstall lumalinux to enable new downloads.",
     llBannerActionReinstall: "Reinstall lumalinux",
@@ -240,6 +241,7 @@ const strings: Record<Lang, Record<string, string>> = {
     // Health sub-row for lumalinux Dependencies (extends the existing v / failed):
     llHealthHashBlocked: "v{0} loaded but blocked — Steam updated past verified hashes (reinstall lumalinux)",
     llHealthNotActive: "Installed but not loaded — restart Steam to activate",
+    llHealthInjectionMissing: "Installed but not injected — reinstall to re-apply the steam.sh patch",
     steamBuildOk: "Steam build: {0}",
     steamBuildMismatch: "Steam build: {0} ⚠ (Headcrab target: {1})",
     headcrabGameModeBlockTitle: "Cannot run from Game Mode",
@@ -565,6 +567,7 @@ const strings: Record<Lang, Record<string, string>> = {
     // lumalinux banner row
     llBannerTitle: "lumalinux não está ativo — novos downloads desabilitados",
     llBannerBodyNotActive: "Instalado mas não carregado. Reinicie a Steam para ativar.",
+    llBannerBodyInjectionMissing: "Instalado, mas o steam.sh não o carrega mais (instalar o CloudRedirect sobrescreve o steam.sh). Reinstale o lumalinux para reaplicá-lo.",
     llBannerBodyHashBlocked: "A Steam atualizou além da lista de hashes verificados. Os jogos instalados continuam funcionando — reinstale o lumalinux para liberar novos downloads.",
     llBannerBodyHooksFailed: "Um hook parou de funcionar ({0}) — a Steam pode ter atualizado. Os jogos instalados continuam funcionando — reinstale o lumalinux para liberar novos downloads.",
     llBannerActionReinstall: "Reinstalar lumalinux",
@@ -591,6 +594,7 @@ const strings: Record<Lang, Record<string, string>> = {
     llUpdateAvailableSub: "Atualização disponível (v{0} → v{1})",
     llHealthHashBlocked: "v{0} carregado mas bloqueado — a Steam atualizou além dos hashes verificados (reinstale o lumalinux)",
     llHealthNotActive: "Instalado mas não carregado — reinicie a Steam para ativar",
+    llHealthInjectionMissing: "Instalado mas não injetado — reinstale para reaplicar o patch do steam.sh",
     dependencies: "Dependências",
     installReinstallDeps: "Instalar / Reinstalar Dependências",
     installDepsConfirm: "CONFIRMAR — Fechará a Steam",

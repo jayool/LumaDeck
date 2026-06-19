@@ -535,6 +535,7 @@ export function Settings() {
                 case "hooks_failed": line = t("llHealthDegraded", ver, h.cause || "?"); break;
                 case "hash_blocked": line = t("llHealthHashBlocked", ver); break;
                 case "not_active":   line = t("llHealthNotActive"); break;
+                case "injection_missing": line = t("llHealthInjectionMissing"); break;
               }
               if (!line) return null;
               return (
