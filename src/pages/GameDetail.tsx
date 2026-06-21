@@ -46,7 +46,6 @@ import {
   fetchAppName,
   repairAppmanifest,
   reconfigureSlssteam,
-  checkGameUpdate,
   pinGame,
   unpinGame,
   getPinStatus,
@@ -111,7 +110,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [isPinned, setIsPinned] = useState(false);
   const [goldbergApplied, setGoldbergApplied] = useState(false);
   const [achievementStatus, setAchievementStatus] = useState("");
@@ -224,7 +222,6 @@ export function GameDetail({ appid }: GameDetailProps) {
         setDownloadState(status.state);
         if (status.state.status === "done") {
           setHasLua(true);
-          setUpdateStatus(null);
           toast(t("toastDownloadComplete"), gameName);
         } else if (status.state.status === "failed") {
           toast(t("toastDownloadFailed"), status.state.error || gameName, 5000);
@@ -479,30 +476,10 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
-  const handleCheckUpdate = async () => {
-    setUpdateStatus("checking");
-    toast(t("toastCheckingUpdates"), gameName, 2000);
-    const result = await checkGameUpdate(appid);
-    if (result.success) {
-      if (result.updateAvailable) {
-        setUpdateStatus("available");
-        const changeCount = (result.changes || []).length;
-        toast(t("toastUpdateAvailable"), t("toastDepotsChanged", changeCount), 5000);
-      } else {
-        setUpdateStatus("uptodate");
-        toast(t("toastUpToDate"), t("toastIsUpToDate", gameName));
-      }
-    } else {
-      setUpdateStatus(null);
-      toast(t("toastUpdateCheckFailed"), result.error || "", 4000);
-    }
-  };
-
   const handleTogglePin = async () => {
     const result = isPinned ? await unpinGame(appid) : await pinGame(appid);
     if (result.success) {
       setIsPinned(!isPinned);
-      if (isPinned) setUpdateStatus(null); // re-allow update checks after unpin
       toast(isPinned ? t("toastUnpinned") : t("toastPinned"), gameName);
     } else {
       toast(t("toastError"), result.error || "", 4000);
@@ -797,26 +774,6 @@ export function GameDetail({ appid }: GameDetailProps) {
                   }
                 />
               </PanelSectionRow>
-            ) : null}
-            {hasLua && !isPinned && updateStatus === "available" ? (
-              <ActionButton
-                label={t("updateNow")}
-                onClick={handleDownload}
-                variant="primary"
-                description={t("redownloadDesc")}
-              />
-            ) : hasLua && !isPinned ? (
-              <ActionButton
-                label={
-                  updateStatus === "checking"
-                    ? t("checking")
-                    : updateStatus === "uptodate"
-                      ? t("upToDate")
-                      : t("checkForUpdates")
-                }
-                onClick={handleCheckUpdate}
-                disabled={updateStatus === "checking"}
-              />
             ) : null}
           </>
         )}

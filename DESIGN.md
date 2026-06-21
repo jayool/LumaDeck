@@ -213,22 +213,24 @@ configuring → restarting_steam → done`. The legacy `depot_download`
 status is no longer emitted but matching UI branches are kept (clearly
 marked) so a rollback is one-line.
 
-### 5. Update Detection
+### 5. Updates
 
-Single source of truth: `~/.local/share/ACCELA/depots/<appid>.depot`,
-which `steamidra_lite.py` always writes during install (commit `c0b5da0`
-in lumalinux). Any tool in the ecosystem (LumaDeck install/update,
-SteaMidra desktop, ASSella in Desktop Mode, the user running the script
-from Konsole) writes there, so there's nothing to keep in sync.
+Updates are **Steam-native**. Games deployed unpinned (`--no-pin`) carry
+`keys.txt gid=0` + commented `--setManifestid`, so Steam's own client
+auto-updates them like an owned game (BuildDep/GMRC supply the manifest
+request code; the per-depot key in `keys.txt` decrypts). The per-game
+**Auto-Update toggle** in GameDetail is just pin/unpin; "Re-download
+manifest" re-runs `steamidra_lite` to force a redeploy by hand.
 
-`check_game_update(appid)` reads the file's `<main_depot>:<manifest>`,
-queries SteamCMD's public API for the current public manifest GID, and
-compares.
-
-(Pendiente at the time of writing: the implementation of
-`check_game_update` itself in `api_manifest.py` still uses the old
-`<plugin_data>/depots/<appid>.json` snapshot path. Documented as TODO for
-the downloads-pipeline pass.)
+The plugin's own update-*detection* badge (`check_game_update` + the
+`<plugin_data>/depots/<appid>.json` snapshot helpers) was **removed**: it
+was redundant with Steam's native auto-update for unpinned games and gave
+false "update available" badges (its snapshot baseline went stale after a
+native Steam update, which doesn't run `steamidra_lite`). The rare cases
+Steam can't auto-apply (an update adds a new depot, or Valve rotates a
+depot key — both surface as `Missing decryption key` / `UpdateResult=8`)
+are the domain of the planned Hubcap re-deploy **watchdog** (issue #21),
+which detects the stuck `.acf` directly rather than diffing manifests.
 
 ## Features
 
@@ -352,7 +354,7 @@ the downloads-pipeline pass.)
 | 8   | Reuse existing DeckTools / LuaToolsLinux configs (`api.json`, cookies)    | Re-prompt the user; isolated config                | Avoids rework for existing users                                       |
 | 9   | Game Mode only                                                            | Game Mode + Desktop                                | Clear scope (Desktop has SFF / ASSella)                                |
 | 10  | DDL legacy pipeline kept as **DEAD CODE blocks** in `downloads.py`        | Delete it; move to a separate file                 | Single-file rollback if the new flow ever hits a blocker; markers make it clear it's parked, not abandoned |
-| 11  | Single source of truth for update detection: ACCELA `.depot` file        | Plugin's own `<plugin_data>/depots/*.json` snapshot| Whichever tool in the ecosystem updates a game (LumaDeck, ASSella, the script from Konsole) writes the same `.depot`, so no sync needed |
+| 11  | No plugin update-detection badge — updates are Steam-native (unpinned auto-update) + the #21 watchdog for stuck `.acf` | Plugin diffs a saved manifest snapshot vs SteamCMD | The snapshot went stale after Steam's own auto-update (which doesn't run `steamidra_lite`), producing false "update available" badges; Steam already handles the common case |
 | 12  | repair_appmanifest now **deletes** the `.acf` instead of reconstructing it | Keep the legacy reconstruction                     | The legacy code chmod'd the new .acf to 0444 so Steam couldn't update it; in LumaDeck Steam owns the .acf and we need it writable |
 | 13  | Bearer header for Hubcap API key, never the URL                           | Keep `?api_key=` in URL                            | Prevents API key leaks in log files. Backports upstream DeckTools commit d557f2a |
 | 14  | Frontend routes moved from `/decktools/*` to `/lumadeck/*`                | Keep `/decktools/*`                                | Avoids router-namespace collision if both forks are installed side by side |

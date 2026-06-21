@@ -212,10 +212,6 @@ class Plugin:
         from api_manifest import search_hubcap
         return _j(await search_hubcap(query))
 
-    async def check_game_update(self, appid: int) -> str:
-        from api_manifest import check_game_update
-        return _j(await check_game_update(appid))
-
     async def pin_game(self, appid: int) -> str:
         from downloads import pin_game
         return _j(await pin_game(appid))
