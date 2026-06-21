@@ -6,7 +6,9 @@ import {
   ButtonItem,
   ToggleField,
   Navigation,
+  SidebarNavigation,
 } from "@decky/ui";
+import { FaKey, FaShieldAlt, FaDownload, FaCog } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import {
   saveRyuCookie,
@@ -319,8 +321,13 @@ export function Settings() {
     }
   };
 
-  return (
-    <>
+  const pages = [
+    {
+      title: t("apiCredentials"),
+      icon: <FaKey />,
+      hideTitle: true,
+      content: (
+        <>
       <PanelSection title={t("apiCredentials")}>
         <PanelSectionRow>
           <TextField
@@ -367,7 +374,14 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
-
+        </>
+      ),
+    },
+    {
+      title: t("slssteam"),
+      icon: <FaShieldAlt />,
+      hideTitle: true,
+      content: (
       <PanelSection title={t("slssteam")}>
         <PanelSectionRow>
           <ToggleField
@@ -451,7 +465,13 @@ export function Settings() {
           );
         })()}
       </PanelSection>
-
+      ),
+    },
+    {
+      title: t("dependencies"),
+      icon: <FaDownload />,
+      hideTitle: true,
+      content: (
       <PanelSection title={t("dependencies")}>
         {deps && (
           <>
@@ -633,6 +653,9 @@ export function Settings() {
           </PanelSectionRow>
         )}
         <PanelSectionRow>
+          <div style={{ height: "8px" }} />
+        </PanelSectionRow>
+        <PanelSectionRow>
           <ButtonItem
             layout="below"
             onClick={handleInstallDeps}
@@ -703,7 +726,14 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
-
+      ),
+    },
+    {
+      title: t("settingsSystem"),
+      icon: <FaCog />,
+      hideTitle: true,
+      content: (
+        <>
       <PanelSection title={t("languageIdioma")}>
         <PanelSectionRow>
           <ButtonItem
@@ -773,14 +803,10 @@ export function Settings() {
           })}
         </PanelSection>
       )}
+        </>
+      ),
+    },
+  ];
 
-      <PanelSection>
-        <ButtonItem layout="below" onClick={() => Navigation.NavigateBack()}>
-          {t("back")}
-        </ButtonItem>
-      </PanelSection>
-
-      <div style={{ height: "48px" }} />
-    </>
-  );
+  return <SidebarNavigation title="LumaDeck" pages={pages} />;
 }
