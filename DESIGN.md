@@ -49,11 +49,9 @@ LumaDeck/
 ├── main.py                          # Decky entrypoint — Plugin class exposes
 │                                    # ~70 async methods that wrap backend calls
 ├── backend/
-│   ├── api_manifest.py              # Hubcap/Ryuu API client, depot snapshot,
-│   │                                # update-check helpers
+│   ├── api_manifest.py              # Hubcap/Ryuu API client, manifest search
 │   ├── downloads.py                 # _download_zip_for_app + _process_and_
-│   │                                # install_lua. DDL pipeline kept as DEAD
-│   │                                # CODE blocks A/B for rollback
+│   │                                # install_lua (Steam-native install flow)
 │   ├── steam_utils.py               # libraryfolders/.acf parsing, install
 │   │                                # path resolution, compat tool override
 │   ├── slssteam_config.py           # config.yaml read/write (flat keys)
@@ -65,8 +63,8 @@ LumaDeck/
 │   │                                # bundled DLLs)
 │   ├── steamless.py                 # Steam DRM remover (uses ACCELA's
 │   │                                # bundled .NET binary)
-│   ├── workshop.py                  # Workshop downloader via DDM (separate
-│   │                                # binary lookup from the dead-code DDL)
+│   ├── workshop.py                  # Workshop downloader via DDM (its own
+│   │                                # self-contained binary lookup)
 │   ├── paths.py                     # Steam/SLSsteam/ACCELA/lumalinux/
 │   │                                # CloudRedirect path detection; SLSsteam
 │   │                                # auto-injection via /usr/bin/steam
@@ -191,11 +189,13 @@ finder is on by default, which happened in v0.13.0. Against an older
 `steamidra_lite` the spawn no-ops (argparse error to a discarded stderr).
 
 
-The legacy DDL pipeline (`_run_depot_download`,
-`_extract_ddm_from_appimage`, `_create_or_update_appmanifest`, …) is
-preserved in DESIGN-marked dead-code blocks in `downloads.py` so the
-flow can be rolled back without re-deriving any code; nothing in the
-active path imports it.
+The legacy DDL pipeline (DepotDownloaderMod extraction/execution, `.acf`
+writing, and the Bifrost launcher-path config) has been **removed** from
+`downloads.py` — it was unreachable from the Steam-native flow. The two
+helpers that `slssteam_ops` still reuses (`_fetch_installdir_from_api`
+and `_parse_lua_depots`) were kept as live utilities. The Workshop
+downloader (`workshop.py`) is a separate, self-contained use of
+DepotDownloaderMod and is unaffected.
 
 ### 4. Progress Tracking
 
@@ -353,7 +353,7 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 | 7   | Port DeckTools' backend instead of writing the plugin from scratch        | Rewrite; shell wrapper                             | DeckTools' frontend / SLSsteam ops / fixes / achievements are exactly what we want; only the download engine needed changing |
 | 8   | Reuse existing DeckTools / LuaToolsLinux configs (`api.json`, cookies)    | Re-prompt the user; isolated config                | Avoids rework for existing users                                       |
 | 9   | Game Mode only                                                            | Game Mode + Desktop                                | Clear scope (Desktop has SFF / ASSella)                                |
-| 10  | DDL legacy pipeline kept as **DEAD CODE blocks** in `downloads.py`        | Delete it; move to a separate file                 | Single-file rollback if the new flow ever hits a blocker; markers make it clear it's parked, not abandoned |
+| 10  | DDL legacy pipeline **removed** from `downloads.py` once install + native update were verified on Deck | Keep it parked as dead-code blocks indefinitely    | The new flow is proven (routine installs; Mina auto-updated natively), so the ~1250 dead lines were pure cognitive cost. Kept only the 2 helpers `slssteam_ops` still reuses (#6) |
 | 11  | No plugin update-detection badge — updates are Steam-native (unpinned auto-update) + the #21 watchdog for stuck `.acf` | Plugin diffs a saved manifest snapshot vs SteamCMD | The snapshot went stale after Steam's own auto-update (which doesn't run `steamidra_lite`), producing false "update available" badges; Steam already handles the common case |
 | 12  | repair_appmanifest now **deletes** the `.acf` instead of reconstructing it | Keep the legacy reconstruction                     | The legacy code chmod'd the new .acf to 0444 so Steam couldn't update it; in LumaDeck Steam owns the .acf and we need it writable |
 | 13  | Bearer header for Hubcap API key, never the URL                           | Keep `?api_key=` in URL                            | Prevents API key leaks in log files. Backports upstream DeckTools commit d557f2a |

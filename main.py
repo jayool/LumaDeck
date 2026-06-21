@@ -284,14 +284,6 @@ class Plugin:
         from downloads import get_games_database
         return _j(get_games_database())
 
-    async def save_launcher_path_config(self, path: str) -> str:
-        from downloads import save_launcher_path_config
-        return _j(save_launcher_path_config(path))
-
-    async def load_launcher_path(self) -> str:
-        from downloads import load_launcher_path
-        return _j({"success": True, "path": load_launcher_path()})
-
     # ==========================================================================
     # Steam Utils
     # ==========================================================================
