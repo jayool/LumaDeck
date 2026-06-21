@@ -4,8 +4,9 @@ import {
   PanelSectionRow,
   ButtonItem,
   TextField,
-  Navigation,
+  SidebarNavigation,
 } from "@decky/ui";
+import { FaDownload, FaTools } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { ProgressBar } from "../components/ProgressBar";
 import {
@@ -130,8 +131,13 @@ export function Downloads() {
     return () => clearInterval(interval);
   }, [downloads]);
 
-  return (
-    <>
+  const pages = [
+    {
+      title: t("manualDownload"),
+      icon: <FaDownload />,
+      hideTitle: true,
+      content: (
+        <>
       <PanelSection title={t("manualDownload")}>
         <PanelSectionRow>
           <TextField
@@ -191,8 +197,14 @@ export function Downloads() {
           ))}
         </PanelSection>
       )}
-
-      {/* Workshop Download */}
+        </>
+      ),
+    },
+    {
+      title: t("workshopDownload"),
+      icon: <FaTools />,
+      hideTitle: true,
+      content: (
       <PanelSection title={t("workshopDownload")}>
         <PanelSectionRow>
           <TextField
@@ -240,12 +252,9 @@ export function Downloads() {
           </>
         )}
       </PanelSection>
+      ),
+    },
+  ];
 
-      <PanelSection>
-        <ButtonItem layout="below" onClick={() => Navigation.NavigateBack()}>
-          {t("back")}
-        </ButtonItem>
-      </PanelSection>
-    </>
-  );
+  return <SidebarNavigation title="LumaDeck" pages={pages} />;
 }

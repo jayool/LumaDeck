@@ -6,7 +6,16 @@ import {
   TextField,
   ToggleField,
   Navigation,
+  SidebarNavigation,
 } from "@decky/ui";
+import {
+  FaInfoCircle,
+  FaDownload,
+  FaCog,
+  FaTrophy,
+  FaTools,
+  FaTrash,
+} from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { ProgressBar } from "../components/ProgressBar";
 import { ActionButton } from "../components/ActionButton";
@@ -666,8 +675,13 @@ export function GameDetail({ appid }: GameDetailProps) {
     ? `${t("removeDlcs")}${dlcCount > 0 ? ` (${dlcCount})` : ""}`
     : `${t("addDlcs")}${dlcCount > 0 ? ` (${dlcCount} ${t("found")})` : ""}`;
 
-  return (
-    <>
+  const pages = [
+    {
+      title: t("gameStatus"),
+      icon: <FaInfoCircle />,
+      hideTitle: true,
+      content: (
+        <>
       <PanelSection title={gameName}>
         <PanelSectionRow>
           <div style={{ fontSize: "13px", color: "#8b929a" }}>
@@ -704,7 +718,15 @@ export function GameDetail({ appid }: GameDetailProps) {
           </PanelSectionRow>
         )}
       </PanelSection>
-
+        </>
+      ),
+    },
+    {
+      title: t("download"),
+      icon: <FaDownload />,
+      hideTitle: true,
+      content: (
+        <>
       {/* Download section */}
       <PanelSection title={t("download")}>
         {isDownloading ? (
@@ -813,7 +835,15 @@ export function GameDetail({ appid }: GameDetailProps) {
           </PanelSectionRow>
         )}
       </PanelSection>
-
+        </>
+      ),
+    },
+    {
+      title: t("gameManagement"),
+      icon: <FaCog />,
+      hideTitle: true,
+      content: (
+        <>
       {/* Game Management */}
       <PanelSection title={t("gameManagement")}>
         <PanelSectionRow>
@@ -875,7 +905,15 @@ export function GameDetail({ appid }: GameDetailProps) {
           </>
         )}
       </PanelSection>
-
+        </>
+      ),
+    },
+    {
+      title: t("achievements"),
+      icon: <FaTrophy />,
+      hideTitle: true,
+      content: (
+        <>
       {/* Achievements */}
       <PanelSection title={t("achievements")}>
         {achievementStatus === "not_installed" ? (
@@ -955,7 +993,15 @@ export function GameDetail({ appid }: GameDetailProps) {
           </>
         ) : null}
       </PanelSection>
-
+        </>
+      ),
+    },
+    {
+      title: t("fixes"),
+      icon: <FaTools />,
+      hideTitle: true,
+      content: (
+        <>
       {/* Fixes */}
       <PanelSection title={t("fixes")}>
         <ActionButton
@@ -1106,7 +1152,15 @@ export function GameDetail({ appid }: GameDetailProps) {
           )}
         </PanelSection>
       )}
-
+        </>
+      ),
+    },
+    {
+      title: t("dangerZone"),
+      icon: <FaTrash />,
+      hideTitle: true,
+      content: (
+        <>
       {/* Uninstall */}
       <PanelSection title={t("dangerZone")}>
         {/* What will be removed */}
@@ -1158,12 +1212,10 @@ export function GameDetail({ appid }: GameDetailProps) {
           description={confirmUninstall ? t("clickToConfirm") : undefined}
         />
       </PanelSection>
+        </>
+      ),
+    },
+  ];
 
-      <PanelSection>
-        <ButtonItem layout="below" onClick={() => Navigation.NavigateBack()}>
-          {t("back")}
-        </ButtonItem>
-      </PanelSection>
-    </>
-  );
+  return <SidebarNavigation title={gameName} pages={pages} />;
 }
