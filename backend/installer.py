@@ -399,6 +399,16 @@ async def install_dependencies() -> dict:
                     sls_check.get("error"),
                 )
             else:
+                # #13: force SafeMode: yes — SLSsteam's own recommendation for
+                # Steam Deck gamemode. It auto-disables SLSsteam on an unknown
+                # steamclient.so hash so a Steam update can't make it inject
+                # against changed offsets and break gamemode. Headcrab's
+                # editconfig() races SLSsteam creating config.yaml and leaves it
+                # at the default (no), so seed the config if it's not there yet
+                # and flip the flag — same approach as DisableCloud for CR.
+                _seed_slssteam_config_if_missing()
+                sm_ok, sm_msg = _set_safemode_yes(get_slssteam_config_path())
+                logger.info("LumaDeck: SafeMode repair: ok=%s (%s)", sm_ok, sm_msg)
                 # enter-the-wired installed SLSsteam + ACCELA but does NOT install
                 # .NET 9. ACCELA's depot downloads and Steamless features need it,
                 # so we install it here in the same "Install / Reinstall" click.
@@ -603,6 +613,52 @@ def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
         return True, "DisableCloud already set to no"
 
     return False, "DisableCloud line missing from SLSsteam config — reinstall dependencies"
+
+
+def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
+    """Flip `SafeMode: no` -> `SafeMode: yes` in SLSsteam's config.yaml.
+
+    SLSsteam's own config recommends SafeMode for Steam Deck gamemode: it
+    auto-disables SLSsteam when steamclient.so doesn't match a known-good hash,
+    so a Steam client update can't make SLSsteam inject against changed offsets
+    and break/crash gamemode (it just no-ops until AceSLS ships a new hash).
+    Headcrab tries to set it but its editconfig() races SLSsteam creating
+    config.yaml and silently fails, leaving the default (no) — so we seed the
+    config if missing and flip the flag ourselves, exactly like DisableCloud.
+
+    Returns (ok, message). ok=False only when the config is missing or has no
+    SafeMode line.
+    """
+    if not os.path.isfile(config_path):
+        return False, f"SLSsteam config not found at {config_path} — install dependencies first"
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as exc:
+        return False, f"Cannot read SLSsteam config: {exc}"
+
+    new_content, n = re.subn(
+        r"^(\s*SafeMode\s*:\s*)no\s*$",
+        r"\1yes",
+        content,
+        flags=re.MULTILINE,
+    )
+
+    if n > 0:
+        try:
+            tmp = config_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            os.replace(tmp, config_path)
+            return True, "SafeMode flipped to yes"
+        except Exception as exc:
+            return False, f"Cannot write SLSsteam config: {exc}"
+
+    if re.search(r"^\s*SafeMode\s*:\s*yes\s*$", content, flags=re.MULTILINE):
+        return True, "SafeMode already set to yes"
+
+    return False, "SafeMode line missing from SLSsteam config — reinstall dependencies"
 
 
 async def install_cloudredirect() -> dict:
