@@ -44,6 +44,15 @@ interface SearchResult {
   name: string;
 }
 
+// ProtonDB compatibility tiers, colored medal-style (see DESIGN_UI.md palette).
+const PROTONDB_TIER_COLOR: Record<string, string> = {
+  platinum: "#5fd0e0",
+  gold: "#c8a84b",
+  silver: "#9aa4b2",
+  bronze: "#c87a3a",
+  borked: "#e06060",
+};
+
 export function GameList() {
   const t = useT();
   const [games, setGames] = useState<GameInfo[]>([]);
@@ -856,6 +865,18 @@ export function GameList() {
                     {pendingGameInfo.sizeBytes >= 1073741824
                       ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
                       : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`}
+                  </span>
+                )}
+                {pendingGameInfo.protondb && (
+                  <span style={{
+                    fontSize: "10px",
+                    fontWeight: 700,
+                    color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2",
+                    background: "rgba(255,255,255,0.07)",
+                    borderRadius: "3px",
+                    padding: "1px 6px",
+                  }}>
+                    ProtonDB: {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
                   </span>
                 )}
               </div>

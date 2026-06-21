@@ -487,6 +487,18 @@ async def get_game_notices(appid: int) -> dict:
             "sizeBytes": size_bytes,
         }
 
+        # --- ProtonDB compatibility tier (best-effort; never blocks notices) ---
+        info["protondb"] = None
+        try:
+            pdb_url = f"https://www.protondb.com/api/v1/reports/summaries/{appid}.json"
+            pdb_resp = await client.get(pdb_url, follow_redirects=True, timeout=4)
+            if pdb_resp.status_code == 200:
+                tier = (pdb_resp.json() or {}).get("tier")
+                if tier and tier not in ("pending",):
+                    info["protondb"] = tier
+        except Exception:
+            pass
+
         # --- DRM / launcher notices ---
         notices = []
         drm_text = app_data.get("drm_notice") or ""
