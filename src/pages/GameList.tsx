@@ -61,6 +61,7 @@ export function GameList() {
 
   // Hubcap search state
   const [searchQuery, setSearchQuery] = useState("");
+  const [hubcapFocused, setHubcapFocused] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -958,14 +959,17 @@ export function GameList() {
         )}
       </PanelSection>
 
-      {/* Hubcap Search — extra bottom padding so keyboard doesn't hide the field */}
-      <div style={{ paddingBottom: "280px" }}>
+      {/* Hubcap Search — bottom padding only while the field is focused, so
+          the on-screen keyboard doesn't hide it (no permanent gap otherwise) */}
+      <div style={{ paddingBottom: hubcapFocused ? "280px" : "0px" }}>
       <PanelSection title={t("searchByName")}>
         <PanelSectionRow>
           <TextField
             label={t("gameName")}
             value={searchQuery}
             onChange={(e: any) => setSearchQuery(e?.target?.value ?? "")}
+            onFocus={() => setHubcapFocused(true)}
+            onBlur={() => setHubcapFocused(false)}
           />
         </PanelSectionRow>
         <PanelSectionRow>
