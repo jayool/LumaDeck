@@ -50,6 +50,14 @@ class Plugin:
             from downloads import init_applist, init_games_db
             from paths import get_platform_summary, verify_slssteam_injected
 
+            # Apply a staged self-update (#23) before anything else, so a pending
+            # zip from a previous session lands on disk for this load's restart.
+            try:
+                from self_update import apply_pending_update_if_any
+                apply_pending_update_if_any()
+            except Exception as exc:
+                logger.warning(f"LumaDeck: pending update check failed: {exc}")
+
             # Check + auto-repair SLSsteam injection before anything else
             try:
                 inj = verify_slssteam_injected()
@@ -283,6 +291,14 @@ class Plugin:
     async def get_games_database(self) -> str:
         from downloads import get_games_database
         return _j(get_games_database())
+
+    async def check_plugin_update(self) -> str:
+        from self_update import check_plugin_update
+        return _j(await check_plugin_update())
+
+    async def update_plugin(self) -> str:
+        from self_update import update_plugin
+        return _j(await update_plugin())
 
     # ==========================================================================
     # Steam Utils

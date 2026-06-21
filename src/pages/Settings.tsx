@@ -8,7 +8,7 @@ import {
   Navigation,
   SidebarNavigation,
 } from "@decky/ui";
-import { FaKey, FaShieldAlt, FaDownload, FaCog } from "react-icons/fa";
+import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import {
   saveRyuCookie,
@@ -33,6 +33,7 @@ import {
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
+import { checkPluginUpdate, updatePlugin } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
 
 export function Settings() {
@@ -83,6 +84,13 @@ export function Settings() {
   } | null>(null);
   const [lang, setLang] = useState(getLanguage());
   const [libraries, setLibraries] = useState<any[]>([]);
+  const [pluginUpdate, setPluginUpdate] = useState<{
+    installed: string | null;
+    latest: string | null;
+    has_update: boolean;
+  } | null>(null);
+  const [updatingPlugin, setUpdatingPlugin] = useState(false);
+  const [pluginMsg, setPluginMsg] = useState<string | null>(null);
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || "", duration });
@@ -163,6 +171,13 @@ export function Settings() {
 
       const libResult = await getSteamLibraries();
       if (!cancelled && libResult.success && libResult.libraries) setLibraries(libResult.libraries);
+
+      const pu = await checkPluginUpdate();
+      if (!cancelled && pu.success) setPluginUpdate({
+        installed: pu.installed ?? null,
+        latest: pu.latest ?? null,
+        has_update: !!pu.has_update,
+      });
     };
 
     load();
@@ -318,6 +333,38 @@ export function Settings() {
           ? t("slssHealthBrokenHash")
           : t("slssHealthBrokenPatterns");
       default:                  return null; // not_installed → red dot already says it
+    }
+  };
+
+  const handleCheckPluginUpdate = async () => {
+    setPluginMsg(t("checking"));
+    const pu = await checkPluginUpdate();
+    if (pu.success) {
+      setPluginUpdate({
+        installed: pu.installed ?? null,
+        latest: pu.latest ?? null,
+        has_update: !!pu.has_update,
+      });
+      setPluginMsg(pu.has_update ? t("pluginUpdateAvailable", pu.latest || "") : t("pluginUpToDate"));
+    } else {
+      setPluginMsg(t("pluginUpdateCheckFailed"));
+    }
+  };
+
+  const handleUpdatePlugin = async () => {
+    setUpdatingPlugin(true);
+    setPluginMsg(t("pluginUpdating"));
+    const result = await updatePlugin();
+    setUpdatingPlugin(false);
+    if (result.success && result.updated) {
+      setPluginMsg(result.pending
+        ? t("pluginUpdatePending")
+        : t("pluginUpdateApplied", result.latest || ""));
+      await restartSteam();
+    } else if (result.success && !result.updated) {
+      setPluginMsg(t("pluginUpToDate"));
+    } else {
+      setPluginMsg(result.error || t("updateFailed"));
     }
   };
 
@@ -804,6 +851,55 @@ export function Settings() {
         </PanelSection>
       )}
         </>
+      ),
+    },
+    {
+      title: t("about"),
+      icon: <FaInfoCircle />,
+      hideTitle: true,
+      content: (
+        <PanelSection title={t("about")}>
+          <PanelSectionRow>
+            <div style={{ fontSize: "11px", color: "#9aa4b2", lineHeight: "1.4" }}>
+              {t("aboutBlurb")}
+            </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <div style={{ fontSize: "12px", color: "#dcdedf" }}>
+              {t("pluginInstalled", pluginUpdate?.installed || "—")}
+              {pluginUpdate?.latest && (
+                <span style={{ marginLeft: "8px", color: pluginUpdate.has_update ? "#9cc4ff" : "#8b929a" }}>
+                  · {t("pluginLatest", pluginUpdate.latest)}
+                </span>
+              )}
+            </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={handleCheckPluginUpdate}
+              disabled={updatingPlugin}
+            >
+              {t("checkForUpdates")}
+            </ButtonItem>
+          </PanelSectionRow>
+          {pluginUpdate?.has_update && (
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                onClick={handleUpdatePlugin}
+                disabled={updatingPlugin}
+              >
+                {updatingPlugin ? t("pluginUpdating") : `${t("updateNow")} (${pluginUpdate.latest})`}
+              </ButtonItem>
+            </PanelSectionRow>
+          )}
+          {pluginMsg && (
+            <PanelSectionRow>
+              <div style={{ fontSize: "11px", color: "#9cc4ff" }}>{pluginMsg}</div>
+            </PanelSectionRow>
+          )}
+        </PanelSection>
       ),
     },
   ];
