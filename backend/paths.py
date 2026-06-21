@@ -362,6 +362,25 @@ def _lumalinux_injected_in_steam_sh() -> bool:
     return False
 
 
+def _cloudredirect_injected_in_steam_sh() -> bool:
+    """True if steam.sh carries Headcrab's CloudRedirect injection (the
+    INJECT_CR / LD_PRELOAD cloud_redirect.so line). Same swallowed-wget risk as
+    the SLSsteam INJECT_SLS line: Headcrab can exit 0 having left it out (a
+    transient network drop during one of its wgets). Checks the first steam.sh
+    found across the known Steam locations; returns False if none carries it."""
+    for candidate in _STEAM_PATHS:
+        steam_sh = os.path.join(candidate, "steam.sh")
+        if not os.path.isfile(steam_sh):
+            continue
+        try:
+            with open(steam_sh, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            continue
+        return "cloud_redirect.so" in content or "INJECT_CR" in content
+    return False
+
+
 def read_lumalinux_health() -> dict:
     """Resolve lumalinux into a single UI state. Symmetric to read_slssteam_health.
 

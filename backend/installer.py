@@ -19,6 +19,9 @@ from paths import (
     check_cloudredirect_installed,
     check_cloudredirect_active,
     check_cloudredirect_authed,
+    verify_slssteam_injected,
+    _lumalinux_injected_in_steam_sh,
+    _cloudredirect_injected_in_steam_sh,
     get_slssteam_config_path,
     get_slssteam_config_dir,
 )
@@ -377,22 +380,41 @@ async def install_dependencies() -> dict:
         await process.wait()
 
         if process.returncode == 0:
-            # enter-the-wired installed SLSsteam + ACCELA but does NOT install
-            # .NET 9. ACCELA's depot downloads and Steamless features need it,
-            # so we install it here in the same "Install / Reinstall" click.
-            # ensure_dotnet_available() is a no-op if .NET 9 is already there.
-            INSTALL_STATE["progress"] = "Installing .NET 9 runtime if missing..."
-            loop = asyncio.get_event_loop()
-            dotnet_ok = await loop.run_in_executor(None, ensure_dotnet_available)
-            if dotnet_ok:
-                INSTALL_STATE["status"] = "done"
-                INSTALL_STATE["progress"] = "Installation complete!"
-            else:
-                INSTALL_STATE["status"] = "done"
-                INSTALL_STATE["progress"] = (
-                    "SLSsteam and ACCELA installed. .NET 9 install failed — "
-                    "click Install / Reinstall Dependencies again to retry."
+            # #19: enter-the-wired/Headcrab can exit 0 even when a transient
+            # wget drop left steam.sh unpatched (its wgets are `&> /dev/null`).
+            # Verify the post-condition (INJECT_SLS in steam.sh) instead of
+            # trusting the exit code, so we don't report a green "done" that
+            # isn't functional.
+            sls_check = verify_slssteam_injected()
+            if not sls_check.get("already_ok"):
+                INSTALL_STATE["status"] = "failed"
+                INSTALL_STATE["error"] = (
+                    "Installer finished but SLSsteam was not injected into "
+                    "steam.sh (likely a transient network drop during Headcrab's "
+                    "downloads). Click Install / Reinstall Dependencies again to "
+                    "retry."
                 )
+                logger.error(
+                    "LumaDeck: install_dependencies post-check failed: %s",
+                    sls_check.get("error"),
+                )
+            else:
+                # enter-the-wired installed SLSsteam + ACCELA but does NOT install
+                # .NET 9. ACCELA's depot downloads and Steamless features need it,
+                # so we install it here in the same "Install / Reinstall" click.
+                # ensure_dotnet_available() is a no-op if .NET 9 is already there.
+                INSTALL_STATE["progress"] = "Installing .NET 9 runtime if missing..."
+                loop = asyncio.get_event_loop()
+                dotnet_ok = await loop.run_in_executor(None, ensure_dotnet_available)
+                if dotnet_ok:
+                    INSTALL_STATE["status"] = "done"
+                    INSTALL_STATE["progress"] = "Installation complete!"
+                else:
+                    INSTALL_STATE["status"] = "done"
+                    INSTALL_STATE["progress"] = (
+                        "SLSsteam and ACCELA installed. .NET 9 install failed — "
+                        "click Install / Reinstall Dependencies again to retry."
+                    )
         else:
             INSTALL_STATE["status"] = "failed"
             INSTALL_STATE["error"] = f"Installer exited with code {process.returncode}"
@@ -652,8 +674,26 @@ async def install_cloudredirect() -> dict:
         await process.wait()
 
         if process.returncode == 0:
-            CR_INSTALL_STATE["status"] = "done"
-            CR_INSTALL_STATE["progress"] = "CloudRedirect installed!"
+            # #19: headcrab can exit 0 with steam.sh left unpatched (transient
+            # wget drop). Verify the post-condition — cloud_redirect.so on disk
+            # AND the INJECT_CR line in steam.sh — instead of the exit code.
+            if not check_cloudredirect_installed():
+                CR_INSTALL_STATE["status"] = "failed"
+                CR_INSTALL_STATE["error"] = (
+                    "Installer finished but cloud_redirect.so was not deployed "
+                    "(likely a transient network drop). Click Install CloudRedirect "
+                    "again to retry."
+                )
+            elif not _cloudredirect_injected_in_steam_sh():
+                CR_INSTALL_STATE["status"] = "failed"
+                CR_INSTALL_STATE["error"] = (
+                    "Installer finished but CloudRedirect was not injected into "
+                    "steam.sh (likely a transient network drop during Headcrab's "
+                    "downloads). Click Install CloudRedirect again to retry."
+                )
+            else:
+                CR_INSTALL_STATE["status"] = "done"
+                CR_INSTALL_STATE["progress"] = "CloudRedirect installed!"
         else:
             CR_INSTALL_STATE["status"] = "failed"
             CR_INSTALL_STATE["error"] = f"Installer exited with code {process.returncode}"
@@ -742,8 +782,19 @@ async def install_lumalinux() -> dict:
         await process.wait()
 
         if process.returncode == 0:
-            LL_INSTALL_STATE["status"] = "done"
-            LL_INSTALL_STATE["progress"] = "lumalinux installed!"
+            # #19: verify the post-condition (the lumalinux LD_PRELOAD block
+            # landed in steam.sh) rather than trusting the exit code, so a
+            # transient download/patch failure can't report a green "done".
+            if not _lumalinux_injected_in_steam_sh():
+                LL_INSTALL_STATE["status"] = "failed"
+                LL_INSTALL_STATE["error"] = (
+                    "Installer finished but the lumalinux block was not added to "
+                    "steam.sh (likely a transient network drop). Click Install "
+                    "lumalinux again to retry."
+                )
+            else:
+                LL_INSTALL_STATE["status"] = "done"
+                LL_INSTALL_STATE["progress"] = "lumalinux installed!"
         else:
             LL_INSTALL_STATE["status"] = "failed"
             LL_INSTALL_STATE["error"] = (
