@@ -719,6 +719,44 @@ async def _enrich_lua_with_linux_depot(appid: int, lua_text: str) -> tuple[str, 
         return lua_text, False
 
 
+def _count_app_depot_keys(appid: int) -> int:
+    """Count usable Extended depot-key entries in lumalinux's keys.txt whose
+    parent_app_id == appid — i.e. content depots for which steamidra_lite wrote
+    a real 32-byte (64-hex) decryption key for this app.
+
+    Used as a post-install sanity check: steamidra_lite can exit 0 yet parse
+    nothing usable out of a .lua that isn't in the Hubcap dialect (a non-Hubcap
+    endpoint may ship a zip whose .lua uses a different format / quote style, or
+    differently named manifests). Without a usable key the install is a
+    "phantom" — Steam shows the game as owned but it never downloads / can't
+    decrypt.
+
+    Returns the count (>= 0), or -1 if keys.txt could not be read (so the
+    caller can skip the guard instead of false-failing on our own read error).
+    """
+    keys_path = os.path.expanduser("~/.config/lumalinux/keys.txt")
+    if not os.path.exists(keys_path):
+        return 0
+    target = str(appid)
+    count = 0
+    try:
+        with open(keys_path, "r", encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                # Extended: depot_id;parent_app_id;manifest_gid;manifest_size;hex_key
+                parts = line.split(";")
+                if len(parts) == 5 and parts[1].strip() == target:
+                    key = parts[4].strip()
+                    if len(key) == 64 and all(c in "0123456789abcdefABCDEF" for c in key):
+                        count += 1
+    except Exception as exc:
+        logger.warning(f"LumaDeck: keys.txt post-check read error: {exc}")
+        return -1
+    return count
+
+
 async def _process_and_install_lua(appid: int, zip_path: str) -> None:
     """Process the downloaded Hubcap zip via lumalinux's steamidra_lite.
 
@@ -821,6 +859,39 @@ async def _process_and_install_lua(appid: int, zip_path: str) -> None:
             raise RuntimeError(
                 f"steamidra_lite failed:\n{output[-2000:]}"  # last 2KB is plenty
             )
+
+        # Post-condition guard against a "phantom install". steamidra_lite is
+        # built for the Hubcap zip dialect; a non-Hubcap endpoint can ship a
+        # zip whose .lua parses to nothing usable (different format / quotes,
+        # or oddly named manifests). The exit code is still 0, but keys.txt got
+        # no decryption key — so Steam would relaunch, show the game as owned,
+        # and never actually download / fail to decrypt. If the zip carried
+        # manifests (there IS content that needs keys) but no usable key landed
+        # for this app, fail loudly here instead of restarting Steam into a
+        # broken state.
+        manifest_count = sum(1 for _ in Path(tmp_dir).rglob("*.manifest"))
+        if manifest_count > 0:
+            key_count = _count_app_depot_keys(appid)
+            if key_count == 0:
+                raise RuntimeError(
+                    f"Install aborted: the download succeeded but no usable depot "
+                    f"key was written for app {appid}, despite the zip carrying "
+                    f"{manifest_count} manifest(s). The endpoint's zip format is "
+                    f"likely incompatible with the Hubcap-style processing "
+                    f"(non-Hubcap source?). Steam was NOT restarted; if the game "
+                    f"shows up in your library, remove it and retry with the "
+                    f"official Hubcap source."
+                )
+            if key_count < 0:
+                logger.warning(
+                    f"LumaDeck: keys.txt post-check skipped for app {appid} "
+                    f"(couldn't read keys.txt) — proceeding"
+                )
+            else:
+                logger.info(
+                    f"LumaDeck: post-check OK — {key_count} depot key(s) in "
+                    f"keys.txt for app {appid} ({manifest_count} manifest(s))"
+                )
 
         # Record the installed lua path for any downstream code that looks
         # it up (the canonical place is stplug-in, written by the script).
