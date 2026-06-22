@@ -997,7 +997,14 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
     _set_download_state(appid, {
         "status": "checking", "currentApi": None,
         "bytesRead": 0, "totalBytes": 0, "dest": dest_path,
+        "errorCode": None,  # clear any stale code from a previous failed attempt
     })
+
+    # Reactive degradation for a stuck-update Fix / re-deploy: if a Hubcap source
+    # answers 401/403, the API key has expired (they last 7 days). Record it so
+    # the terminal failure can surface a dedicated "renew your key" message + a
+    # Settings link instead of the generic "Not available on any API" error (#21).
+    hubcap_key_expired = False
 
     for api in apis:
         name = api.get("name", "Unknown")
@@ -1064,6 +1071,9 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                 if code != success_code:
                     if "ryuu.lol" in url and code in (401, 403):
                         logger.warning(f"LumaDeck: Ryuu access denied ({code}). Check if cookie expired.")
+                    if ("hubcapmanifest.com" in url or "morrenus.xyz" in url) and code in (401, 403):
+                        hubcap_key_expired = True
+                        logger.warning(f"LumaDeck: Hubcap access denied ({code}). API key likely expired.")
                     continue
 
                 total = int(resp.headers.get("Content-Length", "0") or "0")
@@ -1206,7 +1216,14 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
             logger.warning(f"LumaDeck: API '{name}' failed: {err}")
             continue
 
-    _set_download_state(appid, {"status": "failed", "error": "Not available on any API"})
+    if hubcap_key_expired:
+        _set_download_state(appid, {
+            "status": "failed",
+            "error": "Hubcap API key expired",
+            "errorCode": "hubcap_key_expired",
+        })
+    else:
+        _set_download_state(appid, {"status": "failed", "error": "Not available on any API"})
 
 
 async def start_download(appid: int, target_library_path: str = "") -> dict:

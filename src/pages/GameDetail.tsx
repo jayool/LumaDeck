@@ -19,6 +19,7 @@ import {
 import { toaster } from "@decky/api";
 import { ProgressBar } from "../components/ProgressBar";
 import { ActionButton } from "../components/ActionButton";
+import { ROUTE_SETTINGS } from "../routes";
 import {
   startDownload,
   getDownloadStatus,
@@ -823,13 +824,41 @@ export function GameDetail({ appid }: GameDetailProps) {
             </div>
           </PanelSectionRow>
         )}
-        {downloadState?.status === "failed" && (
-          <PanelSectionRow>
-            <div style={{ color: "#ff4444", fontSize: "12px" }}>
-              {downloadState.error || t("downloadFailed")}
-            </div>
-          </PanelSectionRow>
-        )}
+        {downloadState?.status === "failed" &&
+          downloadState.errorCode === "hubcap_key_expired" && (
+            <>
+              <PanelSectionRow>
+                <div style={{
+                  width: "100%",
+                  background: "rgba(255, 140, 0, 0.08)",
+                  border: "1px solid rgba(255, 140, 0, 0.30)",
+                  borderLeft: "3px solid #ff8c00",
+                  borderRadius: "4px",
+                  padding: "8px 12px",
+                }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#ff8c00", marginBottom: "4px" }}>
+                    ⚠ {t("hubcapKeyExpiredTitle")}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#dcdedf", lineHeight: "1.4" }}>
+                    {t("hubcapKeyExpiredBody")}
+                  </div>
+                </div>
+              </PanelSectionRow>
+              <ActionButton
+                label={t("hubcapKeyExpiredButton")}
+                onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
+                variant="primary"
+              />
+            </>
+          )}
+        {downloadState?.status === "failed" &&
+          downloadState.errorCode !== "hubcap_key_expired" && (
+            <PanelSectionRow>
+              <div style={{ color: "#ff4444", fontSize: "12px" }}>
+                {downloadState.error || t("downloadFailed")}
+              </div>
+            </PanelSectionRow>
+          )}
       </PanelSection>
         </>
       ),
