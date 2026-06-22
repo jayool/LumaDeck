@@ -105,6 +105,11 @@ export const getPinStatus = async (appid: number) =>
 export const startDownload = async (appid: number, targetLibraryPath: string = "") =>
   parseResult(await call<[number, string], string>("start_download", appid, targetLibraryPath));
 
+// #21 watchdog: installed lua games whose native Steam update is stuck on a
+// missing decryption key (new/rotated depot) → { stuck: [{appid, name}] }.
+export const checkStuckUpdates = async () =>
+  parseResult(await call<[], string>("check_stuck_updates"));
+
 export const getDownloadStatus = async (appid: number) =>
   parseResult(await call<[number], string>("get_download_status", appid));
 

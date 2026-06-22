@@ -27,6 +27,7 @@ import {
   checkCloudredirectUpdate,
   checkLumalinuxUpdate,
   checkPluginUpdate,
+  checkStuckUpdates,
   installLumalinux,
   installCloudredirect,
   checkHeadcrabCompat,
@@ -108,6 +109,7 @@ export function GameList() {
     latest: string | null;
     has_update: boolean;
   } | null>(null);
+  const [stuckUpdates, setStuckUpdates] = useState<{ appid: number; name: string }[]>([]);
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
     target: number | null;
@@ -312,7 +314,7 @@ export function GameList() {
     // surfaces routine updates separately.
     (async () => {
       try {
-        const [sls, ll, cr, hc, cru, llu, pu] = await Promise.all([
+        const [sls, ll, cr, hc, cru, llu, pu, stuck] = await Promise.all([
           getSlssteamHealth(),
           getLumalinuxHealth(),
           getCloudredirectHealth(),
@@ -320,6 +322,7 @@ export function GameList() {
           checkCloudredirectUpdate(),
           checkLumalinuxUpdate(),
           checkPluginUpdate(),
+          checkStuckUpdates(),
         ]);
         if (sls.state) setSlssteamHealth(sls);
         if (ll.state)  setLumalinuxHealth(ll);
@@ -343,6 +346,7 @@ export function GameList() {
           latest: pu.latest ?? null,
           has_update: !!pu.has_update,
         });
+        if (stuck.success && Array.isArray(stuck.stuck)) setStuckUpdates(stuck.stuck);
       } catch { }
     })();
 
@@ -770,6 +774,9 @@ export function GameList() {
       key: "lumadeck",
       text: t("pluginUpdateAvailableMain", pluginUpdate.latest ?? ""),
     });
+  }
+  for (const s of stuckUpdates) {
+    updates.push({ key: `stuck-${s.appid}`, text: t("stuckUpdateMain", s.name) });
   }
 
   return (

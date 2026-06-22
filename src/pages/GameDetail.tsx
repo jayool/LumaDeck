@@ -46,6 +46,7 @@ import {
   fetchAppName,
   repairAppmanifest,
   reconfigureSlssteam,
+  checkStuckUpdates,
   pinGame,
   unpinGame,
   getPinStatus,
@@ -111,6 +112,7 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
+  const [isStuck, setIsStuck] = useState(false);
   const [goldbergApplied, setGoldbergApplied] = useState(false);
   const [achievementStatus, setAchievementStatus] = useState("");
   const [achievementGenState, setAchievementGenState] = useState<any>(null);
@@ -145,6 +147,14 @@ export function GameDetail({ appid }: GameDetailProps) {
       getSteamLibraries().then((libResult) => {
         if (libResult.success && libResult.libraries) {
           setSteamLibraries(libResult.libraries);
+        }
+      });
+
+      // #21: flag if this game's last native Steam update is stuck on a
+      // missing decryption key (new/rotated depot) so we can offer Fix Update.
+      checkStuckUpdates().then((r) => {
+        if (r.success && Array.isArray(r.stuck)) {
+          setIsStuck(r.stuck.some((s: any) => s.appid === appid));
         }
       });
 
@@ -775,6 +785,35 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </PanelSectionRow>
             ) : null}
+            {isStuck && (
+              <PanelSectionRow>
+                <div style={{
+                  width: "100%",
+                  background: "rgba(255, 140, 0, 0.08)",
+                  border: "1px solid rgba(255, 140, 0, 0.30)",
+                  borderLeft: "3px solid #ff8c00",
+                  borderRadius: "4px",
+                  padding: "8px 12px",
+                }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#ff8c00", marginBottom: "4px" }}>
+                    ⚠ {t("stuckUpdateTitle")}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#dcdedf", lineHeight: "1.4", marginBottom: "4px" }}>
+                    {t("stuckUpdateBody")}
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#9aa4b2" }}>
+                    {t("stuckUpdateKeyHint")}
+                  </div>
+                </div>
+              </PanelSectionRow>
+            )}
+            {isStuck && (
+              <ActionButton
+                label={t("fixUpdate")}
+                onClick={handleDownload}
+                variant="primary"
+              />
+            )}
           </>
         )}
         {downloadState?.status === "done" && (

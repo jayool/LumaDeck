@@ -270,6 +270,7 @@ def get_installed_games() -> list:
                         "name": name,
                         "installDir": install_dir,
                         "libraryPath": lib_path,
+                        "updateResult": str(app_state.get("UpdateResult", "0")),
                     })
                 except (ValueError, Exception):
                     continue
@@ -278,6 +279,24 @@ def get_installed_games() -> list:
 
     games.sort(key=lambda g: g["name"].lower())
     return games
+
+
+def check_stuck_updates() -> dict:
+    """Installed lua games whose last native Steam update failed with a missing
+    decryption key (UpdateResult=8): a new or rotated depot whose key isn't in
+    keys.txt, which needs a fresh Hubcap manifest re-deploy (#21).
+
+    Non-destructive — Steam stages updates and only commits on success, so the
+    game stays on its working installed version. Restricted to games that have a
+    .lua (LumaDeck/unpinned installs); an owned game would never hit this.
+
+    Returns {"success": True, "stuck": [{"appid", "name"}, ...]}.
+    """
+    stuck = []
+    for game in get_installed_games():
+        if str(game.get("updateResult", "0")) == "8" and has_lua_for_app(game["appid"]):
+            stuck.append({"appid": game["appid"], "name": game["name"]})
+    return {"success": True, "stuck": stuck}
 
 
 def get_steam_libraries() -> list:

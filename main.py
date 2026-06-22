@@ -312,6 +312,10 @@ class Plugin:
         from steam_utils import get_installed_games
         return _j({"success": True, "games": get_installed_games()})
 
+    async def check_stuck_updates(self) -> str:
+        from steam_utils import check_stuck_updates
+        return _j(check_stuck_updates())
+
     async def get_steam_libraries(self) -> str:
         from steam_utils import get_steam_libraries
         return _j({"success": True, "libraries": get_steam_libraries()})
