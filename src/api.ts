@@ -87,6 +87,14 @@ export const loadHubcapKey = async () =>
 export const searchHubcap = async (query: string) =>
   parseResult(await call<[string], string>("search_hubcap", query));
 
+// Hubcap key + Ryuu cookie expiry for the UI. Returns
+//   { success, hubcap: {state, days_left, expires_at, daily_usage, daily_limit},
+//              ryuu:   {state, days_left, expires_at} }
+// where state ∈ "none"|"unknown"|"ok"|"soon"|"expired". Hubcap expiry comes from
+// the free /user/stats endpoint (no quota); Ryuu from the import-time sidecar.
+export const getCredentialStatus = async () =>
+  parseResult(await call<[], string>("get_credential_status"));
+
 // In-plugin self-update (#23). checkPluginUpdate → { has_update, installed,
 // latest, download_url }; updatePlugin downloads + applies the latest release.
 export const checkPluginUpdate = async () =>

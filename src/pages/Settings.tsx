@@ -16,6 +16,7 @@ import {
   importRyuuCookieFromBrowser,
   updateHubcapKey,
   loadHubcapKey,
+  getCredentialStatus,
   fetchFreeApisNow,
   checkDependencies,
   installDependencies,
@@ -41,6 +42,7 @@ export function Settings() {
   const t = useT();
   const [ryuCookie, setRyuCookie] = useState("");
   const [hubcapKey, setHubcapKey] = useState("");
+  const [cred, setCred] = useState<any>(null);
   const [deps, setDeps] = useState<any>(null);
   const [platform, setPlatform] = useState<any>(null);
   const [playNotOwned, setPlayNotOwned] = useState(false);
@@ -134,6 +136,9 @@ export function Settings() {
         setHubcapKey(keyResult.key);
       }
 
+      const credResult = await getCredentialStatus();
+      if (!cancelled && credResult.success) setCred(credResult);
+
       await refreshDeps();
 
       const platformResult = await getPlatformSummary();
@@ -197,10 +202,75 @@ export function Settings() {
     };
   }, []);
 
+  const refreshCred = async () => {
+    const credResult = await getCredentialStatus();
+    if (credResult.success) setCred(credResult);
+  };
+
+  // Humanise days-left: whole days normally, hours when under a day (matters
+  // for the short-lived Ryuu cookie). fmtDate → short "Jun 25" style label.
+  const fmtLeft = (d: number) =>
+    d >= 1 ? t("credDays", Math.floor(d)) : t("credHours", Math.max(1, Math.round(d * 24)));
+  const fmtDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    } catch {
+      return iso;
+    }
+  };
+
+  // One status line per credential, styled like the Dependencies health rows.
+  const renderCredLine = (kind: "hubcap" | "ryuu") => {
+    const c = kind === "hubcap" ? cred?.hubcap : cred?.ryuu;
+    if (!c) return null;
+    const K = (suffix: string) => (kind === "hubcap" ? `credHubcap${suffix}` : `credRyuu${suffix}`);
+    let text = "";
+    let color = "#8b929a";
+    switch (c.state) {
+      case "ok":
+        text = t(K("Ok"), fmtLeft(c.days_left), fmtDate(c.expires_at));
+        color = "#00cc00";
+        break;
+      case "soon":
+        text = t(K("Soon"), fmtLeft(c.days_left), fmtDate(c.expires_at));
+        color = "#ff8c00";
+        break;
+      case "expired":
+        text = t(K("Expired"), fmtDate(c.expires_at));
+        color = "#ff4444";
+        break;
+      case "none":
+        text = t(K("None"));
+        break;
+      default: // "unknown"
+        text = t(K("Unknown"));
+        break;
+    }
+    return (
+      <PanelSectionRow>
+        <div style={{ fontSize: "11px", color, paddingLeft: "8px" }}>{text}</div>
+      </PanelSectionRow>
+    );
+  };
+
+  // Hubcap-only sub-line: today's request usage, when stats were reachable.
+  const renderHubcapUsage = () => {
+    const c = cred?.hubcap;
+    if (!c || (c.state !== "ok" && c.state !== "soon") || c.daily_limit == null) return null;
+    return (
+      <PanelSectionRow>
+        <div style={{ fontSize: "11px", color: "#8b929a", paddingLeft: "8px" }}>
+          {t("credHubcapUsage", c.daily_usage ?? 0, c.daily_limit)}
+        </div>
+      </PanelSectionRow>
+    );
+  };
+
   const handleSaveCookie = async () => {
     const result = await saveRyuCookie(ryuCookie);
     if (result.success || result.message) {
       toast(t("toastCookieSaved"));
+      refreshCred();
     } else {
       toast(t("toastError"), result.error || "", 4000);
     }
@@ -219,6 +289,7 @@ export function Settings() {
       // Refresh the displayed value from the saved cookie file.
       const reloaded = await loadRyuCookie();
       if (reloaded.success && reloaded.cookie) setRyuCookie(reloaded.cookie);
+      refreshCred();
       toast(result.message || t("ryuuCookieImported"));
     } else {
       toast(t("toastError"), result.error || "", 5000);
@@ -229,6 +300,7 @@ export function Settings() {
     const result = await updateHubcapKey(hubcapKey);
     if (result.success || result.message) {
       toast(t("toastApiKeySaved"));
+      refreshCred();
     } else {
       toast(t("toastError"), result.error || "", 4000);
     }
@@ -423,6 +495,7 @@ export function Settings() {
             {t("importRyuuCookie")}
           </ButtonItem>
         </PanelSectionRow>
+        {renderCredLine("ryuu")}
 
         <PanelSectionRow>
           <TextField
@@ -446,6 +519,8 @@ export function Settings() {
             {t("getHubcapKey")}
           </ButtonItem>
         </PanelSectionRow>
+        {renderCredLine("hubcap")}
+        {renderHubcapUsage()}
       </PanelSection>
 
       <PanelSection title={t("apis")}>

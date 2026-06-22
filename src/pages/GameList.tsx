@@ -28,6 +28,7 @@ import {
   checkLumalinuxUpdate,
   checkPluginUpdate,
   checkStuckUpdates,
+  getCredentialStatus,
   installLumalinux,
   installCloudredirect,
   checkHeadcrabCompat,
@@ -125,6 +126,7 @@ export function GameList() {
   const [steamLibraries, setSteamLibraries] = useState<any[]>([]);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
   const [pendingGameInfo, setPendingGameInfo] = useState<any>(null);
+  const [cred, setCred] = useState<any>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -347,6 +349,15 @@ export function GameList() {
           has_update: !!pu.has_update,
         });
         if (stuck.success && Array.isArray(stuck.stuck)) setStuckUpdates(stuck.stuck);
+      } catch { }
+    })();
+
+    // Credential expiry — only surfaced at download time (see credWarnings),
+    // so fetch once on mount and let the gated block decide whether to show it.
+    (async () => {
+      try {
+        const cs = await getCredentialStatus();
+        if (cs.success) setCred(cs);
       } catch { }
     })();
 
@@ -779,6 +790,22 @@ export function GameList() {
     updates.push({ key: `stuck-${s.appid}`, text: t("stuckUpdateMain", s.name) });
   }
 
+  // Credential warnings shown ONLY when a game is staged for download (the
+  // game-info section is filled). Expired/missing credentials would block the
+  // download, so they're worth a heads-up here — but nagging about them on
+  // every QAM open is noise, hence the pendingGameInfo gate. "Expiring soon"
+  // is deliberately excluded: the current download would still succeed, so it
+  // lives only in the Settings status line.
+  const credWarnings: { key: string; text: string; color: string }[] = [];
+  if (pendingGameInfo && cred) {
+    const h = cred.hubcap;
+    const r = cred.ryuu;
+    if (h?.state === "expired") credWarnings.push({ key: "h-exp", text: t("dlWarnHubcapExpired"), color: "#ff4444" });
+    else if (h?.state === "none") credWarnings.push({ key: "h-none", text: t("dlWarnHubcapNone"), color: "#ffaa00" });
+    if (r?.state === "expired") credWarnings.push({ key: "r-exp", text: t("dlWarnRyuuExpired"), color: "#ff4444" });
+    else if (r?.state === "none") credWarnings.push({ key: "r-none", text: t("dlWarnRyuuNone"), color: "#ffaa00" });
+  }
+
   return (
     <>
       {showQuickInstall && (
@@ -946,6 +973,27 @@ export function GameList() {
                 }}>
                   <span style={{ color: "#c8a84b", flexShrink: 0, marginTop: "1px" }}>▸</span>
                   <span>{notice}</span>
+                </div>
+              ))}
+            </div>
+          </PanelSectionRow>
+        )}
+        {credWarnings.length > 0 && (
+          <PanelSectionRow>
+            <div style={{
+              width: "100%",
+              display: "flex",
+              flexDirection: "column",
+              gap: "5px",
+              background: "rgba(255, 68, 68, 0.06)",
+              border: "1px solid rgba(255, 68, 68, 0.25)",
+              borderLeft: "3px solid #ff5555",
+              borderRadius: "4px",
+              padding: "8px 12px",
+            }}>
+              {credWarnings.map((w) => (
+                <div key={w.key} style={{ fontSize: "12px", color: w.color, lineHeight: "1.45" }}>
+                  {w.text}
                 </div>
               ))}
             </div>

@@ -224,6 +224,10 @@ class Plugin:
         from api_manifest import search_hubcap
         return _j(await search_hubcap(query))
 
+    async def get_credential_status(self) -> str:
+        from api_manifest import get_credential_status
+        return _j(await get_credential_status())
+
     async def pin_game(self, appid: int) -> str:
         from downloads import pin_game
         return _j(await pin_game(appid))

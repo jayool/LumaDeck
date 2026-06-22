@@ -60,8 +60,9 @@ def _find_cookie_dbs() -> list:
 
 def _read_encrypted_session(db_path: str):
     """Copy the (possibly Steam-locked, WAL-mode) Cookies DB to a temp file and
-    read the encrypted_value of the ryuu.lol `session` cookie. Returns the raw
-    encrypted bytes, or None."""
+    read the ryuu.lol `session` cookie. Returns (encrypted_value, expires_utc)
+    or None. `expires_utc` is Chromium's microseconds-since-1601 expiry (0 for a
+    session cookie); the caller uses it to surface a credential-expiry warning."""
     tmpdir = tempfile.mkdtemp(prefix="lumadeck_cookies_")
     try:
         local = os.path.join(tmpdir, "Cookies")
@@ -73,7 +74,7 @@ def _read_encrypted_session(db_path: str):
         con = sqlite3.connect(local)
         try:
             rows = con.execute(
-                "SELECT host_key, encrypted_value FROM cookies "
+                "SELECT host_key, encrypted_value, expires_utc FROM cookies "
                 "WHERE name = ? AND host_key LIKE ?",
                 (_RYUU_COOKIE_NAME, f"%{_RYUU_HOST_MATCH}%"),
             ).fetchall()
@@ -83,12 +84,29 @@ def _read_encrypted_session(db_path: str):
             return None
         # Prefer an exact generator.ryuu.lol host if several matched.
         rows.sort(key=lambda r: 0 if "generator.ryuu.lol" in (r[0] or "") else 1)
-        return rows[0][1]
+        return rows[0][1], rows[0][2]
     except Exception as exc:
         logger.warning(f"Ryuu cookie: read failed for {db_path}: {exc}")
         return None
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _chromium_epoch_to_iso(expires_utc):
+    """Chromium cookie `expires_utc` is microseconds since 1601-01-01 UTC.
+    0 (or anything in the past) means a session cookie / no usable expiry.
+    Returns an ISO-8601 string, or None."""
+    if not expires_utc:
+        return None
+    try:
+        import datetime
+        unix = expires_utc / 1_000_000 - 11_644_473_600
+        if unix <= 0:
+            return None
+        return (datetime.datetime.utcfromtimestamp(unix)
+                .replace(microsecond=0).isoformat())
+    except Exception:
+        return None
 
 
 def _extract_value(plain: bytes):
@@ -155,16 +173,20 @@ def import_ryuu_cookie_from_browser() -> dict:
 
     found_but_undecryptable = False
     for db in dbs:
-        enc = _read_encrypted_session(db)
-        if enc is None:
+        res = _read_encrypted_session(db)
+        if res is None:
             continue
+        enc, expires_utc = res
         value = _decrypt_v10(enc)
         if not value:
             found_but_undecryptable = True
             continue
-        from api_manifest import save_ryu_cookie
+        from api_manifest import save_ryu_cookie, save_ryu_cookie_expiry
         # save_ryu_cookie prepends "session=" itself.
         save_ryu_cookie(value)
+        # Persist the cookie's own expiry so the credential-status check can
+        # warn before it lapses (None for a session cookie clears the sidecar).
+        save_ryu_cookie_expiry(_chromium_epoch_to_iso(expires_utc))
         logger.info(f"Ryuu cookie: imported from {db} ({len(value)} chars)")
         return {"success": True,
                 "message": "Ryuu cookie imported from the Steam browser."}

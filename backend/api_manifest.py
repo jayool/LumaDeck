@@ -169,6 +169,33 @@ def load_ryu_cookie() -> str:
     return ""
 
 
+def save_ryu_cookie_expiry(iso) -> None:
+    """Persist the imported Ryuu cookie's expiry (ISO-8601) alongside it, so the
+    credential-status check can compute days-left without re-reading the browser
+    DB. A falsy value (session cookie / unknown) clears any stale sidecar."""
+    try:
+        path = data_path("ryuu_cookie_expiry.txt")
+        if iso:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(str(iso))
+        elif os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def load_ryu_cookie_expiry() -> str:
+    """Read the saved Ryuu cookie expiry (ISO-8601), or "" if unknown."""
+    try:
+        path = data_path("ryuu_cookie_expiry.txt")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return ""
+
+
 def update_hubcap_key(key_content: str) -> dict:
     """Update the Hubcap API key in api.json."""
     try:
@@ -315,4 +342,81 @@ async def search_hubcap(query: str) -> dict:
         return {"success": True, "results": filtered, "total": len(results), "filtered": len(filtered)}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+# Credential-expiry warning thresholds (days). Ryuu cookies live ~3 days, so a
+# wide window would keep them permanently "expiring soon" — keep it tight.
+# Hubcap keys live weeks, so 5 days' notice is useful.
+HUBCAP_WARN_DAYS = 5
+RYUU_WARN_DAYS = 1
+
+
+def _classify_expiry(expires_at_iso, warn_days):
+    """Map an ISO-8601 expiry to (state, days_left), state ∈ ok|soon|expired.
+    Returns (None, None) when the expiry is missing or unparseable."""
+    if not expires_at_iso:
+        return None, None
+    try:
+        import datetime
+        # Accept a trailing 'Z'; fromisoformat() doesn't.
+        exp = datetime.datetime.fromisoformat(str(expires_at_iso).rstrip("Z"))
+        days_left = (exp - datetime.datetime.utcnow()).total_seconds() / 86400.0
+    except Exception:
+        return None, None
+    if days_left <= 0:
+        return "expired", days_left
+    if days_left <= warn_days:
+        return "soon", days_left
+    return "ok", days_left
+
+
+async def get_credential_status() -> dict:
+    """Resolve Hubcap key + Ryuu cookie expiry for the UI. Each credential →
+    {state, days_left, expires_at, ...} where
+      state: none | unknown | ok | soon | expired
+    Hubcap expiry comes from the free, no-quota /user/stats endpoint; Ryuu
+    expiry from the sidecar captured at cookie-import time."""
+    # ---- Hubcap ----
+    hubcap = {"state": "none", "days_left": None, "expires_at": None,
+              "daily_usage": None, "daily_limit": None}
+    key = _get_hubcap_key()
+    if key:
+        hubcap["state"] = "unknown"
+        try:
+            client = await ensure_http_client("HubcapStats")
+            # /user/stats is documented as "Free - No usage count", so this poll
+            # never eats the user's daily quota.
+            resp = await client.get(
+                "https://hubcapmanifest.com/api/v1/user/stats",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                hubcap["expires_at"] = data.get("api_key_expires_at")
+                hubcap["daily_usage"] = data.get("daily_usage")
+                hubcap["daily_limit"] = data.get("daily_limit")
+                state, days = _classify_expiry(hubcap["expires_at"], HUBCAP_WARN_DAYS)
+                if state:
+                    hubcap["state"] = state
+                    hubcap["days_left"] = days
+            elif resp.status_code == 401:
+                # Key present but rejected → expired/invalid; nudge a refresh.
+                hubcap["state"] = "expired"
+        except Exception as exc:
+            logger.warning(f"Credential status: Hubcap stats failed: {exc}")
+
+    # ---- Ryuu ----
+    ryuu = {"state": "none", "days_left": None, "expires_at": None}
+    if load_ryu_cookie():
+        ryuu["state"] = "unknown"
+        iso = load_ryu_cookie_expiry()
+        if iso:
+            ryuu["expires_at"] = iso
+            state, days = _classify_expiry(iso, RYUU_WARN_DAYS)
+            if state:
+                ryuu["state"] = state
+                ryuu["days_left"] = days
+
+    return {"success": True, "hubcap": hubcap, "ryuu": ryuu}
 
