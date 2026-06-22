@@ -13,6 +13,7 @@ import { toaster } from "@decky/api";
 import {
   saveRyuCookie,
   loadRyuCookie,
+  importRyuuCookieFromBrowser,
   updateHubcapKey,
   loadHubcapKey,
   fetchFreeApisNow,
@@ -205,6 +206,25 @@ export function Settings() {
     }
   };
 
+  const handleOpenRyuu = () => {
+    // Open Ryuu in Game Mode's built-in Steam browser so the user can log in
+    // with Discord. The session cookie it sets is then importable below
+    // (no DevTools / copy-paste needed).
+    Navigation.NavigateToExternalWeb("https://generator.ryuu.lol/");
+  };
+
+  const handleImportRyuuCookie = async () => {
+    const result = await importRyuuCookieFromBrowser();
+    if (result.success) {
+      // Refresh the displayed value from the saved cookie file.
+      const reloaded = await loadRyuCookie();
+      if (reloaded.success && reloaded.cookie) setRyuCookie(reloaded.cookie);
+      toast(result.message || t("ryuuCookieImported"));
+    } else {
+      toast(t("toastError"), result.error || "", 5000);
+    }
+  };
+
   const handleSaveHubcapKey = async () => {
     const result = await updateHubcapKey(hubcapKey);
     if (result.success || result.message) {
@@ -387,6 +407,20 @@ export function Settings() {
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSaveCookie}>
             {t("saveCookie")}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={handleOpenRyuu}>
+            {t("openRyuu")}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={handleImportRyuuCookie}
+            description={t("importRyuuCookieDesc")}
+          >
+            {t("importRyuuCookie")}
           </ButtonItem>
         </PanelSectionRow>
 

@@ -208,6 +208,10 @@ class Plugin:
         cookie = load_ryu_cookie()
         return _j({"success": True, "cookie": cookie})
 
+    async def import_ryuu_cookie_from_browser(self) -> str:
+        from ryuu_cookie import import_ryuu_cookie_from_browser
+        return _j(import_ryuu_cookie_from_browser())
+
     async def update_hubcap_key(self, key_content: str) -> str:
         from api_manifest import update_hubcap_key
         return _j(update_hubcap_key(key_content))

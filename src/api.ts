@@ -73,6 +73,11 @@ export const saveRyuCookie = async (cookie: string) =>
 export const loadRyuCookie = async () =>
   parseResult(await call<[], string>("load_ryu_cookie"));
 
+// #22: auto-import the Ryuu session cookie from Steam's CEF browser cookie
+// store (no DevTools / copy-paste) -> { success, message? , error? }.
+export const importRyuuCookieFromBrowser = async () =>
+  parseResult(await call<[], string>("import_ryuu_cookie_from_browser"));
+
 export const updateHubcapKey = async (key: string) =>
   parseResult(await call<[string], string>("update_hubcap_key", key));
 
