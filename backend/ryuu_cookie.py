@@ -20,7 +20,6 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
-from glob import glob
 
 try:
     import decky  # type: ignore
@@ -34,25 +33,25 @@ _RYUU_COOKIE_NAME = "session"
 
 
 def _find_cookie_dbs() -> list:
-    """Candidate CEF `Cookies` SQLite DBs under the Steam install."""
+    """Candidate CEF `Cookies` SQLite DBs. The exact subdir under config/htmlcache
+    varies by Chromium build — observed `Default/Cookies` (modern), and older
+    `Cookies` / `Network/Cookies`. Search ONLY under config/ (a small tree); never
+    walk the whole Steam install, which holds the game library and would make a
+    recursive scan crawl (that hang bit the earlier glob-based version)."""
     home = os.path.expanduser("~")
     roots = [
         os.path.join(home, ".local", "share", "Steam"),
         os.path.join(home, ".steam", "steam"),
         os.path.join(home, ".steam", "root"),
     ]
-    patterns = (
-        "config/htmlcache/Cookies",
-        "config/htmlcache/Network/Cookies",
-        "**/htmlcache/**/Cookies",
-    )
     found, seen = [], set()
     for root in roots:
-        if not os.path.isdir(root):
+        cfg = os.path.join(root, "config")
+        if not os.path.isdir(cfg):
             continue
-        for pat in patterns:
-            for p in glob(os.path.join(root, pat), recursive=True):
-                rp = os.path.realpath(p)
+        for dirpath, _dirs, files in os.walk(cfg):
+            if "Cookies" in files:
+                rp = os.path.realpath(os.path.join(dirpath, "Cookies"))
                 if rp not in seen and os.path.isfile(rp):
                     seen.add(rp)
                     found.append(rp)
