@@ -37,6 +37,28 @@ field if you prefer.
 > present). If your cookie happens to be keyring-encrypted (`v11`), the import
 > can't decrypt it and you'll be asked to paste it manually instead.
 
+## Free APIs (no credential)
+
+Hubcap and Ryuu are the **keyed** providers, but LumaDeck also ships a list of
+**free, keyless manifest sources** in `api.json`. When you download a game, the
+backend tries every *enabled* provider in order and uses the first that returns
+a valid manifest zip — so even with no Hubcap key or Ryuu cookie, these can
+still serve some titles.
+
+**Settings ▸ APIs ▸ Update Free APIs** refreshes that list from the upstream it's
+seeded from ([Star123451/LuaToolsLinux `api.json`](https://github.com/Star123451/LuaToolsLinux/blob/main/backend/api.json)).
+Run it if downloads start failing because a source moved or a new one was added.
+Your saved Hubcap key is preserved across the refresh.
+
+Each entry is a templated URL plus the HTTP codes that mean "got it"
+(`success_code`, default 200) and "not here — try the next one"
+(`unavailable_code`, default 404):
+
+```json
+{ "name": "...", "url": "https://.../<appid>", "success_code": 200,
+  "unavailable_code": 404, "enabled": true }
+```
+
 ## Expiry warnings
 
 Both credentials expire, so LumaDeck surfaces it — without nagging:
