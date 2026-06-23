@@ -22,11 +22,9 @@ Everything else (SLSsteam config management, Goldberg, SLScheevo achievements, c
 
 2. **Install it in Decky Loader** as a custom plugin: in the Decky settings on the Deck, point it at the downloaded zip. Decky unpacks the plugin and restarts itself.
 
-3. **Install dependencies from the QAM.** Open the QAM, pick LumaDeck, go to **Settings → Dependencies**. The panel shows the live state of every dependency (green = installed, red = missing) and has three buttons. Tap them in this order:
+3. **Install the components from the QAM.** Open LumaDeck in the QAM. On a fresh setup (nothing installed yet) it shows a **Quick Install** button that installs and configures everything — ACCELA, SLSsteam, the .NET 9 runtime, lumalinux, and optionally CloudRedirect — in the correct order in one tap. This is the recommended path.
 
-   - **Install / Reinstall Dependencies** — runs [`enter-the-wired`](https://github.com/ciscosweater/enter-the-wired) in the background. Installs ACCELA, SLSsteam, the .NET 9 runtime, and patches Steam.
-   - **Enable CloudRedirect** *(optional)* — flips `DisableCloud: yes` → `no` in SLSsteam's config and runs [`headcrab.pages.dev`](https://headcrab.pages.dev), which installs the CloudRedirect Flatpak + `cloud_redirect.so`.
-   - **Install / Reapply lumalinux** — runs [lumalinux's `install.sh`](https://github.com/jayool/lumalinux/blob/main/install.sh): downloads `liblumalinux.so`, deploys it alongside `tools/steamidra_lite.py` + `tools/vdf_inject_keys.py`, and patches Headcrab's `~/.local/share/Steam/steam.sh` with the `LD_PRELOAD` block. The `.so` loads on the next restart.
+   To install or reapply components **individually** (or after a Steam update), use **Settings → Dependencies**. The wiki documents each one and the order they go in: see [Getting started](docs/getting-started.md#2-install-the-components) and [Components & health](docs/components-and-health.md).
 
 4. **(Optional) Sign into your cloud provider.**
 

@@ -29,13 +29,20 @@ replaced by the individual controls in Settings.)
 To install them **individually** (or to reinstall later), open
 **Settings ▸ Dependencies** and run them **in this order**:
 
-1. **Install / Reinstall Dependencies** — ACCELA, SLSsteam, the .NET runtime.
-2. **Enable CloudRedirect** *(optional)* — for cloud saves; see [Cloud saves](cloud-saves.md).
-3. **Install / Reapply lumalinux** — **always do this last.** These are the hooks
-   that let Steam download the games. The earlier steps regenerate Steam's
-   `steam.sh`, which wipes lumalinux's `LD_PRELOAD` block — so lumalinux has to
-   go in *after* them, or nothing downloads. (Same reason: reapply lumalinux
-   whenever you re-run the other installers.)
+1. **Install / Reinstall Dependencies** — runs [enter-the-wired](https://github.com/ciscosweater/enter-the-wired)
+   in the background: installs ACCELA, SLSsteam and the .NET 9 runtime, and
+   patches Steam.
+2. **Enable CloudRedirect** *(optional)* — flips `DisableCloud: yes → no` in
+   SLSsteam's config and runs [headcrab.pages.dev](https://headcrab.pages.dev),
+   which installs the CloudRedirect Flatpak + `cloud_redirect.so`. For cloud
+   saves; see [Cloud saves](cloud-saves.md).
+3. **Install / Reapply lumalinux** — **always do this last.** Runs
+   [lumalinux's `install.sh`](https://github.com/jayool/lumalinux/blob/main/install.sh):
+   deploys `liblumalinux.so` plus the `tools/` scripts and patches Steam's
+   `steam.sh` with the `LD_PRELOAD` block. The earlier steps regenerate
+   `steam.sh` and wipe that block, so lumalinux has to go in *after* them, or
+   nothing downloads. (Same reason: reapply it whenever you re-run the other
+   installers.)
 
 Each step ends with a single, intentional Steam restart. The panel shows a
 live green/red state for every component — see [Components & health](components-and-health.md).
