@@ -1,16 +1,21 @@
 # Achievements
 
 LumaDeck generates achievement files for SLSsteam-managed games using
-[SLScheevo](https://github.com/xamionex/SLScheevo) by xamionex.
+[SLScheevo](https://github.com/xamionex/SLScheevo) by xamionex. SLScheevo signs
+into Steam, fetches a game's achievement **schema** from accounts that own it,
+and writes the stats files into Steam's `appcache/stats` so the game's
+achievements are recognised.
 
 ## Setup
 
 SLScheevo has to be installed and signed in once:
 
 1. On a game page (or when prompted), use **Download SLScheevo** to fetch it.
-2. SLScheevo needs a one-time login. If a game page reports *"Run SLScheevo in
-   terminal to set up login"*, open Konsole (Desktop mode) and run it once to
-   authenticate. After that, generation works from the QAM.
+2. **Sign in once.** SLScheevo authenticates with a **Steam account** (username,
+   password and Steam Guard). LumaDeck can't do this interactive login for you,
+   so when a game page shows *"Run SLScheevo in terminal to set up login"*, open
+   Konsole (Desktop mode) and run SLScheevo once to log in. It saves an
+   encrypted token, and generation then works from the QAM.
 
 The achievement status on each game page reflects this:
 
@@ -32,6 +37,10 @@ Steam to pick them up.
 On the main page, when SLScheevo is ready, a **Sync All Achievements** button
 generates for every installed game that has its files in place. A counter shows
 progress (done / total).
+
+> **Not every game works.** SLScheevo finds the schema by querying accounts that
+> own the game; if none expose one (or the game simply has no achievements),
+> generation reports there's nothing to create for it.
 
 > Achievements only appear after a Steam restart, because Steam reads the
 > generated files at startup.
