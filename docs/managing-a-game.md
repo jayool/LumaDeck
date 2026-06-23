@@ -40,10 +40,10 @@ reach for them to fix a game whose config drifted.
 - **FakeAppId** — maps the game onto a fake owned app (Spacewar, AppID `480`,
   which every account owns) so Steam treats it as owned.
 - **Token** — writes the game's **app access token** into SLSsteam's
-  `AppTokens:`, giving the game a valid Steam app ticket. **Denuvo-protected
-  games in particular need this to launch** (Denuvo validates against the real
-  Steam ticket); most other games don't. The token comes from a bundled list,
-  or is read from the installed `.lua`.
+  `AppTokens:`. SLSsteam uses it to query the app's product information from
+  Steam; in practice it mainly fixes the *"invalid configuration"* error on some
+  games. The token comes from a bundled list, or is read from the installed
+  `.lua`. (This is **not** a Denuvo unlock — see the note below.)
 - **DLCs** — looks up the game's DLCs from Steam's store API and marks them as
   owned so they show up in Steam.
 
@@ -69,6 +69,15 @@ game's install folder, for titles that don't launch cleanly under SLSsteam.
   downloaded).
 - **Installed Fixes** — lists what's applied, with **Remove Fix** / **Remove
   All Fixes** to revert.
+
+> **Denuvo games:** lumalinux can download a Denuvo title and SLSsteam can fake
+> local ownership, but Denuvo validates the licence **server-side** against an
+> account that genuinely owns the game — which SLSsteam can't fabricate. So a
+> Denuvo game you don't own generally **downloads but won't launch** on this
+> alone. The practical way to actually play one is a **fix that strips Denuvo**
+> (above), or owning it legitimately. SLSsteam's `DenuvoGames` / `FakeOffline`
+> options only help narrow cases (binding an existing external activation to the
+> right account, or forcing offline reauth) — they don't generate a licence.
 
 ## Remove DRM (Steamless)
 
