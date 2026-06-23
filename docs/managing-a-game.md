@@ -39,9 +39,11 @@ reach for them to fix a game whose config drifted.
 
 - **FakeAppId** — maps the game onto a fake owned app (Spacewar, AppID `480`,
   which every account owns) so Steam treats it as owned.
-- **Token** — writes the game's **app access token** into SLSsteam's config,
-  which Steam needs to request the app's info and depots. It comes from a
-  bundled token list, or is read from the installed `.lua`.
+- **Token** — writes the game's **app access token** into SLSsteam's
+  `AppTokens:`, giving the game a valid Steam app ticket. **Denuvo-protected
+  games in particular need this to launch** (Denuvo validates against the real
+  Steam ticket); most other games don't. The token comes from a bundled list,
+  or is read from the installed `.lua`.
 - **DLCs** — looks up the game's DLCs from Steam's store API and marks them as
   owned so they show up in Steam.
 
