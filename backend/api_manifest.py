@@ -88,6 +88,13 @@ async def fetch_free_apis_now() -> dict:
     """Force refresh of the free API manifest."""
     client = await ensure_http_client("FetchFreeApisNow")
     try:
+        # The upstream list is written verbatim over api.json, but the user's
+        # Hubcap key also lives in api.json (it's the Hubcap entry's api_key).
+        # Capture it first so refreshing the free list doesn't wipe the key;
+        # we re-apply it after the overwrite. (The Ryuu cookie is stored in a
+        # separate file and is unaffected.)
+        saved_hubcap_key = _get_hubcap_key()
+
         manifest_text = ""
         try:
             resp = await client.get(API_MANIFEST_URL, follow_redirects=True)
@@ -109,6 +116,11 @@ async def fetch_free_apis_now() -> dict:
             return {"success": False, "error": "Empty manifest"}
 
         write_text(data_path(API_JSON_FILE), normalized)
+
+        # Restore the Hubcap key into the freshly written list.
+        if saved_hubcap_key:
+            update_hubcap_key(saved_hubcap_key)
+
         try:
             data = json.loads(normalized)
             count = len(data.get("api_list", []))
