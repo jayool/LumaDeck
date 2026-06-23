@@ -48,11 +48,34 @@ The full end-to-end breakdown is in the root
 
 ## Updating a game
 
-Installed games can be **pinned** (frozen at the installed version) or left on
-**auto-update** — toggled per game on the [game page](managing-a-game.md). When
-a provider publishes a newer manifest for an unpinned game, LumaDeck can surface
-an **Update available** notice; applying it follows the same path as a fresh
-install.
+Games you install through LumaDeck are **normal owned games to Steam**, so
+**Steam updates them natively** — there's no "update" button in the plugin for
+the normal case.
 
-> ⚠️ The update path is **expected behaviour, not yet runtime-verified on a
-> Deck** — see the caveat in the root [README → Update flow](../README.md#update-flow).
+### Auto-update (default)
+
+By default a game is **unpinned**: `steamidra_lite` writes `gid=0` for its
+content depots in `keys.txt`, so the **BuildDep** hook passes through and Steam
+follows Valve's current manifest — the game **auto-updates like a legitimate
+owner**, decrypting each depot with the keys already in `keys.txt`.
+
+The per-game **auto-update** toggle (on the [game page](managing-a-game.md#auto-update))
+controls this:
+
+- **On (unpinned, default)** — follows the latest version.
+- **Off (pinned)** — `steamidra_lite --pin` writes the installed GID and BuildDep
+  freezes that version; updates are held back. **LumaDeck won't tell you a newer
+  version exists for a pinned game** — unpin it to pick updates back up.
+
+### When an update gets stuck
+
+> ⚠️ This remediation is **expected behaviour, not yet verified end-to-end on a
+> Deck** (the auto-update path above is validated).
+
+An auto-update only stalls when a new build pulls in a **new or rotated depot**
+whose decryption key isn't in `keys.txt` yet — Steam can't decrypt it, so the
+update gets stuck and your **installed version keeps working**. LumaDeck's
+watchdog detects this and shows an **Update stuck** notice; tap **Fix Update**
+and the plugin re-fetches the manifest (bringing the new key), re-deploys
+`keys.txt`, and you restart Steam to finish. (Re-fetching needs a valid Hubcap
+key.)
