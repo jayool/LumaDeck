@@ -66,14 +66,16 @@ This is what the plugin does end-to-end when you tap **Download Manifest** in th
 
 ## Update flow
 
-> ⚠️ **Expected behaviour — not yet runtime-verified on a Deck.** The flow follows from how the hooks work; this section will be updated once a real update has been exercised end-to-end.
+Games installed through LumaDeck are **normal owned games to Steam**, so they
+**auto-update natively** — just like any game you actually own. The per-game
+**auto-update** toggle can freeze a game at its installed version instead.
 
-When Hubcap publishes a new `.lua` for a game you've already installed:
+Occasionally an update gets stuck (a new depot needs a decryption key the game
+doesn't have yet). LumaDeck flags it and a **Fix Update** button re-deploys a
+fresh manifest to unblock it; your installed version keeps working meanwhile.
 
-1. The plugin's `check_game_update` compares the saved depot snapshot (written after the last install) against the public manifests SteamCMD reports. If any depot's manifest GID differs, the plugin surfaces **Update available**.
-2. You tap **Update** in the plugin. Same code path as a fresh install: download the new zip → process → `steamidra_lite.py` → `steam -shutdown`.
-3. `steamidra_lite.py` overwrites `keys.txt` with the new manifest GID, the stplug-in `.lua`, and the `.depot` tracker. It detects the existing `.acf` (with the *old* `InstalledDepots`) and **patches** the error-state fields instead of overwriting the whole file — so Steam's record of "what's currently on disk" survives the update.
-4. Steam comes back up. It sees `InstalledDepots` says depot X is at manifest GID Y_old. It queries PICS, which returns Y_new. The BuildDep hook then patches Steam's in-memory depot info with the GID `keys.txt` lists (which is *also* Y_new, because we just wrote it). Steam pulls the new manifest, computes the diff against the local files, and downloads only the changed chunks.
+Full mechanism (pinning, the BuildDep passthrough, stuck-update handling):
+[Adding & updating games → Updating a game](docs/adding-and-updating-games.md#updating-a-game).
 
 ## Why fork instead of contributing to DeckTools
 
