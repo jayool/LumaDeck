@@ -37,10 +37,12 @@ also surfaces:
 
 ### What happens when you tap Download Manifest
 
-The plugin fetches the manifest (a few MB — progress shows **in the plugin**),
-processes it, and restarts Steam. When Steam returns, the game is in your
-library and downloads like a normal owned title — **the multi-GB progress shows
-in the Steam library, not in the plugin.**
+The plugin fetches the manifest (a few MB — progress shows **in the plugin**)
+and processes it. Then **restart Steam** to start the download — the plugin
+tries to do this for you, but if it doesn't come back on its own, restart it
+manually (there's a **Restart Steam** button in LumaDeck). When Steam returns,
+the game is in your library and downloads like a normal owned title — **the
+multi-GB progress shows in the Steam library, not in the plugin.**
 
 The full end-to-end breakdown is in the root
 [README → How a game install works](../README.md#how-a-game-install-works).

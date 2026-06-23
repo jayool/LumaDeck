@@ -59,6 +59,9 @@ The store-page route, end to end:
 1. In Steam, open the **store page** of the game you want.
 2. Open LumaDeck in the QAM — it **auto-detects the AppID** and fills it in.
 3. Tap **Download Manifest**.
-4. The plugin fetches the manifest and restarts Steam. When Steam comes back,
-   the game is in your library and **downloads natively — progress shows in the
-   Steam library, not in the plugin.**
+4. The plugin fetches the manifest, then **restart Steam** to start the
+   download. (The plugin tries to restart Steam for you, but if it doesn't come
+   back on its own, restart it manually — there's a **Restart Steam** button in
+   LumaDeck.)
+5. When Steam is back, the game is in your library and **downloads natively —
+   progress shows in the Steam library, not in the plugin.**
