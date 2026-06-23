@@ -16,6 +16,9 @@ Healthy components stay silent — no banner means nothing to do.
 ## Common problems
 
 ### A game won't download / Steam doesn't start it
+- **Did you restart Steam after *Download Manifest*?** The game **doesn't appear
+  in your library at all** until you restart Steam. After the restart it shows
+  up, ready to **Install**.
 - Check **Dependencies**: lumalinux and SLSsteam must be 🟢 and `healthy`.
 - If a component shows `not_active`, **restart Steam**.
 - If it shows `broken` or a **build mismatch**, Steam updated past the hooks —
@@ -47,6 +50,12 @@ No cloud provider is signed in. Sign in once from Desktop — see
 Try, in order: **Repair appmanifest**, **Reconfigure SLSsteam**, **Check for
 Fixes**, or (for emulator-expecting titles) **Apply Goldberg** — all on the
 [game's page](managing-a-game.md).
+
+### A Denuvo game downloads but won't launch
+Denuvo validates the licence **server-side**, so faked ownership isn't enough —
+a Denuvo game you don't own **downloads but won't run** on this alone. You need
+either an **SLS ticket** from an owner or a **fix that strips Denuvo**. See the
+Denuvo note in [Managing a game](managing-a-game.md#fixes).
 
 ## Still stuck?
 
