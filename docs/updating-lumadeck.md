@@ -10,10 +10,15 @@ an **in-plugin self-update** instead, in **Settings ▸ About**:
 2. If newer, **Update Now (vX.Y.Z)** downloads the release zip and applies it.
 3. Restart Steam to finish — Decky reloads the plugin.
 
-If files are in use during the update, the new zip is **staged and applied on
-the next start** instead of clobbering the running plugin. A background
-auto-check is intentionally **off by default**; the manual button is the
-supported path.
+The update **overwrites the plugin's files in place**. On Linux that's safe even
+while LumaDeck is running — the loaded code keeps running and the new files take
+effect on the next Steam restart. Only if that overwrite *fails* is the zip
+**staged** (saved in the settings dir, which survives the overwrite) and applied
+automatically on the next plugin load.
+
+LumaDeck **never auto-installs** updates. It does check on its own and surface a
+notice (in the QAM update banner and Settings ▸ About), but applying one is
+always the manual **Update Now** button.
 
 > Your installed and latest versions are shown at the top of the About panel.
 
