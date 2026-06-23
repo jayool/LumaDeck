@@ -6,18 +6,26 @@ of it. Groups are ordered from everyday to advanced.
 
 ## Status & manifest
 
-- **Status** — whether the game's files and `.lua` are present.
-- **Re-download Manifest** — fetches the manifest and game files again (use
-  after a failed or partial install).
-- **Manifest only** — refreshes just the manifest/config without re-pulling
-  game files.
+The **Status** line reflects what's on disk:
+
+- **Installed** — the `.lua`/config *and* the game files are present.
+- **Manifest only** — the config is in place but the game files aren't
+  downloaded yet (restart Steam and **Install** the game to pull them).
+- **Not installed** — no `.lua` yet.
+
+**Download Manifest** (shown as **Re-download Manifest** once the game has a
+`.lua`) re-runs the manifest fetch and processing — it rewrites the config
+(`keys.txt`, `config.vdf`, the `.acf` stub, …). The game files themselves are
+always downloaded by Steam natively afterwards, never by the plugin. Use it
+after a failed or partial install.
 
 If your Hubcap key is expired, this page shows a **Hubcap key expired** notice
 with a shortcut to fix it, instead of silently failing a re-download.
 
 ## Auto-update
 
-A toggle per game:
+A per-game toggle, **on by default** (a game stays unpinned until you pin it).
+It appears only for installed games.
 
 - **Auto-update (on)** — the game follows the latest published manifest.
 - **Pinned** — frozen at the installed version; updates are held back. Useful
@@ -25,13 +33,17 @@ A toggle per game:
 
 ## Game management (SLSsteam)
 
-These tell **SLSsteam** how to present the game to Steam. Add/remove each, with
-a live status:
+These tell **SLSsteam** how to present the game to Steam. Each can be added or
+removed, with a live status. A normal install configures them automatically —
+reach for them to fix a game whose config drifted.
 
-- **FakeAppId** — maps the game onto a fake owned app so Steam treats it as
-  owned.
-- **Token** — supplies the app token SLSsteam needs for the title.
-- **DLCs** — marks the game's DLCs as owned so they appear in Steam.
+- **FakeAppId** — maps the game onto a fake owned app (Spacewar, AppID `480`,
+  which every account owns) so Steam treats it as owned.
+- **Token** — writes the game's **app access token** into SLSsteam's config,
+  which Steam needs to request the app's info and depots. It comes from a
+  bundled token list, or is read from the installed `.lua`.
+- **DLCs** — looks up the game's DLCs from Steam's store API and marks them as
+  owned so they show up in Steam.
 
 ## Goldberg
 
@@ -42,13 +54,19 @@ ownership layer. *Apply* replaces the DLLs; *Remove* restores the originals.
 
 ## Fixes
 
-For games that need community fix files to launch:
+A *fix* is a community bypass/patch zip, downloaded and extracted over the
+game's install folder, for titles that don't launch cleanly under SLSsteam.
 
-- **Check for Fixes** — looks up available fixes for the game.
-- **Online Fix** / **Generic Fix** — downloads and applies the matching fix.
-- **Linux-native Fix** — applies a fix specific to native Linux builds.
+- **Check for Fixes** — checks which fixes exist for this game and shows what's
+  available:
+  - **Generic Fix** — a general bypass.
+  - **Online Fix** — a fix for online / multiplayer play.
+- **Apply Online Fix** / **Apply Generic Fix** — downloads the matching zip and
+  extracts it into the install folder.
+- **Linux-native Fix** — a local fix for native-Linux installs (nothing is
+  downloaded).
 - **Installed Fixes** — lists what's applied, with **Remove Fix** / **Remove
-  All Fixes**.
+  All Fixes** to revert.
 
 ## Remove DRM (Steamless)
 
@@ -64,10 +82,14 @@ See [Achievements](achievements.md) for setup and the bulk "sync all" option.
 
 ## Advanced options
 
-- **Reconfigure SLSsteam** — re-applies this game's SLSsteam config (FakeAppId,
-  token, DLCs) in one go.
-- **Repair appmanifest** — regenerates the game's `.acf` so Steam re-recognises
-  the install after it has lost track of it.
+- **Reconfigure SLSsteam** — re-runs this game's full SLSsteam setup at once:
+  AdditionalApps, the app token, the depot **decryption keys** (read from the
+  installed `.lua`) into `config.vdf`, and the DLCs. Use it when the config has
+  drifted out of sync.
+- **Repair appmanifest** — **deletes** the game's `.acf` across every library so
+  Steam **regenerates** it on its next refresh. Use it when Steam has lost track
+  of an installed game. (It doesn't rebuild the `.acf` by hand or restart Steam
+  — pair it with **Restart Steam** when you're ready.)
 
 ## Danger zone
 
