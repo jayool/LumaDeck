@@ -83,6 +83,7 @@ The native-Steam-download approach is a fundamental backend change that wouldn't
 
 ## Related docs
 
+- [**Wiki / docs**](docs/README.md) — task-oriented user & developer guides (credentials, managing games, troubleshooting, architecture, …)
 - [lumalinux README](https://github.com/jayool/lumalinux) — the hooks themselves, build flow, manual install steps
 - [lumalinux maintenance docs](https://github.com/jayool/lumalinux/blob/main/docs/maintenance.md) — what to do after a SteamOS / Steam client update
 - [lumalinux cloudredirect docs](https://github.com/jayool/lumalinux/blob/main/docs/cloudredirect.md) — running side by side with CloudRedirect's flatpak; `LD_PRELOAD` ordering
