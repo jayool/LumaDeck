@@ -4,18 +4,6 @@ Decky Loader plugin for Steam Deck — game library and configuration manager wi
 
 > ⚠️ **Educational / research use only.** Use it with your own Steam account and content. The plugin does not host or distribute any third-party content; it only orchestrates installs around SLSsteam, lumalinux, ACCELA and (optionally) CloudRedirect.
 
-## What's different from DeckTools
-
-DeckTools downloads game files via **DepotDownloaderMod** (a .NET CLI) running outside Steam. LumaDeck instead delegates the download to Steam itself, with the [lumalinux](https://github.com/jayool/lumalinux) hooks intercepting depot-key and manifest-request calls inside `steamclient.so`. The trade-off:
-
-|                            | DeckTools (DDL)              | LumaDeck (native + lumalinux) |
-| -------------------------- | ---------------------------- | ----------------------------- |
-| Download executor          | DepotDownloaderMod (.NET)    | Steam native                  |
-| External dependencies      | .NET 9 runtime, ACCELA       | lumalinux artifact, SLSsteam  |
-| Sensitive to Steam updates | No (DDL is independent)      | Yes (hooks may need new patterns) |
-
-Everything else (SLSsteam config management, Goldberg, SLScheevo achievements, community fixes, Workshop, auto-detect AppID, search) is **kept from DeckTools** and continues to work the same way.
-
 ## Installation
 
 1. **Download the latest LumaDeck zip** from the [releases page](https://github.com/jayool/LumaDeck/releases).
@@ -76,6 +64,18 @@ fresh manifest to unblock it; your installed version keeps working meanwhile.
 
 Full mechanism (pinning, the BuildDep passthrough, stuck-update handling):
 [Adding & updating games → Updating a game](docs/adding-and-updating-games.md#updating-a-game).
+
+## What's different from DeckTools
+
+DeckTools downloads game files via **DepotDownloaderMod** (a .NET CLI) running outside Steam. LumaDeck instead delegates the download to Steam itself, with the [lumalinux](https://github.com/jayool/lumalinux) hooks intercepting depot-key and manifest-request calls inside `steamclient.so`. The trade-off:
+
+|                            | DeckTools (DDL)              | LumaDeck (native + lumalinux) |
+| -------------------------- | ---------------------------- | ----------------------------- |
+| Download executor          | DepotDownloaderMod (.NET)    | Steam native                  |
+| External dependencies      | .NET 9 runtime, ACCELA       | lumalinux artifact, SLSsteam  |
+| Sensitive to Steam updates | No (DDL is independent)      | Yes (hooks may need new patterns) |
+
+Everything else (SLSsteam config management, Goldberg, SLScheevo achievements, community fixes, Workshop, auto-detect AppID, search) is **kept from DeckTools** and continues to work the same way.
 
 ## Why fork instead of contributing to DeckTools
 
