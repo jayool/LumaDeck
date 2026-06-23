@@ -71,13 +71,21 @@ game's install folder, for titles that don't launch cleanly under SLSsteam.
   All Fixes** to revert.
 
 > **Denuvo games:** lumalinux can download a Denuvo title and SLSsteam can fake
-> local ownership, but Denuvo validates the licence **server-side** against an
-> account that genuinely owns the game — which SLSsteam can't fabricate. So a
-> Denuvo game you don't own generally **downloads but won't launch** on this
-> alone. The practical way to actually play one is a **fix that strips Denuvo**
-> (above), or owning it legitimately. SLSsteam's `DenuvoGames` / `FakeOffline`
-> options only help narrow cases (binding an existing external activation to the
-> right account, or forcing offline reauth) — they don't generate a licence.
+> local ownership, but Denuvo validates the licence **server-side**, which needs
+> a real **encrypted app ticket** from an account that owns the game — something
+> SLSsteam can't fabricate. So a Denuvo game you don't own generally
+> **downloads but won't launch** on this alone. Two ways to actually play one:
+>
+> - **An encrypted app ticket** grabbed from an owner (with an external
+>   *ticket-grabber* tool) and supplied to SLSsteam. **LumaDeck doesn't do
+>   this** — there's no ticket import here, and SLSsteam has no config field for
+>   it either (tickets go through an internal cache, not a setting).
+> - **A fix/crack that strips Denuvo** (the Fixes section above), ideally with a
+>   clean `steam_api`.
+>
+> SLSsteam's `DenuvoGames` setting is **not** a bypass — it only stops an appId
+> from unlocking unless the SteamId matches, which keeps external activations
+> from breaking across accounts.
 
 ## Remove DRM (Steamless)
 
