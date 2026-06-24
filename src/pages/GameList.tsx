@@ -36,6 +36,7 @@ import {
   getQuickInstallStatus,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
+import { Notice } from "../components/Notice";
 import { HealthBanner, HealthProblem } from "../components/HealthBanner";
 import { UpdatesBanner, UpdateNotice } from "../components/UpdatesBanner";
 import { ROUTE_GAME_DETAIL, ROUTE_SETTINGS, ROUTE_DOWNLOADS } from "../routes";
@@ -811,7 +812,7 @@ export function GameList() {
       {showQuickInstall && (
         <PanelSection title={t("quickInstallSectionTitle")}>
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#9aa4b2", lineHeight: "1.4" }}>
+            <div style={{ fontSize: "12px", color: "#8b929a", lineHeight: "1.4" }}>
               {t("quickInstallIntro")}
             </div>
           </PanelSectionRow>
@@ -857,25 +858,14 @@ export function GameList() {
           />
         </PanelSectionRow>
         {pendingGameInfo && (
-          <PanelSectionRow>
-            <div style={{
-              width: "100%",
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.10)",
-              borderLeft: "3px solid #4a9eff",
-              borderRadius: "4px",
-              padding: "8px 12px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "4px",
-            }}>
+          <Notice variant="info">
               {pendingGameInfo.name && (
                 <div style={{ fontSize: "13px", fontWeight: 600, color: "#fff", lineHeight: "1.3" }}>
                   {pendingGameInfo.name}
                 </div>
               )}
               {pendingGameInfo.developer && (
-                <div style={{ fontSize: "11px", color: "#9aa4b2" }}>
+                <div style={{ fontSize: "11px", color: "#8b929a" }}>
                   {pendingGameInfo.developer}
                   {pendingGameInfo.metacritic != null && (
                     <span style={{
@@ -894,24 +884,24 @@ export function GameList() {
               )}
               <div style={{ display: "flex", gap: "6px", marginTop: "2px", flexWrap: "wrap" }}>
                 {pendingGameInfo.platforms?.windows && (
-                  <span style={{ fontSize: "10px", color: "#9aa4b2", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>Windows</span>
+                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>Windows</span>
                 )}
                 {pendingGameInfo.platforms?.linux && (
-                  <span style={{ fontSize: "10px", color: "#9aa4b2", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>Linux</span>
+                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>Linux</span>
                 )}
                 {pendingGameInfo.platforms?.mac && (
-                  <span style={{ fontSize: "10px", color: "#9aa4b2", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>macOS</span>
+                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>macOS</span>
                 )}
                 {pendingGameInfo.achievements > 0 && (
-                  <span style={{ fontSize: "10px", color: "#9aa4b2", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>
+                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>
                     {pendingGameInfo.achievements} {t("achievements")}
                   </span>
                 )}
                 {pendingGameInfo.hasPtBR && (
-                  <span style={{ fontSize: "10px", color: "#9aa4b2", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>PT-BR</span>
+                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>PT-BR</span>
                 )}
                 {pendingGameInfo.sizeBytes > 0 && (
-                  <span style={{ fontSize: "10px", color: "#9aa4b2", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>
+                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>
                     {pendingGameInfo.sizeBytes >= 1073741824
                       ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
                       : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`}
@@ -936,68 +926,33 @@ export function GameList() {
                   <span>{t("slscheevoHint")}</span>
                 </div>
               )}
-            </div>
-          </PanelSectionRow>
+          </Notice>
         )}
         {pendingNotices.length > 0 && (
-          <PanelSectionRow>
-            <div style={{
-              width: "100%",
-              background: "rgba(200, 168, 75, 0.08)",
-              border: "1px solid rgba(200, 168, 75, 0.28)",
-              borderLeft: "3px solid #c8a84b",
-              borderRadius: "4px",
-              padding: "8px 12px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "5px",
-            }}>
-              <div style={{
-                fontSize: "10px",
-                fontWeight: 700,
-                color: "#c8a84b",
-                textTransform: "uppercase",
-                letterSpacing: "0.8px",
-                marginBottom: "3px",
-              }}>
-                {t("gameNoticesTitle")}
-              </div>
+          <Notice variant="warn" title={t("gameNoticesTitle")}>
               {pendingNotices.map((notice, i) => (
                 <div key={i} style={{
                   display: "flex",
                   alignItems: "flex-start",
                   gap: "7px",
                   fontSize: "12px",
-                  color: "#e5e5e5",
+                  color: "#dcdedf",
                   lineHeight: "1.45",
                 }}>
                   <span style={{ color: "#c8a84b", flexShrink: 0, marginTop: "1px" }}>▸</span>
                   <span>{notice}</span>
                 </div>
               ))}
-            </div>
-          </PanelSectionRow>
+          </Notice>
         )}
         {credWarnings.length > 0 && (
-          <PanelSectionRow>
-            <div style={{
-              width: "100%",
-              display: "flex",
-              flexDirection: "column",
-              gap: "5px",
-              background: "rgba(255, 68, 68, 0.06)",
-              border: "1px solid rgba(255, 68, 68, 0.25)",
-              borderLeft: "3px solid #ff5555",
-              borderRadius: "4px",
-              padding: "8px 12px",
-            }}>
+          <Notice variant="danger">
               {credWarnings.map((w) => (
                 <div key={w.key} style={{ fontSize: "12px", color: w.color, lineHeight: "1.45" }}>
                   {w.text}
                 </div>
               ))}
-            </div>
-          </PanelSectionRow>
+          </Notice>
         )}
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleAddGame}>
@@ -1014,7 +969,7 @@ export function GameList() {
                     addStatus === t("invalidAppId") ||
                     addStatus === t("downloadFailed")
                     ? "#ff6b6b"
-                    : "#8bca68",
+                    : "#00cc00",
                 fontSize: "12px",
               }}>
                 {addStatus}
@@ -1025,19 +980,19 @@ export function GameList() {
                     <div style={{
                       height: "100%",
                       width: `${downloadPct}%`,
-                      background: "linear-gradient(90deg, #4a9eff, #7ed36f)",
+                      background: "linear-gradient(90deg, #1a9fff, #00cc00)",
                       borderRadius: "3px",
                       transition: "width 0.4s ease",
                     }} />
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#9aa4b2" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#8b929a" }}>
                     <span>
                       {downloadBytes.total > 0
                         ? `${(downloadBytes.read / 1073741824).toFixed(2)} / ${(downloadBytes.total / 1073741824).toFixed(2)} GB (${downloadPct}%)`
                         : `${downloadPct}%`}
                     </span>
                     {downloadSpeed > 0 && (
-                      <span style={{ color: "#7ed36f" }}>
+                      <span style={{ color: "#00cc00" }}>
                         {downloadSpeed >= 1048576
                           ? `${(downloadSpeed / 1048576).toFixed(1)} MB/s`
                           : `${Math.round(downloadSpeed / 1024)} KB/s`}
