@@ -4,13 +4,5 @@
   "flags": [
     "_root"
   ],
-  "api_version": 1,
-  "publish": {
-    "tags": [
-      "gaming",
-      "download-manager"
-    ],
-    "description": "Game library and configuration manager for Steam Deck \u2014 lumalinux backend (native Steam download instead of DepotDownloader)",
-    "image": ""
-  }
+  "api_version": 1
 }
