@@ -51,6 +51,21 @@ def _parse_version(s: str) -> tuple:
     return tuple(nums) + (0,) * (3 - len(nums))
 
 
+def _zip_version(zip_path: str) -> str:
+    """Version of the package.json bundled inside a LumaDeck.zip (top-level
+    `LumaDeck/package.json`). '' if it can't be read — used to refuse applying a
+    staged zip that isn't actually newer than what's installed."""
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            for name in z.namelist():
+                if name.endswith("package.json") and name.count("/") <= 1:
+                    with z.open(name) as f:
+                        return str(json.load(f).get("version", ""))
+    except Exception:
+        pass
+    return ""
+
+
 async def check_plugin_update() -> dict:
     """Compare the installed version against the latest GitHub release.
 
@@ -197,11 +212,29 @@ def apply_pending_update_if_any() -> None:
     if not os.path.isfile(pending):
         return
     try:
-        if _extract_over_plugin(pending):
+        # A staged zip may only ever move FORWARD. Re-applying a zip whose
+        # version is <= what's installed caused a revert loop: an old staged
+        # 0.3.25 kept overwriting freshly-installed newer files on every load
+        # (it survives plugin uninstalls because it lives in the settings dir).
+        staged = _zip_version(pending)
+        installed = _installed_version()
+        if staged and _parse_version(staged) > _parse_version(installed):
+            if _extract_over_plugin(pending):
+                logger.info(
+                    "LumaDeck: applied pending self-update %s -> %s (euid %s)",
+                    installed, _installed_version(), os.geteuid(),
+                )
+        else:
             logger.info(
-                "LumaDeck: applied pending self-update (on-disk now %s, euid %s)",
-                _installed_version(), os.geteuid(),
+                "LumaDeck: discarding stale pending update (staged %s, installed %s)",
+                staged or "?", installed,
             )
-        os.remove(pending)
     except Exception as exc:
         logger.warning("LumaDeck: failed to apply pending update: %s", exc)
+    finally:
+        # Always remove it after one attempt — success, skip, or error — so a
+        # bad/stale zip can never loop.
+        try:
+            os.remove(pending)
+        except Exception:
+            pass
