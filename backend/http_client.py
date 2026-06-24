@@ -38,6 +38,11 @@ class NativeResponse:
         self.url = url
 
     @property
+    def content(self) -> bytes:
+        """Raw response bytes (httpx.Response.content parity)."""
+        return self._data
+
+    @property
     def text(self) -> str:
         return self._data.decode("utf-8", errors="replace")
 
