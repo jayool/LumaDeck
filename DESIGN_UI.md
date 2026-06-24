@@ -222,23 +222,26 @@ const [focused, setFocused] = useState(false);
 markers. Keep one icon family for visual consistency.
 
 ### 5f. Custom focusable buttons (DialogButton)
-When a `DialogButton` is given an inline `background` (segmented toggles, the
-QAM icon toolbar), Steam's native focus highlight is suppressed — so focus
-**must** be re-created explicitly, and it should *animate* like a native button
-(grow + glow), not snap to a static ring:
+**Default: don't override a DialogButton's `background`/`color`.** Steam's
+native focus (button fills white, glyph/text goes dark) is the look to keep —
+it matches every other button. For icon buttons, constrain only the *size*
+(`width`/`height`/`padding`) and leave the rest to Steam. Don't group them in a
+pill; a plain right-aligned `Focusable` row with `gap: 8px` is the standard.
+
+Re-create focus **only** when an inline `background` is unavoidable — e.g. a
+segmented toggle whose selected option must show an accent fill. Native focus is
+then suppressed, so animate it like a native button (grow + glow), never a
+static ring:
 
 ```tsx
-transform: focused ? "scale(1.04)" : "scale(1)",   // 1.08 for small icon buttons
+transform: focused ? "scale(1.04)" : "scale(1)",
 boxShadow: focused ? "0 0 10px rgba(26,159,255,0.55)" : "none",
 transition: "transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease",
 ```
 
-Track focus with **both** `onFocus`/`onBlur` (DOM) and `onGamepadFocus`/
-`onGamepadBlur` (Decky) — spread via an `any`-typed object since
-`DialogButtonProps` doesn't declare them. Group a row of icon buttons inside a
-subtle pill (`background: rgba(255,255,255,0.05)`, `borderRadius: 10px`,
-`padding: 3px`, `gap: 2px`) so they read as one toolbar, with each button
-**ghost** (transparent until focused) — never a row of standalone filled boxes.
+Track that focus with **both** `onFocus`/`onBlur` (DOM) and `onGamepadFocus`/
+`onGamepadBlur` (Decky), spread via an `any`-typed object since
+`DialogButtonProps` doesn't declare them.
 
 ### 5g. Vertical clearance standard
 **8px** is the canonical gap between a block and the next focusable control, so

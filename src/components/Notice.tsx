@@ -34,8 +34,10 @@ export function Notice({
         style={{
           width: "100%",
           boxSizing: "border-box",
-          // 8px standard clearance below every notice so a following control's
-          // focus glow (e.g. Download Manifest) never touches the box.
+          // 8px standard clearance ABOVE and BELOW every notice, so it never
+          // sits flush against the field above it or a control's focus glow
+          // below it.
+          marginTop: "8px",
           marginBottom: "8px",
           background: `rgba(${rgb}, 0.1)`,
           border: `1px solid rgba(${rgb}, 0.4)`,

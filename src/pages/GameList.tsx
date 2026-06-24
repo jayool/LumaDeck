@@ -587,25 +587,19 @@ export function GameList() {
     onGamepadBlur: () => setFocusedBtn(""),
   });
 
-  // Toolbar icon button — ghost style (transparent) so the three read as one
-  // grouped pill rather than three lonely boxes; grows + brightens on focus,
-  // same animation language as the toggle.
-  const iconBtnStyle = (focused: boolean) => ({
+  // Toolbar icon button — only constrain the size; leave background/colour to
+  // DialogButton so it keeps Steam's native focus (button turns white, the
+  // glyph goes dark) exactly like every other button. No custom styling.
+  const iconBtnStyle = {
     minWidth: 0,
-    width: "34px",
-    height: "30px",
+    width: "40px",
+    height: "32px",
     padding: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: "8px",
-    border: "none",
-    fontSize: "15px",
-    background: focused ? "rgba(255,255,255,0.16)" : "transparent",
-    color: focused ? "#ffffff" : "#b8bcbf",
-    transform: focused ? "scale(1.08)" : "scale(1)",
-    transition: "transform 0.16s ease, background 0.16s ease, color 0.16s ease",
-  });
+    fontSize: "16px",
+  };
 
   const filtered = (
     search
@@ -873,31 +867,19 @@ export function GameList() {
           so they sit at the top of the panel instead of stacking full-width
           buttons at the bottom. */}
       <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 12px" }}>
-        <Focusable style={{
-          display: "flex",
-          gap: "2px",
-          background: "rgba(255,255,255,0.05)",
-          borderRadius: "10px",
-          padding: "3px",
-        }}>
+        <Focusable style={{ display: "flex", gap: "8px" }}>
           <DialogButton
             onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
-            {...focusProps("dl")}
-            style={iconBtnStyle(focusedBtn === "dl")}
+            style={iconBtnStyle}
           >
             <FaDownload />
           </DialogButton>
-          <DialogButton
-            onClick={() => loadGames()}
-            {...focusProps("refresh")}
-            style={iconBtnStyle(focusedBtn === "refresh")}
-          >
+          <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
             <FaSync />
           </DialogButton>
           <DialogButton
             onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-            {...focusProps("settings")}
-            style={iconBtnStyle(focusedBtn === "settings")}
+            style={iconBtnStyle}
           >
             <FaCog />
           </DialogButton>
