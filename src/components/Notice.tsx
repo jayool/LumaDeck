@@ -33,6 +33,7 @@ export function Notice({
       <div
         style={{
           width: "100%",
+          boxSizing: "border-box",
           background: `rgba(${rgb}, 0.1)`,
           border: `1px solid rgba(${rgb}, 0.4)`,
           borderLeft: `3px solid ${accent}`,

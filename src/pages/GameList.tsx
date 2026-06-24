@@ -81,6 +81,10 @@ export function GameList() {
   // Which "add a game" mode the section shows: by AppID (default, autofilled
   // from the open store page) or by name (Hubcap search).
   const [addMode, setAddMode] = useState<"appid" | "name">("appid");
+  // Key of the custom button (toggle / toolbar icon) currently focused, so we
+  // can draw an explicit focus ring — overriding a DialogButton's background
+  // hides its native focus highlight.
+  const [focusedBtn, setFocusedBtn] = useState<string>("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -557,27 +561,48 @@ export function GameList() {
   };
 
   // Segmented toggle button style: active option in accent, inactive muted.
-  const segBtnStyle = (active: boolean) => ({
+  // focused draws an explicit ring (the inline background hides the native one).
+  const segBtnStyle = (active: boolean, focused: boolean) => ({
     flex: 1,
     minWidth: 0,
     padding: "8px 0",
     fontSize: "13px",
-    borderRadius: "4px",
+    borderRadius: "6px",
+    border: "none",
     background: active ? "#1a9fff" : "rgba(255,255,255,0.08)",
-    color: active ? "#ffffff" : "#8b929a",
+    color: active ? "#ffffff" : "#dcdedf",
+    boxShadow: focused ? "0 0 0 2px #ffffff" : "none",
+    transition: "background 0.15s ease",
+  });
+
+  // Focus tracking for the custom buttons. DialogButton's TS props don't
+  // declare onFocus/onBlur (the underlying element supports them), so spread
+  // them via an any-typed object to keep the ring logic type-safe.
+  const focusProps = (key: string): any => ({
+    onFocus: () => setFocusedBtn(key),
+    onBlur: () => setFocusedBtn(""),
+    onGamepadFocus: () => setFocusedBtn(key),
+    onGamepadBlur: () => setFocusedBtn(""),
   });
 
   // Compact square icon button for the top toolbar (Downloads / Refresh /
   // Settings) — keeps the QAM narrow instead of a stack of full-width buttons.
-  const iconBtnStyle = {
+  const iconBtnStyle = (focused: boolean) => ({
     minWidth: 0,
-    width: "44px",
+    width: "38px",
     height: "32px",
     padding: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-  };
+    borderRadius: "6px",
+    border: "none",
+    fontSize: "15px",
+    background: focused ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.07)",
+    color: "#dcdedf",
+    boxShadow: focused ? "0 0 0 2px #ffffff" : "none",
+    transition: "background 0.15s ease",
+  });
 
   const filtered = (
     search
@@ -844,20 +869,26 @@ export function GameList() {
       {/* Top toolbar — light nav/utility actions as icons, right-aligned,
           so they sit at the top of the panel instead of stacking full-width
           buttons at the bottom. */}
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "6px 14px 0" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 10px" }}>
         <Focusable style={{ display: "flex", gap: "8px" }}>
           <DialogButton
             onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
-            style={iconBtnStyle}
+            {...focusProps("dl")}
+            style={iconBtnStyle(focusedBtn === "dl")}
           >
             <FaDownload />
           </DialogButton>
-          <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
+          <DialogButton
+            onClick={() => loadGames()}
+            {...focusProps("refresh")}
+            style={iconBtnStyle(focusedBtn === "refresh")}
+          >
             <FaSync />
           </DialogButton>
           <DialogButton
             onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-            style={iconBtnStyle}
+            {...focusProps("settings")}
+            style={iconBtnStyle(focusedBtn === "settings")}
           >
             <FaCog />
           </DialogButton>
@@ -909,13 +940,15 @@ export function GameList() {
           <Focusable style={{ display: "flex", gap: "8px", width: "100%" }}>
             <DialogButton
               onClick={() => setAddMode("appid")}
-              style={segBtnStyle(addMode === "appid")}
+              {...focusProps("m-appid")}
+              style={segBtnStyle(addMode === "appid", focusedBtn === "m-appid")}
             >
               {t("addByAppId")}
             </DialogButton>
             <DialogButton
               onClick={() => setAddMode("name")}
-              style={segBtnStyle(addMode === "name")}
+              {...focusProps("m-name")}
+              style={segBtnStyle(addMode === "name", focusedBtn === "m-name")}
             >
               {t("addByName")}
             </DialogButton>
