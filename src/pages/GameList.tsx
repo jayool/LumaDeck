@@ -7,7 +7,6 @@ import {
   Navigation,
   Focusable,
   DialogButton,
-  Field,
 } from "@decky/ui";
 import { FaCog, FaSync, FaDownload } from "react-icons/fa";
 import { GameInfo } from "../components/GameCard";
@@ -835,37 +834,51 @@ export function GameList() {
           separator. Reads as "LumaDeck" (native title) + subtitle, and anchors
           the icons in the panel's row rhythm instead of floating. Native
           DialogButton focus is kept. */}
+      {/* Header: plugin subtitle (left) + utility icons (right). Built as a
+          plain full-width row instead of a Field — the Field's children column
+          constrained the icons on the sides, clipping the focused icon's glow
+          left/right (only top/bottom showed; padding inside it didn't help).
+          Here we own the whole row: generous horizontal padding + overflow
+          visible keep the glow clear of the panel's overflow-x clip, and a
+          bottom border re-creates the Field separator. */}
       <PanelSection>
-        <Field label={t("headerSubtitle")} bottomSeparator="standard">
-          {/* Horizontal padding gives the focused icon's glow room on the
-              sides — without it the rightmost icon sits flush against the
-              Field's content edge and its focus shadow gets clipped left/right
-              (the Field only pads vertically, which is why top/bottom showed). */}
-          <Focusable
+        <PanelSectionRow>
+          <div
             style={{
               display: "flex",
-              gap: "8px",
-              justifyContent: "flex-end",
-              padding: "0 8px",
+              alignItems: "center",
+              justifyContent: "space-between",
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "2px 16px 10px",
+              borderBottom: "1px solid rgba(255, 255, 255, 0.12)",
+              overflow: "visible",
             }}
           >
-            <DialogButton
-              onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
-              style={iconBtnStyle}
+            <span style={{ fontSize: "13px", color: "#dcdedf" }}>
+              {t("headerSubtitle")}
+            </span>
+            <Focusable
+              style={{ display: "flex", gap: "10px", overflow: "visible" }}
             >
-              <FaDownload />
-            </DialogButton>
-            <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
-              <FaSync />
-            </DialogButton>
-            <DialogButton
-              onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-              style={iconBtnStyle}
-            >
-              <FaCog />
-            </DialogButton>
-          </Focusable>
-        </Field>
+              <DialogButton
+                onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
+                style={iconBtnStyle}
+              >
+                <FaDownload />
+              </DialogButton>
+              <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
+                <FaSync />
+              </DialogButton>
+              <DialogButton
+                onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
+                style={iconBtnStyle}
+              >
+                <FaCog />
+              </DialogButton>
+            </Focusable>
+          </div>
+        </PanelSectionRow>
       </PanelSection>
 
       {showQuickInstall && (
@@ -1187,8 +1200,8 @@ export function GameList() {
         </PanelSectionRow>
       </PanelSection>
 
-      <PanelSection>
-        {slscheevoReady && (
+      {slscheevoReady && (
+        <PanelSection>
           <PanelSectionRow>
             <ButtonItem
               layout="below"
@@ -1200,16 +1213,8 @@ export function GameList() {
                 : t("syncAllAchievements")}
             </ButtonItem>
           </PanelSectionRow>
-        )}
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={() => restartSteam()}
-          >
-            {t("restartSteam")}
-          </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection>
+        </PanelSection>
+      )}
     </>
   );
 }
