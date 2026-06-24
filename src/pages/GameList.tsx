@@ -837,7 +837,18 @@ export function GameList() {
           DialogButton focus is kept. */}
       <PanelSection>
         <Field label={t("headerSubtitle")} bottomSeparator="standard">
-          <Focusable style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          {/* Horizontal padding gives the focused icon's glow room on the
+              sides — without it the rightmost icon sits flush against the
+              Field's content edge and its focus shadow gets clipped left/right
+              (the Field only pads vertically, which is why top/bottom showed). */}
+          <Focusable
+            style={{
+              display: "flex",
+              gap: "8px",
+              justifyContent: "flex-end",
+              padding: "0 8px",
+            }}
+          >
             <DialogButton
               onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
               style={iconBtnStyle}
