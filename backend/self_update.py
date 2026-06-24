@@ -12,6 +12,8 @@ background auto-installer. Only ever pulls from our own repo.
 import json
 import os
 import re
+import shutil
+import tempfile
 import zipfile
 
 from http_client import ensure_http_client
@@ -86,16 +88,40 @@ async def check_plugin_update() -> dict:
 
 
 def _extract_over_plugin(zip_path: str) -> bool:
-    """Extract LumaDeck.zip (top-level `LumaDeck/` dir) over the plugin's parent.
+    """Apply LumaDeck.zip over the *live* plugin directory.
 
-    backend/data/ only ships a .gitkeep, so the user's api.json / cookies (not
-    in the zip) are left untouched.
+    The zip wraps everything in a single top-level `LumaDeck/` folder. The old
+    approach extracted to the plugin dir's PARENT, which silently breaks in two
+    ways that both leave the real files untouched (the update "succeeds" yet the
+    version never changes):
+      - if DECKY_PLUGIN_DIR carries a trailing slash, os.path.dirname() returns
+        the plugin dir itself, so the zip lands nested at LumaDeck/LumaDeck/…;
+      - if the on-disk folder isn't named exactly `LumaDeck`, the zip's folder
+        is created alongside it instead of over it.
+
+    Instead: extract to a temp dir, descend into the single wrapping folder, and
+    copy its contents straight into the normalised plugin dir. Path- and
+    name-proof. Only files present in the zip are overwritten, so user data
+    under backend/data/ (api.json, cookies) is left untouched.
     """
     if not zipfile.is_zipfile(zip_path):
         return False
-    parent = os.path.dirname(get_plugin_dir())
-    with zipfile.ZipFile(zip_path) as z:
-        z.extractall(parent)
+    plugin_dir = os.path.normpath(get_plugin_dir())
+    with tempfile.TemporaryDirectory() as tmpd:
+        with zipfile.ZipFile(zip_path) as z:
+            z.extractall(tmpd)
+        entries = [e for e in os.listdir(tmpd) if not e.startswith(".")]
+        src = (
+            os.path.join(tmpd, entries[0])
+            if len(entries) == 1 and os.path.isdir(os.path.join(tmpd, entries[0]))
+            else tmpd
+        )
+        for root, _dirs, files in os.walk(src):
+            rel = os.path.relpath(root, src)
+            dest = plugin_dir if rel == "." else os.path.join(plugin_dir, rel)
+            os.makedirs(dest, exist_ok=True)
+            for fn in files:
+                shutil.copy2(os.path.join(root, fn), os.path.join(dest, fn))
     return True
 
 
@@ -131,10 +157,28 @@ async def update_plugin() -> dict:
             pass
         return {"success": False, "error": "Downloaded asset is not a valid zip"}
 
+    plugin_dir = os.path.normpath(get_plugin_dir())
     try:
         _extract_over_plugin(tmp)
         os.remove(tmp)
-        logger.info("LumaDeck: self-update applied (-> %s)", info.get("latest"))
+        # Trust nothing: re-read the version on disk. If it didn't become the
+        # target, the extraction wrote somewhere harmless (or couldn't write at
+        # all) — report that honestly instead of a false "applied", and include
+        # the path + euid so the real cause (wrong dir vs. permissions) is clear.
+        applied = _installed_version()
+        logger.info(
+            "LumaDeck: self-update extracted into %s (on-disk now %s, target %s, euid %s)",
+            plugin_dir, applied, info.get("latest"), os.geteuid(),
+        )
+        if _parse_version(applied) != _parse_version(info.get("latest", "")):
+            return {
+                "success": False,
+                "error": (
+                    f"Update extracted but {plugin_dir}/package.json is still "
+                    f"{applied} (wanted {info.get('latest')}). euid={os.geteuid()} "
+                    "— likely the plugin process can't write its own directory."
+                ),
+            }
         return {"success": True, "updated": True, "pending": False, "latest": info.get("latest")}
     except Exception as exc:
         logger.warning("LumaDeck: live update extraction failed, staging pending: %s", exc)
@@ -154,7 +198,10 @@ def apply_pending_update_if_any() -> None:
         return
     try:
         if _extract_over_plugin(pending):
-            logger.info("LumaDeck: applied pending self-update")
+            logger.info(
+                "LumaDeck: applied pending self-update (on-disk now %s, euid %s)",
+                _installed_version(), os.geteuid(),
+            )
         os.remove(pending)
     except Exception as exc:
         logger.warning("LumaDeck: failed to apply pending update: %s", exc)
