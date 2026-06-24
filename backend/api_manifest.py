@@ -27,6 +27,82 @@ _APIS_INIT_DONE = False
 _INIT_APIS_LAST_MESSAGE = ""
 
 
+# ---------------------------------------------------------------------------
+# Persistent credential store (survives plugin reinstalls)
+# ---------------------------------------------------------------------------
+#
+# The Hubcap key lives in backend/data/api.json and the Ryuu cookie in
+# backend/data/ryuu_cookie.txt — both inside the plugin dir, which Decky wipes
+# and replaces on a manual "Install from ZIP" reinstall, taking the credentials
+# with it. To stop them vanishing on every update we mirror them into the Decky
+# settings dir (which Decky leaves untouched across reinstalls) and restore them
+# at load when the plugin-dir copies are gone.
+
+def _cred_store_path() -> str:
+    from paths import settings_dir
+    return os.path.join(settings_dir(), "credentials.json")
+
+
+def _read_cred_store() -> dict:
+    try:
+        p = _cred_store_path()
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f) or {}
+    except Exception:
+        pass
+    return {}
+
+
+def _mirror_cred(**values: str) -> None:
+    """Merge non-empty credential values into the persistent settings-dir store."""
+    try:
+        store = _read_cred_store()
+        changed = False
+        for k, v in values.items():
+            if v:
+                store[k] = v
+                changed = True
+        if not changed:
+            return
+        p = _cred_store_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(store, f, indent=2)
+    except Exception:
+        pass
+
+
+def restore_credentials_from_settings() -> None:
+    """Re-apply credentials saved in the settings dir when the plugin-dir copies
+    are missing (e.g. right after a reinstall wiped backend/data/). Idempotent,
+    so it is safe to call on every plugin load."""
+    store = _read_cred_store()
+    if not store:
+        return
+    key = store.get("hubcap_key")
+    if key and not _get_hubcap_key():
+        try:
+            update_hubcap_key(key)
+            logger.info("LumaDeck: restored Hubcap key from settings store")
+        except Exception:
+            pass
+    cookie = store.get("ryuu_cookie")
+    if cookie and not load_ryu_cookie():
+        try:
+            save_ryu_cookie(cookie)
+            logger.info("LumaDeck: restored Ryuu cookie from settings store")
+        except Exception:
+            pass
+    expiry = store.get("ryuu_cookie_expiry")
+    if expiry and not load_ryu_cookie_expiry():
+        try:
+            save_ryu_cookie_expiry(expiry)
+        except Exception:
+            pass
+
+
+
 async def init_apis() -> dict:
     """Initialise the free API manifest if it has not been loaded yet."""
     global _APIS_INIT_DONE, _INIT_APIS_LAST_MESSAGE
@@ -163,6 +239,8 @@ def save_ryu_cookie(cookie_content: str) -> dict:
             clean_cookie = f"session={clean_cookie}"
         with open(path, "w", encoding="utf-8") as f:
             f.write(clean_cookie)
+        # Mirror to the settings-dir store so a reinstall can restore it.
+        _mirror_cred(ryuu_cookie=clean_cookie)
         return {"success": True, "message": "Cookie saved successfully"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -190,6 +268,7 @@ def save_ryu_cookie_expiry(iso) -> None:
         if iso:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(str(iso))
+            _mirror_cred(ryuu_cookie_expiry=str(iso))
         elif os.path.exists(path):
             os.remove(path)
     except Exception:
@@ -259,6 +338,9 @@ def update_hubcap_key(key_content: str) -> dict:
 
         with open(path, "w", encoding="utf-8") as f:
             json.dump(root_data, f, indent=4)
+
+        # Mirror to the settings-dir store so a reinstall can restore it.
+        _mirror_cred(hubcap_key=key_content)
 
         return {"success": True, "message": "Hubcap key updated successfully"}
     except Exception as e:
