@@ -103,6 +103,13 @@ export const checkPluginUpdate = async () =>
 export const updatePlugin = async () =>
   parseResult(await call<[], string>("update_plugin"));
 
+// Downloads the latest LumaDeck.zip into ~/Downloads (deck-writable) so the
+// user installs it via Decky ▸ Developer ▸ Install from Zip. The in-place
+// updatePlugin can't write the root-owned plugin dir on most setups; this is
+// the reliable path. Returns { downloaded, path, latest }.
+export const downloadUpdateToDownloads = async () =>
+  parseResult(await call<[], string>("download_update_to_downloads"));
+
 // Per-game pin (auto-update toggle). pinGame freezes the game at its installed
 // version; unpinGame returns it to auto-update; getPinStatus → { pinned, depots }.
 export const pinGame = async (appid: number) =>

@@ -35,7 +35,7 @@ import {
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
-import { checkPluginUpdate, updatePlugin } from "../api";
+import { checkPluginUpdate, downloadUpdateToDownloads } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
 
 export function Settings() {
@@ -443,17 +443,18 @@ export function Settings() {
     }
   };
 
-  const handleUpdatePlugin = async () => {
+  // Download the new zip into ~/Downloads instead of trying to overwrite the
+  // plugin dir in place — the plugin process runs as `deck` and the install dir
+  // is root-owned, so in-place self-update can't write there. This only touches
+  // the deck-owned Downloads folder, so it's safe and always works.
+  const handleDownloadUpdate = async () => {
     setUpdatingPlugin(true);
-    setPluginMsg(t("pluginUpdating"));
-    const result = await updatePlugin();
+    setPluginMsg(t("downloadingUpdateZip"));
+    const result = await downloadUpdateToDownloads();
     setUpdatingPlugin(false);
-    if (result.success && result.updated) {
-      setPluginMsg(result.pending
-        ? t("pluginUpdatePending")
-        : t("pluginUpdateApplied", result.latest || ""));
-      await restartSteam();
-    } else if (result.success && !result.updated) {
+    if (result.success && result.downloaded) {
+      setPluginMsg(t("updateZipSaved", result.path || "~/Downloads"));
+    } else if (result.success && !result.downloaded) {
       setPluginMsg(t("pluginUpToDate"));
     } else {
       setPluginMsg(result.error || t("updateFailed"));
@@ -996,10 +997,12 @@ export function Settings() {
             <PanelSectionRow>
               <ButtonItem
                 layout="below"
-                onClick={handleUpdatePlugin}
+                onClick={handleDownloadUpdate}
                 disabled={updatingPlugin}
               >
-                {updatingPlugin ? t("pluginUpdating") : `${t("updateNow")} (${pluginUpdate.latest})`}
+                {updatingPlugin
+                  ? t("downloadingUpdateZip")
+                  : `${t("downloadUpdateZip")} (${pluginUpdate.latest})`}
               </ButtonItem>
             </PanelSectionRow>
           )}

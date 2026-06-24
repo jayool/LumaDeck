@@ -204,6 +204,58 @@ async def update_plugin() -> dict:
             return {"success": False, "error": f"Could not stage update: {exc2}"}
 
 
+def _downloads_dir() -> str:
+    """The Steam Deck user's Downloads folder. The plugin process runs as
+    `deck`, so this is writable — unlike the root-owned plugin dir. Created if
+    missing; falls back to the home dir if even that can't be made."""
+    for cand in ("/home/deck/Downloads", os.path.expanduser("~/Downloads")):
+        if os.path.isdir(cand):
+            return cand
+    target = "/home/deck/Downloads"
+    try:
+        os.makedirs(target, exist_ok=True)
+        return target
+    except Exception:
+        return os.path.expanduser("~")
+
+
+async def download_update_to_downloads() -> dict:
+    """Download the latest LumaDeck.zip into ~/Downloads so the user can install
+    it via Decky ▸ Developer ▸ Install from Zip without hunting in a browser.
+
+    Writes ONLY to the deck-owned Downloads folder — no privilege needed, and it
+    never touches the (root-owned) plugin dir, so it can't break anything. This
+    is the supported update path on setups where the plugin process can't write
+    its own directory (the common case).
+    """
+    info = await check_plugin_update()
+    if not info.get("success"):
+        return {"success": False, "error": info.get("error", "update check failed")}
+    if not info.get("has_update"):
+        return {"success": True, "downloaded": False, "message": "Already up to date"}
+
+    dest = os.path.join(_downloads_dir(), f"LumaDeck-{info.get('latest', 'latest')}.zip")
+    try:
+        client = await ensure_http_client("self_update")
+        resp = await client.get(info["download_url"], follow_redirects=True, timeout=120)
+        if resp.status_code != 200:
+            return {"success": False, "error": f"Download failed ({resp.status_code})"}
+        with open(dest, "wb") as f:
+            f.write(resp.content)
+    except Exception as exc:
+        return {"success": False, "error": f"Download failed: {exc}"}
+
+    if not zipfile.is_zipfile(dest):
+        try:
+            os.remove(dest)
+        except Exception:
+            pass
+        return {"success": False, "error": "Downloaded asset is not a valid zip"}
+
+    logger.info("LumaDeck: update zip saved to %s", dest)
+    return {"success": True, "downloaded": True, "path": dest, "latest": info.get("latest")}
+
+
 def apply_pending_update_if_any() -> None:
     """Apply a staged update zip at plugin load, then remove it. Synchronous so
     it can run at the very top of _main. Takes effect on the following restart

@@ -315,6 +315,10 @@ class Plugin:
         from self_update import update_plugin
         return _j(await update_plugin())
 
+    async def download_update_to_downloads(self) -> str:
+        from self_update import download_update_to_downloads
+        return _j(await download_update_to_downloads())
+
     # ==========================================================================
     # Steam Utils
     # ==========================================================================
