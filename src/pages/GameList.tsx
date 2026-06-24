@@ -867,11 +867,13 @@ export function GameList() {
       {/* Top toolbar — light nav/utility actions as icons, right-aligned,
           so they sit at the top of the panel instead of stacking full-width
           buttons at the bottom. */}
-      {/* Quick actions — anchored as a labelled Field row (label left, icons
-          right, with a separator) so the utility icons sit in the panel's row
-          rhythm instead of floating. Native DialogButton focus is kept. */}
+      {/* Header subtitle row — a Field with the plugin subtitle on the left and
+          the utility icons (Downloads/Refresh/Settings) right-aligned, with a
+          separator. Reads as "LumaDeck" (native title) + subtitle, and anchors
+          the icons in the panel's row rhythm instead of floating. Native
+          DialogButton focus is kept. */}
       <PanelSection>
-        <Field label={t("quickActions")} bottomSeparator="standard" childrenContainerWidth="max">
+        <Field label={t("headerSubtitle")} bottomSeparator="standard">
           <Focusable style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
             <DialogButton
               onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}

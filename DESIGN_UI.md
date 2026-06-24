@@ -234,7 +234,7 @@ cluster into the panel's native row rhythm so it reads as placed, not lonely.
 Don't use a rounded "pill" container or a bare floating `Focusable`:
 
 ```tsx
-<Field label={t("quickActions")} bottomSeparator="standard" childrenContainerWidth="max">
+<Field label={t("headerSubtitle")} bottomSeparator="standard">
   <Focusable style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
     <DialogButton style={iconBtnStyle}><FaDownload /></DialogButton>
     …
