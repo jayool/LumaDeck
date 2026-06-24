@@ -10,7 +10,7 @@ import {
   Field,
 } from "@decky/ui";
 import { FaCog, FaSync, FaDownload } from "react-icons/fa";
-import { GameCard, GameInfo } from "../components/GameCard";
+import { GameInfo } from "../components/GameCard";
 import {
   getInstalledLuaScripts,
   getDownloadStatus,
@@ -43,7 +43,7 @@ import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { Notice } from "../components/Notice";
 import { HealthBanner, HealthProblem } from "../components/HealthBanner";
 import { UpdatesBanner, UpdateNotice } from "../components/UpdatesBanner";
-import { ROUTE_GAME_DETAIL, ROUTE_SETTINGS, ROUTE_DOWNLOADS } from "../routes";
+import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY } from "../routes";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
 
@@ -64,7 +64,6 @@ const PROTONDB_TIER_COLOR: Record<string, string> = {
 export function GameList() {
   const t = useT();
   const [games, setGames] = useState<GameInfo[]>([]);
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [addAppId, setAddAppId] = useState("");
   const [addStatus, setAddStatus] = useState("");
@@ -74,8 +73,6 @@ export function GameList() {
   const [downloadSpeed, setDownloadSpeed] = useState(0);
   const [downloadBytes, setDownloadBytes] = useState({ read: 0, total: 0 });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [sortMode, setSortMode] = useState<"name" | "appid" | "recent">("name");
-
   // Hubcap search state
   const [searchQuery, setSearchQuery] = useState("");
   const [hubcapFocused, setHubcapFocused] = useState(false);
@@ -547,20 +544,6 @@ export function GameList() {
     }, 2000);
   };
 
-  const sortLabels: Record<string, string> = {
-    name: "A-Z",
-    appid: "AppID",
-    recent: "Recent",
-  };
-
-  const cycleSortMode = () => {
-    setSortMode((prev) => {
-      if (prev === "name") return "appid";
-      if (prev === "appid") return "recent";
-      return "name";
-    });
-  };
-
   // Segmented toggle button. Active option in accent; on focus it grows and
   // glows — mirrors Steam's native button focus animation, which an inline
   // background would otherwise suppress.
@@ -600,26 +583,6 @@ export function GameList() {
     alignItems: "center",
     justifyContent: "center",
     fontSize: "16px",
-  };
-
-  const filtered = (
-    search
-      ? games.filter(
-        (g: GameInfo) =>
-          g.name.toLowerCase().includes(search.toLowerCase()) ||
-          String(g.appid).includes(search),
-      )
-      : games
-  )
-    .slice()
-    .sort((a, b) => {
-      if (sortMode === "appid") return a.appid - b.appid;
-      if (sortMode === "recent") return b.appid - a.appid;
-      return a.name.localeCompare(b.name);
-    });
-
-  const navigateToDetail = (appid: number) => {
-    Navigation.Navigate(ROUTE_GAME_DETAIL + "/" + appid);
   };
 
   const handleRestartSteam = async () => {
@@ -1198,49 +1161,19 @@ export function GameList() {
         )}
       </PanelSection>
 
+      {/* My Games lives on its own full-screen route now — the QAM only shows
+          a compact entry so the panel stays a lean launcher. */}
       <PanelSection title={t("myGames")}>
         <PanelSectionRow>
-          <TextField
-            label={t("filterGames")}
-            value={search}
-            onChange={(e: any) => setSearch(e?.target?.value ?? "")}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={cycleSortMode}>
-            {t("sort")}: {sortLabels[sortMode]}
+          <ButtonItem
+            layout="below"
+            onClick={() => Navigation.Navigate(ROUTE_LIBRARY)}
+          >
+            {loading
+              ? t("loadingGames")
+              : `${t("myGames")} (${games.length}) →`}
           </ButtonItem>
         </PanelSectionRow>
-
-        {loading ? (
-          <PanelSectionRow>
-            <div
-              style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
-            >
-              {t("loadingGames")}
-            </div>
-          </PanelSectionRow>
-        ) : filtered.length === 0 ? (
-          <PanelSectionRow>
-            <div
-              style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
-            >
-              {search ? t("noGamesMatch") : t("noGamesYet")}
-            </div>
-          </PanelSectionRow>
-        ) : (
-          filtered.map((game: GameInfo) => (
-            <GameCard
-              key={game.appid}
-              game={
-                activeDownloadId === game.appid
-                  ? { ...game, downloadStatus: activeDownloadPhase }
-                  : game
-              }
-              onClick={navigateToDetail}
-            />
-          ))
-        )}
       </PanelSection>
 
       <PanelSection>

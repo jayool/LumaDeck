@@ -11,8 +11,14 @@ import { GameList } from "./pages/GameList";
 import { GameDetail } from "./pages/GameDetail";
 import { Settings } from "./pages/Settings";
 import { Downloads } from "./pages/Downloads";
+import { Library } from "./pages/Library";
 import { AppPageButton } from "./components/AppPageButton";
-import { ROUTE_GAME_DETAIL, ROUTE_SETTINGS, ROUTE_DOWNLOADS } from "./routes";
+import {
+  ROUTE_GAME_DETAIL,
+  ROUTE_SETTINGS,
+  ROUTE_DOWNLOADS,
+  ROUTE_LIBRARY,
+} from "./routes";
 
 function patchLibraryApp() {
   return routerHook.addPatch("/library/app/:appid", (tree: any) => {
@@ -73,6 +79,7 @@ export default definePlugin(() => {
 
   routerHook.addRoute(ROUTE_SETTINGS, () => <Settings />);
   routerHook.addRoute(ROUTE_DOWNLOADS, () => <Downloads />);
+  routerHook.addRoute(ROUTE_LIBRARY, () => <Library />);
 
   // Patch library app detail page to show "Added via LumaDeck" badge
   const libraryPatch = patchLibraryApp();
@@ -86,6 +93,7 @@ export default definePlugin(() => {
       routerHook.removeRoute(ROUTE_GAME_DETAIL + "/:appid");
       routerHook.removeRoute(ROUTE_SETTINGS);
       routerHook.removeRoute(ROUTE_DOWNLOADS);
+      routerHook.removeRoute(ROUTE_LIBRARY);
       routerHook.removePatch("/library/app/:appid", libraryPatch);
     },
   };
