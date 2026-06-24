@@ -8,6 +8,7 @@ import {
   Focusable,
   DialogButton,
 } from "@decky/ui";
+import { FaCog, FaSync, FaDownload } from "react-icons/fa";
 import { GameCard, GameInfo } from "../components/GameCard";
 import {
   getInstalledLuaScripts,
@@ -566,6 +567,18 @@ export function GameList() {
     color: active ? "#ffffff" : "#8b929a",
   });
 
+  // Compact square icon button for the top toolbar (Downloads / Refresh /
+  // Settings) — keeps the QAM narrow instead of a stack of full-width buttons.
+  const iconBtnStyle = {
+    minWidth: 0,
+    width: "44px",
+    height: "32px",
+    padding: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
   const filtered = (
     search
       ? games.filter(
@@ -828,6 +841,29 @@ export function GameList() {
 
   return (
     <>
+      {/* Top toolbar — light nav/utility actions as icons, right-aligned,
+          so they sit at the top of the panel instead of stacking full-width
+          buttons at the bottom. */}
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "6px 14px 0" }}>
+        <Focusable style={{ display: "flex", gap: "8px" }}>
+          <DialogButton
+            onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
+            style={iconBtnStyle}
+          >
+            <FaDownload />
+          </DialogButton>
+          <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
+            <FaSync />
+          </DialogButton>
+          <DialogButton
+            onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
+            style={iconBtnStyle}
+          >
+            <FaCog />
+          </DialogButton>
+        </Focusable>
+      </div>
+
       {showQuickInstall && (
         <PanelSection title={t("quickInstallSectionTitle")}>
           <PanelSectionRow>
@@ -1175,41 +1211,18 @@ export function GameList() {
       </PanelSection>
 
       <PanelSection>
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
-          >
-            {t("activeDownloads")}
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-          >
-            {t("settings")}
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => loadGames()}>
-            {t("refresh")}
-          </ButtonItem>
-        </PanelSectionRow>
         {slscheevoReady && (
-          <>
-            <PanelSectionRow>
-              <ButtonItem
-                layout="below"
-                onClick={handleSyncAllAchievements}
-                disabled={syncState?.status === "running"}
-              >
-                {syncState?.status === "running"
-                  ? t("syncingAchievements", syncState.done || 0, syncState.total || 0)
-                  : t("syncAllAchievements")}
-              </ButtonItem>
-            </PanelSectionRow>
-          </>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={handleSyncAllAchievements}
+              disabled={syncState?.status === "running"}
+            >
+              {syncState?.status === "running"
+                ? t("syncingAchievements", syncState.done || 0, syncState.total || 0)
+                : t("syncAllAchievements")}
+            </ButtonItem>
+          </PanelSectionRow>
         )}
         <PanelSectionRow>
           <ButtonItem
