@@ -12,6 +12,9 @@ const strings: Record<Lang, Record<string, string>> = {
   en: {
     // GameList
     addGame: "Add Game",
+    addByAppId: "By AppID",
+    addByName: "By name",
+    filterGames: "Filter",
     steamAppId: "Steam AppID",
     searchByName: "Search by Name",
     searching: "Searching...",
@@ -411,6 +414,9 @@ const strings: Record<Lang, Record<string, string>> = {
   "pt-BR": {
     // GameList
     addGame: "Adicionar Jogo",
+    addByAppId: "Por AppID",
+    addByName: "Por nome",
+    filterGames: "Filtrar",
     steamAppId: "Steam AppID",
     searchByName: "Buscar por Nome",
     searching: "Buscando...",

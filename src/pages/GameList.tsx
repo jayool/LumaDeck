@@ -5,6 +5,8 @@ import {
   TextField,
   ButtonItem,
   Navigation,
+  Focusable,
+  DialogButton,
 } from "@decky/ui";
 import { GameCard, GameInfo } from "../components/GameCard";
 import {
@@ -75,6 +77,9 @@ export function GameList() {
   // Hubcap search state
   const [searchQuery, setSearchQuery] = useState("");
   const [hubcapFocused, setHubcapFocused] = useState(false);
+  // Which "add a game" mode the section shows: by AppID (default, autofilled
+  // from the open store page) or by name (Hubcap search).
+  const [addMode, setAddMode] = useState<"appid" | "name">("appid");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -499,6 +504,9 @@ export function GameList() {
     setSearchResults([]);
     setSearchQuery("");
     setAddStatus(`${t("selected")}: ${result.name} (${result.appid})`);
+    // Jump back to AppID mode so the staged game's info card + Download
+    // Manifest button are right there — no scrolling between sections.
+    setAddMode("appid");
   };
 
   const toast = (title: string, body?: string, duration = 3000) =>
@@ -546,6 +554,17 @@ export function GameList() {
       return "name";
     });
   };
+
+  // Segmented toggle button style: active option in accent, inactive muted.
+  const segBtnStyle = (active: boolean) => ({
+    flex: 1,
+    minWidth: 0,
+    padding: "8px 0",
+    fontSize: "13px",
+    borderRadius: "4px",
+    background: active ? "#1a9fff" : "rgba(255,255,255,0.08)",
+    color: active ? "#ffffff" : "#8b929a",
+  });
 
   const filtered = (
     search
@@ -851,6 +870,25 @@ export function GameList() {
 
       <PanelSection title={t("addGame")}>
         <PanelSectionRow>
+          <Focusable style={{ display: "flex", gap: "8px", width: "100%" }}>
+            <DialogButton
+              onClick={() => setAddMode("appid")}
+              style={segBtnStyle(addMode === "appid")}
+            >
+              {t("addByAppId")}
+            </DialogButton>
+            <DialogButton
+              onClick={() => setAddMode("name")}
+              style={segBtnStyle(addMode === "name")}
+            >
+              {t("addByName")}
+            </DialogButton>
+          </Focusable>
+        </PanelSectionRow>
+
+        {addMode === "appid" ? (
+          <>
+        <PanelSectionRow>
           <TextField
             label={t("steamAppId")}
             value={addAppId}
@@ -1004,12 +1042,11 @@ export function GameList() {
             </div>
           </PanelSectionRow>
         )}
-      </PanelSection>
-
-      {/* Hubcap Search — bottom padding only while the field is focused, so
-          the on-screen keyboard doesn't hide it (no permanent gap otherwise) */}
-      <div style={{ paddingBottom: hubcapFocused ? "280px" : "0px" }}>
-      <PanelSection title={t("searchByName")}>
+          </>
+        ) : (
+          /* By name (Hubcap search) — bottom padding only while the field is
+             focused so the on-screen keyboard doesn't hide it */
+          <div style={{ paddingBottom: hubcapFocused ? "280px" : "0px" }}>
         <PanelSectionRow>
           <TextField
             label={t("gameName")}
@@ -1088,13 +1125,14 @@ export function GameList() {
             )}
           </>
         )}
+          </div>
+        )}
       </PanelSection>
-      </div>
 
       <PanelSection title={t("myGames")}>
         <PanelSectionRow>
           <TextField
-            label={t("searchByName")}
+            label={t("filterGames")}
             value={search}
             onChange={(e: any) => setSearch(e?.target?.value ?? "")}
           />
