@@ -7,6 +7,7 @@ import {
   Navigation,
   Focusable,
   DialogButton,
+  Field,
 } from "@decky/ui";
 import { FaCog, FaSync, FaDownload } from "react-icons/fa";
 import { GameCard, GameInfo } from "../components/GameCard";
@@ -866,25 +867,30 @@ export function GameList() {
       {/* Top toolbar — light nav/utility actions as icons, right-aligned,
           so they sit at the top of the panel instead of stacking full-width
           buttons at the bottom. */}
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 12px" }}>
-        <Focusable style={{ display: "flex", gap: "8px" }}>
-          <DialogButton
-            onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
-            style={iconBtnStyle}
-          >
-            <FaDownload />
-          </DialogButton>
-          <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
-            <FaSync />
-          </DialogButton>
-          <DialogButton
-            onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-            style={iconBtnStyle}
-          >
-            <FaCog />
-          </DialogButton>
-        </Focusable>
-      </div>
+      {/* Quick actions — anchored as a labelled Field row (label left, icons
+          right, with a separator) so the utility icons sit in the panel's row
+          rhythm instead of floating. Native DialogButton focus is kept. */}
+      <PanelSection>
+        <Field label={t("quickActions")} bottomSeparator="standard" childrenContainerWidth="max">
+          <Focusable style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <DialogButton
+              onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
+              style={iconBtnStyle}
+            >
+              <FaDownload />
+            </DialogButton>
+            <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
+              <FaSync />
+            </DialogButton>
+            <DialogButton
+              onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
+              style={iconBtnStyle}
+            >
+              <FaCog />
+            </DialogButton>
+          </Focusable>
+        </Field>
+      </PanelSection>
 
       {showQuickInstall && (
         <PanelSection title={t("quickInstallSectionTitle")}>

@@ -225,8 +225,22 @@ markers. Keep one icon family for visual consistency.
 **Default: don't override a DialogButton's `background`/`color`.** Steam's
 native focus (button fills white, glyph/text goes dark) is the look to keep —
 it matches every other button. For icon buttons, constrain only the *size*
-(`width`/`height`/`padding`) and leave the rest to Steam. Don't group them in a
-pill; a plain right-aligned `Focusable` row with `gap: 8px` is the standard.
+(`width`/`height`/`padding`) and leave the rest to Steam.
+
+**Anchor a utility-icon row in a labelled `Field`** — never let an icon cluster
+float at the top of `content`. A `Field` (label on the left, the icons in a
+right-aligned `Focusable` on the right, `bottomSeparator="standard"`) drops the
+cluster into the panel's native row rhythm so it reads as placed, not lonely.
+Don't use a rounded "pill" container or a bare floating `Focusable`:
+
+```tsx
+<Field label={t("quickActions")} bottomSeparator="standard" childrenContainerWidth="max">
+  <Focusable style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+    <DialogButton style={iconBtnStyle}><FaDownload /></DialogButton>
+    …
+  </Focusable>
+</Field>
+```
 
 Re-create focus **only** when an inline `background` is unavoidable — e.g. a
 segmented toggle whose selected option must show an accent fill. Native focus is

@@ -12,6 +12,7 @@ const strings: Record<Lang, Record<string, string>> = {
   en: {
     // GameList
     addGame: "Add Game",
+    quickActions: "Quick actions",
     addByAppId: "By AppID",
     addByName: "By name",
     filterGames: "Filter",
@@ -414,6 +415,7 @@ const strings: Record<Lang, Record<string, string>> = {
   "pt-BR": {
     // GameList
     addGame: "Adicionar Jogo",
+    quickActions: "Ações rápidas",
     addByAppId: "Por AppID",
     addByName: "Por nome",
     filterGames: "Filtrar",
