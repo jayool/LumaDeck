@@ -221,6 +221,35 @@ const [focused, setFocused] = useState(false);
 `react-icons/fa` only. Used for `SidebarNavigation` page icons and inline
 markers. Keep one icon family for visual consistency.
 
+### 5f. Custom focusable buttons (DialogButton)
+When a `DialogButton` is given an inline `background` (segmented toggles, the
+QAM icon toolbar), Steam's native focus highlight is suppressed — so focus
+**must** be re-created explicitly, and it should *animate* like a native button
+(grow + glow), not snap to a static ring:
+
+```tsx
+transform: focused ? "scale(1.04)" : "scale(1)",   // 1.08 for small icon buttons
+boxShadow: focused ? "0 0 10px rgba(26,159,255,0.55)" : "none",
+transition: "transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease",
+```
+
+Track focus with **both** `onFocus`/`onBlur` (DOM) and `onGamepadFocus`/
+`onGamepadBlur` (Decky) — spread via an `any`-typed object since
+`DialogButtonProps` doesn't declare them. Group a row of icon buttons inside a
+subtle pill (`background: rgba(255,255,255,0.05)`, `borderRadius: 10px`,
+`padding: 3px`, `gap: 2px`) so they read as one toolbar, with each button
+**ghost** (transparent until focused) — never a row of standalone filled boxes.
+
+### 5g. Vertical clearance standard
+**8px** is the canonical gap between a block and the next focusable control, so
+a control's focus glow never collides with the block above it:
+- every `Notice` carries `marginBottom: 8px`;
+- insert `<PanelSectionRow><div style={{ height: "8px" }} /></PanelSectionRow>`
+  between a mode toggle and the field under it.
+
+Don't rely on `PanelSectionRow`'s own margin alone — it's too tight once a
+neighbour shows a focus glow.
+
 ---
 
 ## 6. Internationalisation

@@ -560,8 +560,9 @@ export function GameList() {
     });
   };
 
-  // Segmented toggle button style: active option in accent, inactive muted.
-  // focused draws an explicit ring (the inline background hides the native one).
+  // Segmented toggle button. Active option in accent; on focus it grows and
+  // glows — mirrors Steam's native button focus animation, which an inline
+  // background would otherwise suppress.
   const segBtnStyle = (active: boolean, focused: boolean) => ({
     flex: 1,
     minWidth: 0,
@@ -571,8 +572,9 @@ export function GameList() {
     border: "none",
     background: active ? "#1a9fff" : "rgba(255,255,255,0.08)",
     color: active ? "#ffffff" : "#dcdedf",
-    boxShadow: focused ? "0 0 0 2px #ffffff" : "none",
-    transition: "background 0.15s ease",
+    transform: focused ? "scale(1.04)" : "scale(1)",
+    boxShadow: focused ? "0 0 10px rgba(26,159,255,0.55)" : "none",
+    transition: "transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease",
   });
 
   // Focus tracking for the custom buttons. DialogButton's TS props don't
@@ -585,23 +587,24 @@ export function GameList() {
     onGamepadBlur: () => setFocusedBtn(""),
   });
 
-  // Compact square icon button for the top toolbar (Downloads / Refresh /
-  // Settings) — keeps the QAM narrow instead of a stack of full-width buttons.
+  // Toolbar icon button — ghost style (transparent) so the three read as one
+  // grouped pill rather than three lonely boxes; grows + brightens on focus,
+  // same animation language as the toggle.
   const iconBtnStyle = (focused: boolean) => ({
     minWidth: 0,
-    width: "38px",
-    height: "32px",
+    width: "34px",
+    height: "30px",
     padding: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: "6px",
+    borderRadius: "8px",
     border: "none",
     fontSize: "15px",
-    background: focused ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.07)",
-    color: "#dcdedf",
-    boxShadow: focused ? "0 0 0 2px #ffffff" : "none",
-    transition: "background 0.15s ease",
+    background: focused ? "rgba(255,255,255,0.16)" : "transparent",
+    color: focused ? "#ffffff" : "#b8bcbf",
+    transform: focused ? "scale(1.08)" : "scale(1)",
+    transition: "transform 0.16s ease, background 0.16s ease, color 0.16s ease",
   });
 
   const filtered = (
@@ -869,8 +872,14 @@ export function GameList() {
       {/* Top toolbar — light nav/utility actions as icons, right-aligned,
           so they sit at the top of the panel instead of stacking full-width
           buttons at the bottom. */}
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 10px" }}>
-        <Focusable style={{ display: "flex", gap: "8px" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 12px" }}>
+        <Focusable style={{
+          display: "flex",
+          gap: "2px",
+          background: "rgba(255,255,255,0.05)",
+          borderRadius: "10px",
+          padding: "3px",
+        }}>
           <DialogButton
             onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
             {...focusProps("dl")}
@@ -957,9 +966,10 @@ export function GameList() {
 
         {addMode === "appid" ? (
           <>
+        {/* 8px standard gap between the mode toggle and the field below it. */}
+        <PanelSectionRow><div style={{ height: "8px" }} /></PanelSectionRow>
         <PanelSectionRow>
           <TextField
-            label={t("steamAppId")}
             value={addAppId}
             onChange={(e: any) => setAddAppId(e?.target?.value ?? "")}
           />
