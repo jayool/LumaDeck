@@ -98,6 +98,33 @@ Principles are **derived** from these entries as patterns emerge (see
     **Step-based** progress is a text line; a `ProgressBar` is only for a real
     percentage.
 
+### 3. Health alerts — *conditional* — 🔧 direction fixed (not yet built)
+
+- **What:** surfaces a broken / degraded **core component** (SLSsteam,
+  lumalinux, CloudRedirect). One alert per unhealthy component. Only
+  *actionable failures* appear here — `healthy` / `not_installed` are silent
+  (install lives in Quick Install / Settings).
+- **Current (to be replaced):** a custom orange box (`HealthBanner`) with a
+  title, body, and a hand-rolled `<button>` — the worst "red" (non-native
+  control, broken gamepad focus, and it looks identical whether or not there's
+  an action).
+- **Direction (decided — colored box → native rows):**
+  - **No colored box.** Each problem is its own **native row**:
+    - **Fixable from Game Mode** → **`ButtonItem`**: `icon` = ⚠ in the severity
+      colour, `children` = the fix action ("Restart Steam" / "Reinstall …"),
+      `description` = the problem. Native focus, the whole row is the button.
+    - **Not fixable from Game Mode** → **`Field`**: `icon` = ⚠, `label` = the
+      problem, `description` = where/how to fix it (Settings, or Desktop).
+      Display-only — **no dead button**.
+  - **Severity = the ⚠ icon colour** (warn `#ff8c00`), not a box.
+  - **Multiple problems = multiple rows** (one per component), not one stacked
+    box.
+- **Native or custom:** 🟢 native (`ButtonItem` / `Field`). Drops the custom
+  box *and* the raw `<button>`.
+- **Rule:** **never render a button for something you can't do from here.** An
+  unactionable alert is a `Field` (info + instructions), not a fake button. The
+  exact actionable/not split per state is the table below.
+
 ---
 
 ## Principles (emerging)
@@ -119,4 +146,14 @@ Principles are **derived** from these entries as patterns emerge (see
   (`confirm<Action>` state + `ButtonItem` `description`).
 - Raw `<div>`s for text are expected (no native text component); keep them on
   the tokens above rather than inventing new colours/sizes.
+- **Alerts map to native controls by nature**, not one colored box: actionable
+  → `ButtonItem` (message in `description`, action in the label); pure info →
+  `Field` (`icon` + `label`/`description`); only genuinely rich content (a
+  badge grid) keeps a custom container. Severity is carried by a **coloured
+  icon**, not a box.
+- **Never render a control (button) for something that can't act from the
+  current context.** Show it as display (`Field`) with instructions instead.
+- Native **text lives in control slots**: `label` / `description` of
+  `ButtonItem`/`Field`, `title` of `PanelSection`. Only *free-floating* text
+  needs a raw `<div>`.
 
