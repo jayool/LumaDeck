@@ -850,7 +850,7 @@ export function GameList() {
               justifyContent: "space-between",
               width: "100%",
               boxSizing: "border-box",
-              padding: "2px 16px 10px",
+              padding: "6px 16px",
               borderBottom: "1px solid rgba(255, 255, 255, 0.12)",
               overflow: "visible",
             }}
@@ -943,8 +943,6 @@ export function GameList() {
 
         {addMode === "appid" ? (
           <>
-        {/* 8px standard gap between the mode toggle and the field below it. */}
-        <PanelSectionRow><div style={{ height: "8px" }} /></PanelSectionRow>
         <PanelSectionRow>
           <TextField
             value={addAppId}

@@ -34,11 +34,10 @@ export function Notice({
         style={{
           width: "100%",
           boxSizing: "border-box",
-          // 8px standard clearance ABOVE and BELOW every notice, so it never
-          // sits flush against the field above it or a control's focus glow
-          // below it.
-          marginTop: "8px",
-          marginBottom: "8px",
+          // No own vertical margin — the wrapping PanelSectionRow already
+          // supplies the panel's standard inter-row gap, same as every other
+          // row. Adding margin here stacked an extra 8px on top, making the
+          // space around notices bigger than the rest of the panel.
           background: `rgba(${rgb}, 0.1)`,
           border: `1px solid rgba(${rgb}, 0.4)`,
           borderLeft: `3px solid ${accent}`,
