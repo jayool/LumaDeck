@@ -8,8 +8,9 @@ import {
   Navigation,
   SidebarNavigation,
 } from "@decky/ui";
-import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle } from "react-icons/fa";
+import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle } from "react-icons/fa";
 import { toaster } from "@decky/api";
+import { HelpContent } from "./Help";
 import {
   saveRyuCookie,
   loadRyuCookie,
@@ -1013,6 +1014,12 @@ export function Settings() {
           )}
         </PanelSection>
       ),
+    },
+    {
+      title: t("help"),
+      icon: <FaQuestionCircle />,
+      hideTitle: true,
+      content: <HelpContent />,
     },
   ];
 

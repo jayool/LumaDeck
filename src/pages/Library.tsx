@@ -3,11 +3,8 @@ import {
   PanelSection,
   PanelSectionRow,
   TextField,
-  ButtonItem,
-  SidebarNavigation,
   Navigation,
 } from "@decky/ui";
-import { FaGamepad } from "react-icons/fa";
 import { GameCard, GameInfo } from "../components/GameCard";
 import {
   getInstalledLuaScripts,
@@ -17,16 +14,15 @@ import {
 import { useT } from "../i18n";
 import { ROUTE_GAME_DETAIL } from "../routes";
 
-type SortMode = "name" | "appid" | "recent";
-
 // Full-screen "My Games" library. Lives on its own route so the QAM panel
 // stays a compact launcher — idiomatic Decky plugins push space-hungry lists
-// out of the narrow Quick Access menu and into a dedicated page.
+// out of the narrow Quick Access menu and into a dedicated page. A single
+// list needs no sidebar, so this is a plain scrollable page (not
+// SidebarNavigation). Games are always name-sorted; type to filter.
 export function Library() {
   const t = useT();
   const [games, setGames] = useState<GameInfo[]>([]);
   const [search, setSearch] = useState("");
-  const [sortMode, setSortMode] = useState<SortMode>("name");
   const [loading, setLoading] = useState(true);
   // appid -> active download phase, so cards can show live status here too.
   const [activePhases, setActivePhases] = useState<Record<number, string>>({});
@@ -98,18 +94,6 @@ export function Library() {
     };
   }, []);
 
-  const sortLabels: Record<SortMode, string> = {
-    name: "A-Z",
-    appid: "AppID",
-    recent: "Recent",
-  };
-
-  const cycleSortMode = () => {
-    setSortMode((prev) =>
-      prev === "name" ? "appid" : prev === "appid" ? "recent" : "name",
-    );
-  };
-
   const filtered = (
     search
       ? games.filter(
@@ -120,69 +104,53 @@ export function Library() {
       : games
   )
     .slice()
-    .sort((a, b) => {
-      if (sortMode === "appid") return a.appid - b.appid;
-      if (sortMode === "recent") return b.appid - a.appid;
-      return a.name.localeCompare(b.name);
-    });
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const navigateToDetail = (appid: number) => {
     Navigation.Navigate(ROUTE_GAME_DETAIL + "/" + appid);
   };
 
-  const pages = [
-    {
-      title: t("myGames"),
-      icon: <FaGamepad />,
-      hideTitle: true,
-      content: (
-        <PanelSection title={t("myGames")}>
+  return (
+    <div style={{ marginTop: "40px", height: "calc(100% - 40px)", overflowY: "scroll" }}>
+      <PanelSection title={t("myGames")}>
+        <PanelSectionRow>
+          <TextField
+            label={t("filterGames")}
+            value={search}
+            onChange={(e: any) => setSearch(e?.target?.value ?? "")}
+          />
+        </PanelSectionRow>
+
+        {loading ? (
           <PanelSectionRow>
-            <TextField
-              label={t("filterGames")}
-              value={search}
-              onChange={(e: any) => setSearch(e?.target?.value ?? "")}
+            <div
+              style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
+            >
+              {t("loadingGames")}
+            </div>
+          </PanelSectionRow>
+        ) : filtered.length === 0 ? (
+          <PanelSectionRow>
+            <div
+              style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
+            >
+              {search ? t("noGamesMatch") : t("noGamesYet")}
+            </div>
+          </PanelSectionRow>
+        ) : (
+          filtered.map((game: GameInfo) => (
+            <GameCard
+              key={game.appid}
+              game={
+                activePhases[game.appid]
+                  ? { ...game, downloadStatus: activePhases[game.appid] }
+                  : game
+              }
+              onClick={navigateToDetail}
             />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={cycleSortMode}>
-              {t("sort")}: {sortLabels[sortMode]}
-            </ButtonItem>
-          </PanelSectionRow>
-
-          {loading ? (
-            <PanelSectionRow>
-              <div
-                style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
-              >
-                {t("loadingGames")}
-              </div>
-            </PanelSectionRow>
-          ) : filtered.length === 0 ? (
-            <PanelSectionRow>
-              <div
-                style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
-              >
-                {search ? t("noGamesMatch") : t("noGamesYet")}
-              </div>
-            </PanelSectionRow>
-          ) : (
-            filtered.map((game: GameInfo) => (
-              <GameCard
-                key={game.appid}
-                game={
-                  activePhases[game.appid]
-                    ? { ...game, downloadStatus: activePhases[game.appid] }
-                    : game
-                }
-                onClick={navigateToDetail}
-              />
-            ))
-          )}
-        </PanelSection>
-      ),
-    },
-  ];
-
-  return <SidebarNavigation title="LumaDeck" pages={pages} />;
+          ))
+        )}
+      </PanelSection>
+    </div>
+  );
 }

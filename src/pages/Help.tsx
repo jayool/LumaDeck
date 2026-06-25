@@ -1,12 +1,9 @@
-import {
-  PanelSection,
-  PanelSectionRow,
-  ButtonItem,
-  Navigation,
-} from "@decky/ui";
+import { PanelSection, PanelSectionRow } from "@decky/ui";
 import { useT } from "../i18n";
 
-export function Help() {
+// Plugin help. Surfaced as a page in the Settings sidebar (not its own route),
+// so there's no back button here — the sidebar owns navigation.
+export function HelpContent() {
   const t = useT();
   return (
     <>
@@ -93,12 +90,6 @@ export function Help() {
             {t("helpTroubleshootingTips")}
           </div>
         </PanelSectionRow>
-      </PanelSection>
-
-      <PanelSection>
-        <ButtonItem layout="below" onClick={() => Navigation.NavigateBack()}>
-          {t("back")}
-        </ButtonItem>
       </PanelSection>
     </>
   );

@@ -390,6 +390,65 @@ lagging component still supports it.
 
 ---
 
+## Full-screen pages — top to bottom
+
+The QAM is a launcher; space-hungry views live on their own routes
+(`routerHook.addRoute` in `index.tsx`): **Library** (My Games), **GameDetail**,
+**Settings**, **Downloads**. (`Help` is no longer a standalone page — see §7.)
+
+### 7. Library (My Games) — full-screen — ✅ built
+
+- **What:** the full games list, reached from the QAM's My Games button
+  (`ROUTE_LIBRARY`). Builds its own list from `getInstalledLuaScripts` (so every
+  row is a lua-managed game) and polls `getActiveDownloads` for live phase.
+- **Container — was `SidebarNavigation` with ONE page → now a plain page.** A
+  single-page sidebar renders a left rail with one item next to the content —
+  pure overhead. Library is now a plain scrollable page
+  (`<div style={{marginTop:40, height:'calc(100% - 40px)', overflowY:'scroll'}}>`
+  + the `PanelSection`). This also removes the **doubled "My Games"** (the
+  sidebar page title *and* the `PanelSection` title were the same string) — only
+  the section title remains. *(Downloads still uses a 1-page `SidebarNavigation`;
+  same treatment pending when we reach it.)*
+- **Sort control removed.** A `ButtonItem` that **cycled** A-Z → AppID → Recent
+  on each tap was low-discoverability custom interaction. For a personal list,
+  type-to-filter (the `TextField`) + a fixed A-Z sort is enough. Dropped the
+  button, `sortMode` state and the `sort` i18n key.
+- **`GameCard` — colour dot removed, dead progress bar removed:**
+  - The hand-built 8px coloured status **dot** (`<div>`+`<span>` flex) is gone.
+    State is already named by the row's coloured `description` text, so the dot
+    was redundant. Card is now `ButtonItem` `children = {name}`, `description =`
+    a single coloured `<span>` (`installed`/`manifest only`/`disabled` +
+    `— appid`), colour kept (green `#00cc00` / amber `#ffaa00` / blue `#1a9fff`
+    while a phase is active).
+  - The custom **`ProgressBar`** branch was **dead code**:
+    `downloadProgress`/`downloadTotal` were never assigned anywhere (Library only
+    sets the phase string). Steam does the actual download natively — there are
+    no bytes for the plugin to show — so the bar never rendered. Removed the
+    branch, the two fields and the `ProgressBar` import. The **phase text**
+    (`Installing…`, `Configuring…`, `Restarting Steam…`) stays — that's real
+    post-download lumalinux work, shown as the coloured `description`.
+  - Reachable states here: **Installed** (green, `· ★` if achievements),
+    **Manifest only** (amber), **Disabled** (amber), **Downloading/phase**
+    (blue). The grey **Pending** (no-lua) branch is **unreachable** in Library
+    (every row has lua by construction) — kept in the component only for reuse.
+- **`Help` relocated.** `Help.tsx` was a fully-built page wired to **nothing**
+  (no route, no import). Its content is general plugin help, so it now lives as
+  a **page in the Settings sidebar** (`HelpContent`, no back button — the sidebar
+  owns navigation). `Help.tsx` exports `HelpContent`; `Settings.tsx` adds a
+  `FaQuestionCircle` "Help" page after About.
+- **Native or custom:** 🟢 plain native page — `PanelSection` + `TextField` +
+  native `ButtonItem` rows (`GameCard`). Remaining `<div>`s are the
+  loading/empty status lines (free-floating text, on-token) and the page's
+  scroll wrapper (structural, not decorative).
+- **Rule:** a single-list route is a **plain scrollable page**, not a 1-page
+  `SidebarNavigation`. Don't ship cycle-through controls where a filter or a
+  `Dropdown` fits. Never render UI for data that no longer exists (the native
+  Steam download killed per-game byte progress — delete it, don't leave it
+  guarded-but-dead). A built page wired to nothing is either routed or deleted —
+  Help was rehomed.
+
+---
+
 ## Principles (emerging)
 
 - The brand string `"LumaDeck"` is the only hard-coded display literal; every

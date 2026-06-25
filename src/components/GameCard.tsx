@@ -1,6 +1,4 @@
 import { ButtonItem } from "@decky/ui";
-import { CSSProperties } from "react";
-import { ProgressBar } from "./ProgressBar";
 import { useT } from "../i18n";
 
 export interface GameInfo {
@@ -11,8 +9,6 @@ export interface GameInfo {
   hasGameFiles?: boolean;
   hasAchievements?: boolean;
   downloadStatus?: string;
-  downloadProgress?: number;
-  downloadTotal?: number;
 }
 
 interface GameCardProps {
@@ -55,16 +51,6 @@ export function GameCard({ game, onClick }: GameCardProps) {
   ];
   const isDownloading = !!game.downloadStatus && activePhases.includes(game.downloadStatus);
 
-  const badgeStyle: CSSProperties = {
-    display: "inline-block",
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    backgroundColor: isDownloading ? "#1a9fff" : statusColor,
-    marginRight: "8px",
-    flexShrink: 0,
-  };
-
   const downloadLabel = (() => {
     switch (game.downloadStatus) {
       case "downloading": return t("statusDownloading");
@@ -85,22 +71,12 @@ export function GameCard({ game, onClick }: GameCardProps) {
       layout="below"
       onClick={() => onClick(game.appid)}
       description={
-        isDownloading && game.downloadTotal ? (
-          <ProgressBar
-            value={game.downloadProgress ?? 0}
-            max={game.downloadTotal}
-          />
-        ) : (
-          <span style={{ color: isDownloading ? "#1a9fff" : statusColor, fontSize: "12px" }}>
-            {isDownloading ? downloadLabel : statusText} — {game.appid}
-          </span>
-        )
+        <span style={{ color: isDownloading ? "#1a9fff" : statusColor, fontSize: "12px" }}>
+          {isDownloading ? downloadLabel : statusText} — {game.appid}
+        </span>
       }
     >
-      <div style={{ display: "flex", alignItems: "center" }}>
-        <span style={badgeStyle} />
-        <span>{game.name}</span>
-      </div>
+      {game.name}
     </ButtonItem>
   );
 }
