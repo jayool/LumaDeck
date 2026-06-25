@@ -223,6 +223,28 @@ lagging component still supports it.
 - Text drops jargon (`steam.sh`, hooks, patterns, hash, SafeMode) and the
   `hooks_failed` `{0}` hook name (kept in logs only).
 
+### 4. Add Game — mode toggle (By AppID / By name) — ✅ built (v0.3.34)
+
+- **What:** switch the Add Game input between AppID entry and name search; the
+  content below follows the selection.
+- **How shown:** two native `DialogButton`s in a `Focusable` row. **Focusing**
+  one selects its mode (`onFocus`/`onGamepadFocus` → `setAddMode`), so moving
+  L/R swaps the content below — native-tab behaviour, but it fits the narrow QAM
+  where the native `Tabs` row would look oversized (Tabs is built for full-width
+  pages).
+- **Native or custom:** 🟢 mostly native — no background/glow override, so the
+  **native focus** (white fill) is the only indicator while on the toggle; once
+  focus is in the content, the content (AppID field vs search) shows the mode.
+  Replaces the old custom segmented control (accent fill + hand-made scale+glow
+  focus, which existed only because the fill suppressed native focus).
+- **Rule:** for a 2-mode switch with per-mode content in the QAM, prefer
+  focus-driven native `DialogButton`s over a custom segmented control or the
+  page-sized native `Tabs`. Don't override `background` (it kills native focus);
+  let focus + the content below indicate state. No persistent active marker
+  needed.
+- **Verify on device:** returning *up* from the content should re-focus the
+  active mode's button (Decky usually restores last focus within a `Focusable`).
+
 ---
 
 ## Principles (emerging)

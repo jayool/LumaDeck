@@ -78,10 +78,6 @@ export function GameList() {
   // Which "add a game" mode the section shows: by AppID (default, autofilled
   // from the open store page) or by name (Hubcap search).
   const [addMode, setAddMode] = useState<"appid" | "name">("appid");
-  // Key of the custom button (toggle / toolbar icon) currently focused, so we
-  // can draw an explicit focus ring — overriding a DialogButton's background
-  // hides its native focus highlight.
-  const [focusedBtn, setFocusedBtn] = useState<string>("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -550,31 +546,16 @@ export function GameList() {
     }, 2000);
   };
 
-  // Segmented toggle button. Active option in accent; on focus it grows and
-  // glows — mirrors Steam's native button focus animation, which an inline
-  // background would otherwise suppress.
-  const segBtnStyle = (active: boolean, focused: boolean) => ({
-    flex: 1,
-    minWidth: 0,
-    padding: "8px 0",
-    fontSize: "13px",
-    borderRadius: "6px",
-    border: "none",
-    background: active ? "#1a9fff" : "rgba(255,255,255,0.08)",
-    color: active ? "#ffffff" : "#dcdedf",
-    transform: focused ? "scale(1.04)" : "scale(1)",
-    boxShadow: focused ? "0 0 10px rgba(26,159,255,0.55)" : "none",
-    transition: "transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease",
-  });
-
-  // Focus tracking for the custom buttons. DialogButton's TS props don't
-  // declare onFocus/onBlur (the underlying element supports them), so spread
-  // them via an any-typed object to keep the ring logic type-safe.
-  const focusProps = (key: string): any => ({
-    onFocus: () => setFocusedBtn(key),
-    onBlur: () => setFocusedBtn(""),
-    onGamepadFocus: () => setFocusedBtn(key),
-    onGamepadBlur: () => setFocusedBtn(""),
+  // Add-Game mode toggle, tab-style: two native DialogButtons. Focusing one
+  // selects its mode, so moving L/R swaps the content below — like native
+  // tabs, but it fits the narrow QAM where the native Tabs row wouldn't. No
+  // background/glow override, so the native focus (white fill) is the only
+  // indicator; once focus is in the content, the content itself shows the mode.
+  // onFocus/onGamepadFocus aren't in DialogButton's TS props (the element
+  // supports them), so spread via an any-typed object.
+  const modeFocus = (mode: "appid" | "name"): any => ({
+    onFocus: () => setAddMode(mode),
+    onGamepadFocus: () => setAddMode(mode),
   });
 
   const handleRestartSteam = async () => {
@@ -843,16 +824,16 @@ export function GameList() {
         <PanelSectionRow>
           <Focusable style={{ display: "flex", gap: "8px", width: "100%" }}>
             <DialogButton
+              style={{ flex: 1 }}
               onClick={() => setAddMode("appid")}
-              {...focusProps("m-appid")}
-              style={segBtnStyle(addMode === "appid", focusedBtn === "m-appid")}
+              {...modeFocus("appid")}
             >
               {t("addByAppId")}
             </DialogButton>
             <DialogButton
+              style={{ flex: 1 }}
               onClick={() => setAddMode("name")}
-              {...focusProps("m-name")}
-              style={segBtnStyle(addMode === "name", focusedBtn === "m-name")}
+              {...modeFocus("name")}
             >
               {t("addByName")}
             </DialogButton>
