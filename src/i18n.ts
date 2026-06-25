@@ -12,6 +12,7 @@ const strings: Record<Lang, Record<string, string>> = {
   en: {
     // GameList
     addGame: "Add Game",
+    addGameAction: "Add game",
     headerSubtitle: "Game manager",
     addByAppId: "By AppID",
     addByName: "By name",
@@ -207,8 +208,8 @@ const strings: Record<Lang, Record<string, string>> = {
     credRyuuNone: "No Ryuu cookie saved",
     credRyuuUnknown: "Ryuu cookie saved (expiry unknown)",
     // Credential expiry — download-time warnings (only when adding a game)
-    dlWarnHubcapExpired: "⚠ Hubcap key expired — regenerate it in Settings before downloading.",
-    dlWarnHubcapNone: "⚠ No Hubcap key saved — add one in Settings to download Hubcap manifests.",
+    dlWarnHubcapExpired: "Hubcap key expired — regenerate it in Settings before downloading.",
+    dlWarnHubcapNone: "No Hubcap key saved — add one in Settings to download Hubcap manifests.",
     fixCredentials: "Configure API key",
     dlWarnRyuuExpired: "⚠ Ryuu cookie expired — re-import it in Settings before downloading.",
     dlWarnRyuuNone: "⚠ No Ryuu cookie saved — import one in Settings to download Ryuu manifests.",
@@ -430,6 +431,7 @@ const strings: Record<Lang, Record<string, string>> = {
   "pt-BR": {
     // GameList
     addGame: "Adicionar Jogo",
+    addGameAction: "Adicionar jogo",
     headerSubtitle: "Gerenciador",
     addByAppId: "Por AppID",
     addByName: "Por nome",
@@ -625,8 +627,8 @@ const strings: Record<Lang, Record<string, string>> = {
     credRyuuNone: "Nenhum cookie Ryuu salvo",
     credRyuuUnknown: "Cookie Ryuu salvo (validade desconhecida)",
     // Validade das credenciais — avisos no momento do download (só ao adicionar um jogo)
-    dlWarnHubcapExpired: "⚠ Chave Hubcap expirada — regenere-a nas Configurações antes de baixar.",
-    dlWarnHubcapNone: "⚠ Nenhuma chave Hubcap salva — adicione uma nas Configurações para baixar manifests do Hubcap.",
+    dlWarnHubcapExpired: "Chave Hubcap expirada — regenere-a nas Configurações antes de baixar.",
+    dlWarnHubcapNone: "Nenhuma chave Hubcap salva — adicione uma nas Configurações para baixar manifests do Hubcap.",
     fixCredentials: "Configurar chave de API",
     dlWarnRyuuExpired: "⚠ Cookie Ryuu expirado — reimporte-o nas Configurações antes de baixar.",
     dlWarnRyuuNone: "⚠ Nenhum cookie Ryuu salvo — importe um nas Configurações para baixar manifests do Ryuu.",

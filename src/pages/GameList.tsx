@@ -8,6 +8,7 @@ import {
   Focusable,
   DialogButton,
   Field,
+  ProgressBarWithInfo,
 } from "@decky/ui";
 import { GameInfo } from "../components/GameCard";
 import {
@@ -913,7 +914,7 @@ export function GameList() {
         )}
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleAddGame}>
-            {t("downloadManifest")}
+            {t("addGameAction")}
           </ButtonItem>
         </PanelSectionRow>
         {addStatus && (
@@ -932,31 +933,19 @@ export function GameList() {
                 {addStatus}
               </div>
               {(activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <div style={{ height: "6px", background: "rgba(255,255,255,0.1)", borderRadius: "3px", overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%",
-                      width: `${downloadPct}%`,
-                      background: "linear-gradient(90deg, #1a9fff, #00cc00)",
-                      borderRadius: "3px",
-                      transition: "width 0.4s ease",
-                    }} />
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#8b929a" }}>
-                    <span>
-                      {downloadBytes.total > 0
-                        ? `${(downloadBytes.read / 1073741824).toFixed(2)} / ${(downloadBytes.total / 1073741824).toFixed(2)} GB (${downloadPct}%)`
-                        : `${downloadPct}%`}
-                    </span>
-                    {downloadSpeed > 0 && (
-                      <span style={{ color: "#00cc00" }}>
-                        {downloadSpeed >= 1048576
+                <ProgressBarWithInfo
+                  nProgress={downloadPct}
+                  sOperationText={
+                    (downloadBytes.total > 0
+                      ? `${(downloadBytes.read / 1073741824).toFixed(2)} / ${(downloadBytes.total / 1073741824).toFixed(2)} GB`
+                      : "") +
+                    (downloadSpeed > 0
+                      ? `  ·  ${downloadSpeed >= 1048576
                           ? `${(downloadSpeed / 1048576).toFixed(1)} MB/s`
-                          : `${Math.round(downloadSpeed / 1024)} KB/s`}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                          : `${Math.round(downloadSpeed / 1024)} KB/s`}`
+                      : "")
+                  }
+                />
               )}
             </div>
           </PanelSectionRow>

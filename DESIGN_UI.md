@@ -280,6 +280,24 @@ lagging component still supports it.
   Add Game — `components/Notice.tsx` is deleted (no remaining users).
 - **Scope decision:** only the **Hubcap API key** warning is surfaced here; Ryuu
   is intentionally dropped (not relevant to adding a game).
+- **No double ⚠:** the warning text dropped its leading "⚠ " now that the row
+  carries an icon.
+
+### 4d. Add Game — action button + download progress — ✅ built
+
+- **Button:** renamed "Download Manifest" → **"Add game"** (`addGameAction`) —
+  plain language; the user is adding a game, not downloading a "manifest". The
+  `downloadManifest` key stays for the Downloads page's manual button.
+- **Progress:** the hand-drawn gradient bar + bytes/speed row → native
+  **`ProgressBarWithInfo`** (`nProgress` = percent, `sOperationText` =
+  "read / total GB · speed"). Note the `ProgressBar` in `components/ProgressBar.tsx`
+  used by the Downloads page is *also* custom — the real native bar is
+  `ProgressBarWithInfo` from `@decky/ui` (Downloads can migrate later).
+- **Native or custom:** 🟢 native progress. The `addStatus` line stays a small
+  status text (green/red) above the bar.
+
+**Add Game is now box-free:** native tab toggle, label-less fields, info as a
+`Field`, alerts as native rows, native progress bar.
 
 ---
 
