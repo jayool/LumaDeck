@@ -266,6 +266,21 @@ lagging component still supports it.
   `description` ReactNode that can colour the meaningful bits). Reach for a
   custom box only when the colour-coded *badge shape* itself is essential.
 
+### 4c. Add Game — alerts (game notices / credentials) — ✅ built
+
+- **What:** notices about the game being added, and a credential warning shown
+  at add-time.
+- **How shown (native rows, same as Health §3):**
+  - **Game notices** (info, no action) → one display-only **`Field`** per note,
+    ⚠ gold (`#c8a84b`) icon, the note as the label.
+  - **Credential warning** (fixable in Settings) → an actionable **`ButtonItem`**
+    "Configure API key" → `Navigation.Navigate(ROUTE_SETTINGS)`, the warning as
+    `description`, ⚠ icon in the warning colour. (Health tier-2 pattern.)
+- **Native or custom:** 🟢 native. Removes the last custom `Notice` cards from
+  Add Game — `components/Notice.tsx` is deleted (no remaining users).
+- **Scope decision:** only the **Hubcap API key** warning is surfaced here; Ryuu
+  is intentionally dropped (not relevant to adding a game).
+
 ---
 
 ## Principles (emerging)

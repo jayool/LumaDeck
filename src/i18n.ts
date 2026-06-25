@@ -209,6 +209,7 @@ const strings: Record<Lang, Record<string, string>> = {
     // Credential expiry — download-time warnings (only when adding a game)
     dlWarnHubcapExpired: "⚠ Hubcap key expired — regenerate it in Settings before downloading.",
     dlWarnHubcapNone: "⚠ No Hubcap key saved — add one in Settings to download Hubcap manifests.",
+    fixCredentials: "Configure API key",
     dlWarnRyuuExpired: "⚠ Ryuu cookie expired — re-import it in Settings before downloading.",
     dlWarnRyuuNone: "⚠ No Ryuu cookie saved — import one in Settings to download Ryuu manifests.",
     apis: "APIs",
@@ -626,6 +627,7 @@ const strings: Record<Lang, Record<string, string>> = {
     // Validade das credenciais — avisos no momento do download (só ao adicionar um jogo)
     dlWarnHubcapExpired: "⚠ Chave Hubcap expirada — regenere-a nas Configurações antes de baixar.",
     dlWarnHubcapNone: "⚠ Nenhuma chave Hubcap salva — adicione uma nas Configurações para baixar manifests do Hubcap.",
+    fixCredentials: "Configurar chave de API",
     dlWarnRyuuExpired: "⚠ Cookie Ryuu expirado — reimporte-o nas Configurações antes de baixar.",
     dlWarnRyuuNone: "⚠ Nenhum cookie Ryuu salvo — importe um nas Configurações para baixar manifests do Ryuu.",
     apis: "APIs",

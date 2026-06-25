@@ -39,10 +39,10 @@ import {
   reinjectInstalled,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
-import { Notice } from "../components/Notice";
+import { FaExclamationTriangle } from "react-icons/fa";
 import { HealthBanner, HealthProblem } from "../components/HealthBanner";
 import { UpdatesBanner, UpdateNotice } from "../components/UpdatesBanner";
-import { ROUTE_DOWNLOADS, ROUTE_LIBRARY } from "../routes";
+import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY } from "../routes";
 import { setRefreshHandler } from "../refresh";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
@@ -766,14 +766,13 @@ export function GameList() {
   // every QAM open is noise, hence the pendingGameInfo gate. "Expiring soon"
   // is deliberately excluded: the current download would still succeed, so it
   // lives only in the Settings status line.
+  // Only the Hubcap API key matters for adding a game; Ryuu is intentionally
+  // not surfaced here.
   const credWarnings: { key: string; text: string; color: string }[] = [];
   if (pendingGameInfo && cred) {
     const h = cred.hubcap;
-    const r = cred.ryuu;
     if (h?.state === "expired") credWarnings.push({ key: "h-exp", text: t("dlWarnHubcapExpired"), color: "#ff4444" });
     else if (h?.state === "none") credWarnings.push({ key: "h-none", text: t("dlWarnHubcapNone"), color: "#ffaa00" });
-    if (r?.state === "expired") credWarnings.push({ key: "r-exp", text: t("dlWarnRyuuExpired"), color: "#ff4444" });
-    else if (r?.state === "none") credWarnings.push({ key: "r-none", text: t("dlWarnRyuuNone"), color: "#ffaa00" });
   }
 
   return (
@@ -892,31 +891,25 @@ export function GameList() {
             </>
           );
         })()}
-        {pendingNotices.length > 0 && (
-          <Notice variant="warn" title={t("gameNoticesTitle")}>
-              {pendingNotices.map((notice, i) => (
-                <div key={i} style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "7px",
-                  fontSize: "12px",
-                  color: "#dcdedf",
-                  lineHeight: "1.45",
-                }}>
-                  <span style={{ color: "#c8a84b", flexShrink: 0, marginTop: "1px" }}>▸</span>
-                  <span>{notice}</span>
-                </div>
-              ))}
-          </Notice>
-        )}
+        {/* Game notices → display-only Field rows (one per note), ⚠ gold icon. */}
+        {pendingNotices.map((notice, i) => (
+          <PanelSectionRow key={`note-${i}`}>
+            <Field icon={<FaExclamationTriangle color="#c8a84b" />} label={notice} />
+          </PanelSectionRow>
+        ))}
+        {/* Credential warning → an actionable row: the fix lives in Settings ▸
+            Credentials, so navigate there (Health tier-2 pattern). Only Hubcap. */}
         {credWarnings.length > 0 && (
-          <Notice variant="danger">
-              {credWarnings.map((w) => (
-                <div key={w.key} style={{ fontSize: "12px", color: w.color, lineHeight: "1.45" }}>
-                  {w.text}
-                </div>
-              ))}
-          </Notice>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              icon={<FaExclamationTriangle color={credWarnings[0].color} />}
+              description={credWarnings[0].text}
+              onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
+            >
+              {t("fixCredentials")}
+            </ButtonItem>
+          </PanelSectionRow>
         )}
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleAddGame}>
