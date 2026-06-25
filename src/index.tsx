@@ -108,29 +108,24 @@ export default definePlugin(() => {
     // (Refresh + Settings). This is the idiomatic Decky slot for header
     // actions, so they don't need a hand-built row inside the panel content.
     titleView: (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          width: "100%",
-        }}
-      >
-        <div className={staticClasses.Title}>LumaDeck</div>
-        <Focusable
-          style={{ display: "flex", gap: "6px", marginLeft: "auto" }}
+      // Idiomatic single-Focusable title bar: the title takes the slack
+      // (flex:1) and pushes the icons to the right. Avoids the extra full-width
+      // wrapper div, which was abutting the native back button and drawing a
+      // dark seam on its right edge.
+      <Focusable style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%" }}>
+        <div className={staticClasses.Title} style={{ flex: 1 }}>
+          LumaDeck
+        </div>
+        <DialogButton style={headerIconStyle} onClick={() => requestRefresh()}>
+          <FaSync />
+        </DialogButton>
+        <DialogButton
+          style={headerIconStyle}
+          onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
         >
-          <DialogButton style={headerIconStyle} onClick={() => requestRefresh()}>
-            <FaSync />
-          </DialogButton>
-          <DialogButton
-            style={headerIconStyle}
-            onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-          >
-            <FaCog />
-          </DialogButton>
-        </Focusable>
-      </div>
+          <FaCog />
+        </DialogButton>
+      </Focusable>
     ),
     content: <GameList />,
     icon: <FaDownload />,

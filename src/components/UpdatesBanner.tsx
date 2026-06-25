@@ -1,4 +1,5 @@
-import { PanelSection } from "@decky/ui";
+import { PanelSection, PanelSectionRow, Field } from "@decky/ui";
+import { FaArrowCircleUp } from "react-icons/fa";
 
 // One row inside the banner — a short informational line about an available
 // update (no button, no body). Severity is "info" (blue): non-critical, not an
@@ -8,34 +9,22 @@ export type UpdateNotice = {
   text: string;
 };
 
-// A pale-blue banner with one line per available update. Lower visual weight
-// than HealthBanner — updates are routine, not problems. Renders nothing when
-// updates is empty.
+// Info accent — same idea as HealthBanner's ⚠ colour, but blue: updates are
+// routine, not problems. Severity rides on the icon, not a coloured box.
+const INFO = "#5b9eff";
+
+// Native update rows — one display-only Field per available update, mirroring
+// HealthBanner (no hand-built coloured card). Renders nothing when empty.
 export function UpdatesBanner({ updates }: { updates: UpdateNotice[] }) {
   if (updates.length === 0) return null;
 
   return (
     <PanelSection>
-      <div style={{
-        background: "rgba(91, 158, 255, 0.08)",
-        border: "1px solid rgba(91, 158, 255, 0.30)",
-        borderLeft: "3px solid #5b9eff",
-        borderRadius: "6px",
-        padding: "6px 10px",
-      }}>
-        {updates.map((u, i) => (
-          <div
-            key={u.key}
-            style={{
-              fontSize: "11px",
-              color: "#9cc4ff",
-              marginTop: i === 0 ? 0 : "4px",
-            }}
-          >
-            {u.text}
-          </div>
-        ))}
-      </div>
+      {updates.map((u) => (
+        <PanelSectionRow key={u.key}>
+          <Field icon={<FaArrowCircleUp color={INFO} />} label={u.text} />
+        </PanelSectionRow>
+      ))}
     </PanelSection>
   );
 }

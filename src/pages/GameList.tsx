@@ -823,16 +823,19 @@ export function GameList() {
 
       <PanelSection title={t("addGame")}>
         <PanelSectionRow>
-          <Focusable style={{ display: "flex", gap: "8px", width: "100%" }}>
+          <Focusable style={{ display: "flex", gap: "8px", width: "100%", marginBottom: "8px" }}>
+            {/* minWidth:0 lets the buttons shrink below their content min-width
+                — without it DialogButton's native min-width overflows the narrow
+                QAM and "By name" runs off the right edge. */}
             <DialogButton
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: 0 }}
               onClick={() => setAddMode("appid")}
               {...modeFocus("appid")}
             >
               {t("addByAppId")}
             </DialogButton>
             <DialogButton
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: 0 }}
               onClick={() => setAddMode("name")}
               {...modeFocus("name")}
             >
@@ -1012,11 +1015,12 @@ export function GameList() {
         )}
       </PanelSection>
 
-      {/* My Games lives on its own full-screen route now — the QAM only shows
-          a compact entry (one plain ButtonItem, like Downloads) so the panel
-          stays a lean launcher. No section title (would repeat the label) and
-          no count (the full-screen page owns the list; the QAM shouldn't carry
-          a number that costs a library load to display). */}
+      {/* Bottom navigation — My Games, the optional Sync-all shortcut, and
+          Downloads share ONE PanelSection. Each entry in its own section stacked
+          the sections' vertical padding into big empty gaps; one section with
+          rows gives the normal native row rhythm. My Games and Downloads each
+          live on their own full-screen route, so the QAM only carries compact
+          entries (no title, no count). */}
       <PanelSection>
         <PanelSectionRow>
           <ButtonItem
@@ -1026,39 +1030,35 @@ export function GameList() {
             {t("myGames")}
           </ButtonItem>
         </PanelSectionRow>
-      </PanelSection>
 
-      {slscheevoReady && (
-        <PanelSection>
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={handleSyncAllAchievements}
-              disabled={syncState?.status === "running"}
-            >
-              {syncState?.status === "running"
-                ? t("syncingAchievements")
-                : t("syncAllAchievements")}
-            </ButtonItem>
-          </PanelSectionRow>
-          {syncState?.status === "running" && (
+        {slscheevoReady && (
+          <>
             <PanelSectionRow>
-              <ProgressBarWithInfo
-                nProgress={
-                  syncState.total > 0
-                    ? Math.round((syncState.done / syncState.total) * 100)
-                    : 0
-                }
-                sOperationText={`${syncState.done || 0} / ${syncState.total || 0}`}
-              />
+              <ButtonItem
+                layout="below"
+                onClick={handleSyncAllAchievements}
+                disabled={syncState?.status === "running"}
+              >
+                {syncState?.status === "running"
+                  ? t("syncingAchievements")
+                  : t("syncAllAchievements")}
+              </ButtonItem>
             </PanelSectionRow>
-          )}
-        </PanelSection>
-      )}
+            {syncState?.status === "running" && (
+              <PanelSectionRow>
+                <ProgressBarWithInfo
+                  nProgress={
+                    syncState.total > 0
+                      ? Math.round((syncState.done / syncState.total) * 100)
+                      : 0
+                  }
+                  sOperationText={`${syncState.done || 0} / ${syncState.total || 0}`}
+                />
+              </PanelSectionRow>
+            )}
+          </>
+        )}
 
-      {/* Downloads lives at the very bottom as a plain button (the header only
-          carries Refresh + Settings now). */}
-      <PanelSection>
         <PanelSectionRow>
           <ButtonItem
             layout="below"
