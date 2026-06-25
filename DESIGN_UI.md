@@ -42,6 +42,40 @@ Principles are **derived** from these entries as patterns emerge (see
   allowed without `t()`. Title always uses `staticClasses.Title`; icon always
   from `react-icons/fa`.
 
+### 1. Utility actions (Refresh · Settings) — *always* — ✅ verified
+
+- **What:** the panel's utility actions. Decided home: the **native title bar**,
+  not a row inside the content.
+- **How shown:** via Decky's **`titleView`** (a custom JSX element in the
+  `Plugin` definition that replaces the default header title). In `index.tsx`:
+  brand `LumaDeck` (left) + a `Focusable` of two icon `DialogButton`s (right):
+  **Refresh** (`FaSync`) and **Settings** (`FaCog`).
+  - Refresh and the panel content (`GameList`) are separate React trees, so the
+    icon talks to the panel through a tiny bridge (`src/refresh.ts`):
+    `GameList` registers `loadGames` via `setRefreshHandler`; the icon calls
+    `requestRefresh()`.
+  - Settings just navigates: `Navigation.Navigate(ROUTE_SETTINGS)`.
+- **Native or custom:** 🟢 **Native slot** (`titleView`) with native
+  `DialogButton`s (size-only `headerIconStyle`, native focus kept). The
+  previous hand-built header row in `content` is **gone** — and with it the
+  glow-clipping fight and the "Game manager" subtitle.
+- **Rule:**
+  - Header actions go in **`titleView`**, never a custom row at the top of
+    `content`. Keep it to **1–2 icons** (the title bar is narrow).
+  - Title-bar icons use native `DialogButton` with **size-only** styling
+    (`headerIconStyle`); never override background/colour/focus.
+  - An action that must reach panel state crosses the tree via the
+    `src/refresh.ts` bridge pattern, not by lifting state into `index.tsx`.
+
+### 1b. Downloads entry — *always* — ✅ verified
+
+- **What:** entry point to the Downloads page.
+- **How shown:** a plain native `ButtonItem` in a trailing `PanelSection` at the
+  **very bottom** of the QAM → `Navigation.Navigate(ROUTE_DOWNLOADS)`.
+- **Native or custom:** 🟢 native `ButtonItem`.
+- **Rule:** secondary navigation that doesn't fit the 1–2 title-bar icons lives
+  as a labelled `ButtonItem`, bottom of the panel.
+
 ---
 
 ## Principles (emerging)

@@ -8,7 +8,6 @@ import {
   Focusable,
   DialogButton,
 } from "@decky/ui";
-import { FaCog, FaSync, FaDownload } from "react-icons/fa";
 import { GameInfo } from "../components/GameCard";
 import {
   getInstalledLuaScripts,
@@ -42,7 +41,8 @@ import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { Notice } from "../components/Notice";
 import { HealthBanner, HealthProblem } from "../components/HealthBanner";
 import { UpdatesBanner, UpdateNotice } from "../components/UpdatesBanner";
-import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY } from "../routes";
+import { ROUTE_DOWNLOADS, ROUTE_LIBRARY } from "../routes";
+import { setRefreshHandler } from "../refresh";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
 
@@ -298,6 +298,13 @@ export function GameList() {
       if (syncPollRef.current) clearInterval(syncPollRef.current);
     };
   }, []);
+
+  // Let the Refresh icon in the native title bar (index.tsx titleView) reload
+  // the panel, since it lives in a separate React tree.
+  useEffect(() => {
+    setRefreshHandler(loadGames);
+    return () => setRefreshHandler(null);
+  }, [loadGames]);
 
   useEffect(() => {
     loadGames();
@@ -570,20 +577,6 @@ export function GameList() {
     onGamepadBlur: () => setFocusedBtn(""),
   });
 
-  // Toolbar icon button — only constrain the size; leave background/colour to
-  // DialogButton so it keeps Steam's native focus (button turns white, the
-  // glyph goes dark) exactly like every other button. No custom styling.
-  const iconBtnStyle = {
-    minWidth: 0,
-    width: "40px",
-    height: "32px",
-    padding: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "16px",
-  };
-
   const handleRestartSteam = async () => {
     setRestartingStream(true);
     await restartSteam();
@@ -829,58 +822,6 @@ export function GameList() {
       {/* Top toolbar — light nav/utility actions as icons, right-aligned,
           so they sit at the top of the panel instead of stacking full-width
           buttons at the bottom. */}
-      {/* Header subtitle row — a Field with the plugin subtitle on the left and
-          the utility icons (Downloads/Refresh/Settings) right-aligned, with a
-          separator. Reads as "LumaDeck" (native title) + subtitle, and anchors
-          the icons in the panel's row rhythm instead of floating. Native
-          DialogButton focus is kept. */}
-      {/* Header: plugin subtitle (left) + utility icons (right). Built as a
-          plain full-width row instead of a Field — the Field's children column
-          constrained the icons on the sides, clipping the focused icon's glow
-          left/right (only top/bottom showed; padding inside it didn't help).
-          Here we own the whole row: generous horizontal padding + overflow
-          visible keep the glow clear of the panel's overflow-x clip, and a
-          bottom border re-creates the Field separator. */}
-      <PanelSection>
-        <PanelSectionRow>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              width: "100%",
-              boxSizing: "border-box",
-              padding: "6px 16px",
-              borderBottom: "1px solid rgba(255, 255, 255, 0.12)",
-              overflow: "visible",
-            }}
-          >
-            <span style={{ fontSize: "13px", color: "#dcdedf" }}>
-              {t("headerSubtitle")}
-            </span>
-            <Focusable
-              style={{ display: "flex", gap: "10px", overflow: "visible" }}
-            >
-              <DialogButton
-                onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
-                style={iconBtnStyle}
-              >
-                <FaDownload />
-              </DialogButton>
-              <DialogButton onClick={() => loadGames()} style={iconBtnStyle}>
-                <FaSync />
-              </DialogButton>
-              <DialogButton
-                onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-                style={iconBtnStyle}
-              >
-                <FaCog />
-              </DialogButton>
-            </Focusable>
-          </div>
-        </PanelSectionRow>
-      </PanelSection>
-
       {showQuickInstall && (
         <PanelSection title={t("quickInstallSectionTitle")}>
           <PanelSectionRow>
@@ -1213,6 +1154,19 @@ export function GameList() {
           </PanelSectionRow>
         </PanelSection>
       )}
+
+      {/* Downloads lives at the very bottom as a plain button (the header only
+          carries Refresh + Settings now). */}
+      <PanelSection>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
+          >
+            {t("downloads")}
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
     </>
   );
 }

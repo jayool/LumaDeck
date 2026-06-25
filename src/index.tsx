@@ -5,20 +5,38 @@ import {
   findInReactTree,
   createReactTreePatcher,
   appDetailsClasses,
+  Navigation,
+  Focusable,
+  DialogButton,
 } from "@decky/ui";
-import { FaDownload } from "react-icons/fa";
+import { FaDownload, FaSync, FaCog } from "react-icons/fa";
 import { GameList } from "./pages/GameList";
 import { GameDetail } from "./pages/GameDetail";
 import { Settings } from "./pages/Settings";
 import { Downloads } from "./pages/Downloads";
 import { Library } from "./pages/Library";
 import { AppPageButton } from "./components/AppPageButton";
+import { requestRefresh } from "./refresh";
 import {
   ROUTE_GAME_DETAIL,
   ROUTE_SETTINGS,
   ROUTE_DOWNLOADS,
   ROUTE_LIBRARY,
 } from "./routes";
+
+// Compact icon button for the native title bar (titleView). Only the size is
+// constrained; background/colour/focus stay native (Steam fills it white on
+// focus), matching every other DialogButton.
+const headerIconStyle = {
+  minWidth: 0,
+  width: "32px",
+  height: "28px",
+  padding: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "15px",
+};
 
 function patchLibraryApp() {
   return routerHook.addPatch("/library/app/:appid", (tree: any) => {
@@ -86,7 +104,34 @@ export default definePlugin(() => {
 
   return {
     name: "LumaDeck",
-    title: <div className={staticClasses.Title}>LumaDeck</div>,
+    // Custom native title bar: brand on the left, utility icons on the right
+    // (Refresh + Settings). This is the idiomatic Decky slot for header
+    // actions, so they don't need a hand-built row inside the panel content.
+    titleView: (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          width: "100%",
+        }}
+      >
+        <div className={staticClasses.Title}>LumaDeck</div>
+        <Focusable
+          style={{ display: "flex", gap: "6px", marginLeft: "auto" }}
+        >
+          <DialogButton style={headerIconStyle} onClick={() => requestRefresh()}>
+            <FaSync />
+          </DialogButton>
+          <DialogButton
+            style={headerIconStyle}
+            onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
+          >
+            <FaCog />
+          </DialogButton>
+        </Focusable>
+      </div>
+    ),
     content: <GameList />,
     icon: <FaDownload />,
     onDismount() {
