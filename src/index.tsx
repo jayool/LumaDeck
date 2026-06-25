@@ -113,7 +113,13 @@ export default definePlugin(() => {
       // wrapper div, which was abutting the native back button and drawing a
       // dark seam on its right edge.
       <Focusable style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%" }}>
-        <div className={staticClasses.Title} style={{ flex: 1 }}>
+        {/* maskImage:none kills the native title's left/right fade mask, which
+            was darkening the title's edges and reading as a dark seam on the
+            adjacent back/refresh buttons. */}
+        <div
+          className={staticClasses.Title}
+          style={{ flex: 1, maskImage: "none", WebkitMaskImage: "none" }}
+        >
           LumaDeck
         </div>
         <DialogButton style={headerIconStyle} onClick={() => requestRefresh()}>
