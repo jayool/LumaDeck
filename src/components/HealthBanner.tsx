@@ -1,97 +1,56 @@
-import { PanelSection } from "@decky/ui";
+import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
+import { FaExclamationTriangle } from "react-icons/fa";
 
-// One problem row inside the banner — title, body, and an optional action
-// (label + click handler). The parent decides which components are unhealthy
-// and what their action should do.
+// One unhealthy component, normalized to the native model (DESIGN_UI.md §3c):
+//   - label:       impact + component, e.g. "SLSsteam — games won't launch"
+//   - description: the plain-language cause / instruction
+//   - actionLabel + onAction PRESENT  → a ButtonItem (fixable from here)
+//   - actionLabel ABSENT              → a display-only Field (not fixable here;
+//                                       the instruction lives in description)
 export type HealthProblem = {
-  key: string;        // stable react key (component id)
-  title: string;
-  body: string;
+  key: string;
+  label: string;
+  description: string;
   actionLabel?: string;
   onAction?: () => void;
   actionDisabled?: boolean;
 };
 
-// A single orange banner that renders one row per problem. Same frame whether
-// there is one problem or several — keeps the QAM uncluttered while still
-// surfacing every unhealthy component with its specific cause and fix.
-//
-// Renders nothing when problems is empty (so callers can wire it
-// unconditionally and let the data decide).
-export function HealthBanner({
-  problems,
-  multiTitle,
-}: {
-  problems: HealthProblem[];
-  multiTitle: string;
-}) {
+// Warning accent — severity is carried by the ⚠ icon colour, not a coloured box.
+const WARN = "#ff8c00";
+
+// Native health rows: no coloured box, no hand-rolled button. Each component is
+// one native row. Renders nothing when there are no problems, so callers can
+// wire it unconditionally and let the data decide.
+export function HealthBanner({ problems }: { problems: HealthProblem[] }) {
   if (problems.length === 0) return null;
 
   return (
     <PanelSection>
-      <div style={{
-        background: "rgba(255, 140, 0, 0.1)",
-        border: "1px solid rgba(255, 140, 0, 0.4)",
-        borderLeft: "3px solid #ff8c00",
-        borderRadius: "6px",
-        padding: "10px 12px",
-      }}>
-        {problems.length > 1 && (
-          <div style={{
-            fontWeight: 600,
-            color: "#ffaa33",
-            fontSize: "13px",
-            marginBottom: "8px",
-          }}>
-            {multiTitle}
-          </div>
-        )}
-        {problems.map((p, i) => (
-          <div
-            key={p.key}
-            style={{
-              marginTop: i === 0 ? 0 : "12px",
-              paddingTop: i === 0 ? 0 : "10px",
-              borderTop: i === 0 ? "none" : "1px solid rgba(255, 140, 0, 0.25)",
-            }}
-          >
-            <div style={{
-              fontWeight: 600,
-              color: "#ffaa33",
-              fontSize: "13px",
-              marginBottom: "4px",
-            }}>
-              {p.title}
-            </div>
-            <div style={{
-              fontSize: "12px",
-              color: "#aaa",
-              marginBottom: p.actionLabel ? "10px" : "0",
-            }}>
-              {p.body}
-            </div>
-            {p.actionLabel && p.onAction && (
-              <button
-                onClick={p.onAction}
-                disabled={p.actionDisabled}
-                style={{
-                  background: p.actionDisabled ? "#555" : "#ff8c00",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "4px",
-                  padding: "6px 14px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  cursor: p.actionDisabled ? "default" : "pointer",
-                  width: "100%",
-                }}
-              >
-                {p.actionLabel}
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+      {problems.map((p) =>
+        p.actionLabel && p.onAction ? (
+          <PanelSectionRow key={p.key}>
+            <ButtonItem
+              layout="below"
+              icon={<FaExclamationTriangle color={WARN} />}
+              label={p.label}
+              description={p.description}
+              onClick={p.onAction}
+              disabled={p.actionDisabled}
+            >
+              {p.actionLabel}
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : (
+          <PanelSectionRow key={p.key}>
+            <Field
+              icon={<FaExclamationTriangle color={WARN} />}
+              label={p.label}
+              description={p.description}
+            />
+          </PanelSectionRow>
+        ),
+      )}
     </PanelSection>
   );
 }

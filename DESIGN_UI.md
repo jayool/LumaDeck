@@ -98,7 +98,7 @@ Principles are **derived** from these entries as patterns emerge (see
     **Step-based** progress is a text line; a `ProgressBar` is only for a real
     percentage.
 
-### 3. Health alerts — *conditional* — 🔧 direction fixed (not yet built)
+### 3. Health alerts — *conditional* — ✅ built (v0.3.33)
 
 - **What:** surfaces a broken / degraded **core component** (SLSsteam,
   lumalinux, CloudRedirect). One alert per unhealthy component. Only

@@ -32,10 +32,10 @@ import {
   checkStuckUpdates,
   getCredentialStatus,
   installLumalinux,
-  installCloudredirect,
   checkHeadcrabCompat,
   quickInstall,
   getQuickInstallStatus,
+  reinjectInstalled,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { Notice } from "../components/Notice";
@@ -126,7 +126,7 @@ export function GameList() {
   } | null>(null);
   const [restartingStream, setRestartingStream] = useState(false);
   const [reinstallingLL, setReinstallingLL] = useState(false);
-  const [reinstallingCR, setReinstallingCR] = useState(false);
+  const [repairingInjection, setRepairingInjection] = useState(false);
   const [quickInstalling, setQuickInstalling] = useState(false);
   const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
   const [quickProgress, setQuickProgress] = useState("");
@@ -599,16 +599,16 @@ export function GameList() {
     }
   };
 
-  const handleReinstallCloudredirect = async () => {
-    setReinstallingCR(true);
-    const result = await installCloudredirect();
-    setReinstallingCR(false);
+  // SLSsteam injection_missing repair: re-inject the whole INSTALLED set in
+  // order (reinject_installed). SLSsteam's installer runs headcrab, which
+  // regenerates steam.sh and wipes the others — so a single-component repair
+  // would break them (DESIGN_UI.md §3b). Restart Steam to load the result.
+  const handleRepairInjection = async () => {
+    setRepairingInjection(true);
+    const result = await reinjectInstalled();
+    setRepairingInjection(false);
     if (result.success) {
-      toast(t("crInstalled"), t("crInstalledBody"), 6000);
-      try {
-        const cr = await getCloudredirectHealth();
-        if (cr.state) setCrHealth(cr);
-      } catch { }
+      await restartSteam();
     } else {
       toast(t("toastError"), result.error || "", 4000);
     }
@@ -677,93 +677,70 @@ export function GameList() {
   // Translate each component's health into a HealthProblem row, or null when
   // healthy / not installed (the banner only surfaces actionable failures —
   // "not installed" belongs to the install flow in Settings, not here).
+  // Health rows, normalized per DESIGN_UI.md §3c. Each component collapses to
+  // one user-facing row: a Restart/Repair button when fixable from Game Mode,
+  // or a display-only "unsupported / sign-in" Field when the fix lives in
+  // Desktop. The backend's granular states (patterns/hash, hash_blocked/
+  // hooks_failed, broken cause) are kept for logs; here they fold into one
+  // "unsupported" message. The shared restart action label.
+  const restartAction = restartingStream ? t("restarting") : t("restartSteam");
+
   const slssProblem = ((): HealthProblem | null => {
-    if (!slssteamHealth) return null;
-    if (slssteamHealth.state === "healthy" || slssteamHealth.state === "not_installed") return null;
-    const body = (() => {
-      switch (slssteamHealth.state) {
-        case "not_active":        return t("slssBannerBodyNotActive");
-        case "injection_missing": return t("slssBannerBodyInjectionMissing");
-        case "broken":
-          return slssteamHealth.cause === "hash"
-            ? t("slssBannerBodyBrokenHash")
-            : t("slssBannerBodyBrokenPatterns");
-        default: return "";
-      }
-    })();
-    const isRestart = slssteamHealth.action === "restart";
-    return {
-      key: "slssteam",
-      title: t("slssBannerTitle"),
-      body,
-      actionLabel: isRestart
-        ? (restartingStream ? t("restarting") : t("slssBannerActionRestart"))
-        : undefined,  // repair states route through Settings (Headcrab + gamemode checks live there)
-      onAction: isRestart ? handleRestartSteam : undefined,
-      actionDisabled: isRestart ? restartingStream : false,
-    };
+    const s = slssteamHealth?.state;
+    if (!s || s === "healthy" || s === "not_installed") return null;
+    const label = t("healthImpactSlss");
+    if (s === "not_active")
+      return {
+        key: "slssteam", label, description: t("healthNotActive"),
+        actionLabel: restartAction, onAction: handleRestartSteam,
+        actionDisabled: restartingStream,
+      };
+    if (s === "injection_missing")
+      return {
+        key: "slssteam", label, description: t("healthNotInstalled"),
+        actionLabel: repairingInjection ? t("healthRepairing") : t("healthActionRepair"),
+        onAction: handleRepairInjection, actionDisabled: repairingInjection,
+      };
+    // broken (patterns/hash) → unsupported Steam version: Field, no button.
+    return { key: "slssteam", label, description: t("healthUnsupported") };
   })();
 
   const llProblem = ((): HealthProblem | null => {
-    if (!lumalinuxHealth) return null;
-    if (lumalinuxHealth.state === "healthy" || lumalinuxHealth.state === "not_installed") return null;
-    const body = (() => {
-      switch (lumalinuxHealth.state) {
-        case "not_active":    return t("llBannerBodyNotActive");
-        case "injection_missing": return t("llBannerBodyInjectionMissing");
-        case "hash_blocked":  return t("llBannerBodyHashBlocked");
-        case "hooks_failed":  return t("llBannerBodyHooksFailed", lumalinuxHealth.cause || "?");
-        default: return "";
-      }
-    })();
-    const isRestart = lumalinuxHealth.action === "restart";
-    return {
-      key: "lumalinux",
-      title: t("llBannerTitle"),
-      body,
-      actionLabel: isRestart
-        ? (restartingStream ? t("restarting") : t("llBannerActionRestart"))
-        : (reinstallingLL ? t("installingLL") : t("llBannerActionReinstall")),
-      onAction: isRestart ? handleRestartSteam : handleReinstallLumalinux,
-      actionDisabled: isRestart ? restartingStream : reinstallingLL,
-    };
+    const s = lumalinuxHealth?.state;
+    if (!s || s === "healthy" || s === "not_installed") return null;
+    const label = t("healthImpactLl");
+    if (s === "not_active")
+      return {
+        key: "lumalinux", label, description: t("healthNotActive"),
+        actionLabel: restartAction, onAction: handleRestartSteam,
+        actionDisabled: restartingStream,
+      };
+    if (s === "injection_missing")
+      return {
+        key: "lumalinux", label, description: t("healthNotInstalled"),
+        // patch-only installer — restores lumalinux's block, preserves the
+        // others; no full re-inject needed.
+        actionLabel: reinstallingLL ? t("installingLL") : t("healthActionRepair"),
+        onAction: handleReinstallLumalinux, actionDisabled: reinstallingLL,
+      };
+    // hash_blocked / hooks_failed → unsupported Steam version: Field, no button.
+    return { key: "lumalinux", label, description: t("healthUnsupported") };
   })();
 
-  // CloudRedirect rides in the HealthBanner for broken / not_active /
-  // not_authed. broken → Reinstall button (safe in gamemode, no downgrade
-  // involved). not_active → Restart Steam. not_authed → no button, the body
-  // tells the user to switch to Desktop and sign in. healthy / kill_switched
-  // / not_installed → silence at the banner level.
   const crProblem = ((): HealthProblem | null => {
-    if (!crHealth) return null;
-    if (
-      crHealth.state === "healthy" ||
-      crHealth.state === "not_installed" ||
-      crHealth.state === "kill_switched"
-    ) return null;
-    const body = (() => {
-      switch (crHealth.state) {
-        case "broken":     return t("crBannerBodyBroken");
-        case "not_active": return t("crBannerBodyNotActive");
-        case "not_authed": return t("crBannerBodyNotAuthed");
-        default: return "";
-      }
-    })();
-    const isRestart  = crHealth.action === "restart";
-    const isReinstall = crHealth.action === "reinstall";
-    return {
-      key: "cloudredirect",
-      title: t("crBannerTitle"),
-      body,
-      // not_authed has action="configure_desktop" → no button (the body says it all).
-      actionLabel: isRestart
-        ? (restartingStream ? t("restarting") : t("crBannerActionRestart"))
-        : isReinstall
-          ? (reinstallingCR ? t("installingCR") : t("crBannerActionReinstall"))
-          : undefined,
-      onAction: isRestart ? handleRestartSteam : isReinstall ? handleReinstallCloudredirect : undefined,
-      actionDisabled: isRestart ? restartingStream : isReinstall ? reinstallingCR : false,
-    };
+    const s = crHealth?.state;
+    if (!s || s === "healthy" || s === "not_installed" || s === "kill_switched") return null;
+    const label = t("healthImpactCr");
+    if (s === "not_active")
+      return {
+        key: "cloudredirect", label, description: t("healthNotActive"),
+        actionLabel: restartAction, onAction: handleRestartSteam,
+        actionDisabled: restartingStream,
+      };
+    if (s === "not_authed")
+      return { key: "cloudredirect", label, description: t("healthCrNotAuthed") };
+    // broken → unsupported Steam version: Field, no button.
+    return { key: "cloudredirect", label, description: t("healthUnsupported") };
   })();
 
   const healthProblems = [slssProblem, llProblem, crProblem].filter((p): p is HealthProblem => p !== null);
@@ -859,7 +836,7 @@ export function GameList() {
         </PanelSection>
       )}
 
-      <HealthBanner problems={healthProblems} multiTitle={t("healthBannerTitleMulti")} />
+      <HealthBanner problems={healthProblems} />
       <UpdatesBanner updates={updates} />
 
       <PanelSection title={t("addGame")}>
