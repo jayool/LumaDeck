@@ -167,6 +167,62 @@ doesn't wipe lumalinux, and (b) so lumalinux can chain onto CR's freshly
 re-added `LD_PRELOAD` (`sls:cr:lumalinux`). The backend's CR detection and the
 lumalinux script's preservation work together via this order.
 
+### 3c. Health text spec (normalized, beginner-friendly) — ✅ final
+
+The backend keeps its **granular** states (for logs/diagnostics). The **UI
+collapses** the "Steam too new" family into one `unsupported` message per
+component, because they share one cause and one fix.
+
+**Why `unsupported` is one state + one fix:** SLSsteam `patterns`/`hash` and
+lumalinux `hash_blocked`/`hooks_failed` and CloudRedirect `broken` all mean the
+same thing to the user — *Steam updated past what this component supports*. The
+fix is the same: **run enter-the-wired in Desktop**, which (via headcrab)
+downgrades Steam to the blessed stable build `1782257239` (2026-06-10). Verified
+that build is supported by all three: CloudRedirect lists it explicitly
+(`SUPPORTED_STEAM_VERSIONS`), it is SLSsteam's headcrab target by definition,
+and lumalinux's current hash set covers that era (shared `steamclient.so` hashes
+with SLSsteam). It downgrades to an *older stable* build, so even a slightly
+lagging component still supports it.
+
+**Render:** each row is `icon` ⚠ (`#ff8c00`) + `label` = *"[Component] —
+[impact]"* + `description` = the text below + the control. The component
+(technical name) stays, led by the plain-language impact.
+
+**SLSsteam** — impact: *"games won't launch"*
+
+| State (backend) | description | control |
+|---|---|---|
+| `not_active` | "Not active." | 🔘 **Restart Steam** |
+| `injection_missing` | "Not correctly installed." | 🔘 **Repair** → `reinjectInstalled` |
+| `unsupported` (= `broken` patterns/hash) | "Unsupported Steam version. Run enter-the-wired in Desktop." | 📄 Field |
+
+**lumalinux** — impact: *"downloads disabled (installed games OK)"*
+
+| State (backend) | description | control |
+|---|---|---|
+| `not_active` | "Not active." | 🔘 **Restart Steam** |
+| `injection_missing` | "Not correctly installed." | 🔘 **Repair** → `install_lumalinux` (patch-only, safe alone) |
+| `unsupported` (= `hash_blocked` / `hooks_failed`) | "Unsupported Steam version. Run enter-the-wired in Desktop." | 📄 Field |
+
+**CloudRedirect** — impact: *"cloud saves off"*
+
+| State (backend) | description | control |
+|---|---|---|
+| `not_active` | "Not active." | 🔘 **Restart Steam** |
+| `unsupported` (= `broken`) | "Unsupported Steam version. Run enter-the-wired in Desktop." | 📄 Field |
+| `not_authed` | "Sign in via the CloudRedirect app in Desktop." | 📄 Field |
+
+**Wiring notes:**
+- **Restart Steam** → `restart_steam` (clean `steam -shutdown`, GM auto-restarts).
+- **Repair** → SLSsteam: `reinjectInstalled` (its headcrab wipes the others, so
+  re-inject the whole installed set in order). lumalinux: `install_lumalinux`
+  alone (patch-only — restores its block, preserves the others; no need to touch
+  SLSsteam/CR).
+- **Field** rows are display-only (no button); the instruction is in the
+  `description`. `unsupported` and `not_authed` are Desktop-only.
+- Text drops jargon (`steam.sh`, hooks, patterns, hash, SafeMode) and the
+  `hooks_failed` `{0}` hook name (kept in logs only).
+
 ---
 
 ## Principles (emerging)
