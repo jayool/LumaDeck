@@ -447,6 +447,44 @@ The QAM is a launcher; space-hungry views live on their own routes
   guarded-but-dead). A built page wired to nothing is either routed or deleted —
   Help was rehomed.
 
+### 8. GameDetail — full-screen, 6-page `SidebarNavigation` — 🚧 in progress
+
+The per-game page (`ROUTE_GAME_DETAIL/:appid`). **`SidebarNavigation` is
+justified here** — it has six genuine sections: Status, Download, Game
+Management, Achievements, Fixes, Uninstall. Reviewed page by page.
+
+**`ActionButton` is fine (not custom chrome).** Used across the page, it's just a
+native `ButtonItem` with a colour-tinted label (`danger` red `#ff4444`,
+`primary` blue `#1a9fff`) — matches the "coloured text in a control slot"
+principle. Kept as-is.
+
+**Decided in advance (boxes, when we reach their pages):**
+- *Uninstall* red box → **native**: the destructive list becomes a `Field`
+  (label + `·` list in the description); severity is already carried by the red
+  `danger` button, the two-click confirm, and the page literally titled
+  "Uninstall". No hand-bordered box.
+- *SLScheevo path* code box → **simplify**: you can't copy it (Game Mode has no
+  clipboard to Konsole), so it's reference text, not a copy affordance. Keep a
+  legible monospace line, drop the dark bordered "code block" framing.
+
+#### 8a. Status page — ✅ built
+
+- **What:** read-only summary — AppID, install status (+ size), install path.
+- **Was:** three raw `<div>`s (`AppID: …`, `Status: …` coloured, the path).
+- **Now:** native `Field` rows —
+  - `Field label="AppID"` → value on the right (AppID is a technical literal used
+    across the codebase, not display prose, so no `t()` — consistent with
+    GameCard / search results).
+  - `Field label={t("gameStatus")}` → coloured status value as children
+    (green installed / amber manifest-only / grey not-installed, `+ size`), with
+    the **install path as the Field's `description`** sub-line (one Field does
+    both; no separate path `<div>`).
+- **Native or custom:** 🟢 native `Field`s; the only inline style left is the
+  status **colour** on the value `<span>` (a control-slot child, allowed).
+- **Rule:** read-only "label: value" info is a native `Field` (label + value
+  child), not a `Label: value` `<div>`. A secondary detail (a path) rides as the
+  Field `description` rather than spawning its own row.
+
 ---
 
 ## Principles (emerging)

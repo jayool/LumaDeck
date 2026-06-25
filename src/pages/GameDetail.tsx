@@ -5,6 +5,7 @@ import {
   ButtonItem,
   TextField,
   ToggleField,
+  Field,
   Navigation,
   SidebarNavigation,
 } from "@decky/ui";
@@ -672,39 +673,28 @@ export function GameDetail({ appid }: GameDetailProps) {
         <>
       <PanelSection title={gameName}>
         <PanelSectionRow>
-          <div style={{ fontSize: "13px", color: "#8b929a" }}>
-            AppID: {appid}
-          </div>
+          {/* AppID is a technical identifier, used as a literal across the
+              codebase (GameCard, search results) — not display prose. */}
+          <Field label="AppID">{appid}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <div
-            style={{
-              fontSize: "13px",
-              color: hasLua ? (installPath ? "#00cc00" : "#ffaa00") : "#666",
-            }}
-          >
-            Status:{" "}
-            {hasLua
-              ? installPath
-                ? t("installed")
-                : t("manifestOnly")
-              : t("notInstalled")}
-            {gameSize > 0 && ` — ${formatSize(gameSize)}`}
-          </div>
-        </PanelSectionRow>
-        {installPath && (
-          <PanelSectionRow>
-            <div
+          {/* Status value carries the state colour; the install path (when
+              present) rides along as the Field's muted description sub-line. */}
+          <Field label={t("gameStatus")} description={installPath || undefined}>
+            <span
               style={{
-                fontSize: "11px",
-                color: "#8b929a",
-                wordBreak: "break-all",
+                color: hasLua ? (installPath ? "#00cc00" : "#ffaa00") : "#666",
               }}
             >
-              {installPath}
-            </div>
-          </PanelSectionRow>
-        )}
+              {hasLua
+                ? installPath
+                  ? t("installed")
+                  : t("manifestOnly")
+                : t("notInstalled")}
+              {gameSize > 0 && ` — ${formatSize(gameSize)}`}
+            </span>
+          </Field>
+        </PanelSectionRow>
       </PanelSection>
         </>
       ),
