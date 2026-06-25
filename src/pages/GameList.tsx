@@ -1002,7 +1002,6 @@ export function GameList() {
           <div style={{ paddingBottom: hubcapFocused ? "280px" : "0px" }}>
         <PanelSectionRow>
           <TextField
-            label={t("gameName")}
             value={searchQuery}
             onChange={(e: any) => setSearchQuery(e?.target?.value ?? "")}
             onFocus={() => setHubcapFocused(true)}

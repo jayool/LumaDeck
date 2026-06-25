@@ -244,6 +244,9 @@ lagging component still supports it.
   needed.
 - **Verify on device:** returning *up* from the content should re-focus the
   active mode's button (Decky usually restores last focus within a `Focusable`).
+- **No field labels in Add Game:** the tab already names the mode ("By AppID" /
+  "By name"), so the AppID and search `TextField`s carry **no `label`** — it
+  would be redundant. The active tab is the field's context.
 
 ---
 
