@@ -7,6 +7,7 @@ import {
   Navigation,
   Focusable,
   DialogButton,
+  Field,
 } from "@decky/ui";
 import { GameInfo } from "../components/GameCard";
 import {
@@ -848,77 +849,49 @@ export function GameList() {
             onChange={(e: any) => setAddAppId(e?.target?.value ?? "")}
           />
         </PanelSectionRow>
-        {pendingGameInfo && (
-          <Notice variant="info">
-              {pendingGameInfo.name && (
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "#fff", lineHeight: "1.3" }}>
-                  {pendingGameInfo.name}
-                </div>
-              )}
-              {pendingGameInfo.developer && (
-                <div style={{ fontSize: "11px", color: "#8b929a" }}>
-                  {pendingGameInfo.developer}
-                  {pendingGameInfo.metacritic != null && (
-                    <span style={{
-                      marginLeft: "8px",
-                      background: pendingGameInfo.metacritic >= 75 ? "rgba(100,200,80,0.18)" : pendingGameInfo.metacritic >= 50 ? "rgba(200,168,75,0.18)" : "rgba(220,80,80,0.18)",
-                      color: pendingGameInfo.metacritic >= 75 ? "#7ed36f" : pendingGameInfo.metacritic >= 50 ? "#c8a84b" : "#e06060",
-                      borderRadius: "3px",
-                      padding: "1px 5px",
-                      fontSize: "10px",
-                      fontWeight: 700,
-                    }}>
-                      Metacritic: {pendingGameInfo.metacritic}
-                    </span>
-                  )}
-                </div>
-              )}
-              <div style={{ display: "flex", gap: "6px", marginTop: "2px", flexWrap: "wrap" }}>
-                {pendingGameInfo.platforms?.windows && (
-                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>Windows</span>
-                )}
-                {pendingGameInfo.platforms?.linux && (
-                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>Linux</span>
-                )}
-                {pendingGameInfo.platforms?.mac && (
-                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>macOS</span>
-                )}
-                {pendingGameInfo.achievements > 0 && (
-                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>
-                    {pendingGameInfo.achievements} {t("achievements")}
-                  </span>
-                )}
-                {pendingGameInfo.hasPtBR && (
-                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>PT-BR</span>
-                )}
-                {pendingGameInfo.sizeBytes > 0 && (
-                  <span style={{ fontSize: "10px", color: "#8b929a", background: "rgba(255,255,255,0.07)", borderRadius: "3px", padding: "1px 6px" }}>
-                    {pendingGameInfo.sizeBytes >= 1073741824
-                      ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
-                      : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`}
-                  </span>
-                )}
-                {pendingGameInfo.protondb && (
-                  <span style={{
-                    fontSize: "10px",
-                    fontWeight: 700,
-                    color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2",
-                    background: "rgba(255,255,255,0.07)",
-                    borderRadius: "3px",
-                    padding: "1px 6px",
-                  }}>
-                    ProtonDB: {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
-                  </span>
-                )}
-              </div>
+        {pendingGameInfo && (() => {
+          // Native Field instead of a custom card (DESIGN_UI.md §4b): name as the
+          // label, a trimmed "dev · size · Metacritic · ProtonDB" fact line as
+          // the description. The description is a ReactNode, so Metacritic and
+          // ProtonDB keep their colour as inline text. Platforms / achievement
+          // count / PT-BR move to GameDetail.
+          const mc: number | null = pendingGameInfo.metacritic;
+          const mcColor = mc == null ? "" : mc >= 75 ? "#7ed36f" : mc >= 50 ? "#c8a84b" : "#e06060";
+          const size = pendingGameInfo.sizeBytes > 0
+            ? (pendingGameInfo.sizeBytes >= 1073741824
+              ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
+              : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`)
+            : "";
+          const facts: any[] = [];
+          if (pendingGameInfo.developer) facts.push(pendingGameInfo.developer);
+          if (size) facts.push(size);
+          if (mc != null) facts.push(<span key="mc" style={{ color: mcColor }}>Metacritic {mc}</span>);
+          if (pendingGameInfo.protondb) facts.push(
+            <span key="proton" style={{ color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2" }}>
+              ProtonDB {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
+            </span>,
+          );
+          const desc = facts.flatMap((f, i) => (i === 0 ? [f] : [" · ", f]));
+          return (
+            <>
+              <PanelSectionRow>
+                <Field
+                  label={pendingGameInfo.name || `AppID ${addAppId}`}
+                  description={<span>{desc}</span>}
+                  bottomSeparator="standard"
+                />
+              </PanelSectionRow>
               {pendingGameInfo.achievements > 0 && !slscheevoReady && (
-                <div style={{ marginTop: "4px", fontSize: "11px", color: "#c8a84b", display: "flex", gap: "6px", alignItems: "flex-start" }}>
-                  <span style={{ flexShrink: 0 }}>⚡</span>
-                  <span>{t("slscheevoHint")}</span>
-                </div>
+                <PanelSectionRow>
+                  <div style={{ fontSize: "11px", color: "#c8a84b", display: "flex", gap: "6px", alignItems: "flex-start" }}>
+                    <span style={{ flexShrink: 0 }}>⚡</span>
+                    <span>{t("slscheevoHint")}</span>
+                  </div>
+                </PanelSectionRow>
               )}
-          </Notice>
-        )}
+            </>
+          );
+        })()}
         {pendingNotices.length > 0 && (
           <Notice variant="warn" title={t("gameNoticesTitle")}>
               {pendingNotices.map((notice, i) => (

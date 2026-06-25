@@ -248,6 +248,24 @@ lagging component still supports it.
   "By name"), so the AppID and search `TextField`s carry **no `label`** — it
   would be redundant. The active tab is the field's context.
 
+### 4b. Add Game — game info preview — ✅ built
+
+- **What:** the preview shown after a valid AppID — confirms which game you're
+  about to add.
+- **How shown:** a native **`Field`**: `label` = game name, `description` = a
+  trimmed fact line *"dev · size · Metacritic NN · ProtonDB Tier"*. The
+  description is a `ReactNode`, so Metacritic and ProtonDB keep their **colour as
+  inline text**. `bottomSeparator="standard"`. The slscheevo achievements hint
+  stays as a small gold line below.
+- **Native or custom:** 🟢 native `Field`. Replaces the custom `Notice` card +
+  hand-made badge pills. The only thing dropped is the card box and the grey
+  pills — info is preserved (colour included), and platforms / achievement count
+  / PT-BR move to GameDetail.
+- **Rule:** a colored badge/pill has no native equivalent, but most "rich card"
+  content reduces to a native `Field` (name = label, facts = a `·`-joined
+  `description` ReactNode that can colour the meaningful bits). Reach for a
+  custom box only when the colour-coded *badge shape* itself is essential.
+
 ---
 
 ## Principles (emerging)
