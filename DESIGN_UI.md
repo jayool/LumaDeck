@@ -151,6 +151,22 @@ have). Wire SLSsteam `injection_missing` and CloudRedirect `broken` to it.
 `restart` (no `steam.sh` change) and `install_lumalinux` (patch-only) are safe
 standalone and stay as-is.
 
+**What `injection_missing`'s repair does, concretely** — `reinject_installed()`:
+re-runs SLSsteam (`install_dependencies`) **if installed**, then CloudRedirect
+(`install_cloudredirect`) **if installed** (omitted otherwise), then lumalinux
+(`install_lumalinux`) **if installed**, in that order — rebuilding a correct
+shared `steam.sh`. Each step is gated on `check_*_installed()`, so it only ever
+re-injects what the user already had; it never installs a new component.
+
+**`steam.sh` ordering has two reasons, not one.** lumalinux's `install.sh`
+*preserves* CloudRedirect's `LD_PRELOAD` (it appends `cloud_redirect.so` rather
+than clobbering it) — but only if CR's block is already in `steam.sh` when
+lumalinux runs. It **preserves, it does not resurrect** a wiped CR block. So
+lumalinux must run after CloudRedirect both (a) so headcrab's regeneration
+doesn't wipe lumalinux, and (b) so lumalinux can chain onto CR's freshly
+re-added `LD_PRELOAD` (`sls:cr:lumalinux`). The backend's CR detection and the
+lumalinux script's preservation work together via this order.
+
 ---
 
 ## Principles (emerging)
