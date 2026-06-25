@@ -677,24 +677,22 @@ export function GameDetail({ appid }: GameDetailProps) {
               codebase (GameCard, search results) — not display prose. */}
           <Field label="AppID">{appid}</Field>
         </PanelSectionRow>
-        <PanelSectionRow>
-          {/* Status value carries the state colour; the install path (when
-              present) rides along as the Field's muted description sub-line. */}
-          <Field label={t("gameStatus")} description={installPath || undefined}>
-            <span
-              style={{
-                color: hasLua ? (installPath ? "#00cc00" : "#ffaa00") : "#666",
-              }}
-            >
-              {hasLua
-                ? installPath
-                  ? t("installed")
-                  : t("manifestOnly")
-                : t("notInstalled")}
-              {gameSize > 0 && ` — ${formatSize(gameSize)}`}
-            </span>
-          </Field>
-        </PanelSectionRow>
+        {/* Status only renders while the game still has a lua config. Every
+            game reachable here has one (you arrive from My Games); the only
+            time hasLua is false is the ~1.5s flash after Uninstall before the
+            page navigates back — so there's no "not installed" state to show. */}
+        {hasLua && (
+          <PanelSectionRow>
+            {/* Status value carries the state colour; the install path (when
+                present) rides along as the Field's muted description sub-line. */}
+            <Field label={t("gameStatus")} description={installPath || undefined}>
+              <span style={{ color: installPath ? "#00cc00" : "#ffaa00" }}>
+                {installPath ? t("installed") : t("manifestOnly")}
+                {gameSize > 0 && ` — ${formatSize(gameSize)}`}
+              </span>
+            </Field>
+          </PanelSectionRow>
+        )}
       </PanelSection>
         </>
       ),

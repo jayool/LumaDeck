@@ -479,11 +479,20 @@ principle. Kept as-is.
     (green installed / amber manifest-only / grey not-installed, `+ size`), with
     the **install path as the Field's `description`** sub-line (one Field does
     both; no separate path `<div>`).
+- **"Not installed" state removed.** It required `hasLua === false`, but every
+  game reachable here arrives from My Games (which only lists lua-managed games),
+  so `hasLua` is always true on entry — the only false instant is the ~1.5s flash
+  after Uninstall before `NavigateBack()`. So the status row is gated on `hasLua`
+  (hidden in that flash) and collapses to two real states: **Installed** (green,
+  has files) / **Manifest only** (amber, config but no files). Dropped the
+  `notInstalled` i18n key. (Same "delete the unreachable state" call as
+  GameCard's grey *Pending*.)
 - **Native or custom:** 🟢 native `Field`s; the only inline style left is the
   status **colour** on the value `<span>` (a control-slot child, allowed).
 - **Rule:** read-only "label: value" info is a native `Field` (label + value
   child), not a `Label: value` `<div>`. A secondary detail (a path) rides as the
-  Field `description` rather than spawning its own row.
+  Field `description` rather than spawning its own row. Don't render states the
+  navigation can't reach.
 
 ---
 
