@@ -327,6 +327,34 @@ lagging component still supports it.
 `Field`, alerts as native rows, native progress bar, and a native
 `PanelSection`-titled results list (no count `<div>`s).
 
+### 5. My Games — QAM entry — ✅ built
+
+- **What:** the entry point to the full-screen library. My Games **lives on its
+  own route** (`ROUTE_LIBRARY`, `Library.tsx`) — the QAM only shows a compact
+  launcher entry, not the list.
+- **How shown:** a single plain native `ButtonItem` in a **title-less**
+  `PanelSection` → `Navigation.Navigate(ROUTE_LIBRARY)`. Same shape as the
+  Downloads entry (§1b).
+- **Removed:**
+  - The `PanelSection title="My Games"` **and** the button label `"My Games"`
+    were the *same word stacked twice* (section header + control). Dropped the
+    title; the button label carries the name.
+  - The manual `" → "` glyph in the label — an arrow typed into the string is
+    not a native affordance. A navigating `ButtonItem` needs no arrow; if a
+    "goes to a page" hint is ever wanted it's a native `icon`, not a character.
+  - The `(N)` count — the full-screen page owns the list, and a count in the QAM
+    costs a **full library load** just to render a number. Label is now just
+    `t("myGames")`.
+- **Native or custom:** 🟢 native `ButtonItem`, no title, no glyph, no count.
+- **Known follow-up (not this section):** the panel **still** loads the whole
+  library on mount, because the Sync-all-achievements button (§6) consumes
+  `games`. So removing the count did *not* yet make the panel lazy — that only
+  lands when §6 is reworked. Documented honestly rather than claimed as a win.
+- **Rule:** a navigation entry is **one** plain `ButtonItem`; the label names the
+  destination. Never repeat the destination in a section title above it, never
+  type arrows into labels, and never put a value in the QAM that forces a data
+  load purely to display it.
+
 ---
 
 ## Principles (emerging)

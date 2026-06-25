@@ -1013,16 +1013,17 @@ export function GameList() {
       </PanelSection>
 
       {/* My Games lives on its own full-screen route now — the QAM only shows
-          a compact entry so the panel stays a lean launcher. */}
-      <PanelSection title={t("myGames")}>
+          a compact entry (one plain ButtonItem, like Downloads) so the panel
+          stays a lean launcher. No section title (would repeat the label) and
+          no count (the full-screen page owns the list; the QAM shouldn't carry
+          a number that costs a library load to display). */}
+      <PanelSection>
         <PanelSectionRow>
           <ButtonItem
             layout="below"
             onClick={() => Navigation.Navigate(ROUTE_LIBRARY)}
           >
-            {loading
-              ? t("loadingGames")
-              : `${t("myGames")} (${games.length}) →`}
+            {t("myGames")}
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
