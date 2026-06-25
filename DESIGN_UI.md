@@ -76,12 +76,47 @@ Principles are **derived** from these entries as patterns emerge (see
 - **Rule:** secondary navigation that doesn't fit the 1–2 title-bar icons lives
   as a labelled `ButtonItem`, bottom of the panel.
 
+### 2. Quick Install (onboarding) — *conditional* — ✅ verified
+
+- **What:** the first-run setup entry. Renders **only** when SLSsteam **and**
+  CloudRedirect **and** lumalinux are all `not_installed` and headcrab is
+  compatible — i.e. a fresh, unconfigured install. It self-hides the moment any
+  component is installed (repair/reinstall then lives in Settings).
+- **How shown:** `PanelSection title` (i18n) with three rows: an intro text
+  `<div>`, a `ButtonItem` (two-click confirm), and a progress text `<div>`
+  shown while installing.
+- **Native or custom:** 🟢 native skeleton. The two text rows are raw `<div>`s
+  (🔴, but unavoidable — Decky has no text primitive) and they already follow
+  the tokens: intro `12px #8b929a`, progress `11px #1a9fff`.
+- **Rule:**
+  - Onboarding only relevant on a fresh install is **gated on health state**
+    and self-hides once configured.
+  - Install / destructive actions use the **two-click confirm**: a
+    `confirm<Action>` state arms the button (relabel + `description` prompt),
+    second press executes.
+  - Body text is a plain `<div>` in a `PanelSectionRow` using the text tokens.
+    **Step-based** progress is a text line; a `ProgressBar` is only for a real
+    percentage.
+
 ---
 
 ## Principles (emerging)
 
 - The brand string `"LumaDeck"` is the only hard-coded display literal; every
-  other user-facing string goes through `t()`.
+  other user-facing string goes through `t()`, added to **both** `en` and
+  `pt-BR`.
 - Icons come from `react-icons/fa` only.
+- **Header actions** live in the native `titleView` (1–2 icons), not a custom
+  row in `content`. Native `DialogButton`, size-only styling, native focus.
+- **Text tokens observed so far** (inline hex, no CSS framework):
+  | Role | Value |
+  |---|---|
+  | Primary text | `#dcdedf` |
+  | Secondary / muted | `#8b929a` |
+  | Accent / progress | `#1a9fff` |
+  - Sizes: `12px` standard body, `11px` secondary sub-line.
+- **Two-click confirm** is the standard for install/destructive actions
+  (`confirm<Action>` state + `ButtonItem` `description`).
+- Raw `<div>`s for text are expected (no native text component); keep them on
+  the tokens above rather than inventing new colours/sizes.
 
-*(More principles will be added as we verify each element.)*
