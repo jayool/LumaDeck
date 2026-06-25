@@ -987,18 +987,7 @@ export function GameList() {
           </PanelSectionRow>
         )}
         {searchResults.length > 0 && (
-          <>
-            <PanelSectionRow>
-              <div
-                style={{
-                  fontSize: "11px",
-                  color: "#8b929a",
-                  textAlign: "center",
-                }}
-              >
-                {searchResults.length} {t("results")}
-              </div>
-            </PanelSectionRow>
+          <PanelSection title={`${searchResults.length} ${t("results")}`}>
             {searchResults.slice(0, showMoreResults ? 15 : 5).map((r: SearchResult) => (
               <PanelSectionRow key={r.appid}>
                 <ButtonItem
@@ -1017,20 +1006,7 @@ export function GameList() {
                 </ButtonItem>
               </PanelSectionRow>
             )}
-            {searchResults.length > 15 && showMoreResults && (
-              <PanelSectionRow>
-                <div
-                  style={{
-                    fontSize: "11px",
-                    color: "#8b929a",
-                    textAlign: "center",
-                  }}
-                >
-                  +{searchResults.length - 15} {t("moreResults")}
-                </div>
-              </PanelSectionRow>
-            )}
-          </>
+          </PanelSection>
         )}
           </div>
         )}

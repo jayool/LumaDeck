@@ -296,8 +296,36 @@ lagging component still supports it.
 - **Native or custom:** 🟢 native progress. The `addStatus` line stays a small
   status text (green/red) above the bar.
 
+### 4e. Add Game — "By name" search & results — ✅ built
+
+- **What:** the name-search path: a search field, a search button, and the
+  results list (with a "Show More" affordance).
+- **How shown:**
+  - Search field → native `TextField` (no label, per §4). Search button →
+    native `ButtonItem`.
+  - **Results header** → the count is now the **`title` of a nested
+    `PanelSection`** (`"12 results"`), i.e. the native Steam section header —
+    not a hand-made `<div>`. Each result is a native `ButtonItem` (`label` =
+    name, `description` = `AppID: …`).
+  - **Show More** → native `ButtonItem` (`+N`), capping the visible list at
+    5 → 15.
+- **Removed (were raw `<div>`s, never native):**
+  - The `"N results — tap to select"` caption `<div>` → folded into the
+    `PanelSection title` (just the count; "tap to select" was redundant with the
+    button list). `results` i18n trimmed to `"results"`.
+  - The `"+N more — refine your search"` footer `<div>` → **deleted** outright
+    (once expanded to 15 it was noise). `moreResults` key removed.
+- **Native or custom:** 🟢 the "By name" path is now `<div>`-free for counts:
+  native section header + native result/Show-More buttons.
+- **Honest note on tokens vs native:** a `<div>` on the right colour token is
+  *still custom* — "on-token" ≠ "native". The only fully-native home for a count
+  label is a control slot (`PanelSection title` here); free-floating status text
+  (`searchError`, `addStatus`) stays a raw `<div>` because Decky has no text
+  primitive — that's the documented, unavoidable exception, marked 🔴, not 🟢.
+
 **Add Game is now box-free:** native tab toggle, label-less fields, info as a
-`Field`, alerts as native rows, native progress bar.
+`Field`, alerts as native rows, native progress bar, and a native
+`PanelSection`-titled results list (no count `<div>`s).
 
 ---
 
@@ -319,7 +347,12 @@ lagging component still supports it.
 - **Two-click confirm** is the standard for install/destructive actions
   (`confirm<Action>` state + `ButtonItem` `description`).
 - Raw `<div>`s for text are expected (no native text component); keep them on
-  the tokens above rather than inventing new colours/sizes.
+  the tokens above rather than inventing new colours/sizes. **But "on-token" is
+  not "native":** a styled `<div>` is still 🔴 custom. Before accepting one, ask
+  whether the text is really a *label* — counts, captions and section headers
+  belong in a native control slot (`PanelSection title`, `Field` label, button
+  `description`). Only genuinely free-floating status text (`searchError`,
+  `addStatus`, install progress) has no native home and stays a `<div>`.
 - **Alerts map to native controls by nature**, not one colored box: actionable
   → `ButtonItem` (message in `description`, action in the label); pure info →
   `Field` (`icon` + `label`/`description`); only genuinely rich content (a
