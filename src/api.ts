@@ -374,3 +374,10 @@ export const quickInstall = async () =>
 
 export const getQuickInstallStatus = async () =>
   parseResult(await call<[], string>("get_quick_install_status"));
+
+// Re-inject every INSTALLED component into steam.sh in dependency order
+// (SLSsteam → CloudRedirect → lumalinux). Used to repair injection without the
+// shared-steam.sh cascade wiping the other components. Poll
+// getQuickInstallStatus() for progress (it shares the same state).
+export const reinjectInstalled = async () =>
+  parseResult(await call<[], string>("reinject_installed"));

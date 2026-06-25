@@ -959,3 +959,73 @@ def get_quick_install_status() -> dict:
             if sub.get("status") == "failed" and sub.get("error"):
                 state["error"] = sub["error"]
     return state
+
+
+async def reinject_installed() -> dict:
+    """Re-inject every INSTALLED component into steam.sh, in dependency order.
+
+    steam.sh is shared: SLSsteam, CloudRedirect and lumalinux each inject a
+    block. The SLSsteam installer (install_dependencies) and the CloudRedirect
+    installer both run headcrab, which REGENERATES steam.sh from scratch —
+    wiping the other components' blocks. install_lumalinux only patches
+    (idempotent), so it never wipes the others and must run LAST to survive the
+    headcrab regenerations.
+
+    Repairing one component's injection with a single installer therefore
+    silently breaks the others. This re-runs the installers for the components
+    that are actually installed, in order SLSsteam -> CloudRedirect -> lumalinux.
+    It never installs a component the user doesn't have.
+
+    Used to repair SLSsteam `injection_missing` and CloudRedirect `broken` (any
+    repair that runs headcrab). Shares QUICK_INSTALL_STATE so the frontend polls
+    the same get_quick_install_status().
+    """
+    global QUICK_INSTALL_STATE
+
+    steps = []
+    if check_slssteam_installed():
+        steps.append(("dependencies", install_dependencies, get_install_status))
+    if check_cloudredirect_installed():
+        steps.append(("cloudredirect", install_cloudredirect, get_cr_install_status))
+    if check_lumalinux_installed():
+        steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
+
+    if not steps:
+        return {"success": True, "skipped": "nothing installed"}
+
+    QUICK_INSTALL_STATE = {
+        "status": "installing",
+        "step": steps[0][0],
+        "stepIndex": 0,
+        "totalSteps": len(steps),
+        "progress": "Starting re-injection...",
+        "error": None,
+    }
+    logger.info("LumaDeck: reinject_installed() entered (%d steps)", len(steps))
+
+    for i, (name, runner, status_getter) in enumerate(steps):
+        QUICK_INSTALL_STATE["step"] = name
+        QUICK_INSTALL_STATE["stepIndex"] = i
+        QUICK_INSTALL_STATE["progress"] = f"Re-injecting {name} ({i + 1}/{len(steps)})..."
+        logger.info("LumaDeck: reinject step %d/%d: %s", i + 1, len(steps), name)
+        try:
+            result = await runner()
+        except Exception as exc:
+            logger.exception("LumaDeck: reinject step %s crashed: %s", name, exc)
+            QUICK_INSTALL_STATE["status"] = "failed"
+            QUICK_INSTALL_STATE["error"] = f"{name} crashed: {exc}"
+            return {"success": False, "failedStep": name}
+
+        if not (isinstance(result, dict) and result.get("success")):
+            sub = status_getter()
+            QUICK_INSTALL_STATE["status"] = "failed"
+            QUICK_INSTALL_STATE["error"] = sub.get("error") or f"{name} failed"
+            QUICK_INSTALL_STATE["progress"] = sub.get("progress", "")
+            logger.error("LumaDeck: reinject failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
+            return {"success": False, "failedStep": name}
+
+    QUICK_INSTALL_STATE["status"] = "done"
+    QUICK_INSTALL_STATE["stepIndex"] = len(steps)
+    QUICK_INSTALL_STATE["progress"] = "Re-injection complete!"
+    logger.info("LumaDeck: reinject_installed finished OK")
+    return {"success": True}

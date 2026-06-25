@@ -125,6 +125,32 @@ Principles are **derived** from these entries as patterns emerge (see
   unactionable alert is a `Field` (info + instructions), not a fake button. The
   exact actionable/not split per state is the table below.
 
+### 3b. Repair architecture — the shared `steam.sh` cascade — ⚠️ correctness
+
+`steam.sh` is **shared**: SLSsteam, CloudRedirect and lumalinux each inject a
+block into it. Both the SLSsteam installer (`install_dependencies`) and the
+CloudRedirect installer (`install_cloudredirect`) run **headcrab**, which
+**regenerates `steam.sh` from scratch** — wiping the *other* components' blocks.
+`install_lumalinux` is the exception: it only *patches* (idempotent), so it
+never wipes the others, and it must run **last** so its block survives the
+headcrab regenerations.
+
+Consequence — a per-component repair that runs headcrab **silently breaks the
+others**:
+
+- SLSsteam `injection_missing` repaired with `install_dependencies` alone →
+  re-injects SLSsteam but **wipes CloudRedirect + lumalinux**.
+- CloudRedirect `broken` repaired with `install_cloudredirect` alone →
+  re-injects SLSsteam (headcrab) + CR but **wipes lumalinux**.
+
+**Rule:** any repair that runs headcrab must **re-inject every *installed*
+component, in order `SLSsteam → CloudRedirect → lumalinux`** — not a single
+installer. This is a dedicated routine, `reinject_installed()` (= `quick_install`
+gated on `check_*_installed()`; never installs a component the user doesn't
+have). Wire SLSsteam `injection_missing` and CloudRedirect `broken` to it.
+`restart` (no `steam.sh` change) and `install_lumalinux` (patch-only) are safe
+standalone and stay as-is.
+
 ---
 
 ## Principles (emerging)

@@ -600,6 +600,10 @@ class Plugin:
         from installer import install_dependencies
         return _j(await install_dependencies())
 
+    async def reinject_installed(self) -> str:
+        from installer import reinject_installed
+        return _j(await reinject_installed())
+
     async def get_install_status(self) -> str:
         from installer import get_install_status
         return _j(get_install_status())
