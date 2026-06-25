@@ -355,6 +355,39 @@ lagging component still supports it.
   type arrows into labels, and never put a value in the QAM that forces a data
   load purely to display it.
 
+### 6. Sync Achievements (SLScheevo) — QAM entry — ✅ built
+
+- **What it is:** SLScheevo (third-party, xamionex) generates a game's
+  achievement files so Steam recognises them. **Full setup lives on the
+  per-game page** (`GameDetail.tsx` → "Achievements" section): download the
+  binary, the one-time interactive Steam login (Desktop/Konsole only — Game Mode
+  has no terminal), per-game **Generate**, status machine
+  (`not_installed` → `not_configured` → `ready`/`generating`/`generated`).
+- **What the QAM button does:** *only* the batch shortcut — "generate for **all**
+  games at once" (every game with lua + files). It does **not** install or
+  configure; it only fires generation with the already-saved login, so it is
+  gated on `slscheevoReady` (`check_slscheevo_installed`) and is hidden for users
+  without SLScheevo. Decision: **keep it in the QAM** (a whole-library shortcut),
+  setup stays in GameDetail.
+- **How shown:** native `ButtonItem` in a title-less `PanelSection`; `disabled`
+  while running; completion/failure via the native `toaster.toast`.
+- **Made native (this pass):** progress was crammed into the **button label**
+  (`"Syncing 3/12…"`). `done/total` is a real percentage, and we already use
+  `ProgressBarWithInfo` for downloads (§4d) — so the running state is now a
+  native **`ProgressBarWithInfo`** below the button (`nProgress` =
+  `done/total·100`, `sOperationText` = `"3 / 12"`), and the button label is a
+  plain `t("syncingAchievements")` ("Syncing achievements…"). The
+  `syncingAchievements` key dropped its `{0}/{1}` placeholders (the count lives
+  in the bar now).
+- **Native or custom:** 🟢 fully native — `ButtonItem` + native progress bar +
+  native toast. No `<div>`.
+- **Rule:** a discrete-count batch with a known total uses a native
+  `ProgressBarWithInfo` (real `done/total` percentage), not a count stuffed into
+  a button label. The button label is the *action/idle* text only.
+- **Known follow-up (carried from §5):** this is the QAM's **last** consumer of
+  the full `games` list. Moving the batch to the My Games full-screen page would
+  finally let the panel skip the library load — deferred, not done.
+
 ---
 
 ## Principles (emerging)

@@ -1037,10 +1037,22 @@ export function GameList() {
               disabled={syncState?.status === "running"}
             >
               {syncState?.status === "running"
-                ? t("syncingAchievements", syncState.done || 0, syncState.total || 0)
+                ? t("syncingAchievements")
                 : t("syncAllAchievements")}
             </ButtonItem>
           </PanelSectionRow>
+          {syncState?.status === "running" && (
+            <PanelSectionRow>
+              <ProgressBarWithInfo
+                nProgress={
+                  syncState.total > 0
+                    ? Math.round((syncState.done / syncState.total) * 100)
+                    : 0
+                }
+                sOperationText={`${syncState.done || 0} / ${syncState.total || 0}`}
+              />
+            </PanelSectionRow>
+          )}
         </PanelSection>
       )}
 
