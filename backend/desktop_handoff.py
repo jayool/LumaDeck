@@ -137,14 +137,23 @@ def run_desktop_handoff_dummy() -> dict:
         info["note"] = "armed OK; steamos-session-select not found — switch to Desktop manually to test the autostart"
         return _dump(info)
 
+    uid, _gid = _deck_ids()
+    runtime = f"/run/user/{uid}"
     try:
+        # sudo strips the env, so set the session vars on the command line via
+        # `env`. steamos-session-select needs deck's session bus to trigger the
+        # switch — the root backend isn't in that session by default.
         subprocess.Popen(
-            ["sudo", "-u", "deck", sel, "desktop"],
+            ["sudo", "-u", "deck", "env",
+             f"XDG_RUNTIME_DIR={runtime}",
+             f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
+             "HOME=/home/deck",
+             sel, "desktop"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            env={**os.environ, "PATH": "/usr/bin:/bin:/usr/local/bin"},
         )
         info["success"] = True
         info["switchLaunched"] = True
+        info["switchRuntime"] = runtime
     except Exception as exc:
         logger.exception("LumaDeck: switch to desktop failed: %s", exc)
         info["success"] = True   # armed fine; only the auto-switch failed
