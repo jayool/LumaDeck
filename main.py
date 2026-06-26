@@ -617,6 +617,17 @@ class Plugin:
         from installer import apply_component
         return _j(await apply_component(component_id, op))
 
+    async def run_desktop_handoff_dummy(self) -> str:
+        """TEST: arm a one-shot Desktop autostart (dummy payload) + switch to
+        Desktop; it runs there and returns to Game Mode. Validates the round-trip
+        before wiring the real headcrab downgrade."""
+        from desktop_handoff import run_desktop_handoff_dummy
+        return _j(run_desktop_handoff_dummy())
+
+    async def disarm_desktop_handoff(self) -> str:
+        from desktop_handoff import disarm_desktop_handoff
+        return _j(disarm_desktop_handoff())
+
     async def get_install_status(self) -> str:
         from installer import get_install_status
         return _j(get_install_status())

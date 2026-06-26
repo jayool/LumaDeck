@@ -33,6 +33,7 @@ import {
   quickInstall,
   getQuickInstallStatus,
   reinjectInstalled,
+  runDesktopHandoffDummy,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { FaExclamationTriangle } from "react-icons/fa";
@@ -902,6 +903,15 @@ export function GameList() {
             onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
           >
             {t("downloads")}
+          </ButtonItem>
+        </PanelSectionRow>
+
+        {/* TEMPORARY: validate the Desktop autostart hand-off round-trip with a
+            dummy payload before wiring the real headcrab downgrade. Remove once
+            the round-trip is confirmed. */}
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={() => runDesktopHandoffDummy()}>
+            🧪 Test Desktop hand-off
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>

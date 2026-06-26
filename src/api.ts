@@ -396,3 +396,8 @@ export const applyComponent = async (
   componentId: "slssteam" | "cloudredirect" | "lumalinux" | "core",
   op: "install" | "repair" | "update" = "repair",
 ) => parseResult(await call<[string, string], string>("apply_component", componentId, op));
+
+// TEST: Desktop autostart hand-off round-trip (dummy payload). Arms a one-shot
+// autostart + switches to Desktop; the script runs there and returns to Game Mode.
+export const runDesktopHandoffDummy = async () =>
+  parseResult(await call<[], string>("run_desktop_handoff_dummy"));
