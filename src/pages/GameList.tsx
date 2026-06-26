@@ -769,39 +769,8 @@ export function GameList() {
             {t("addGameAction")}
           </ButtonItem>
         </PanelSectionRow>
-        {addStatus && (
-          <PanelSectionRow>
-            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "6px" }}>
-              <div style={{
-                textAlign: "center",
-                color:
-                  addStatus.startsWith(t("error")) ||
-                    addStatus === t("invalidAppId") ||
-                    addStatus === t("downloadFailed")
-                    ? "#ff6b6b"
-                    : "#00cc00",
-                fontSize: "12px",
-              }}>
-                {addStatus}
-              </div>
-              {(activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0 && (
-                <ProgressBarWithInfo
-                  nProgress={downloadPct}
-                  sOperationText={
-                    (downloadBytes.total > 0
-                      ? `${(downloadBytes.read / 1073741824).toFixed(2)} / ${(downloadBytes.total / 1073741824).toFixed(2)} GB`
-                      : "") +
-                    (downloadSpeed > 0
-                      ? `  ·  ${downloadSpeed >= 1048576
-                          ? `${(downloadSpeed / 1048576).toFixed(1)} MB/s`
-                          : `${Math.round(downloadSpeed / 1024)} KB/s`}`
-                      : "")
-                  }
-                />
-              )}
-            </div>
-          </PanelSectionRow>
-        )}
+        {/* Download status + progress live BELOW, outside the appid/name toggle,
+            so an in-flight download stays visible regardless of input mode. */}
           </>
         ) : (
           /* By name (Hubcap search) — bottom padding only while the field is
@@ -861,6 +830,44 @@ export function GameList() {
           </PanelSection>
         )}
           </div>
+        )}
+        {/* Download status + progress: rendered OUTSIDE the appid/name toggle so
+            an in-flight download stays visible when switching input modes. The
+            ProgressBarWithInfo is a DIRECT PanelSectionRow child (not nested in a
+            flex div) — nesting it shifted the native bar off the right edge. */}
+        {addStatus && (
+          <PanelSectionRow>
+            <div style={{
+              width: "100%",
+              textAlign: "center",
+              color:
+                addStatus.startsWith(t("error")) ||
+                  addStatus === t("invalidAppId") ||
+                  addStatus === t("downloadFailed")
+                  ? "#ff6b6b"
+                  : "#00cc00",
+              fontSize: "12px",
+            }}>
+              {addStatus}
+            </div>
+          </PanelSectionRow>
+        )}
+        {(activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0 && (
+          <PanelSectionRow>
+            <ProgressBarWithInfo
+              nProgress={downloadPct}
+              sOperationText={
+                (downloadBytes.total > 0
+                  ? `${(downloadBytes.read / 1073741824).toFixed(2)} / ${(downloadBytes.total / 1073741824).toFixed(2)} GB`
+                  : "") +
+                (downloadSpeed > 0
+                  ? `  ·  ${downloadSpeed >= 1048576
+                      ? `${(downloadSpeed / 1048576).toFixed(1)} MB/s`
+                      : `${Math.round(downloadSpeed / 1024)} KB/s`}`
+                  : "")
+              }
+            />
+          </PanelSectionRow>
         )}
       </PanelSection>
 
