@@ -910,7 +910,17 @@ export function GameList() {
             dummy payload before wiring the real headcrab downgrade. Remove once
             the round-trip is confirmed. */}
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => runDesktopHandoffDummy()}>
+          <ButtonItem
+            layout="below"
+            onClick={async () => {
+              try {
+                const r: any = await runDesktopHandoffDummy();
+                toast("Hand-off", JSON.stringify(r), 12000);
+              } catch (e: any) {
+                toast("Hand-off ERROR", String(e?.message || e), 12000);
+              }
+            }}
+          >
             🧪 Test Desktop hand-off
           </ButtonItem>
         </PanelSectionRow>

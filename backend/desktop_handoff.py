@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import pwd
+import shutil
 import subprocess
 
 try:
@@ -76,43 +77,76 @@ def _build_script(payload: str) -> str:
 
 
 def _arm(payload: str) -> dict:
-    _write_as_deck(_SCRIPT_FILE, _build_script(payload), 0o755)
-    desktop_entry = (
-        "[Desktop Entry]\n"
-        "Type=Application\n"
-        "Name=LumaDeck Desktop Hand-off\n"
-        # --hold keeps the terminal open if the gamescope switch fails, so a
-        # failed test is visible instead of vanishing.
-        f"Exec=konsole --hold -e {_SCRIPT_FILE}\n"
-        "Terminal=false\n"
-        "X-KDE-AutostartScript=true\n"
-    )
-    _write_as_deck(_DESKTOP_FILE, desktop_entry, 0o644)
-    logger.info("LumaDeck: armed desktop hand-off (%s)", _SCRIPT_FILE)
-    return {"success": True}
-
-
-def _switch_to_desktop() -> dict:
-    """Switch the active session to Desktop as deck; the KDE autostart then fires
-    the armed script."""
     try:
-        subprocess.Popen(
-            ["sudo", "-u", "deck", "steamos-session-select", "desktop"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        _write_as_deck(_SCRIPT_FILE, _build_script(payload), 0o755)
+        desktop_entry = (
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=LumaDeck Desktop Hand-off\n"
+            # --hold keeps the terminal open if the gamescope switch fails, so a
+            # failed test is visible instead of vanishing.
+            f"Exec=konsole --hold -e {_SCRIPT_FILE}\n"
+            "Terminal=false\n"
+            "X-KDE-AutostartScript=true\n"
         )
+        _write_as_deck(_DESKTOP_FILE, desktop_entry, 0o644)
+        logger.info("LumaDeck: armed desktop hand-off (%s)", _SCRIPT_FILE)
         return {"success": True}
     except Exception as exc:
-        logger.exception("LumaDeck: switch to desktop failed: %s", exc)
-        return {"success": False, "error": str(exc)}
+        logger.exception("LumaDeck: arm failed: %s", exc)
+        return {"success": False, "error": f"arm: {exc}"}
+
+
+def _find_session_select() -> str | None:
+    for p in (
+        "/usr/bin/steamos-session-select",
+        "/usr/local/bin/steamos-session-select",
+        shutil.which("steamos-session-select") or "",
+    ):
+        if p and os.path.isfile(p):
+            return p
+    return None
 
 
 def run_desktop_handoff_dummy() -> dict:
-    """Arm the dummy task and switch to Desktop. The script runs there, then
-    returns to Game Mode. Round-trip validation for the real downgrade."""
+    """Arm the dummy task and switch to Desktop. Returns a DIAGNOSTIC dict (every
+    step's outcome) so the test button can show exactly what happened: whether
+    files armed, whether steamos-session-select was found, whether the switch
+    launched. If the switch can't fire, the user can switch to Desktop manually
+    to test the autostart half."""
+    info: dict = {"success": False}
     armed = _arm(_DUMMY_PAYLOAD)
+    info["armed"] = bool(armed.get("success"))
     if not armed.get("success"):
-        return armed
-    return _switch_to_desktop()
+        info["error"] = armed.get("error")
+        return info
+
+    info["scriptExists"] = os.path.isfile(_SCRIPT_FILE)
+    info["desktopExists"] = os.path.isfile(_DESKTOP_FILE)
+
+    sel = _find_session_select()
+    info["sessionSelect"] = sel or "(not found)"
+    if not sel:
+        info["success"] = True
+        info["switchLaunched"] = False
+        info["note"] = "armed OK; steamos-session-select not found — switch to Desktop manually to test the autostart"
+        return info
+
+    try:
+        subprocess.Popen(
+            ["sudo", "-u", "deck", sel, "desktop"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env={**os.environ, "PATH": "/usr/bin:/bin:/usr/local/bin"},
+        )
+        info["success"] = True
+        info["switchLaunched"] = True
+    except Exception as exc:
+        logger.exception("LumaDeck: switch to desktop failed: %s", exc)
+        info["success"] = True   # armed fine; only the auto-switch failed
+        info["switchLaunched"] = False
+        info["switchError"] = str(exc)
+        info["note"] = "armed OK; auto-switch failed — switch to Desktop manually to test the autostart"
+    return info
 
 
 def disarm_desktop_handoff() -> dict:
