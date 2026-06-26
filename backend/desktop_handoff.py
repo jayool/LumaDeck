@@ -119,7 +119,7 @@ def run_desktop_handoff_dummy() -> dict:
     info["armed"] = bool(armed.get("success"))
     if not armed.get("success"):
         info["error"] = armed.get("error")
-        return info
+        return _dump(info)
 
     info["scriptExists"] = os.path.isfile(_SCRIPT_FILE)
     info["desktopExists"] = os.path.isfile(_DESKTOP_FILE)
@@ -130,7 +130,7 @@ def run_desktop_handoff_dummy() -> dict:
         info["success"] = True
         info["switchLaunched"] = False
         info["note"] = "armed OK; steamos-session-select not found — switch to Desktop manually to test the autostart"
-        return info
+        return _dump(info)
 
     try:
         subprocess.Popen(
@@ -146,6 +146,21 @@ def run_desktop_handoff_dummy() -> dict:
         info["switchLaunched"] = False
         info["switchError"] = str(exc)
         info["note"] = "armed OK; auto-switch failed — switch to Desktop manually to test the autostart"
+    return _dump(info)
+
+
+# Full diagnostic written to a file so a tiny toast doesn't truncate it: the user
+# can `cat /home/deck/lh.json` in Konsole for the complete result.
+_DIAG_FILE = os.path.join(_HOME, "lh.json")
+
+
+def _dump(info: dict) -> dict:
+    import json
+    try:
+        _write_as_deck(_DIAG_FILE, json.dumps(info, indent=2), 0o644)
+        info["diagFile"] = _DIAG_FILE
+    except Exception:
+        pass
     return info
 
 

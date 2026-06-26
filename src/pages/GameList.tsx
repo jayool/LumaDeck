@@ -915,7 +915,8 @@ export function GameList() {
             onClick={async () => {
               try {
                 const r: any = await runDesktopHandoffDummy();
-                toast("Hand-off", JSON.stringify(r), 12000);
+                const sel = r?.sessionSelect === "(not found)" ? "NO" : "OK";
+                toast("Hand-off", `switch=${r?.switchLaunched} sel=${sel} → cat ~/lh.json`, 12000);
               } catch (e: any) {
                 toast("Hand-off ERROR", String(e?.message || e), 12000);
               }
