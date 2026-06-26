@@ -79,17 +79,22 @@ def _build_script(payload: str) -> str:
 def _arm(payload: str) -> dict:
     try:
         _write_as_deck(_SCRIPT_FILE, _build_script(payload), 0o755)
+        # Plain freedesktop autostart entry (Type=Application + Exec). NO
+        # X-KDE-AutostartScript — that legacy key makes Plasma route it through
+        # the login-script path and can make it ignore a Type=Application entry.
         desktop_entry = (
             "[Desktop Entry]\n"
             "Type=Application\n"
             "Name=LumaDeck Desktop Hand-off\n"
             # --hold keeps the terminal open if the gamescope switch fails, so a
-            # failed test is visible instead of vanishing.
+            # failed run is visible instead of vanishing.
             f"Exec=konsole --hold -e {_SCRIPT_FILE}\n"
             "Terminal=false\n"
-            "X-KDE-AutostartScript=true\n"
+            "X-GNOME-Autostart-enabled=true\n"
         )
-        _write_as_deck(_DESKTOP_FILE, desktop_entry, 0o644)
+        # 0755 so a Plasma build that requires autostart .desktop files to be
+        # executable still runs it.
+        _write_as_deck(_DESKTOP_FILE, desktop_entry, 0o755)
         logger.info("LumaDeck: armed desktop hand-off (%s)", _SCRIPT_FILE)
         return {"success": True}
     except Exception as exc:
