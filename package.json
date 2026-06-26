@@ -1,6 +1,6 @@
 {
   "name": "lumadeck",
-  "version": "0.3.48",
+  "version": "0.3.49",
   "description": "Decky Loader plugin for Steam Deck — game library and configuration manager with lumalinux backend (native Steam download via hooks instead of DepotDownloader). Fork of DeckTools.",
   "type": "module",
   "scripts": {

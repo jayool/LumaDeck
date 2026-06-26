@@ -143,12 +143,16 @@ def run_desktop_handoff_dummy() -> dict:
         # sudo strips the env, so set the session vars on the command line via
         # `env`. steamos-session-select needs deck's session bus to trigger the
         # switch — the root backend isn't in that session by default.
+        # NOTE: steamos-session-select has NO "desktop" case — valid args are
+        # plasma / plasma-wayland / gamescope / ...-persistent. We use "plasma"
+        # (non-persistent X11 desktop) so the default login mode stays Game Mode
+        # and we land back in Game Mode after the task.
         subprocess.Popen(
             ["sudo", "-u", "deck", "env",
              f"XDG_RUNTIME_DIR={runtime}",
              f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
              "HOME=/home/deck",
-             sel, "desktop"],
+             sel, "plasma"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         info["success"] = True
