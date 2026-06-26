@@ -137,9 +137,11 @@ function buildRows(
   // the Steam build — so they're only offered when Steam is already at the pin.
   if (!needsDowngrade) {
     const llUpdate = !!ll?.installed && !!ll.update?.available;
-    const slsCrUpdate = compatible && comps.some(
-      (c) => c.installed && (c.id === "slssteam" || c.id === "cloudredirect") && c.update?.available);
-    if (llUpdate || slsCrUpdate) {
+    // SLSsteam updates are NOT surfaced (choice B): it exposes no readable
+    // installed version, and it rides headcrab + is gated anyway. Of the
+    // headcrab bundle, only CloudRedirect has a checkable update here.
+    const crUpdate = compatible && !!cr?.installed && !!cr.update?.available;
+    if (llUpdate || crUpdate) {
       rows.push({
         key: "update", severity: "info",
         label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),

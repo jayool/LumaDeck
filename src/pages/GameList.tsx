@@ -525,8 +525,10 @@ export function GameList() {
       // SLSsteam/CloudRedirect updates ride headcrab (a full reinject pulls all
       // latest); a lumalinux-only update is the light, patch-only path.
       const comps = compStatus?.components || [];
+      // Only CloudRedirect rides headcrab in the update surface (SLSsteam isn't
+      // surfaced — choice B); a CR update needs the full reinject.
       const heavy = comps.some((c) =>
-        c.installed && (c.id === "slssteam" || c.id === "cloudredirect") && c.update?.available);
+        c.installed && c.id === "cloudredirect" && c.update?.available);
       const r = heavy
         ? await reinjectInstalled()
         : await applyComponent("lumalinux", "update");

@@ -178,7 +178,12 @@ async def get_components_status() -> dict:
     ll_health = _safe_sync(read_lumalinux_health, {"state": None})
     cr_health = _safe_sync(read_cloudredirect_health, {"state": None})
 
-    sls_update = await _safe(check_slssteam_update(), no_update)
+    # SLSsteam exposes no readable installed version (config.yaml is settings
+    # only; no version file on disk), and its updates ride headcrab + are gated,
+    # so we don't surface them (choice B). Skip the check to avoid a wasted API
+    # call. check_slssteam_update() stays defined for if we ever record the
+    # version at install time.
+    sls_update = dict(no_update)
     ll_update = await _safe(has_update("jayool", "lumalinux", ll_health.get("version")), no_update)
     cr_update = await _safe(check_cloudredirect_update(), no_update)
 
