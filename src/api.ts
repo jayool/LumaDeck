@@ -57,6 +57,13 @@ export const checkLumalinuxUpdate = async () =>
 export const checkHeadcrabCompat = async () =>
   parseResult(await call<[], string>("check_headcrab_compat"));
 
+// Unified component status (DESIGN_UI.md "Component model"): one call returns
+// per-component { installed, health, cause, action, update:{installed,latest,
+// available} } for slssteam/cloudredirect/lumalinux, plus headcrab {compatible,
+// target, current} and plugin {installed,latest,available}.
+export const getComponentsStatus = async () =>
+  parseResult(await call<[], string>("get_components_status"));
+
 export const repairSlssteamHeadcrab = async () =>
   parseResult(await call<[], string>("repair_slssteam_headcrab"));
 

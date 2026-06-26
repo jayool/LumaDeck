@@ -140,6 +140,13 @@ class Plugin:
         installed = read_lumalinux_health().get("version")
         return _j(await has_update("jayool", "lumalinux", installed))
 
+    async def get_components_status(self) -> str:
+        """Unified per-component health + update + headcrab gate + plugin, in one
+        call. See the Component model spec in DESIGN_UI.md. Additive — wraps the
+        existing per-component checks."""
+        from components import get_components_status
+        return _j(await get_components_status())
+
     async def restart_steam(self) -> str:
         """Shutdown Steam as deck user (Game Mode auto-restarts it)."""
         import subprocess, os
