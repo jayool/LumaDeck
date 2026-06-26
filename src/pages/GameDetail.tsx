@@ -8,6 +8,7 @@ import {
   Field,
   Navigation,
   SidebarNavigation,
+  ProgressBarWithInfo,
 } from "@decky/ui";
 import {
   FaInfoCircle,
@@ -16,6 +17,7 @@ import {
   FaTrophy,
   FaTools,
   FaTrash,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { ProgressBar } from "../components/ProgressBar";
@@ -664,6 +666,37 @@ export function GameDetail({ appid }: GameDetailProps) {
     ? `${t("removeDlcs")}${dlcCount > 0 ? ` (${dlcCount})` : ""}`
     : `${t("addDlcs")}${dlcCount > 0 ? ` (${dlcCount} ${t("found")})` : ""}`;
 
+  // Download phase → human label. depot_download removed (dead DDL path).
+  const dlStatusLabel = (() => {
+    switch (downloadState?.status) {
+      case "downloading": return t("statusDownloading");
+      case "processing": return t("statusProcessing");
+      case "configuring": return t("statusConfiguring");
+      case "installing": return t("statusInstalling");
+      case "queued": return t("statusQueued");
+      case "restarting_steam": return t("statusRestartingSteam");
+      case "checking": return `${t("statusChecking")} ${downloadState?.currentApi || ""}`.trim();
+      default: return downloadState?.status || "";
+    }
+  })();
+
+  // One native ProgressBarWithInfo replaces the old status <div> + custom
+  // ProgressBar: API, phase label, byte counter and speed all ride in
+  // sOperationText. Determinate only while a byte total exists (the downloading
+  // phase); other phases (processing/installing/...) show an indeterminate bar.
+  const dlDeterminate =
+    downloadState?.status === "downloading" && downloadState?.totalBytes > 0;
+  const dlOperationText = (() => {
+    if (!downloadState) return "";
+    const parts: string[] = [];
+    if (downloadState.currentApi) parts.push(`API: ${downloadState.currentApi}`);
+    if (dlStatusLabel) parts.push(dlStatusLabel);
+    if (dlDeterminate)
+      parts.push(`${formatSize(downloadState.bytesRead || 0)} / ${formatSize(downloadState.totalBytes)}`);
+    if (downloadState.speed > 0) parts.push(formatSpeed(downloadState.speed));
+    return parts.join(" · ");
+  })();
+
   const pages = [
     {
       title: t("gameStatus"),
@@ -703,52 +736,22 @@ export function GameDetail({ appid }: GameDetailProps) {
       hideTitle: true,
       content: (
         <>
-      {/* Download section */}
       <PanelSection title={t("download")}>
         {isDownloading ? (
           <>
+            {/* Native progress bar: phase/API/bytes/speed in sOperationText.
+                Indeterminate for phases without a measurable byte total. */}
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#dcdedf" }}>
-                {/* depot_download is dead code (DDL backend no longer runs)
-                    but the branch + progress bar below stay so a rollback
-                    keeps working. The active flow goes through downloading →
-                    processing → installing → configuring → restarting_steam → done. */}
-                {downloadState.status === "depot_download"
-                  ? (downloadState.depotProgress || t("statusDownloadingGame"))
-                  : (<>
-                    {downloadState.currentApi && `API: ${downloadState.currentApi}`}
-                    {" — "}
-                    {downloadState.status === "downloading" ? t("statusDownloading")
-                      : downloadState.status === "processing" ? t("statusProcessing")
-                        : downloadState.status === "configuring" ? t("statusConfiguring")
-                          : downloadState.status === "installing" ? t("statusInstalling")
-                            : downloadState.status === "queued" ? t("statusQueued")
-                              : downloadState.status === "restarting_steam" ? t("statusRestartingSteam")
-                                : downloadState.status === "checking" ? `${t("statusChecking")} ${downloadState.currentApi || ""}...`
-                                  : downloadState.status}
-                    {downloadState.speed > 0 &&
-                      ` — ${formatSpeed(downloadState.speed)}`}
-                  </>)
+              <ProgressBarWithInfo
+                indeterminate={!dlDeterminate}
+                nProgress={
+                  dlDeterminate
+                    ? Math.min(100, ((downloadState.bytesRead || 0) / downloadState.totalBytes) * 100)
+                    : 0
                 }
-              </div>
+                sOperationText={dlOperationText}
+              />
             </PanelSectionRow>
-            {downloadState.status === "depot_download" && downloadState.depotPercent > 0 ? (
-              <PanelSectionRow>
-                <ProgressBar
-                  value={downloadState.depotPercent}
-                  max={100}
-                  label={t("statusDownloadingGame")}
-                />
-              </PanelSectionRow>
-            ) : downloadState.status === "downloading" && downloadState.totalBytes > 0 ? (
-              <PanelSectionRow>
-                <ProgressBar
-                  value={downloadState.bytesRead || 0}
-                  max={downloadState.totalBytes}
-                  label={t("progress")}
-                />
-              </PanelSectionRow>
-            ) : null}
             <ActionButton
               label={t("cancelDownload")}
               onClick={handleCancel}
@@ -774,77 +777,54 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </PanelSectionRow>
             ) : null}
+            {/* Stuck update → one native actionable row (warning icon + Fix
+                Update). No "open game" button: we're already in GameDetail. */}
             {isStuck && (
               <PanelSectionRow>
-                <div style={{
-                  width: "100%",
-                  background: "rgba(255, 140, 0, 0.08)",
-                  border: "1px solid rgba(255, 140, 0, 0.30)",
-                  borderLeft: "3px solid #ff8c00",
-                  borderRadius: "4px",
-                  padding: "8px 12px",
-                }}>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#ff8c00", marginBottom: "4px" }}>
-                    ⚠ {t("stuckUpdateTitle")}
-                  </div>
-                  <div style={{ fontSize: "11px", color: "#dcdedf", lineHeight: "1.4", marginBottom: "4px" }}>
-                    {t("stuckUpdateBody")}
-                  </div>
-                  <div style={{ fontSize: "10px", color: "#9aa4b2" }}>
-                    {t("stuckUpdateKeyHint")}
-                  </div>
-                </div>
+                <ButtonItem
+                  layout="below"
+                  icon={<FaExclamationTriangle color="#ff8c00" />}
+                  label={t("stuckUpdateTitle")}
+                  description={`${t("stuckUpdateBody")} ${t("stuckUpdateKeyHint")}`}
+                  onClick={handleDownload}
+                >
+                  {t("fixUpdate")}
+                </ButtonItem>
               </PanelSectionRow>
-            )}
-            {isStuck && (
-              <ActionButton
-                label={t("fixUpdate")}
-                onClick={handleDownload}
-                variant="primary"
-              />
             )}
           </>
         )}
         {downloadState?.status === "done" && (
           <PanelSectionRow>
-            <div style={{ color: "#00cc00", fontSize: "12px" }}>
-              {t("downloadComplete")}
-            </div>
+            <Field label={t("download")}>
+              <span style={{ color: "#00cc00" }}>{t("downloadComplete")}</span>
+            </Field>
           </PanelSectionRow>
         )}
+        {/* Hubcap key expired → native actionable row that navigates to the
+            Hubcap key in Settings. */}
         {downloadState?.status === "failed" &&
           downloadState.errorCode === "hubcap_key_expired" && (
-            <>
-              <PanelSectionRow>
-                <div style={{
-                  width: "100%",
-                  background: "rgba(255, 140, 0, 0.08)",
-                  border: "1px solid rgba(255, 140, 0, 0.30)",
-                  borderLeft: "3px solid #ff8c00",
-                  borderRadius: "4px",
-                  padding: "8px 12px",
-                }}>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#ff8c00", marginBottom: "4px" }}>
-                    ⚠ {t("hubcapKeyExpiredTitle")}
-                  </div>
-                  <div style={{ fontSize: "11px", color: "#dcdedf", lineHeight: "1.4" }}>
-                    {t("hubcapKeyExpiredBody")}
-                  </div>
-                </div>
-              </PanelSectionRow>
-              <ActionButton
-                label={t("hubcapKeyExpiredButton")}
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                icon={<FaExclamationTriangle color="#ff8c00" />}
+                label={t("hubcapKeyExpiredTitle")}
+                description={t("hubcapKeyExpiredBody")}
                 onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-                variant="primary"
-              />
-            </>
+              >
+                {t("hubcapKeyExpiredButton")}
+              </ButtonItem>
+            </PanelSectionRow>
           )}
         {downloadState?.status === "failed" &&
           downloadState.errorCode !== "hubcap_key_expired" && (
             <PanelSectionRow>
-              <div style={{ color: "#ff4444", fontSize: "12px" }}>
-                {downloadState.error || t("downloadFailed")}
-              </div>
+              <Field
+                icon={<FaExclamationTriangle color="#ff4444" />}
+                label={t("downloadFailed")}
+                description={downloadState.error || undefined}
+              />
             </PanelSectionRow>
           )}
       </PanelSection>

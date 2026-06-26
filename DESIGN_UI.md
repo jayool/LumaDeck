@@ -494,15 +494,49 @@ principle. Kept as-is.
   Field `description` rather than spawning its own row. Don't render states the
   navigation can't reach.
 
+#### 8b. Download page — ✅ built (v0.3.52)
+
+- **What:** start/cancel a download, auto-update toggle, and the in-flight
+  status + result/warning messages.
+- **Was:** half-native. The structure (`PanelSection`/`PanelSectionRow`), the
+  `ToggleField` (auto-update) and the `ActionButton`s were already native; the
+  custom chrome was a raw status `<div>`, the custom `ProgressBar` component, two
+  hand-bordered orange warning boxes (stuck update, hubcap-key-expired), and two
+  raw coloured `<div>`s for done/failed.
+- **Now:**
+  - **Status line + bar → one native `ProgressBarWithInfo`.** The phase label,
+    `API:`, byte counter and speed all ride in `sOperationText`; `nProgress` is
+    the byte ratio. `indeterminate` for phases with no measurable total
+    (processing/installing/configuring/…). Same pattern as the QAM download bar.
+  - **`depot_download` branch deleted.** Dead DDL path (backend no longer runs
+    it); the status-label map and the bar no longer reference it.
+  - **Stuck-update box → one native actionable `ButtonItem`** (⚠ amber icon,
+    `label` = title, `description` = body + key hint, children = "Fix Update",
+    `onClick` = re-download). Collapses the old box + separate Fix-Update button
+    into one row. **No "open game" action** — we're already in GameDetail.
+  - **Hubcap-key-expired box → one native actionable `ButtonItem`** (⚠ amber,
+    `onClick` → Settings, where the Hubcap key lives). Same shape as GameList's
+    `credWarnings` row.
+  - **done / failed → native `Field`** (green child for "complete"; ⚠ red icon +
+    error in `description` for failed).
+- **Native or custom:** 🟢 native; only inline style left is the status **colour**
+  on the "complete" `<span>` child (allowed control-slot colour).
+- **Rule:** in-progress work is a native `ProgressBarWithInfo` (text in
+  `sOperationText`, never a sibling `<div>`); a warning that has a fix is an
+  actionable `ButtonItem` with a `FaExclamationTriangle` icon, not a
+  hand-bordered box. Reuse the established native warning shape; don't re-skin it.
+
 ---
 
-## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–3 done)
+## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)
 
 > Progress: **1** `get_components_status()` ✅ · **2** `apply_component()` ✅ ·
 > **3** one fetch + `SystemStatus` renderer (5-action collapse + update track),
 > old builders/banners deleted ✅ · **4** Stuck into the renderer ✅ (folded into
-> step 3) · **5** Desktop autostart for the downgrade — pending · **6** i18n
-> cleanup (drop the now-unused per-component update strings) — pending.
+> step 3) · **5** Desktop autostart for the downgrade ✅ (v0.3.50 — the "Fix in
+> Desktop" row arms a one-shot autostart that runs enter-the-wired + lumalinux
+> re-inject in Desktop and auto-returns to Game Mode) · **6** i18n cleanup (drop
+> the now-unused per-component update strings) — pending.
 
 > Supersedes the split **Health banner (§3)** + **Updates banner**. Both collapse
 > into one data model and one renderer. This is the authoritative spec; §3/§3b/§3c
