@@ -156,16 +156,34 @@ async def get_components_status() -> dict:
     from headcrab_compat import check_headcrab_compat
     from self_update import check_plugin_update
 
-    sls_health = read_slssteam_health()
-    ll_health = read_lumalinux_health()
-    cr_health = read_cloudredirect_health()
+    def _safe_sync(fn, default):
+        try:
+            return fn()
+        except Exception as exc:
+            logger.warning(f"components: {getattr(fn, '__name__', 'check')} failed: {exc}")
+            return default
 
-    sls_update = await check_slssteam_update()
-    ll_update = await has_update("jayool", "lumalinux", ll_health.get("version"))
-    cr_update = await check_cloudredirect_update()
+    async def _safe(coro, default):
+        # Each subcheck is isolated: a single failure (network, parse) must not
+        # blank the whole status surface.
+        try:
+            return await coro
+        except Exception as exc:
+            logger.warning(f"components: async check failed: {exc}")
+            return default
 
-    headcrab = await check_headcrab_compat()
-    plugin = await check_plugin_update()
+    no_update = {"installed": None, "latest": None, "has_update": False}
+
+    sls_health = _safe_sync(read_slssteam_health, {"state": None})
+    ll_health = _safe_sync(read_lumalinux_health, {"state": None})
+    cr_health = _safe_sync(read_cloudredirect_health, {"state": None})
+
+    sls_update = await _safe(check_slssteam_update(), no_update)
+    ll_update = await _safe(has_update("jayool", "lumalinux", ll_health.get("version")), no_update)
+    cr_update = await _safe(check_cloudredirect_update(), no_update)
+
+    headcrab = await _safe(check_headcrab_compat(), {"compatible": None, "target": None, "current_build": None})
+    plugin = await _safe(check_plugin_update(), {"installed": None, "latest": None, "has_update": False})
 
     components = [
         _component("slssteam", "SLSsteam", check_slssteam_installed(), sls_health, sls_update),

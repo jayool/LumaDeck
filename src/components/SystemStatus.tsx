@@ -130,10 +130,16 @@ function buildRows(
     });
   }
 
-  // ---- updates (info track, gated on a compatible Steam & no pending downgrade) ----
-  if (!needsDowngrade && compatible) {
-    const anyCompUpdate = comps.some((c) => c.installed && c.update?.available);
-    if (anyCompUpdate) {
+  // ---- updates (info track) ----
+  // lumalinux is independent of headcrab (patch-only, validates itself via its
+  // hash check) → its update shows whenever available, regardless of the Steam
+  // pin. SLSsteam/CloudRedirect updates RIDE headcrab — re-running it would move
+  // the Steam build — so they're only offered when Steam is already at the pin.
+  if (!needsDowngrade) {
+    const llUpdate = !!ll?.installed && !!ll.update?.available;
+    const slsCrUpdate = compatible && comps.some(
+      (c) => c.installed && (c.id === "slssteam" || c.id === "cloudredirect") && c.update?.available);
+    if (llUpdate || slsCrUpdate) {
       rows.push({
         key: "update", severity: "info",
         label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),
