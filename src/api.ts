@@ -401,3 +401,8 @@ export const applyComponent = async (
 // autostart + switches to Desktop; the script runs there and returns to Game Mode.
 export const runDesktopHandoffDummy = async () =>
   parseResult(await call<[], string>("run_desktop_handoff_dummy"));
+
+// REAL Desktop hand-off: enter-the-wired Steam downgrade + lumalinux re-inject.
+// Arms a one-shot autostart + switches to Desktop; returns to Game Mode on success.
+export const runDesktopHandoffReal = async () =>
+  parseResult(await call<[], string>("run_desktop_handoff_real"));

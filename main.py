@@ -624,6 +624,13 @@ class Plugin:
         from desktop_handoff import run_desktop_handoff_dummy
         return _j(run_desktop_handoff_dummy())
 
+    async def run_desktop_handoff_real(self) -> str:
+        """Arm a one-shot Desktop autostart (REAL payload: enter-the-wired Steam
+        downgrade + lumalinux re-inject) and switch to Desktop. It runs there and
+        returns to Game Mode on success; stays in Desktop on failure."""
+        from desktop_handoff import run_desktop_handoff_real
+        return _j(run_desktop_handoff_real())
+
     async def disarm_desktop_handoff(self) -> str:
         from desktop_handoff import disarm_desktop_handoff
         return _j(disarm_desktop_handoff())

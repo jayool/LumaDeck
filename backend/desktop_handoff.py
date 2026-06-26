@@ -1,9 +1,15 @@
 """Desktop hand-off: arm a one-shot KDE autostart that runs a task on the next
 Desktop login and returns to Game Mode.
 
-DUMMY payload first, to validate the round-trip (Game Mode -> Desktop -> run
-something visible -> back to Game Mode) before wiring the real enter-the-wired /
-headcrab downgrade (+ the lumalinux re-inject at the end).
+There are two payloads:
+  - DUMMY: prints visible output, always returns to Game Mode. Used to validate
+    the round-trip.
+  - REAL: runs enter-the-wired/headcrab (the Steam downgrade that can't run in
+    Game Mode) and re-injects lumalinux afterwards. Only returns to Game Mode on
+    success; on failure it stays in Desktop (--hold) so the error is readable.
+
+Each payload owns its own return-to-Game-Mode line, because the real one must
+NOT return when the downgrade fails.
 """
 
 from __future__ import annotations
@@ -26,6 +32,14 @@ _DESKTOP_FILE = os.path.join(_AUTOSTART, "lumadeck-handoff.desktop")
 _SCRIPT_DIR = os.path.join(_HOME, ".local", "share", "lumadeck")
 _SCRIPT_FILE = os.path.join(_SCRIPT_DIR, "handoff.sh")
 
+# Each payload ends with its own return-to-Game-Mode logic. The dummy always
+# returns; the real one only returns on success (see below).
+_RETURN_TO_GAME_MODE = (
+    'echo " Returning to Game Mode in 4s..."\n'
+    "sleep 4\n"
+    "steamos-session-select gamescope\n"
+)
+
 # Stand-in for enter-the-wired/headcrab: just prints visible output so we can see
 # the round-trip work on-device before trusting it with the real downgrade.
 _DUMMY_PAYLOAD = """
@@ -36,6 +50,47 @@ echo "============================================="
 for i in 1 2 3 4 5; do echo "  ... step $i/5"; sleep 1; done
 echo
 echo " Dummy task done."
+""" + _RETURN_TO_GAME_MODE
+
+# REAL payload: aligns Steam to headcrab's pin (enter-the-wired), then re-injects
+# lumalinux so the native-download hooks survive the regenerated steam.sh. This
+# is the ONE fix that can't run in Game Mode (Steam is live there).
+#
+#   - `set +e`: never abort the script on a sub-command failure; we branch
+#     explicitly on the enter-the-wired exit code.
+#   - lumalinux re-inject is GATED on lumalinux being installed (the .so present)
+#     and mirrors install_lumalinux(): download install.sh from main and bash it.
+#     It's patch-only and idempotent, and MUST run last (after headcrab
+#     regenerates steam.sh) so its hooks aren't wiped.
+#   - Returns to Game Mode ONLY on success. On failure it stays in Desktop so the
+#     konsole window (--hold) shows the error.
+_REAL_PAYLOAD = """
+set +e
+echo "================================================================"
+echo " LumaDeck - Aligning Steam to the supported build"
+echo " (this runs enter-the-wired / headcrab, then re-injects lumalinux)"
+echo "================================================================"
+echo
+echo ">>> Running enter-the-wired (Steam downgrade)..."
+if curl -fsSL headcrab.pages.dev | bash; then
+  echo
+  echo ">>> enter-the-wired finished OK."
+  if [ -f "$HOME/.local/share/lumalinux/liblumalinux.so" ]; then
+    echo ">>> Re-injecting lumalinux..."
+    curl -fsSL https://raw.githubusercontent.com/jayool/lumalinux/main/install.sh | bash
+    echo ">>> lumalinux re-inject finished (exit $?)."
+  else
+    echo ">>> lumalinux not installed, skipping re-inject."
+  fi
+  echo
+  echo " All done. Returning to Game Mode in 6s..."
+  sleep 6
+  steamos-session-select gamescope
+else
+  echo
+  echo "!! enter-the-wired FAILED. Staying in Desktop so you can read the error."
+  echo "!! Close this window and switch back to Game Mode manually when ready."
+fi
 """
 
 
@@ -62,6 +117,8 @@ def _write_as_deck(path: str, content: str, mode: int) -> None:
 
 
 def _build_script(payload: str) -> str:
+    # The payload owns its own return-to-Game-Mode line, so we don't append one
+    # here (the real payload must NOT return when the downgrade fails).
     return (
         "#!/bin/bash\n"
         "# One-shot LumaDeck Desktop hand-off. Delete the autostart entry FIRST so\n"
@@ -69,10 +126,6 @@ def _build_script(payload: str) -> str:
         f'rm -f "{_DESKTOP_FILE}"\n'
         "\n"
         f"{payload}\n"
-        "\n"
-        'echo " Returning to Game Mode in 4s..."\n'
-        "sleep 4\n"
-        "steamos-session-select gamescope\n"
     )
 
 
@@ -113,14 +166,14 @@ def _find_session_select() -> str | None:
     return None
 
 
-def run_desktop_handoff_dummy() -> dict:
-    """Arm the dummy task and switch to Desktop. Returns a DIAGNOSTIC dict (every
-    step's outcome) so the test button can show exactly what happened: whether
-    files armed, whether steamos-session-select was found, whether the switch
-    launched. If the switch can't fire, the user can switch to Desktop manually
-    to test the autostart half."""
+def _run_handoff(payload: str) -> dict:
+    """Arm a payload and switch to Desktop. Returns a DIAGNOSTIC dict (every
+    step's outcome) so the caller can show exactly what happened: whether files
+    armed, whether steamos-session-select was found, whether the switch launched.
+    If the switch can't fire, the user can switch to Desktop manually to run the
+    armed task."""
     info: dict = {"success": False}
-    armed = _arm(_DUMMY_PAYLOAD)
+    armed = _arm(payload)
     info["armed"] = bool(armed.get("success"))
     if not armed.get("success"):
         info["error"] = armed.get("error")
@@ -165,6 +218,19 @@ def run_desktop_handoff_dummy() -> dict:
         info["switchError"] = str(exc)
         info["note"] = "armed OK; auto-switch failed — switch to Desktop manually to test the autostart"
     return _dump(info)
+
+
+def run_desktop_handoff_dummy() -> dict:
+    """Arm the DUMMY task (visible output, always returns) and switch to Desktop.
+    Used to validate the round-trip without touching Steam."""
+    return _run_handoff(_DUMMY_PAYLOAD)
+
+
+def run_desktop_handoff_real() -> dict:
+    """Arm the REAL task (enter-the-wired downgrade + lumalinux re-inject) and
+    switch to Desktop. Returns to Game Mode only on success; stays in Desktop on
+    failure so the error is readable."""
+    return _run_handoff(_REAL_PAYLOAD)
 
 
 # Full diagnostic written to a file so a tiny toast doesn't truncate it: the user

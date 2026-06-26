@@ -1,4 +1,5 @@
 import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
+import { useState } from "react";
 import { FaExclamationTriangle, FaArrowCircleUp } from "react-icons/fa";
 import { useT } from "../i18n";
 
@@ -28,6 +29,7 @@ export interface SystemStatusActions {
   restart: () => void;       // not_active
   repair: () => void;        // injection_missing / hooks_failed / broken (Steam OK)
   reinstallCore: () => void; // core half-installed
+  downgrade: () => void;     // Steam too new: hand off to Desktop for the downgrade
   update: () => void;        // component update(s) available
   pluginUpdate: () => void;  // LumaDeck plugin update
   openGame: (appid: number) => void; // a stuck game
@@ -43,6 +45,8 @@ type Row = {
   description?: string;
   actionLabel?: string;
   onAction?: () => void;
+  // Destructive / Desktop-switching actions ask for a second tap before firing.
+  confirmFirst?: boolean;
 };
 
 const WARN = "#ff8c00";
@@ -83,8 +87,12 @@ function buildRows(
     rows.push({
       key: "downgrade", severity: "problem",
       label: t("sysSteamTooNew"), description: t("sysSteamTooNewDesc"),
-      // No button: the downgrade is Desktop-only (the autostart hand-off is a
-      // later step). Display-only Field with the instruction.
+      // The downgrade is Desktop-only (Steam is live in Game Mode). The button
+      // arms a one-shot autostart and switches to Desktop, where it runs and
+      // returns automatically. Two-tap confirm because it leaves Game Mode.
+      actionLabel: busy ? t("sysWorking") : t("sysFixInDesktop"),
+      onAction: actions.downgrade,
+      confirmFirst: true,
     });
   } else if (coreHalf) {
     rows.push({
@@ -189,6 +197,8 @@ export function SystemStatus({
   actions: SystemStatusActions;
 }) {
   const t = useT();
+  // Which row is mid-confirm (first tap done, waiting for the second).
+  const [confirming, setConfirming] = useState<string | null>(null);
   if (!status?.success) return null;
 
   const rows = buildRows(t, status, stuck, busy, actions);
@@ -203,6 +213,21 @@ export function SystemStatus({
           ) : (
             <FaArrowCircleUp color={INFO} />
           );
+        const isConfirming = confirming === r.key;
+        // A confirmFirst row turns its first tap into "tap again to confirm"; the
+        // second tap fires. Other rows fire on the first tap.
+        const handleClick = () => {
+          if (!r.onAction) return;
+          if (r.confirmFirst && !isConfirming) {
+            setConfirming(r.key);
+            return;
+          }
+          setConfirming(null);
+          r.onAction();
+        };
+        const buttonLabel = r.confirmFirst && isConfirming
+          ? t("sysConfirmTap")
+          : r.actionLabel;
         return (
           <PanelSectionRow key={r.key}>
             {r.actionLabel && r.onAction ? (
@@ -211,10 +236,10 @@ export function SystemStatus({
                 icon={icon}
                 label={r.label}
                 description={r.description}
-                onClick={r.onAction}
+                onClick={handleClick}
                 disabled={busy}
               >
-                {r.actionLabel}
+                {buttonLabel}
               </ButtonItem>
             ) : (
               <Field icon={icon} label={r.label} description={r.description} />

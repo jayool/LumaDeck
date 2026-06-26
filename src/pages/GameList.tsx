@@ -34,6 +34,7 @@ import {
   getQuickInstallStatus,
   reinjectInstalled,
   runDesktopHandoffDummy,
+  runDesktopHandoffReal,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { FaExclamationTriangle } from "react-icons/fa";
@@ -522,6 +523,16 @@ export function GameList() {
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
     }),
+    downgrade: () => runSysAction(async () => {
+      // Arm the one-shot Desktop autostart (enter-the-wired + lumalinux
+      // re-inject) and switch to Desktop. The script runs there and returns to
+      // Game Mode on success. If the auto-switch can't fire, tell the user to
+      // switch to Desktop manually — the task is already armed.
+      const r: any = await runDesktopHandoffReal();
+      if (r?.switchLaunched) toast(t("sysSteamTooNew"), t("sysHandoffSwitching"), 8000);
+      else if (r?.armed) toast(t("sysSteamTooNew"), t("sysHandoffManual"), 12000);
+      else toast(t("toastError"), r?.error || "", 6000);
+    }),
     update: () => runSysAction(async () => {
       // SLSsteam/CloudRedirect updates ride headcrab (a full reinject pulls all
       // latest); a lumalinux-only update is the light, patch-only path.
@@ -906,23 +917,24 @@ export function GameList() {
           </ButtonItem>
         </PanelSectionRow>
 
-        {/* TEMPORARY: validate the Desktop autostart hand-off round-trip with a
-            dummy payload before wiring the real headcrab downgrade. Remove once
-            the round-trip is confirmed. */}
+        {/* TEMPORARY: validate the REAL Desktop hand-off (enter-the-wired Steam
+            downgrade + lumalinux re-inject) round-trip on-device, regardless of
+            the current status. Remove once the real round-trip is confirmed.
+            The dummy path is kept available via runDesktopHandoffDummy. */}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
             onClick={async () => {
               try {
-                const r: any = await runDesktopHandoffDummy();
+                const r: any = await runDesktopHandoffReal();
                 const sel = r?.sessionSelect === "(not found)" ? "NO" : "OK";
-                toast("Hand-off", `switch=${r?.switchLaunched} sel=${sel} → cat ~/lh.json`, 12000);
+                toast("Hand-off (REAL)", `switch=${r?.switchLaunched} sel=${sel} → cat ~/lh.json`, 12000);
               } catch (e: any) {
                 toast("Hand-off ERROR", String(e?.message || e), 12000);
               }
             }}
           >
-            🧪 Test Desktop hand-off
+            🧪 Test REAL Desktop downgrade
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
