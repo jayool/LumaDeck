@@ -121,6 +121,22 @@ function buildRows(
     });
   }
 
+  // ---- unsupported on the CURRENT (pinned) build — hash_blocked while Steam IS
+  // at the pin. Not a downgrade (already at the pin; going lower breaks SLS/CR),
+  // not a repair (reinstalling the latest gives the same block — the component
+  // genuinely doesn't support this Steam build yet). Informational, no action. ----
+  if (compatible) {
+    for (const c of comps) {
+      if (c.installed && c.health === "hash_blocked") {
+        rows.push({
+          key: `unsup-${c.id}`, severity: "problem",
+          label: t("sysUnsupportedBuild", c.name),
+          description: t("sysUnsupportedBuildDesc"),
+        });
+      }
+    }
+  }
+
   // ---- stuck games (per-game problem, "with the errors") ----
   for (const s of stuck) {
     rows.push({
