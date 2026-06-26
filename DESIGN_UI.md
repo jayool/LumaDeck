@@ -496,6 +496,155 @@ principle. Kept as-is.
 
 ---
 
+## Component model — system status (errors + updates) — 📋 SPEC (not yet built)
+
+> Supersedes the split **Health banner (§3)** + **Updates banner**. Both collapse
+> into one data model and one renderer. This is the authoritative spec; §3/§3b/§3c
+> remain valid for the *text* and *cascade* rules, but the rendering and fetching
+> described there are replaced by this.
+
+### Why
+Today SLSsteam, lumalinux and CloudRedirect each live in four places (health,
+update, row builder, action) with the `steam.sh` cascade knowledge copied into
+every button. Three components × four concerns = a tangle. They are the **same
+kind of thing** — a *managed component* — so we unify them.
+
+### The components
+- **Core** = **SLSsteam + lumalinux**. They go together; one without the other is
+  a broken state, fixed by reinstalling the pair.
+- **Optional** = **CloudRedirect**. Add-on; its absence is not an error.
+- **Plugin** = **LumaDeck** itself. Special: its "fix" and its "update" are the
+  same manual action (download zip, install via Decky ▸ Developer ▸ Install from
+  ZIP).
+
+### Backend (two new pieces, wrapping what exists)
+
+**1. `get_components_status()` — one fetch, uniform shape.** Composes the existing
+`read_*_health` + the update checks. Replaces the 8 fetches / 7 React states:
+```
+{
+  components: [ { id, name, installed, health, update:{installed,latest,available} }, ... ],
+  headcrab:   { compatible, target, current },   // compat gate ONLY (see below)
+  plugin:     { installed, latest, available },
+}
+```
+New real check: `check_slssteam_update` + a CR check, both **via h3adcr-b**
+(see Updates). `headcrabCompat` goes back to being *only* the compat gate — the
+fake "SLSsteam update derived from `!compatible`" is deleted.
+
+**2. `apply_component(id, op)` — one cascade-safe action.** `op ∈ {install,
+repair, update}`. Does the op, then **always** runs `reinject_installed()` (which
+already re-injects every *installed* component in order SLSsteam → CloudRedirect →
+lumalinux). The UI never knows the `steam.sh` ordering. `reinject_installed`
+already exists and already gates on `check_*_installed()`.
+
+### Compatibility contract (how updates stay safe)
+The whole set is anchored to **h3adcr-b's pinned Steam build**
+(`HeadcrabCompatibleClientVer`). Deadboy666 curates the bundle (Steam pin +
+SLSsteam `latest` + CloudRedirect `linux-test` `.so`) to be mutually compatible
+at the **weakest-link** Steam build, so headcrab never lands you on a Steam that
+breaks SLSsteam or CR. **lumalinux is outside headcrab** and self-validates via
+its `steamclient.so` hash check (`hash_blocked`). Three safety layers:
+1. Updates are **gated on `headcrab.compatible === true`** (Steam at the pin).
+2. lumalinux's hash check refuses silently-incompatible builds (`hash_blocked`).
+3. After `apply_component`, re-fetch status to confirm all healthy.
+
+---
+
+### ERRORS → the user can only ever do 5 things
+
+| # | User action | Backend states it covers | Where |
+|---|---|---|---|
+| 1 | **Restart Steam** | `not_active` (any component) | Game Mode |
+| 2 | **Repair component** (install + restart) | `injection_missing` (SLS/luma), `hooks_failed` (luma), `broken`→reinstall (CR, Steam OK), core half-installed | Game Mode |
+| 3 | **Downgrade Steam** | "Steam too new": `broken`/`hash_blocked` (cross-ref headcrab) | Desktop |
+| 4 | **Configure cloud provider** | CR `not_authed` | Desktop |
+| 5 | **Install LumaDeck manually** | plugin needs the zip | manual |
+
+Silent: `healthy`, CR `kill_switched` (`~/.config/CloudRedirect/disable`, a
+deliberate opt-out the plugin only *detects*, never creates), CR `not_installed`.
+
+**Collapse / cross-reference rules (why the user sees little):**
+- **"Steam too new" is ONE row** even when 3 components report it
+  (`broken`/`broken`/`hash_blocked`). Cross-ref `headcrab.compatible` to confirm
+  it's a downgrade and not a plain reinstall.
+- **Same cause across components = one row** (two `not_active` → one "Restart").
+- **Core (SLS+luma) is evaluated as one unit**; CR separate, only if installed.
+- **Priority:** action 3 (downgrade) **supersedes** 1 and 2 (nothing works until
+  Steam is right). Show the single highest-priority row; the next surfaces once
+  it's resolved.
+- **lumalinux `hash_blocked` is conditional:** it joins the downgrade group ONLY
+  if SLS/CR also report "Steam too new" (then the headcrab pin is in lumalinux's
+  hash set and it recovers too). If lumalinux is blocked **alone**, headcrab
+  can't help (it doesn't know about lumalinux) → it's a **lumalinux update**
+  problem, not a downgrade.
+
+**Two Desktop actions (3 and 4) — why they can't run in Game Mode:**
+- **Downgrade (3):** the Steam roll-back is a multi-restart op; even with our
+  Game-Mode-safe headcrab patches the failure mode is a wiped Steam, so it stays
+  Desktop. Delivered via a **one-shot autostart** in `~/.config/autostart/`: from
+  Game Mode we write the script + `.desktop`, switch to Desktop, it runs on login
+  (in a visible Konsole), then self-removes. The "order" persists on disk.
+- **CR login (4):** the provider sign-in is a GUI flow inside the CloudRedirect
+  Flatpak; Game Mode can't drive arbitrary Flatpak windows. Genuinely
+  Desktop-only unless CR adds a headless/token login.
+
+---
+
+### UPDATES → a separate track (not folded into "repair")
+
+Mechanically an update is "(re)install + restart" like a repair, but for the user
+it's **optional/info**, not a problem — so it renders as a distinct (blue) track,
+not as a ⚠ fix.
+
+| Component | Update check | Apply | Weight |
+|---|---|---|---|
+| **lumalinux** | latest release of its repo vs installed | `install_lumalinux` + reinject | light |
+| **SLSsteam** | hash of the `latest` asset (**via h3adcr-b**) vs installed `.so` | re-run headcrab + reinject | heavy |
+| **CloudRedirect** | hash/ETag of `linux-test/cloud_redirect.so` (**via h3adcr-b**) vs installed `.so` | re-run headcrab + reinject | heavy |
+| **LumaDeck** | latest plugin release | download zip → message "Decky ▸ Developer ▸ Install from ZIP, then restart Steam" | manual |
+
+Rules:
+- **CR has no semver of its own** — its "version" *is* which `linux-test` `.so`
+  you have, so the check is a **hash/ETag compare against the exact asset headcrab
+  installs** (the current `checkCloudredirectUpdate` semver check is wrong and is
+  removed).
+- **All updates gated on `headcrab.compatible`**; the set updates **together**
+  (one reinject at the end); re-check health after.
+- SLSsteam/CR "update" = re-running the headcrab install, which is **safe in Game
+  Mode when Steam is already at the pin** (no downgrade happens).
+
+---
+
+### Two tracks the user sees
+- **"Something's wrong" (⚠):** at most one of the 5 fixes, by priority.
+- **"Something's new" (info):** the update track.
+
+Normally the user sees **nothing, or one row**. The full per-component breakdown
+(versions, individual install/repair/update) lives in **Settings ▸ Dependencies**
+for the advanced 1%.
+
+### What gets deleted
+- The 3 near-identical health row builders (`slssProblem`/`llProblem`/`crProblem`)
+  → one generic mapper.
+- `UpdatesBanner` (absorbed into the single renderer).
+- The fake "SLSsteam update" derived from `!headcrabCompat.compatible`.
+- The misleading `checkCloudredirectUpdate` semver check → hash compare.
+- Per-button cascade wiring → owned by `apply_component`.
+
+### Implementation order (incremental, each step builds + ships)
+1. Backend `get_components_status()` wrapping existing health/update fns + real
+   `check_slssteam_update` + CR hash check. (Adds only; nothing visible changes.)
+2. Backend `apply_component()` over `reinject_installed`.
+3. Frontend: one fetch, one renderer (the 5-fix collapse + update track); delete
+   the 3 builders + `UpdatesBanner`.
+4. Move **Stuck** (per-game `UpdateResult=8`) into the same problem renderer,
+   action "Open game".
+5. The Desktop autostart for the downgrade (action 3).
+6. i18n cleanup + normalized strings.
+
+---
+
 ## Principles (emerging)
 
 - The brand string `"LumaDeck"` is the only hard-coded display literal; every
