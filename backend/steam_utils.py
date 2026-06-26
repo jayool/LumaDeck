@@ -271,6 +271,12 @@ def get_installed_games() -> list:
                         "installDir": install_dir,
                         "libraryPath": lib_path,
                         "updateResult": str(app_state.get("UpdateResult", "0")),
+                        # StateFlags is a bitmask; bit 2 = StateUpdateRequired.
+                        # BytesToDownload > 0 = an update is actually queued.
+                        # Both distinguish a genuinely pending update from a stale
+                        # historical UpdateResult.
+                        "stateFlags": str(app_state.get("StateFlags", "0")),
+                        "bytesToDownload": str(app_state.get("BytesToDownload", "0")),
                     })
                 except (ValueError, Exception):
                     continue
@@ -290,12 +296,35 @@ def check_stuck_updates() -> dict:
     game stays on its working installed version. Restricted to games that have a
     .lua (LumaDeck/unpinned installs); an owned game would never hit this.
 
+    UpdateResult persists until a successful depot op, so a fully-installed,
+    up-to-date game can carry a STALE "8" (e.g. from the initial add) with no
+    pending update — that's a false positive. We additionally require an update
+    to be actually pending (StateFlags bit 2 = StateUpdateRequired, or
+    BytesToDownload > 0).
+
     Returns {"success": True, "stuck": [{"appid", "name"}, ...]}.
     """
     stuck = []
     for game in get_installed_games():
-        if str(game.get("updateResult", "0")) == "8" and has_lua_for_app(game["appid"]):
-            stuck.append({"appid": game["appid"], "name": game["name"]})
+        if str(game.get("updateResult", "0")) != "8":
+            continue
+        if not has_lua_for_app(game["appid"]):
+            continue
+        # UpdateResult persists in the ACF until a successful depot op, so a
+        # fully-installed, up-to-date game can carry a stale "8" from a past
+        # failure (e.g. the initial add). Only flag when an update is ACTUALLY
+        # pending: StateUpdateRequired (StateFlags bit 2) or queued bytes.
+        try:
+            flags = int(game.get("stateFlags", "0"))
+        except (TypeError, ValueError):
+            flags = 0
+        try:
+            to_download = int(game.get("bytesToDownload", "0"))
+        except (TypeError, ValueError):
+            to_download = 0
+        if (flags & 2) == 0 and to_download <= 0:
+            continue  # stale UpdateResult, game is fine
+        stuck.append({"appid": game["appid"], "name": game["name"]})
     return {"success": True, "stuck": stuck}
 
 
