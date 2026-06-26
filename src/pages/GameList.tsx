@@ -25,25 +25,23 @@ import {
   getSteamLibraries,
   getGameNotices,
   restartSteam,
-  getSlssteamHealth,
-  getLumalinuxHealth,
-  getCloudredirectHealth,
-  checkCloudredirectUpdate,
-  checkLumalinuxUpdate,
-  checkPluginUpdate,
+  getComponentsStatus,
+  applyComponent,
+  downloadUpdateToDownloads,
   checkStuckUpdates,
   getCredentialStatus,
-  installLumalinux,
-  checkHeadcrabCompat,
   quickInstall,
   getQuickInstallStatus,
   reinjectInstalled,
 } from "../api";
 import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { FaExclamationTriangle } from "react-icons/fa";
-import { HealthBanner, HealthProblem } from "../components/HealthBanner";
-import { UpdatesBanner, UpdateNotice } from "../components/UpdatesBanner";
-import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY } from "../routes";
+import {
+  SystemStatus,
+  ComponentsStatus,
+  SystemStatusActions,
+} from "../components/SystemStatus";
+import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL } from "../routes";
 import { setRefreshHandler } from "../refresh";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
@@ -85,46 +83,10 @@ export function GameList() {
   const [searchError, setSearchError] = useState("");
   const [showMoreResults, setShowMoreResults] = useState(false);
   const [slscheevoReady, setSlscheevoReady] = useState(false);
-  const [slssteamHealth, setSlssteamHealth] = useState<{
-    state: string;
-    cause: string | null;
-    action: string | null;
-  } | null>(null);
-  const [lumalinuxHealth, setLumalinuxHealth] = useState<{
-    state: string;
-    cause: string | null;
-    version: string | null;
-    action: string | null;
-  } | null>(null);
-  const [crHealth, setCrHealth] = useState<{
-    state: string;
-    cause: string | null;
-    version: string | null;
-    action: string | null;
-  } | null>(null);
-  const [crUpdate, setCrUpdate] = useState<{
-    installed: string | null;
-    latest: string | null;
-    has_update: boolean;
-  } | null>(null);
-  const [llUpdate, setLlUpdate] = useState<{
-    installed: string | null;
-    latest: string | null;
-    has_update: boolean;
-  } | null>(null);
-  const [pluginUpdate, setPluginUpdate] = useState<{
-    latest: string | null;
-    has_update: boolean;
-  } | null>(null);
+  // Unified system status (one fetch). Replaces the 7 health/update states.
+  const [compStatus, setCompStatus] = useState<ComponentsStatus | null>(null);
   const [stuckUpdates, setStuckUpdates] = useState<{ appid: number; name: string }[]>([]);
-  const [headcrabCompat, setHeadcrabCompat] = useState<{
-    current_build: number | null;
-    target: number | null;
-    compatible: boolean;
-  } | null>(null);
-  const [restartingStream, setRestartingStream] = useState(false);
-  const [reinstallingLL, setReinstallingLL] = useState(false);
-  const [repairingInjection, setRepairingInjection] = useState(false);
+  const [sysBusy, setSysBusy] = useState(false);
   const [quickInstalling, setQuickInstalling] = useState(false);
   const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
   const [quickProgress, setQuickProgress] = useState("");
@@ -174,6 +136,27 @@ export function GameList() {
       setLoading(false);
     }
   }, []);
+
+  // One fetch for the whole system-status surface (component health + updates +
+  // headcrab gate + plugin) plus the per-game stuck check. Re-run after any
+  // system action so the rows reflect the new state.
+  const refreshStatus = useCallback(async () => {
+    try {
+      const [cs, stuck] = await Promise.all([getComponentsStatus(), checkStuckUpdates()]);
+      if (cs?.success) setCompStatus(cs);
+      if (stuck?.success && Array.isArray(stuck.stuck)) setStuckUpdates(stuck.stuck);
+    } catch { }
+  }, []);
+
+  // Run a system action (restart/repair/update/...), keeping a single busy flag
+  // so the rows disable while it works, then refresh the status.
+  const runSysAction = useCallback(async (fn: () => Promise<void>) => {
+    setSysBusy(true);
+    try { await fn(); } catch { } finally {
+      setSysBusy(false);
+      await refreshStatus();
+    }
+  }, [refreshStatus]);
 
   const formatStatus = useCallback(
     (st: any): string => {
@@ -324,46 +307,9 @@ export function GameList() {
       } catch { }
     })();
 
-    // Health (HealthBanner, critical) + updates (UpdatesBanner, info). Five
-    // signals fetched in parallel — keeps the critical lane uncluttered and
-    // surfaces routine updates separately.
-    (async () => {
-      try {
-        const [sls, ll, cr, hc, cru, llu, pu, stuck] = await Promise.all([
-          getSlssteamHealth(),
-          getLumalinuxHealth(),
-          getCloudredirectHealth(),
-          checkHeadcrabCompat(),
-          checkCloudredirectUpdate(),
-          checkLumalinuxUpdate(),
-          checkPluginUpdate(),
-          checkStuckUpdates(),
-        ]);
-        if (sls.state) setSlssteamHealth(sls);
-        if (ll.state)  setLumalinuxHealth(ll);
-        if (cr.state)  setCrHealth(cr);
-        if (hc.success) setHeadcrabCompat({
-          current_build: hc.current_build,
-          target: hc.target,
-          compatible: hc.compatible,
-        });
-        setCrUpdate({
-          installed: cru.installed ?? null,
-          latest: cru.latest ?? null,
-          has_update: !!cru.has_update,
-        });
-        setLlUpdate({
-          installed: llu.installed ?? null,
-          latest: llu.latest ?? null,
-          has_update: !!llu.has_update,
-        });
-        if (pu.success) setPluginUpdate({
-          latest: pu.latest ?? null,
-          has_update: !!pu.has_update,
-        });
-        if (stuck.success && Array.isArray(stuck.stuck)) setStuckUpdates(stuck.stuck);
-      } catch { }
-    })();
+    // Unified system status: one call for all component health + updates +
+    // headcrab gate + plugin, plus the per-game stuck check.
+    refreshStatus();
 
     // Credential expiry — only surfaced at download time (see credWarnings),
     // so fetch once on mount and let the gated block decide whether to show it.
@@ -560,41 +506,39 @@ export function GameList() {
     onGamepadFocus: () => setAddMode(mode),
   });
 
-  const handleRestartSteam = async () => {
-    setRestartingStream(true);
-    await restartSteam();
-    setRestartingStream(false);
-    try {
-      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
-      if (sls.state) setSlssteamHealth(sls);
-      if (ll.state) setLumalinuxHealth(ll);
-    } catch { }
-  };
-
-  const handleReinstallLumalinux = async () => {
-    setReinstallingLL(true);
-    const result = await installLumalinux();
-    setReinstallingLL(false);
-    if (result.success) {
-      toast(t("llInstalled"), t("llInstalledBody"), 6000);
-    } else {
-      toast(t("toastError"), result.error || "", 4000);
-    }
-  };
-
-  // SLSsteam injection_missing repair: re-inject the whole INSTALLED set in
-  // order (reinject_installed). SLSsteam's installer runs headcrab, which
-  // regenerates steam.sh and wipes the others — so a single-component repair
-  // would break them (DESIGN_UI.md §3b). Restart Steam to load the result.
-  const handleRepairInjection = async () => {
-    setRepairingInjection(true);
-    const result = await reinjectInstalled();
-    setRepairingInjection(false);
-    if (result.success) {
-      await restartSteam();
-    } else {
-      toast(t("toastError"), result.error || "", 4000);
-    }
+  // The 5 system actions (DESIGN_UI.md "Component model"). All cascade-safe:
+  // repair/reinstall/update go through reinject_installed / apply_component,
+  // which own the steam.sh ordering. Each refreshes the status afterwards.
+  const sysActions: SystemStatusActions = {
+    restart: () => runSysAction(async () => { await restartSteam(); }),
+    repair: () => runSysAction(async () => {
+      const r = await reinjectInstalled();
+      if (r?.success) await restartSteam();
+      else toast(t("toastError"), r?.error || "", 4000);
+    }),
+    reinstallCore: () => runSysAction(async () => {
+      const r = await applyComponent("core", "install");
+      if (r?.success) await restartSteam();
+      else toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
+    }),
+    update: () => runSysAction(async () => {
+      // SLSsteam/CloudRedirect updates ride headcrab (a full reinject pulls all
+      // latest); a lumalinux-only update is the light, patch-only path.
+      const comps = compStatus?.components || [];
+      const heavy = comps.some((c) =>
+        c.installed && (c.id === "slssteam" || c.id === "cloudredirect") && c.update?.available);
+      const r = heavy
+        ? await reinjectInstalled()
+        : await applyComponent("lumalinux", "update");
+      if (r?.success) await restartSteam();
+      else toast(t("toastError"), r?.error || "", 4000);
+    }),
+    pluginUpdate: () => runSysAction(async () => {
+      const r = await downloadUpdateToDownloads();
+      if (r?.success) toast(t("sysPluginUpdate"), t("updateZipSaved", r.path || "Downloads"), 8000);
+      else toast(t("toastError"), r?.error || "", 4000);
+    }),
+    openGame: (appid: number) => Navigation.Navigate(ROUTE_GAME_DETAIL + "/" + appid),
   };
 
   const handleQuickInstall = async () => {
@@ -627,17 +571,8 @@ export function GameList() {
     setQuickInstalling(false);
     setQuickProgress("");
 
-    // Refresh health so the onboarding button hides once components land.
-    try {
-      const [sls, ll, cr] = await Promise.all([
-        getSlssteamHealth(),
-        getLumalinuxHealth(),
-        getCloudredirectHealth(),
-      ]);
-      if (sls.state) setSlssteamHealth(sls);
-      if (ll.state) setLumalinuxHealth(ll);
-      if (cr.state) setCrHealth(cr);
-    } catch { }
+    // Refresh status so the onboarding entry hides once components land.
+    await refreshStatus();
 
     if (result.success) {
       toast(t("toastQuickInstallDone"), "", 4000);
@@ -651,115 +586,11 @@ export function GameList() {
   // are installed and Steam's build is compatible. As soon as any one is
   // present, this onboarding entry point disappears (reinstall/repair lives in
   // Settings via the individual buttons).
-  const showQuickInstall =
-    slssteamHealth?.state === "not_installed" &&
-    crHealth?.state === "not_installed" &&
-    lumalinuxHealth?.state === "not_installed" &&
-    headcrabCompat?.compatible === true;
-
-  // Translate each component's health into a HealthProblem row, or null when
-  // healthy / not installed (the banner only surfaces actionable failures —
-  // "not installed" belongs to the install flow in Settings, not here).
-  // Health rows, normalized per DESIGN_UI.md §3c. Each component collapses to
-  // one user-facing row: a Restart/Repair button when fixable from Game Mode,
-  // or a display-only "unsupported / sign-in" Field when the fix lives in
-  // Desktop. The backend's granular states (patterns/hash, hash_blocked/
-  // hooks_failed, broken cause) are kept for logs; here they fold into one
-  // "unsupported" message. The shared restart action label.
-  const restartAction = restartingStream ? t("restarting") : t("restartSteam");
-
-  const slssProblem = ((): HealthProblem | null => {
-    const s = slssteamHealth?.state;
-    if (!s || s === "healthy" || s === "not_installed") return null;
-    const label = t("healthImpactSlss");
-    if (s === "not_active")
-      return {
-        key: "slssteam", label, description: t("healthNotActive"),
-        actionLabel: restartAction, onAction: handleRestartSteam,
-        actionDisabled: restartingStream,
-      };
-    if (s === "injection_missing")
-      return {
-        key: "slssteam", label, description: t("healthNotInstalled"),
-        actionLabel: repairingInjection ? t("healthRepairing") : t("healthActionRepair"),
-        onAction: handleRepairInjection, actionDisabled: repairingInjection,
-      };
-    // broken (patterns/hash) → unsupported Steam version: Field, no button.
-    return { key: "slssteam", label, description: t("healthUnsupported") };
+  const showQuickInstall = (() => {
+    const cs = compStatus;
+    if (!cs?.success || cs.headcrab?.compatible !== true) return false;
+    return (cs.components || []).every((c) => !c.installed);
   })();
-
-  const llProblem = ((): HealthProblem | null => {
-    const s = lumalinuxHealth?.state;
-    if (!s || s === "healthy" || s === "not_installed") return null;
-    const label = t("healthImpactLl");
-    if (s === "not_active")
-      return {
-        key: "lumalinux", label, description: t("healthNotActive"),
-        actionLabel: restartAction, onAction: handleRestartSteam,
-        actionDisabled: restartingStream,
-      };
-    if (s === "injection_missing")
-      return {
-        key: "lumalinux", label, description: t("healthNotInstalled"),
-        // patch-only installer — restores lumalinux's block, preserves the
-        // others; no full re-inject needed.
-        actionLabel: reinstallingLL ? t("installingLL") : t("healthActionRepair"),
-        onAction: handleReinstallLumalinux, actionDisabled: reinstallingLL,
-      };
-    // hash_blocked / hooks_failed → unsupported Steam version: Field, no button.
-    return { key: "lumalinux", label, description: t("healthUnsupported") };
-  })();
-
-  const crProblem = ((): HealthProblem | null => {
-    const s = crHealth?.state;
-    if (!s || s === "healthy" || s === "not_installed" || s === "kill_switched") return null;
-    const label = t("healthImpactCr");
-    if (s === "not_active")
-      return {
-        key: "cloudredirect", label, description: t("healthNotActive"),
-        actionLabel: restartAction, onAction: handleRestartSteam,
-        actionDisabled: restartingStream,
-      };
-    if (s === "not_authed")
-      return { key: "cloudredirect", label, description: t("healthCrNotAuthed") };
-    // broken → unsupported Steam version: Field, no button.
-    return { key: "cloudredirect", label, description: t("healthUnsupported") };
-  })();
-
-  const healthProblems = [slssProblem, llProblem, crProblem].filter((p): p is HealthProblem => p !== null);
-
-  // Info-level updates (blue). Only surface for components that are HEALTHY
-  // — a broken component already shouts via HealthBanner with its repair button,
-  // doubling up would be noise. The text says where to apply the update; the
-  // button lives in Settings (intentional — keeps the QAM uncluttered).
-  const updates: UpdateNotice[] = [];
-  if (
-    headcrabCompat && !headcrabCompat.compatible &&
-    slssteamHealth?.state === "healthy"
-  ) {
-    updates.push({ key: "slssteam", text: t("slssUpdateAvailableMain") });
-  }
-  if (
-    crUpdate?.has_update &&
-    crHealth?.state === "healthy"
-  ) {
-    updates.push({ key: "cloudredirect", text: t("crUpdateAvailableMain") });
-  }
-  if (
-    llUpdate?.has_update &&
-    lumalinuxHealth?.state === "healthy"
-  ) {
-    updates.push({ key: "lumalinux", text: t("llUpdateAvailableMain") });
-  }
-  if (pluginUpdate?.has_update) {
-    updates.push({
-      key: "lumadeck",
-      text: t("pluginUpdateAvailableMain", pluginUpdate.latest ?? ""),
-    });
-  }
-  for (const s of stuckUpdates) {
-    updates.push({ key: `stuck-${s.appid}`, text: t("stuckUpdateMain", s.name) });
-  }
 
   // Credential warnings shown ONLY when a game is staged for download (the
   // game-info section is filled). Expired/missing credentials would block the
@@ -818,8 +649,12 @@ export function GameList() {
         </PanelSection>
       )}
 
-      <HealthBanner problems={healthProblems} />
-      <UpdatesBanner updates={updates} />
+      <SystemStatus
+        status={compStatus}
+        stuck={stuckUpdates}
+        busy={sysBusy}
+        actions={sysActions}
+      />
 
       <PanelSection title={t("addGame")}>
         <PanelSectionRow>

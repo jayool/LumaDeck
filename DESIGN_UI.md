@@ -496,7 +496,13 @@ principle. Kept as-is.
 
 ---
 
-## Component model — system status (errors + updates) — 📋 SPEC (not yet built)
+## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–3 done)
+
+> Progress: **1** `get_components_status()` ✅ · **2** `apply_component()` ✅ ·
+> **3** one fetch + `SystemStatus` renderer (5-action collapse + update track),
+> old builders/banners deleted ✅ · **4** Stuck into the renderer ✅ (folded into
+> step 3) · **5** Desktop autostart for the downgrade — pending · **6** i18n
+> cleanup (drop the now-unused per-component update strings) — pending.
 
 > Supersedes the split **Health banner (§3)** + **Updates banner**. Both collapse
 > into one data model and one renderer. This is the authoritative spec; §3/§3b/§3c
