@@ -611,6 +611,12 @@ class Plugin:
         from installer import reinject_installed
         return _j(await reinject_installed())
 
+    async def apply_component(self, component_id: str, op: str = "repair") -> str:
+        """Install/repair/update one component (or 'core'), cascade-safe. Poll
+        get_quick_install_status. See the Component model spec in DESIGN_UI.md."""
+        from installer import apply_component
+        return _j(await apply_component(component_id, op))
+
     async def get_install_status(self) -> str:
         from installer import get_install_status
         return _j(get_install_status())

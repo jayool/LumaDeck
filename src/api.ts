@@ -388,3 +388,11 @@ export const getQuickInstallStatus = async () =>
 // getQuickInstallStatus() for progress (it shares the same state).
 export const reinjectInstalled = async () =>
   parseResult(await call<[], string>("reinject_installed"));
+
+// Cascade-safe install/repair/update for one component (or "core"). op is
+// install|repair|update (same mechanics, differs only in trigger/label). Poll
+// getQuickInstallStatus for progress. See DESIGN_UI.md "Component model".
+export const applyComponent = async (
+  componentId: "slssteam" | "cloudredirect" | "lumalinux" | "core",
+  op: "install" | "repair" | "update" = "repair",
+) => parseResult(await call<[string, string], string>("apply_component", componentId, op));

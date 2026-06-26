@@ -980,8 +980,6 @@ async def reinject_installed() -> dict:
     repair that runs headcrab). Shares QUICK_INSTALL_STATE so the frontend polls
     the same get_quick_install_status().
     """
-    global QUICK_INSTALL_STATE
-
     steps = []
     if check_slssteam_installed():
         steps.append(("dependencies", install_dependencies, get_install_status))
@@ -992,26 +990,36 @@ async def reinject_installed() -> dict:
 
     if not steps:
         return {"success": True, "skipped": "nothing installed"}
+    return await _run_install_steps(steps, "Re-injecting")
+
+
+async def _run_install_steps(steps, verb: str = "Running") -> dict:
+    """Run a list of (name, async runner, status_getter) steps in order, driving
+    QUICK_INSTALL_STATE so the frontend polls get_quick_install_status uniformly.
+    Stops at the first failure. Shared by reinject_installed and apply_component."""
+    global QUICK_INSTALL_STATE
+    if not steps:
+        return {"success": True, "skipped": "nothing to do"}
 
     QUICK_INSTALL_STATE = {
         "status": "installing",
         "step": steps[0][0],
         "stepIndex": 0,
         "totalSteps": len(steps),
-        "progress": "Starting re-injection...",
+        "progress": f"{verb}...",
         "error": None,
     }
-    logger.info("LumaDeck: reinject_installed() entered (%d steps)", len(steps))
+    logger.info("LumaDeck: _run_install_steps (%d steps)", len(steps))
 
     for i, (name, runner, status_getter) in enumerate(steps):
         QUICK_INSTALL_STATE["step"] = name
         QUICK_INSTALL_STATE["stepIndex"] = i
-        QUICK_INSTALL_STATE["progress"] = f"Re-injecting {name} ({i + 1}/{len(steps)})..."
-        logger.info("LumaDeck: reinject step %d/%d: %s", i + 1, len(steps), name)
+        QUICK_INSTALL_STATE["progress"] = f"{verb} {name} ({i + 1}/{len(steps)})..."
+        logger.info("LumaDeck: step %d/%d: %s", i + 1, len(steps), name)
         try:
             result = await runner()
         except Exception as exc:
-            logger.exception("LumaDeck: reinject step %s crashed: %s", name, exc)
+            logger.exception("LumaDeck: step %s crashed: %s", name, exc)
             QUICK_INSTALL_STATE["status"] = "failed"
             QUICK_INSTALL_STATE["error"] = f"{name} crashed: {exc}"
             return {"success": False, "failedStep": name}
@@ -1021,11 +1029,54 @@ async def reinject_installed() -> dict:
             QUICK_INSTALL_STATE["status"] = "failed"
             QUICK_INSTALL_STATE["error"] = sub.get("error") or f"{name} failed"
             QUICK_INSTALL_STATE["progress"] = sub.get("progress", "")
-            logger.error("LumaDeck: reinject failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
+            logger.error("LumaDeck: failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
             return {"success": False, "failedStep": name}
 
     QUICK_INSTALL_STATE["status"] = "done"
     QUICK_INSTALL_STATE["stepIndex"] = len(steps)
-    QUICK_INSTALL_STATE["progress"] = "Re-injection complete!"
-    logger.info("LumaDeck: reinject_installed finished OK")
+    QUICK_INSTALL_STATE["progress"] = "Complete!"
+    logger.info("LumaDeck: _run_install_steps finished OK")
     return {"success": True}
+
+
+async def apply_component(component_id: str, op: str = "repair") -> dict:
+    """Install / repair / update one component, keeping steam.sh correct.
+
+    `op` (install|repair|update) is the same mechanically — every op re-runs the
+    component's installer(s), which always fetch the latest, so a repair and an
+    update run identical code; `op` is only the trigger/label. The per-component
+    cascade follows DESIGN_UI.md §3b:
+
+      - slssteam:      its installer runs headcrab (regenerates steam.sh, wiping
+                       CR + lumalinux) → re-inject the whole installed set in
+                       order = reinject_installed.
+      - cloudredirect: its installer runs headcrab (re-adds SLSsteam + CR) but
+                       wipes lumalinux → install_cloudredirect, then
+                       install_lumalinux if installed.
+      - lumalinux:     patch-only, touches nobody else → install_lumalinux alone.
+      - core:          ensure BOTH core pieces (half-installed / onboarding) +
+                       CR if present, in order.
+
+    Drives QUICK_INSTALL_STATE; poll get_quick_install_status.
+    """
+    if component_id == "slssteam":
+        return await reinject_installed()
+
+    if component_id == "cloudredirect":
+        steps = [("cloudredirect", install_cloudredirect, get_cr_install_status)]
+        if check_lumalinux_installed():
+            steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
+        return await _run_install_steps(steps, "Applying")
+
+    if component_id == "lumalinux":
+        return await _run_install_steps(
+            [("lumalinux", install_lumalinux, get_ll_install_status)], "Applying")
+
+    if component_id == "core":
+        steps = [("dependencies", install_dependencies, get_install_status)]
+        if check_cloudredirect_installed():
+            steps.append(("cloudredirect", install_cloudredirect, get_cr_install_status))
+        steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
+        return await _run_install_steps(steps, "Installing")
+
+    return {"success": False, "error": f"unknown component '{component_id}'"}
