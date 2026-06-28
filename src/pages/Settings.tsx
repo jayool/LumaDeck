@@ -567,16 +567,16 @@ export function Settings() {
           return (
             <>
               <PanelSectionRow>
-                <div style={{
-                  fontSize: "11px",
-                  color: broken ? "#ffaa00" : "#9cc4ff",
-                }}>
-                  {broken
-                    ? <>⚠ {slssHealthLine(slssteamHealth!)}</>
+                <Field
+                  icon={broken
+                    ? <FaExclamationTriangle color="#ffaa00" />
+                    : <FaInfoCircle color="#9cc4ff" />}
+                  label={broken
+                    ? slssHealthLine(slssteamHealth!)
                     : t("slssUpdateAvailableSub",
                          headcrabCompat?.current_build ?? "?",
                          headcrabCompat?.target ?? "?")}
-                </div>
+                />
               </PanelSectionRow>
               <PanelSectionRow>
                 <ButtonItem
@@ -588,36 +588,26 @@ export function Settings() {
                 </ButtonItem>
               </PanelSectionRow>
               {gamemodeBlocked && (
-                <PanelSectionRow>
-                  <div style={{
-                    fontSize: "11px",
-                    color: "#aaa",
-                    lineHeight: "1.4",
-                    padding: "4px 0",
-                  }}>
-                    <div style={{
-                      color: broken ? "#ff8c00" : "#5b9eff",
-                      fontWeight: 600,
-                      marginBottom: "4px",
-                    }}>
-                      ⚠ {broken ? t("headcrabGameModeBlockTitle") : t("slssUpdateApplyTitle")}
-                    </div>
-                    <div style={{ marginBottom: "6px" }}>
-                      {broken ? t("headcrabGameModeBlockBody") : t("slssUpdateApplyBody")}
-                    </div>
-                    <div style={{
-                      fontFamily: "monospace",
-                      fontSize: "10px",
-                      color: "#ccc",
-                      background: "rgba(0,0,0,0.3)",
-                      padding: "4px 6px",
-                      borderRadius: "3px",
-                      wordBreak: "break-all",
-                    }}>
-                      {t("headcrabGameModeBlockCommand")}
-                    </div>
-                  </div>
-                </PanelSectionRow>
+                <>
+                  {/* Must-run-in-Desktop notice → native Field (title + body) +
+                      a monospace command line (no dark box). */}
+                  <PanelSectionRow>
+                    <Field
+                      icon={<FaExclamationTriangle color={broken ? "#ff8c00" : "#5b9eff"} />}
+                      label={broken ? t("headcrabGameModeBlockTitle") : t("slssUpdateApplyTitle")}
+                      description={broken ? t("headcrabGameModeBlockBody") : t("slssUpdateApplyBody")}
+                    />
+                  </PanelSectionRow>
+                  <PanelSectionRow>
+                    <Field
+                      description={
+                        <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                          {t("headcrabGameModeBlockCommand")}
+                        </span>
+                      }
+                    />
+                  </PanelSectionRow>
+                </>
               )}
             </>
           );

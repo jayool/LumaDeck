@@ -641,6 +641,23 @@ monospace `description`, custom bar → `ProgressBarWithInfo`.
 - **Native or custom:** 🟢 native; the credential inputs/buttons were already
   `TextField`/`ButtonItem`.
 
+#### 9b. SLSsteam page — ✅ built
+
+- **Was:** the repair/update zone had a colored status `<div>` (amber broken /
+  blue update) and, when the fix is Game-Mode-blocked, a hand-bordered alert
+  block: bold colored title + body + a dark monospace "code block" with the
+  Desktop command.
+- **Now:** status line → `Field` (⚠ amber icon broken / `FaInfoCircle` blue
+  update). Alert block → a `Field` (icon + title `label` + body `description`)
+  plus a second `Field` whose `description` is the command in a plain monospace
+  span (dark box dropped). Toggle + Restart + Repair buttons were already native.
+- **Note:** `gamemodeBlocked` is the same "downgrade in Desktop" case the QAM
+  `SystemStatus` now solves with a "Fix in Desktop" hand-off button. Here the
+  Repair button is still *disabled* with a manual command shown — a future pass
+  could wire the v0.3.50 hand-off here too. Out of scope for the native pass.
+- **Native or custom:** 🟢 native; only inline style left is monospace on the
+  command span.
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)
