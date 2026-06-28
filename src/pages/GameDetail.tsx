@@ -18,6 +18,7 @@ import {
   FaTools,
   FaTrash,
   FaExclamationTriangle,
+  FaCheckCircle,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { ProgressBar } from "../components/ProgressBar";
@@ -62,6 +63,7 @@ import {
   getGenerateStatus,
   downloadSlscheevo,
   getSlscheevoDownloadStatus,
+  runDesktopHandoffSlscheevo,
   getSteamLibraries,
   checkSteamlessInstalled,
   downloadSteamless,
@@ -571,6 +573,16 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
+  const handleConfigureSlscheevo = async () => {
+    // SLScheevo's login is an interactive terminal flow — Desktop only. Arm a
+    // hand-off that opens Konsole already running it, then switch to Desktop.
+    // No auto-return: the user logs in and switches back to Game Mode by hand.
+    const r: any = await runDesktopHandoffSlscheevo();
+    if (r?.switchLaunched) toast(t("achievements"), t("slscheevoConfigSwitching"), 8000);
+    else if (r?.armed) toast(t("achievements"), t("slscheevoConfigManual"), 12000);
+    else toast(t("toastError"), r?.error || "", 6000);
+  };
+
   const handleDownloadSteamless = async () => {
     const result = await downloadSteamless();
     if (result.success) {
@@ -907,9 +919,7 @@ export function GameDetail({ appid }: GameDetailProps) {
         {achievementStatus === "not_installed" ? (
           <>
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#8b929a" }}>
-                {t("achievementStatusNotInstalled")}
-              </div>
+              <Field label={t("achievementStatusNotInstalled")} />
             </PanelSectionRow>
             <ActionButton
               label={busy === "slscheevo" ? t("downloadingSlscheevo") : t("downloadSlscheevo")}
@@ -919,60 +929,57 @@ export function GameDetail({ appid }: GameDetailProps) {
           </>
         ) : achievementStatus === "not_configured" ? (
           <>
+            {/* Login is an interactive terminal flow (Desktop only). The button
+                opens Konsole already running SLScheevo; the monospace line is the
+                same command, kept as a manual fallback. */}
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#ffaa00" }}>
-                {t("achievementStatusNotConfigured")}
-              </div>
+              <Field
+                icon={<FaExclamationTriangle color="#ffaa00" />}
+                label={t("achievementStatusNotConfigured")}
+              />
             </PanelSectionRow>
-            <PanelSectionRow>
-              <div style={{ fontSize: "11px", color: "#8b929a" }}>
-                {t("slscheevoRunInTerminal")}
-              </div>
-            </PanelSectionRow>
+            <ActionButton
+              label={t("configureInDesktop")}
+              onClick={handleConfigureSlscheevo}
+              variant="primary"
+            />
             {slscheevoBinaryPath && (
               <PanelSectionRow>
-                <div style={{
-                  fontSize: "10px",
-                  color: "#b8bcbf",
-                  fontFamily: "monospace",
-                  background: "#1a1d23",
-                  padding: "6px 8px",
-                  borderRadius: "4px",
-                  wordBreak: "break-all",
-                }}>
-                  {t("slscheevoPath",
-                    slscheevoBinaryPath.substring(0, slscheevoBinaryPath.lastIndexOf("/")),
-                    slscheevoBinaryPath.substring(slscheevoBinaryPath.lastIndexOf("/") + 1),
-                  )}
-                </div>
+                <Field
+                  label={t("slscheevoRunInTerminal")}
+                  description={
+                    <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                      {t("slscheevoPath",
+                        slscheevoBinaryPath.substring(0, slscheevoBinaryPath.lastIndexOf("/")),
+                        slscheevoBinaryPath.substring(slscheevoBinaryPath.lastIndexOf("/") + 1),
+                      )}
+                    </span>
+                  }
+                />
               </PanelSectionRow>
             )}
           </>
         ) : achievementStatus === "generating" ? (
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#1a9fff" }}>
-              {achievementGenState?.progress || t("achievementStatusGenerating")}
-            </div>
+            <Field label={achievementGenState?.progress || t("achievementStatusGenerating")} />
           </PanelSectionRow>
         ) : achievementStatus === "generated" ? (
           <>
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#00cc00" }}>
-                {t("achievementStatusGenerated")}
-              </div>
+              <Field
+                icon={<FaCheckCircle color="#00cc00" />}
+                label={t("achievementStatusGenerated")}
+              />
             </PanelSectionRow>
             <ActionButton
               label={t("generateAchievements")}
               onClick={handleGenerateAchievements}
-              description={t("achievementStatusGenerated")}
             />
           </>
         ) : achievementStatus === "ready" ? (
           <>
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#dcdedf" }}>
-                {t("achievementStatusReady")}
-              </div>
+              <Field label={t("achievementStatusReady")} />
             </PanelSectionRow>
             <ActionButton
               label={t("generateAchievements")}

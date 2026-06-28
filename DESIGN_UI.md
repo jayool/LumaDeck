@@ -543,6 +543,38 @@ principle. Kept as-is.
   control is a direct row child. A `description` must add information — never
   echo the section title.
 
+#### 8d. Achievements page — ✅ built (v0.3.54)
+
+- **What:** a 5-state machine (not_installed / not_configured / generating /
+  generated / ready) for the SLScheevo achievement-generation flow.
+- **Was:** every state's status line was a raw coloured `<div>` (gray/amber/
+  blue/green), and the not_configured state showed the binary path in a dark
+  bordered "code block" `<div>`.
+- **Now:**
+  - Status lines → native `Field`. Colour signal carried by **icons** (per the
+    "icons not coloured text" choice): ⚠ amber `FaExclamationTriangle` on
+    not_configured, ✓ green `FaCheckCircle` on generated; the neutral states
+    (not_installed / generating / ready) are plain `Field`s.
+  - Path "code block" → a plain **monospace** line inside a `Field` description
+    (monospace kept, dark frame dropped — the §8 decision).
+  - Dropped the redundant `description` on the generated-state button (it echoed
+    the status line above it).
+- **New capability — "Configure in Desktop":** SLScheevo's login is an
+  interactive terminal flow (Desktop only), so the not_configured state now has a
+  primary **"Configure in Desktop"** button. It reuses the v0.3.50 hand-off with
+  an **interactive payload**: arms an autostart that opens Konsole already
+  running `cd <dir> && ./<binary>`, switches to Desktop, and — unlike the
+  downgrade — does **NOT** auto-return (the user logs in, then switches back by
+  hand; konsole stays open via `--hold`). The backend recomputes the binary path
+  via `find_slscheevo_binary()` (no command from the frontend) and `shlex.quote`s
+  it. The monospace command line stays as a manual fallback.
+- **Native or custom:** 🟢 native `Field`s + icons; only inline style left is
+  `fontFamily: monospace` on the path span (a value child, allowed).
+- **Rule:** a Desktop-only interactive setup (SLScheevo login, like CR sign-in)
+  gets a hand-off button with an **interactive, no-auto-return** payload — the
+  user drives the console and returns manually. Don't fake a round-trip around an
+  interactive flow.
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)

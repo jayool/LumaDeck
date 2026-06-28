@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import pwd
+import shlex
 import shutil
 import subprocess
 
@@ -231,6 +232,40 @@ def run_desktop_handoff_real() -> dict:
     switch to Desktop. Returns to Game Mode only on success; stays in Desktop on
     failure so the error is readable."""
     return _run_handoff(_REAL_PAYLOAD)
+
+
+def run_desktop_handoff_slscheevo() -> dict:
+    """Arm an INTERACTIVE Desktop hand-off that opens Konsole running the
+    SLScheevo binary so the user can do its one-time terminal login, then switch
+    to Desktop. This is the exact command the manual instructions tell the user
+    to type (`cd <dir> && ./<binary>`), just automated.
+
+    INTERACTIVE → no auto-return to Game Mode: the user logs in, then switches
+    back manually. The konsole window stays open (--hold) showing the result.
+    The script runs as deck in deck's Plasma session, which is the right context
+    for SLScheevo to decrypt its login token (same as running it by hand)."""
+    try:
+        from paths import find_slscheevo_binary
+        binary = find_slscheevo_binary()
+    except Exception as exc:
+        return {"success": False, "error": f"locate slscheevo: {exc}"}
+    if not binary or not os.path.isfile(binary):
+        return {"success": False, "error": "SLScheevo binary not found"}
+
+    qdir = shlex.quote(os.path.dirname(binary))
+    qbin = shlex.quote("./" + os.path.basename(binary))
+    payload = (
+        'echo "================================================"\n'
+        'echo " LumaDeck - SLScheevo login setup"\n'
+        'echo " Log in when prompted. When it finishes, close"\n'
+        'echo " this window and switch back to Game Mode."\n'
+        'echo "================================================"\n'
+        'echo\n'
+        f"cd {qdir} || {{ echo '!! SLScheevo folder not found'; exit 1; }}\n"
+        f"{qbin}\n"
+        # No steamos-session-select: interactive, the user returns by hand.
+    )
+    return _run_handoff(payload)
 
 
 # Full diagnostic written to a file so a tiny toast doesn't truncate it: the user

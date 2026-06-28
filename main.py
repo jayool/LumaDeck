@@ -631,6 +631,13 @@ class Plugin:
         from desktop_handoff import run_desktop_handoff_real
         return _j(run_desktop_handoff_real())
 
+    async def run_desktop_handoff_slscheevo(self) -> str:
+        """Arm an interactive Desktop hand-off that opens Konsole running the
+        SLScheevo binary for its one-time login, then switch to Desktop. No
+        auto-return (the user logs in and switches back manually)."""
+        from desktop_handoff import run_desktop_handoff_slscheevo
+        return _j(run_desktop_handoff_slscheevo())
+
     async def disarm_desktop_handoff(self) -> str:
         from desktop_handoff import disarm_desktop_handoff
         return _j(disarm_desktop_handoff())

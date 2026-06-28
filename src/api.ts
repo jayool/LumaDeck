@@ -406,3 +406,8 @@ export const runDesktopHandoffDummy = async () =>
 // Arms a one-shot autostart + switches to Desktop; returns to Game Mode on success.
 export const runDesktopHandoffReal = async () =>
   parseResult(await call<[], string>("run_desktop_handoff_real"));
+
+// Interactive Desktop hand-off: opens Konsole running the SLScheevo binary for
+// its one-time login. No auto-return (the user logs in, then switches back).
+export const runDesktopHandoffSlscheevo = async () =>
+  parseResult(await call<[], string>("run_desktop_handoff_slscheevo"));
