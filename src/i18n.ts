@@ -35,34 +35,35 @@ const strings: Record<Lang, Record<string, string>> = {
     // Help page content (Settings ▸ Help). en only; pt-BR falls back to en.
     helpWhatIs: "What is LumaDeck?",
     helpWhatIsDesc:
-      "LumaDeck lets you add and manage Steam games on your Deck. It downloads game files through Steam itself, instead of an external tool, and keeps achievements, DLC and multiplayer working. Most of the setup is automatic: in everyday use you just add a game and play.",
+      "LumaDeck adds and manages Steam games from the Quick Access Menu. It fetches a game's manifest; Steam then downloads the files natively, like any owned game. It also configures SLSsteam and handles achievements, fixes and cloud saves.",
     helpHowToAdd: "Adding a game",
     helpHowToAddSteps:
-      "1. Open the LumaDeck panel from the Quick Access menu (the \"…\" button).\n" +
-      "2. Under Add Game, search by name or paste a Steam AppID.\n" +
-      "3. Pick the game and press Download. Steam downloads it like any other game.\n" +
-      "4. When it finishes, the game is in My Games, ready to launch.\n\n" +
-      "If a download complains about credentials, set them up first in Settings ▸ API Credentials.",
+      "1. In Steam, open the game's store page — or search by name / paste its AppID in Add Game.\n" +
+      "2. Open LumaDeck in the QAM; it auto-detects the AppID.\n" +
+      "3. Tap Download Manifest.\n" +
+      "4. Restart Steam so the game appears in your library.\n" +
+      "5. In Steam, press Install. It downloads natively — progress shows in the Steam library, not in the plugin.\n\n" +
+      "Set a manifest credential first in Settings ▸ API Credentials.",
     helpFeatures: "Features",
     helpFakeAppId:
-      "Makes a game launch under a different Steam App ID so it sees itself as owned. Useful for games that check ownership of one specific ID.",
+      "Maps the game onto a fake owned app (Spacewar, AppID 480, which every account owns) so Steam treats it as owned.",
     helpToken:
-      "Adds a per-game ownership token so Steam treats the game as part of your account.",
+      "Writes the game's app access token into SLSsteam so it can query the app's product info; mainly fixes the \"invalid configuration\" error on some games. Not a Denuvo unlock.",
     helpDlcs:
-      "Unlocks the game's DLC so add-on content shows up and loads in-game.",
+      "Looks up the game's DLCs from Steam's store API and marks them as owned so they show up in Steam.",
     helpGoldberg:
-      "Swaps Steam's online libraries for the Goldberg emulator: offline play and LAN/online multiplayer for games that rely on Steam networking.",
+      "Swaps the game's steam_api libraries for the Goldberg emulator (and back), for titles that expect an emulator instead of SLSsteam's ownership layer.",
     helpFixes:
-      "Applies community fixes (Generic Fix, Online Fix, and others) for games that won't start or won't go online on their own.",
+      "Community bypass/patch zips for titles that don't launch cleanly: Generic Fix and Online Fix, extracted over the install.",
     helpLinuxNative:
-      "Points a game at Steam's Linux runtime instead of the Windows one, so native Linux builds run without Proton.",
+      "A local fix for native-Linux installs (nothing is downloaded).",
     helpTroubleshooting: "Troubleshooting",
     helpTroubleshootingTips:
-      "• Game won't start? Open its Fixes tab, Check for Fixes, and apply any that appear.\n" +
-      "• Download stuck or failing? Make sure Settings ▸ API Credentials are valid, then retry.\n" +
-      "• Achievements not unlocking? Set up SLScheevo from the game's Achievements tab.\n" +
-      "• A red item in Settings ▸ Dependencies? Use the Install/Repair button there.\n" +
-      "• After most changes, restart Steam so they take effect.",
+      "• Game won't appear / download? Restart Steam after Download Manifest — it won't show until you do, then press Install in Steam.\n" +
+      "• Manifest fetch fails? Check Settings ▸ API Credentials (an expired key is the usual cause); try the other provider.\n" +
+      "• A component shows not_active? Restart Steam. Broken or build mismatch? Reapply it from Settings ▸ Dependencies.\n" +
+      "• \"Reapply blocked in Game Mode\"? Switch to Desktop, run the command shown, then return.\n" +
+      "• A game crashes? Try Repair appmanifest, Reconfigure SLSsteam, Check for Fixes, or (emulator titles) Apply Goldberg.",
     results: "results",
     selected: "Selected",
     invalidAppId: "Invalid AppID",

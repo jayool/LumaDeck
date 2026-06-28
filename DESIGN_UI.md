@@ -712,9 +712,12 @@ cluster (~16 spots). Converted with the two patterns:
   upstream — **DeckTools' own `i18n.ts` (master) doesn't contain them either**,
   so there was no original text to recover. Nothing was deleted; the strings were
   simply never written.
-- **Fix:** wrote fresh English help content for all keys (what LumaDeck is, how
-  to add a game, the six features, troubleshooting tips). en only — pt-BR falls
-  back to en via `t()`.
+- **Fix:** wrote English help content for all keys (what LumaDeck is, how to add
+  a game, the six features, troubleshooting tips). en only — pt-BR falls back to
+  en via `t()`. **Content is sourced from `docs/`** (getting-started,
+  managing-a-game, troubleshooting) — an earlier from-memory draft had
+  inaccuracies (e.g. Token described as an ownership token, and the add-a-game
+  steps missed the restart-Steam → press-Install flow); aligned to the docs.
 - **Render:** the **Features** list → native `Field` per feature (name as
   `label`, explanation as `description`). The prose sections (what-is, how-to-add
   steps, troubleshooting) stay readable `<div>` body text with `pre-line` — Decky
