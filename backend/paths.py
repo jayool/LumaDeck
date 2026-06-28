@@ -655,35 +655,41 @@ def verify_slssteam_injected() -> dict:
     if _check_process_injected():
         return {"patched": False, "already_ok": True, "method": "active", "error": None}
 
-    # 2. Headcrab marker: INJECT_SLS variable in steam.sh referencing
-    #    SLSsteam.so. Means everything is configured and the next Steam
-    #    launch will pick it up; no error, just needs a restart.
-    sls_dir = find_slssteam_root()
-    sls_so = os.path.join(sls_dir or "", "SLSsteam.so") if sls_dir else None
-
+    # 2. Headcrab marker: INJECT_SLS variable in steam.sh. Means everything is
+    #    configured and the next Steam launch will pick it up; no error, just
+    #    needs a restart.
+    #
+    #    We accept the `INJECT_SLS=` marker ON ITS OWN — Headcrab references the
+    #    .so via its own variable, so requiring the literal SLSsteam.so path here
+    #    false-negatived (e.g. right after a Steam downgrade). And we scan ALL
+    #    candidate steam.sh files, only failing if NONE carry the marker — the
+    #    old loop returned on the first existing steam.sh, so a transiently
+    #    unpatched one (Steam mid-restart) masked a patched sibling.
+    found_steam_sh = False
     for candidate in _STEAM_PATHS:
         steam_sh = os.path.join(candidate, "steam.sh")
         if not os.path.isfile(steam_sh):
             continue
+        found_steam_sh = True
         try:
             with open(steam_sh, "r", encoding="utf-8") as f:
                 content = f.read()
         except Exception:
             continue
-        if "INJECT_SLS=" in content and (sls_so is None or sls_so in content):
+        if "INJECT_SLS=" in content:
             return {
                 "patched": False,
                 "already_ok": True,
                 "method": "steam_sh_configured",
                 "error": None,
             }
-        # steam.sh exists but isn't Headcrab-patched.
+
+    if found_steam_sh:
         return {
             "patched": False,
             "already_ok": False,
             "error": "steam.sh has no INJECT_SLS line — Headcrab not installed or steam.sh was overwritten. Re-run Install Dependencies.",
         }
-
     return {"patched": False, "already_ok": False, "error": "steam.sh not found"}
 
 

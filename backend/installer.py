@@ -411,7 +411,20 @@ async def install_dependencies(gamemode: bool = True) -> dict:
             # Verify the post-condition (INJECT_SLS in steam.sh) instead of
             # trusting the exit code, so we don't report a green "done" that
             # isn't functional.
+            #
+            # In the Desktop / off-pin path the Steam DOWNGRADE settles
+            # asynchronously — Steam restarts to step the client version down and
+            # steam.sh's INJECT_SLS can land a few seconds after headcrab exits.
+            # Poll before declaring failure so we don't abort a setup that's
+            # actually finishing (that abort is what skipped CR + lumalinux).
             sls_check = verify_slssteam_injected()
+            if not sls_check.get("already_ok"):
+                for _ in range(20):  # ~60s (20 x 3s)
+                    await asyncio.sleep(3)
+                    INSTALL_STATE["progress"] = "Waiting for Steam to settle after the downgrade..."
+                    sls_check = verify_slssteam_injected()
+                    if sls_check.get("already_ok"):
+                        break
             if not sls_check.get("already_ok"):
                 INSTALL_STATE["status"] = "failed"
                 INSTALL_STATE["error"] = (
