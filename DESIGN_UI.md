@@ -745,6 +745,22 @@ colours on value spans and monospace on command spans (both allowed).
 - **Native or custom:** 🟢 native; no inline styles left (the page wrapper div is
   layout, like Library's).
 
+#### 10b. LibraryPickerModal — ❌ removed (dead code)
+
+The "which Steam library to install to" modal (shown from the game-download
+flow when `steamLibraries.length > 1`) was **vestigial from the ACCELA era**:
+`start_download` passes `target_library_path` to `_download_zip_for_app`, which
+**never references it** — the manifest flow always installs to the default
+library. So the modal let the user pick a disk that the backend then ignored,
+and it only appeared with 2+ libraries (most users, including single-drive
+setups, never saw it). Removed `LibraryPickerModal.tsx` and the
+`showLibraryPicker` calls in GameDetail/GameList; both `handleDownload`/
+`handleAddGame` now call `doStartDownload` directly, and the
+`steamLibraries`/`getSteamLibraries` plumbing that only fed the picker is gone
+(the Settings ▸ System library list uses its own `getSteamLibraries`, untouched).
+If per-disk install is ever wanted, it's a backend feature (make
+`_download_zip_for_app` honour `target_library_path`), not a modal.
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)

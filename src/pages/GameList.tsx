@@ -22,7 +22,6 @@ import {
   checkAllAchievementsStatus,
   generateAllAchievements,
   getSyncAllStatus,
-  getSteamLibraries,
   getGameNotices,
   restartSteam,
   getComponentsStatus,
@@ -36,7 +35,6 @@ import {
   runDesktopHandoffDummy,
   runDesktopHandoffReal,
 } from "../api";
-import { showLibraryPicker } from "../components/LibraryPickerModal";
 import { FaExclamationTriangle } from "react-icons/fa";
 import {
   SystemStatus,
@@ -93,7 +91,6 @@ export function GameList() {
   const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
   const [quickProgress, setQuickProgress] = useState("");
   const [syncState, setSyncState] = useState<any>(null);
-  const [steamLibraries, setSteamLibraries] = useState<any[]>([]);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
   const [pendingGameInfo, setPendingGameInfo] = useState<any>(null);
   const [cred, setCred] = useState<any>(null);
@@ -292,13 +289,6 @@ export function GameList() {
   useEffect(() => {
     loadGames();
 
-    // Load Steam libraries for library picker
-    getSteamLibraries().then((libResult) => {
-      if (libResult.success && libResult.libraries) {
-        setSteamLibraries(libResult.libraries);
-      }
-    });
-
     // Check SLScheevo availability
     (async () => {
       try {
@@ -419,12 +409,8 @@ export function GameList() {
       setAddStatus(t("invalidAppId"));
       return;
     }
-    if (steamLibraries.length > 1) {
-      showLibraryPicker(steamLibraries, (libraryPath) => {
-        doStartDownload(id, libraryPath);
-      }, pendingGameInfo?.sizeBytes || 0);
-      return;
-    }
+    // The backend ignores the install-library path (manifest flow always uses
+    // the default library), so there's no disk choice to make.
     doStartDownload(id);
   };
 

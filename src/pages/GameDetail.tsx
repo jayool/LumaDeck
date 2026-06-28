@@ -63,7 +63,6 @@ import {
   downloadSlscheevo,
   getSlscheevoDownloadStatus,
   runDesktopHandoffSlscheevo,
-  getSteamLibraries,
   checkSteamlessInstalled,
   downloadSteamless,
   getSteamlessDownloadStatus,
@@ -71,7 +70,6 @@ import {
   getSteamlessStatus,
 } from "../api";
 import { useT } from "../i18n";
-import { showLibraryPicker } from "../components/LibraryPickerModal";
 
 interface GameDetailProps {
   appid: number;
@@ -127,7 +125,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [steamlessDotnet, setSteamlessDotnet] = useState(false);
   const [steamlessDownloadState, setSteamlessDownloadState] = useState<any>(null);
   const [steamlessState, setSteamlessState] = useState<any>(null);
-  const [steamLibraries, setSteamLibraries] = useState<any[]>([]);
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || gameName, duration });
@@ -148,12 +145,6 @@ export function GameDetail({ appid }: GameDetailProps) {
 
   useEffect(() => {
     const load = async () => {
-      // Load libraries immediately so the picker is ready before user clicks
-      getSteamLibraries().then((libResult) => {
-        if (libResult.success && libResult.libraries) {
-          setSteamLibraries(libResult.libraries);
-        }
-      });
 
       // #21: flag if this game's last native Steam update is stuck on a
       // missing decryption key (new/rotated depot) so we can offer Fix Update.
@@ -338,12 +329,8 @@ export function GameDetail({ appid }: GameDetailProps) {
   };
 
   const handleDownload = () => {
-    if (!installPath && steamLibraries.length > 1) {
-      showLibraryPicker(steamLibraries, (libraryPath) => {
-        doStartDownload(libraryPath);
-      });
-      return;
-    }
+    // The backend ignores the install-library path (the manifest flow always
+    // uses the default library), so there's no disk choice to make here.
     doStartDownload();
   };
 
