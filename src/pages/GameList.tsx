@@ -32,7 +32,6 @@ import {
   quickInstall,
   getQuickInstallStatus,
   reinjectInstalled,
-  runDesktopHandoffDummy,
   runDesktopHandoffReal,
 } from "../api";
 import { FaExclamationTriangle } from "react-icons/fa";
@@ -907,27 +906,6 @@ export function GameList() {
             onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
           >
             {t("workshop")}
-          </ButtonItem>
-        </PanelSectionRow>
-
-        {/* TEMPORARY: validate the REAL Desktop hand-off (enter-the-wired Steam
-            downgrade + lumalinux re-inject) round-trip on-device, regardless of
-            the current status. Remove once the real round-trip is confirmed.
-            The dummy path is kept available via runDesktopHandoffDummy. */}
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={async () => {
-              try {
-                const r: any = await runDesktopHandoffReal();
-                const sel = r?.sessionSelect === "(not found)" ? "NO" : "OK";
-                toast("Hand-off (REAL)", `switch=${r?.switchLaunched} sel=${sel} → cat ~/lh.json`, 12000);
-              } catch (e: any) {
-                toast("Hand-off ERROR", String(e?.message || e), 12000);
-              }
-            }}
-          >
-            🧪 Test REAL Desktop downgrade
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
