@@ -5,10 +5,11 @@ import {
   TextField,
   ButtonItem,
   ToggleField,
+  Field,
   Navigation,
   SidebarNavigation,
 } from "@decky/ui";
-import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle } from "react-icons/fa";
+import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle, FaCheckCircle, FaExclamationTriangle } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { HelpContent } from "./Help";
 import {
@@ -226,19 +227,20 @@ export function Settings() {
     if (!c) return null;
     const K = (suffix: string) => (kind === "hubcap" ? `credHubcap${suffix}` : `credRyuu${suffix}`);
     let text = "";
-    let color = "#8b929a";
+    // Colour signal carried by an icon (native Field), per the GameDetail choice.
+    let icon: JSX.Element | undefined;
     switch (c.state) {
       case "ok":
         text = t(K("Ok"), fmtLeft(c.days_left), fmtDate(c.expires_at));
-        color = "#00cc00";
+        icon = <FaCheckCircle color="#00cc00" />;
         break;
       case "soon":
         text = t(K("Soon"), fmtLeft(c.days_left), fmtDate(c.expires_at));
-        color = "#ff8c00";
+        icon = <FaExclamationTriangle color="#ff8c00" />;
         break;
       case "expired":
         text = t(K("Expired"), fmtDate(c.expires_at));
-        color = "#ff4444";
+        icon = <FaExclamationTriangle color="#ff4444" />;
         break;
       case "none":
         text = t(K("None"));
@@ -249,7 +251,7 @@ export function Settings() {
     }
     return (
       <PanelSectionRow>
-        <div style={{ fontSize: "11px", color, paddingLeft: "8px" }}>{text}</div>
+        <Field icon={icon} label={text} />
       </PanelSectionRow>
     );
   };
@@ -260,9 +262,7 @@ export function Settings() {
     if (!c || (c.state !== "ok" && c.state !== "soon") || c.daily_limit == null) return null;
     return (
       <PanelSectionRow>
-        <div style={{ fontSize: "11px", color: "#8b929a", paddingLeft: "8px" }}>
-          {t("credHubcapUsage", c.daily_usage ?? 0, c.daily_limit)}
-        </div>
+        <Field label={t("credHubcapUsage", c.daily_usage ?? 0, c.daily_limit)} />
       </PanelSectionRow>
     );
   };

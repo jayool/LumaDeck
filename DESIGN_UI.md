@@ -618,6 +618,31 @@ spans, monospace on path spans).
 
 ---
 
+### 9. Settings — full-screen, 6-page `SidebarNavigation` — 🚧 in progress
+
+The config surface (`ROUTE_SETTINGS`). Six pages: API Credentials, SLSsteam,
+Dependencies, System, About, Help. **Dependencies is the "advanced 1%" detailed
+per-component breakdown** (the QAM's `SystemStatus` is the collapsed view for
+everyone else). Audited: ~27 custom-chrome spots, mostly **colored status
+`<div>`s** (green installed / red not-found / amber degraded / blue update),
+plus 2 monospace command "code-block" alert boxes (SLSsteam, Dependencies) and 1
+custom disk-usage bar (System). Same three native patterns as GameDetail:
+status → `Field` (icon for the colour signal), command box → `Field` with
+monospace `description`, custom bar → `ProgressBarWithInfo`.
+
+#### 9a. API Credentials page — ✅ built
+
+- **Was:** two colored status sub-line `<div>`s — `renderCredLine` (credential
+  validity: green ok / amber soon / red expired / gray none) and
+  `renderHubcapUsage` (gray daily-usage stat).
+- **Now:** both → native `Field`. The validity line carries its colour via an
+  **icon** (✓ green `FaCheckCircle` ok, ⚠ amber soon, ⚠ red expired, plain for
+  none/unknown), text as `label`; the usage stat is a plain `Field`.
+- **Native or custom:** 🟢 native; the credential inputs/buttons were already
+  `TextField`/`ButtonItem`.
+
+---
+
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)
 
 > Progress: **1** `get_components_status()` ✅ · **2** `apply_component()` ✅ ·
