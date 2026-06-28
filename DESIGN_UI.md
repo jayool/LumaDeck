@@ -761,6 +761,17 @@ setups, never saw it). Removed `LibraryPickerModal.tsx` and the
 If per-disk install is ever wanted, it's a backend feature (make
 `_download_zip_for_app` honour `target_library_path`), not a modal.
 
+#### 10c. Dead components removed
+
+- **`components/ProgressBar.tsx`** (the custom bar) — every usage now goes
+  through the native `ProgressBarWithInfo` (QAM, GameDetail, Downloads/Workshop,
+  Settings), so the component was unreferenced. Deleted.
+- **`components/TextInputButton.tsx`** — not imported anywhere (QAM text input is
+  a plain `TextField` now). Deleted.
+- **`components/AppPageButton.tsx`** — kept: it's injected into Steam's **native**
+  library app page (`index.tsx`), not a Decky panel, so its `<div>` "Added via
+  LumaDeck" badge is correct (no `PanelSection`/`Field` context there).
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)
