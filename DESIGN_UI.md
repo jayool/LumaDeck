@@ -526,6 +526,23 @@ principle. Kept as-is.
   actionable `ButtonItem` with a `FaExclamationTriangle` icon, not a
   hand-bordered box. Reuse the established native warning shape; don't re-skin it.
 
+#### 8c. Game Management page — ✅ built (v0.3.53)
+
+- **What:** the "Advanced Options" toggle gating FakeAppId / token / DLCs /
+  Goldberg controls.
+- **Was:** already almost fully native (`ToggleField`, `TextField`,
+  `ActionButton`s). Two warts: (1) the FakeAppId `TextField` was wrapped in two
+  pointless `<div>` flex containers (leftover from an old side-by-side layout),
+  and (2) the "Advanced Options" toggle's `description` was `t("gameManagement")`
+  — which just repeats the section title verbatim as a meaningless sub-line.
+- **Now:** the wrapper `<div>`s removed (TextField is a direct `PanelSectionRow`
+  child like every other row); the redundant toggle `description` dropped
+  entirely. `"FakeAppId"` stays a hardcoded literal (technical term, like AppID).
+- **Native or custom:** 🟢 fully native, no inline styles left on this page.
+- **Rule:** don't wrap a native control in layout `<div>`s "just in case"; a
+  control is a direct row child. A `description` must add information — never
+  echo the section title.
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)

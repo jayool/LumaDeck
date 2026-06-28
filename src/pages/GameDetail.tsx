@@ -844,23 +844,18 @@ export function GameDetail({ appid }: GameDetailProps) {
             label={t("advancedOptions")}
             checked={showAdvancedOptions}
             onChange={setShowAdvancedOptions}
-            description={t("gameManagement")}
           />
         </PanelSectionRow>
 
         {showAdvancedOptions && (
           <>
             <PanelSectionRow>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    label="FakeAppId"
-                    value={fakeIdValue}
-                    onChange={(e: any) => setFakeIdValue(e?.target?.value ?? "480")}
-                    disabled={fakeAppId}
-                  />
-                </div>
-              </div>
+              <TextField
+                label="FakeAppId"
+                value={fakeIdValue}
+                onChange={(e: any) => setFakeIdValue(e?.target?.value ?? "480")}
+                disabled={fakeAppId}
+              />
             </PanelSectionRow>
             <ActionButton
               label={
