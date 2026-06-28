@@ -1155,31 +1155,24 @@ export function GameDetail({ appid }: GameDetailProps) {
         <>
       {/* Uninstall */}
       <PanelSection title={t("dangerZone")}>
-        {/* What will be removed */}
-        <div style={{
-          background: "rgba(220, 50, 50, 0.07)",
-          border: "1px solid rgba(220, 50, 50, 0.25)",
-          borderRadius: "6px",
-          padding: "10px 14px",
-          marginBottom: "4px",
-        }}>
-          <div style={{ fontSize: "11px", fontWeight: 600, color: "#e07070", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            {t("uninstallWillRemove")}
-          </div>
-          {[
-            t("uninstallItemFiles"),
-            t("uninstallItemLua"),
-            t("uninstallItemManifest"),
-            t("uninstallItemDepots"),
-            t("uninstallItemSteamConfig"),
-            t("uninstallItemKeys"),
-          ].map((item, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "7px", fontSize: "12px", color: "#bbb", lineHeight: "1.9" }}>
-              <span style={{ color: "#e07070", fontSize: "10px" }}>✕</span>
-              {item}
-            </div>
-          ))}
-        </div>
+        {/* What will be removed — native Field (label + "·" list), ⚠ red icon
+            for the destructive signal. The hand-bordered red box is gone; the
+            danger button + two-tap confirm + "Danger Zone" title carry the rest
+            of the severity. (DESIGN_UI.md §8f.) */}
+        <PanelSectionRow>
+          <Field
+            icon={<FaExclamationTriangle color="#e07070" />}
+            label={t("uninstallWillRemove")}
+            description={[
+              t("uninstallItemFiles"),
+              t("uninstallItemLua"),
+              t("uninstallItemManifest"),
+              t("uninstallItemDepots"),
+              t("uninstallItemSteamConfig"),
+              t("uninstallItemKeys"),
+            ].join(" · ")}
+          />
+        </PanelSectionRow>
 
         <PanelSectionRow>
           <ToggleField

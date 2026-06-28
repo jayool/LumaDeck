@@ -447,7 +447,7 @@ The QAM is a launcher; space-hungry views live on their own routes
   guarded-but-dead). A built page wired to nothing is either routed or deleted —
   Help was rehomed.
 
-### 8. GameDetail — full-screen, 6-page `SidebarNavigation` — 🚧 in progress
+### 8. GameDetail — full-screen, 6-page `SidebarNavigation` — ✅ built (8a–8f done)
 
 The per-game page (`ROUTE_GAME_DETAIL/:appid`). **`SidebarNavigation` is
 justified here** — it has six genuine sections: Status, Download, Game
@@ -593,6 +593,28 @@ principle. Kept as-is.
   - Removed the now-unused `ProgressBar` custom-component import from this file
     (the component still lives for Library/Downloads).
 - **Native or custom:** 🟢 fully native; no inline styles left on this page.
+
+#### 8f. Uninstall (Danger Zone) page — ✅ built (v0.3.56)
+
+- **What:** the destructive full-uninstall flow — a "what will be removed" list,
+  a "remove Proton prefix" toggle, and the red two-tap uninstall button.
+- **Was:** a hand-bordered **red box** (`<div>` with red bg/border/radius), an
+  uppercase "WHAT WILL BE REMOVED" header, and 6 items each with a red `✕` mark.
+- **Now:** the box → a single native `Field` (`label` = "What will be removed",
+  `description` = the 6 items joined with ` · `), with a ⚠ red
+  `FaExclamationTriangle` icon for the destructive signal. The hand-bordered box,
+  the uppercase header and the per-item `✕` are gone; the rest of the severity is
+  carried by the red `danger` button, the two-tap confirm, and the "Danger Zone"
+  title. `ToggleField` + uninstall `ActionButton` were already native.
+- **Native or custom:** 🟢 fully native; no inline styles left on this page.
+- **Rule:** a destructive-action summary is a native `Field` (icon + label + ` · `
+  list), not a hand-bordered coloured box. Let the danger button + confirm +
+  page title carry severity; the icon is the only decorative signal kept.
+
+**GameDetail done.** All six pages (Status, Download, Game Management,
+Achievements, Fixes, Uninstall) are native. The page has zero hand-bordered
+boxes and only the handful of allowed inline styles (status colours on value
+spans, monospace on path spans).
 
 ---
 
