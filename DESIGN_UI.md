@@ -677,6 +677,30 @@ cluster (~16 spots). Converted with the two patterns:
 - **Native or custom:** 🟢 native; inline styles left are the status colour on
   the install-value spans and monospace on the command span (both allowed).
 
+#### 9d. System page — ✅ built
+
+- **Was:** centered gray "current language" `<div>`, a gray "Steam: <root>"
+  `<div>`, and per Steam library a nested `<div>` block (path line + free/games
+  line + a **custom disk-usage bar** = background `<div>` + colored fill).
+- **Now:** language line → plain `Field`; platform → `Field label="Steam"
+  description={root}`; each library → a `Field` (path + default tag) plus a
+  native `ProgressBarWithInfo` (usage %, with free/total + game count in
+  `sOperationText`). Used `flatMap` to emit the Field + bar as two keyed rows.
+- **Note:** the old bar tinted red >90% / amber >75%; `ProgressBarWithInfo` has
+  no threshold colour, so that signal is dropped (the % + text remain). Acceptable
+  trade for native.
+- **Native or custom:** 🟢 native; no inline styles left.
+
+#### 9e. About page — ✅ built
+
+- **Was:** a gray blurb `<div>`, a version `<div>` (installed + a colored
+  `<span>` latest), and a blue plugin-message `<div>`.
+- **Now:** blurb → `Field description`; version → `Field label={installed}` with
+  the latest as a colored value child (blue when an update exists); plugin message
+  → plain `Field`. Update buttons were already native.
+- **Native or custom:** 🟢 native; only the latest-version value span keeps its
+  colour (allowed).
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)

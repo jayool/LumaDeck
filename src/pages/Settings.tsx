@@ -6,6 +6,7 @@ import {
   ButtonItem,
   ToggleField,
   Field,
+  ProgressBarWithInfo,
   Navigation,
   SidebarNavigation,
 } from "@decky/ui";
@@ -855,58 +856,40 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
-          <div
-            style={{ fontSize: "11px", color: "#8b929a", textAlign: "center" }}
-          >
-            {lang === "en" ? t("currentEnglish") : t("currentPortuguese")}
-          </div>
+          <Field label={lang === "en" ? t("currentEnglish") : t("currentPortuguese")} />
         </PanelSectionRow>
       </PanelSection>
 
       {platform && (
         <PanelSection title={t("platform")}>
           <PanelSectionRow>
-            <div style={{ fontSize: "11px", color: "#8b929a" }}>
-              Steam: {platform.steam_root || t("notFound")}
-            </div>
+            <Field label="Steam" description={platform.steam_root || t("notFound")} />
           </PanelSectionRow>
         </PanelSection>
       )}
 
       {libraries.length > 0 && (
         <PanelSection title={t("steamLibraries")}>
-          {libraries.map((lib: any, idx: number) => {
+          {libraries.flatMap((lib: any, idx: number) => {
             const freeGB = (lib.freeBytes / (1024 * 1024 * 1024)).toFixed(1);
             const totalGB = (lib.totalBytes / (1024 * 1024 * 1024)).toFixed(1);
             const usedPercent = lib.totalBytes > 0
               ? Math.round(((lib.totalBytes - lib.freeBytes) / lib.totalBytes) * 100)
               : 0;
-            return (
+            return [
               <PanelSectionRow key={lib.path}>
-                <div>
-                  <div style={{ fontSize: "12px", color: "#dcdedf" }}>
-                    {lib.path} {idx === 0 && `(${t("defaultLibrary")})`}
-                  </div>
-                  <div style={{ fontSize: "11px", color: "#8b929a" }}>
-                    {t("freeSpace", `${freeGB} / ${totalGB} GB`)} — {t("libraryGames", lib.gameCount)}
-                  </div>
-                  <div style={{
-                    height: "4px",
-                    background: "#2a2d35",
-                    borderRadius: "2px",
-                    marginTop: "4px",
-                    overflow: "hidden",
-                  }}>
-                    <div style={{
-                      height: "100%",
-                      width: `${usedPercent}%`,
-                      background: usedPercent > 90 ? "#ff4444" : usedPercent > 75 ? "#ffaa00" : "#1a9fff",
-                      borderRadius: "2px",
-                    }} />
-                  </div>
-                </div>
-              </PanelSectionRow>
-            );
+                <Field label={`${lib.path}${idx === 0 ? ` (${t("defaultLibrary")})` : ""}`} />
+              </PanelSectionRow>,
+              <PanelSectionRow key={`${lib.path}-bar`}>
+                {/* Native usage bar. The old custom bar tinted red >90% / amber
+                    >75%; ProgressBarWithInfo has no threshold colour, but the
+                    free/total + game count ride in sOperationText. */}
+                <ProgressBarWithInfo
+                  nProgress={usedPercent}
+                  sOperationText={`${t("freeSpace", `${freeGB} / ${totalGB} GB`)} — ${t("libraryGames", lib.gameCount)}`}
+                />
+              </PanelSectionRow>,
+            ];
           })}
         </PanelSection>
       )}
@@ -920,19 +903,16 @@ export function Settings() {
       content: (
         <PanelSection title={t("about")}>
           <PanelSectionRow>
-            <div style={{ fontSize: "11px", color: "#9aa4b2", lineHeight: "1.4" }}>
-              {t("aboutBlurb")}
-            </div>
+            <Field description={t("aboutBlurb")} />
           </PanelSectionRow>
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#dcdedf" }}>
-              {t("pluginInstalled", pluginUpdate?.installed || "—")}
+            <Field label={t("pluginInstalled", pluginUpdate?.installed || "—")}>
               {pluginUpdate?.latest && (
-                <span style={{ marginLeft: "8px", color: pluginUpdate.has_update ? "#9cc4ff" : "#8b929a" }}>
-                  · {t("pluginLatest", pluginUpdate.latest)}
+                <span style={{ color: pluginUpdate.has_update ? "#9cc4ff" : "#8b929a" }}>
+                  {t("pluginLatest", pluginUpdate.latest)}
                 </span>
               )}
-            </div>
+            </Field>
           </PanelSectionRow>
           <PanelSectionRow>
             <ButtonItem
@@ -958,7 +938,7 @@ export function Settings() {
           )}
           {pluginMsg && (
             <PanelSectionRow>
-              <div style={{ fontSize: "11px", color: "#9cc4ff" }}>{pluginMsg}</div>
+              <Field label={pluginMsg} />
             </PanelSectionRow>
           )}
         </PanelSection>
