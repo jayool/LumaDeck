@@ -1,4 +1,4 @@
-import { PanelSection, PanelSectionRow } from "@decky/ui";
+import { PanelSection, PanelSectionRow, Field } from "@decky/ui";
 import { useT } from "../i18n";
 
 // Plugin help. Surfaced as a page in the Settings sidebar (not its own route),
@@ -32,48 +32,26 @@ export function HelpContent() {
         </PanelSectionRow>
       </PanelSection>
 
+      {/* Feature list → native Field per feature (name as label, the
+          explanation as description). Names are technical literals. */}
       <PanelSection title={t("helpFeatures")}>
         <PanelSectionRow>
-          <div
-            style={{ fontSize: "12px", color: "#dcdedf", lineHeight: "1.6" }}
-          >
-            {t("helpFakeAppId")}
-          </div>
+          <Field label="FakeAppId" description={t("helpFakeAppId")} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <div
-            style={{ fontSize: "12px", color: "#dcdedf", lineHeight: "1.6" }}
-          >
-            {t("helpToken")}
-          </div>
+          <Field label="Token" description={t("helpToken")} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <div
-            style={{ fontSize: "12px", color: "#dcdedf", lineHeight: "1.6" }}
-          >
-            {t("helpDlcs")}
-          </div>
+          <Field label="DLCs" description={t("helpDlcs")} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <div
-            style={{ fontSize: "12px", color: "#dcdedf", lineHeight: "1.6" }}
-          >
-            {t("helpGoldberg")}
-          </div>
+          <Field label="Goldberg" description={t("helpGoldberg")} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <div
-            style={{ fontSize: "12px", color: "#dcdedf", lineHeight: "1.6" }}
-          >
-            {t("helpFixes")}
-          </div>
+          <Field label={t("fixes")} description={t("helpFixes")} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <div
-            style={{ fontSize: "12px", color: "#dcdedf", lineHeight: "1.6" }}
-          >
-            {t("helpLinuxNative")}
-          </div>
+          <Field label="Linux Native" description={t("helpLinuxNative")} />
         </PanelSectionRow>
       </PanelSection>
 

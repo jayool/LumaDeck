@@ -618,7 +618,7 @@ spans, monospace on path spans).
 
 ---
 
-### 9. Settings — full-screen, 6-page `SidebarNavigation` — 🚧 in progress
+### 9. Settings — full-screen, 6-page `SidebarNavigation` — ✅ built (9a–9f done)
 
 The config surface (`ROUTE_SETTINGS`). Six pages: API Credentials, SLSsteam,
 Dependencies, System, About, Help. **Dependencies is the "advanced 1%" detailed
@@ -700,6 +700,30 @@ cluster (~16 spots). Converted with the two patterns:
   → plain `Field`. Update buttons were already native.
 - **Native or custom:** 🟢 native; only the latest-version value span keeps its
   colour (allowed).
+
+#### 9f. Help page — ✅ built (content written)
+
+- **Finding:** the Help tab was **broken since v0.3.9** — `Help.tsx` referenced
+  `help*` i18n keys (`helpWhatIsDesc`, `helpHowToAddSteps`, the feature lines,
+  `helpTroubleshootingTips`, …) that were **never defined** in LumaDeck's
+  `i18n.ts`. With `t()` falling back to the key itself (`i18n.ts`: `… || key`),
+  the page rendered raw variable names, not text. Confirmed via git (`-S`: the
+  keys only ever appeared in `Help.tsx`, never in `i18n.ts`) and against the
+  upstream — **DeckTools' own `i18n.ts` (master) doesn't contain them either**,
+  so there was no original text to recover. Nothing was deleted; the strings were
+  simply never written.
+- **Fix:** wrote fresh English help content for all keys (what LumaDeck is, how
+  to add a game, the six features, troubleshooting tips). en only — pt-BR falls
+  back to en via `t()`.
+- **Render:** the **Features** list → native `Field` per feature (name as
+  `label`, explanation as `description`). The prose sections (what-is, how-to-add
+  steps, troubleshooting) stay readable `<div>` body text with `pre-line` — Decky
+  has no paragraph primitive, and `Field` `description` would mute them and break
+  the numbered steps. Prose ≠ chrome, so it's left as prose.
+
+**Settings done.** All six pages native (or, for Help's prose, intentionally
+plain body text). The only inline styles left across `Settings.tsx` are status
+colours on value spans and monospace on command spans (both allowed).
 
 ---
 

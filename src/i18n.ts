@@ -31,6 +31,37 @@ const strings: Record<Lang, Record<string, string>> = {
     settings: "Settings",
     refresh: "Refresh",
     help: "Help",
+    // Help page content (Settings ▸ Help). en only; pt-BR falls back to en.
+    helpWhatIs: "What is LumaDeck?",
+    helpWhatIsDesc:
+      "LumaDeck lets you add and manage Steam games on your Deck. It downloads game files through Steam itself, instead of an external tool, and keeps achievements, DLC and multiplayer working. Most of the setup is automatic: in everyday use you just add a game and play.",
+    helpHowToAdd: "Adding a game",
+    helpHowToAddSteps:
+      "1. Open the LumaDeck panel from the Quick Access menu (the \"…\" button).\n" +
+      "2. Under Add Game, search by name or paste a Steam AppID.\n" +
+      "3. Pick the game and press Download. Steam downloads it like any other game.\n" +
+      "4. When it finishes, the game is in My Games, ready to launch.\n\n" +
+      "If a download complains about credentials, set them up first in Settings ▸ API Credentials.",
+    helpFeatures: "Features",
+    helpFakeAppId:
+      "Makes a game launch under a different Steam App ID so it sees itself as owned. Useful for games that check ownership of one specific ID.",
+    helpToken:
+      "Adds a per-game ownership token so Steam treats the game as part of your account.",
+    helpDlcs:
+      "Unlocks the game's DLC so add-on content shows up and loads in-game.",
+    helpGoldberg:
+      "Swaps Steam's online libraries for the Goldberg emulator: offline play and LAN/online multiplayer for games that rely on Steam networking.",
+    helpFixes:
+      "Applies community fixes (Generic Fix, Online Fix, and others) for games that won't start or won't go online on their own.",
+    helpLinuxNative:
+      "Points a game at Steam's Linux runtime instead of the Windows one, so native Linux builds run without Proton.",
+    helpTroubleshooting: "Troubleshooting",
+    helpTroubleshootingTips:
+      "• Game won't start? Open its Fixes tab, Check for Fixes, and apply any that appear.\n" +
+      "• Download stuck or failing? Make sure Settings ▸ API Credentials are valid, then retry.\n" +
+      "• Achievements not unlocking? Set up SLScheevo from the game's Achievements tab.\n" +
+      "• A red item in Settings ▸ Dependencies? Use the Install/Repair button there.\n" +
+      "• After most changes, restart Steam so they take effect.",
     results: "results",
     selected: "Selected",
     invalidAppId: "Invalid AppID",
