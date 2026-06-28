@@ -575,6 +575,25 @@ principle. Kept as-is.
   user drives the console and returns manually. Don't fake a round-trip around an
   interactive flow.
 
+#### 8e. Fixes page — ✅ built (v0.3.55)
+
+- **What:** the long action list (check for fixes, apply generic/online fix,
+  Linux-native fix, Steamless DRM removal, reconfigure SLSsteam, repair ACF) plus
+  the "Installed Fixes" list.
+- **Was:** almost all native already (every action is an `ActionButton`). Three
+  bits of custom chrome: a gray `<div>` "No fixes available", the custom
+  `ProgressBar` while a fix applies, and the Installed-Fixes rows as nested raw
+  `<div>`s (type + file count, applied date).
+- **Now:**
+  - "No fixes available" → native `Field` (plain, neutral info).
+  - Apply-fix progress → native `ProgressBarWithInfo` (`sOperationText` =
+    phase label, `indeterminate` when no byte total) — same pattern as 8b/8d.
+  - Each Installed Fix → native `Field` (`label` = "type — N files",
+    `description` = applied date).
+  - Removed the now-unused `ProgressBar` custom-component import from this file
+    (the component still lives for Library/Downloads).
+- **Native or custom:** 🟢 fully native; no inline styles left on this page.
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)

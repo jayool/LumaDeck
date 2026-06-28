@@ -21,7 +21,6 @@ import {
   FaCheckCircle,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
-import { ProgressBar } from "../components/ProgressBar";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS } from "../routes";
 import {
@@ -1028,9 +1027,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             )}
             {!fixes.genericFix?.available && !fixes.onlineFix?.available && (
               <PanelSectionRow>
-                <div style={{ color: "#8b929a", fontSize: "12px" }}>
-                  {t("noFixesAvailable")}
-                </div>
+                <Field label={t("noFixesAvailable")} />
               </PanelSectionRow>
             )}
           </>
@@ -1038,10 +1035,14 @@ export function GameDetail({ appid }: GameDetailProps) {
         {isFixInProgress && (
           <>
             <PanelSectionRow>
-              <ProgressBar
-                value={fixStatus.bytesRead || 0}
-                max={fixStatus.totalBytes || 1}
-                label={fixStatusLabel}
+              <ProgressBarWithInfo
+                indeterminate={!(fixStatus.totalBytes > 0)}
+                nProgress={
+                  fixStatus.totalBytes > 0
+                    ? Math.min(100, ((fixStatus.bytesRead || 0) / fixStatus.totalBytes) * 100)
+                    : 0
+                }
+                sOperationText={fixStatusLabel}
               />
             </PanelSectionRow>
             <ActionButton
@@ -1105,14 +1106,10 @@ export function GameDetail({ appid }: GameDetailProps) {
         <PanelSection title={t("installedFixes")}>
           {installedFixes.map((fix, idx) => (
             <PanelSectionRow key={idx}>
-              <div>
-                <div style={{ fontSize: "12px", color: "#dcdedf" }}>
-                  {fix.fixType} — {t("fixFiles", fix.filesCount)}
-                </div>
-                <div style={{ fontSize: "11px", color: "#8b929a" }}>
-                  {t("fixApplied", fix.date)}
-                </div>
-              </div>
+              <Field
+                label={`${fix.fixType} — ${t("fixFiles", fix.filesCount)}`}
+                description={t("fixApplied", fix.date)}
+              />
             </PanelSectionRow>
           ))}
           {installedFixes.length === 1 ? (
