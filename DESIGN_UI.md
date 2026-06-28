@@ -727,6 +727,26 @@ colours on value spans and monospace on command spans (both allowed).
 
 ---
 
+### 10. Workshop (was "Downloads") — full-screen — ✅ built (v0.3.58)
+
+- **Rename:** the QAM entry button and the page are now **"Workshop"**, not
+  "Downloads". Games are added from the QAM's Add Game (native Steam download),
+  so "Downloads" was misleading — the page's real remaining job is Steam
+  **Workshop** items. New `workshop` i18n key; the QAM button uses it. (Internal
+  route/file kept as `ROUTE_DOWNLOADS` / `Downloads.tsx` to avoid churn.)
+- **Structure:** dropped from a 2-tab `SidebarNavigation` (Manual Download +
+  Workshop) to a **single Workshop screen**. The "Manual Download" tab and its
+  active-downloads list were removed (redundant with QAM Add Game). Now a plain
+  full-screen page (same `marginTop:40px / overflowY:scroll` wrapper as Library)
+  — no sidebar for one screen.
+- **Native conversion:** the workshop status `<div>` → `Field`; the custom
+  `ProgressBar` → `ProgressBarWithInfo` (`sOperationText` = phase label). AppID /
+  item-ID `TextField`s and the buttons were already native.
+- **Native or custom:** 🟢 native; no inline styles left (the page wrapper div is
+  layout, like Library's).
+
+---
+
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)
 
 > Progress: **1** `get_components_status()` ✅ · **2** `apply_component()` ✅ ·

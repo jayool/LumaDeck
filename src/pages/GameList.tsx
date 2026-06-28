@@ -920,7 +920,7 @@ export function GameList() {
             layout="below"
             onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
           >
-            {t("downloads")}
+            {t("workshop")}
           </ButtonItem>
         </PanelSectionRow>
 
