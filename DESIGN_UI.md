@@ -658,6 +658,25 @@ monospace `description`, custom bar → `ProgressBarWithInfo`.
 - **Native or custom:** 🟢 native; only inline style left is monospace on the
   command span.
 
+#### 9c. Dependencies page — ✅ built
+
+The dense "advanced 1%" per-component breakdown — the biggest custom-chrome
+cluster (~16 spots). Converted with the two patterns:
+- **Install-status rows** (ACCELA, SLSsteam, .NET Runtime, lumalinux,
+  CloudRedirect) → native `Field` (8a pattern): `label` = component name,
+  coloured value child (green "Installed" / red "Not found"), install path as
+  `description`.
+- **Health / update / provider-auth / Steam-build sub-lines** → native `Field`
+  with an **icon** signalling state: ✓ green healthy, ⚠ amber degraded/broken,
+  `FaInfoCircle` blue update, `FaInfoCircle` gray for CR `kill_switched`.
+- **Game-Mode-blocked alert box** → `Field` (icon + title + body) + a `Field`
+  with the command in a monospace span (dark box dropped) — same as §9b.
+- Removed the `<div style height:8px>` spacer (native rows space themselves) and
+  the three `<div textAlign:center>` wrappers inside the Install/CR/lumalinux
+  button `description`s (plain strings now).
+- **Native or custom:** 🟢 native; inline styles left are the status colour on
+  the install-value spans and monospace on the command span (both allowed).
+
 ---
 
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)

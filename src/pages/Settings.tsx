@@ -624,74 +624,53 @@ export function Settings() {
         {deps && (
           <>
             <PanelSectionRow>
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: deps.accela ? "#00cc00" : "#ff4444",
-                }}
-              >
-                ACCELA:{" "}
-                {deps.accela
-                  ? `${t("installed")} (${deps.accelaPath})`
-                  : t("notFound")}
-              </div>
+              <Field label="ACCELA" description={deps.accela ? deps.accelaPath : undefined}>
+                <span style={{ color: deps.accela ? "#00cc00" : "#ff4444" }}>
+                  {deps.accela ? t("installed") : t("notFound")}
+                </span>
+              </Field>
             </PanelSectionRow>
             <PanelSectionRow>
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: deps.slssteam ? "#00cc00" : "#ff4444",
-                }}
-              >
-                SLSsteam:{" "}
-                {deps.slssteam
-                  ? `${t("installed")} (${deps.slssteamPath})`
-                  : t("notFound")}
-              </div>
+              <Field label="SLSsteam" description={deps.slssteam ? deps.slssteamPath : undefined}>
+                <span style={{ color: deps.slssteam ? "#00cc00" : "#ff4444" }}>
+                  {deps.slssteam ? t("installed") : t("notFound")}
+                </span>
+              </Field>
             </PanelSectionRow>
             {deps.slssteam && slssteamHealth && slssHealthLine(slssteamHealth) && (
               <PanelSectionRow>
-                <div style={{
-                  fontSize: "11px",
-                  color: slssteamHealth.state === "healthy" ? "#00cc00" : "#ff8c00",
-                  paddingLeft: "8px",
-                }}>
-                  {slssHealthLine(slssteamHealth)}
-                </div>
+                <Field
+                  icon={slssteamHealth.state === "healthy"
+                    ? <FaCheckCircle color="#00cc00" />
+                    : <FaExclamationTriangle color="#ff8c00" />}
+                  label={slssHealthLine(slssteamHealth)}
+                />
               </PanelSectionRow>
             )}
             {deps.slssteam && slssteamHealth?.state === "healthy" &&
              headcrabCompat && !headcrabCompat.compatible && (
               <PanelSectionRow>
-                <div style={{ fontSize: "11px", color: "#9cc4ff", paddingLeft: "8px" }}>
-                  {t("slssUpdateAvailableSub",
+                <Field
+                  icon={<FaInfoCircle color="#9cc4ff" />}
+                  label={t("slssUpdateAvailableSub",
                      headcrabCompat.current_build ?? "?",
                      headcrabCompat.target ?? "?")}
-                </div>
+                />
               </PanelSectionRow>
             )}
             <PanelSectionRow>
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: deps.dotnet ? "#00cc00" : "#ff4444",
-                }}
-              >
-                .NET Runtime: {deps.dotnet ? t("installed") : t("notFound")}
-              </div>
+              <Field label=".NET Runtime">
+                <span style={{ color: deps.dotnet ? "#00cc00" : "#ff4444" }}>
+                  {deps.dotnet ? t("installed") : t("notFound")}
+                </span>
+              </Field>
             </PanelSectionRow>
             <PanelSectionRow>
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: deps.lumalinux ? "#00cc00" : "#ff4444",
-                }}
-              >
-                lumalinux:{" "}
-                {deps.lumalinux
-                  ? `${t("installed")} (${deps.lumalinuxPath})`
-                  : t("notFound")}
-              </div>
+              <Field label="lumalinux" description={deps.lumalinux ? deps.lumalinuxPath : undefined}>
+                <span style={{ color: deps.lumalinux ? "#00cc00" : "#ff4444" }}>
+                  {deps.lumalinux ? t("installed") : t("notFound")}
+                </span>
+              </Field>
             </PanelSectionRow>
             {deps.lumalinux && lumalinuxHealth && (() => {
               const h = lumalinuxHealth;
@@ -708,37 +687,31 @@ export function Settings() {
               if (!line) return null;
               return (
                 <PanelSectionRow>
-                  <div style={{
-                    fontSize: "11px",
-                    color: h.state === "healthy" ? "#00cc00" : "#ff8c00",
-                    paddingLeft: "8px",
-                  }}>
-                    {line}
-                  </div>
+                  <Field
+                    icon={h.state === "healthy"
+                      ? <FaCheckCircle color="#00cc00" />
+                      : <FaExclamationTriangle color="#ff8c00" />}
+                    label={line}
+                  />
                 </PanelSectionRow>
               );
             })()}
             {deps.lumalinux && lumalinuxHealth?.state === "healthy" && llUpdate?.has_update && (
               <PanelSectionRow>
-                <div style={{ fontSize: "11px", color: "#9cc4ff", paddingLeft: "8px" }}>
-                  {t("llUpdateAvailableSub",
+                <Field
+                  icon={<FaInfoCircle color="#9cc4ff" />}
+                  label={t("llUpdateAvailableSub",
                      llUpdate.installed ?? "?",
                      llUpdate.latest ?? "?")}
-                </div>
+                />
               </PanelSectionRow>
             )}
             <PanelSectionRow>
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: deps.cloudredirect ? "#00cc00" : "#ff4444",
-                }}
-              >
-                CloudRedirect:{" "}
-                {deps.cloudredirect
-                  ? `${t("installed")} (${deps.cloudredirectPath})`
-                  : t("notFound")}
-              </div>
+              <Field label="CloudRedirect" description={deps.cloudredirect ? deps.cloudredirectPath : undefined}>
+                <span style={{ color: deps.cloudredirect ? "#00cc00" : "#ff4444" }}>
+                  {deps.cloudredirect ? t("installed") : t("notFound")}
+                </span>
+              </Field>
             </PanelSectionRow>
             {deps.cloudredirect && crHealth && (() => {
               const ver = crHealth.version || "?";
@@ -752,63 +725,57 @@ export function Settings() {
                 case "kill_switched": line = t("crHealthKillSwitched"); color = "#888"; break;
               }
               if (!line) return null;
+              const icon = crHealth.state === "healthy"
+                ? <FaCheckCircle color={color} />
+                : crHealth.state === "kill_switched"
+                  ? <FaInfoCircle color={color} />
+                  : <FaExclamationTriangle color={color} />;
               return (
                 <PanelSectionRow>
-                  <div style={{ fontSize: "11px", color, paddingLeft: "8px" }}>
-                    {line}
-                  </div>
+                  <Field icon={icon} label={line} />
                 </PanelSectionRow>
               );
             })()}
             {deps.cloudredirect && crHealth?.state === "healthy" && crUpdate?.has_update && (
               <PanelSectionRow>
-                <div style={{ fontSize: "11px", color: "#9cc4ff", paddingLeft: "8px" }}>
-                  {t("crUpdateAvailableSub",
+                <Field
+                  icon={<FaInfoCircle color="#9cc4ff" />}
+                  label={t("crUpdateAvailableSub",
                      crUpdate.installed ?? "?",
                      crUpdate.latest ?? "?")}
-                </div>
+                />
               </PanelSectionRow>
             )}
             {deps.cloudredirect && (
               <PanelSectionRow>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: deps.cloudredirectAuthed ? "#00cc00" : "#ffaa00",
-                  }}
-                >
-                  {t("cloudredirectProvider")}:{" "}
-                  {deps.cloudredirectAuthed
-                    ? t("providerConfigured")
-                    : t("providerNotConfigured")}
-                </div>
+                <Field
+                  icon={deps.cloudredirectAuthed
+                    ? <FaCheckCircle color="#00cc00" />
+                    : <FaExclamationTriangle color="#ffaa00" />}
+                  label={`${t("cloudredirectProvider")}: ${deps.cloudredirectAuthed ? t("providerConfigured") : t("providerNotConfigured")}`}
+                />
               </PanelSectionRow>
             )}
           </>
         )}
         {headcrabCompat && (
           <PanelSectionRow>
-            <div
-              style={{
-                fontSize: "12px",
-                color: headcrabCompat.compatible ? "#00cc00" : "#ff8c00",
-              }}
-            >
-              {headcrabCompat.compatible
+            <Field
+              icon={headcrabCompat.compatible
+                ? <FaCheckCircle color="#00cc00" />
+                : <FaExclamationTriangle color="#ff8c00" />}
+              label={headcrabCompat.compatible
                 ? t("steamBuildOk", headcrabCompat.current_build ?? "?")
                 : t("steamBuildMismatch", headcrabCompat.current_build ?? "?", headcrabCompat.target ?? "?")}
-            </div>
+            />
           </PanelSectionRow>
         )}
-        <PanelSectionRow>
-          <div style={{ height: "8px" }} />
-        </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem
             layout="below"
             onClick={handleInstallDeps}
             disabled={installing || (headcrabCompat ? !headcrabCompat.compatible : false)}
-            description={confirmInstallDeps ? <div style={{ textAlign: "center" }}>{t("installDepsConfirmDesc")}</div> : undefined}
+            description={confirmInstallDeps ? t("installDepsConfirmDesc") : undefined}
           >
             {installing
               ? t("installing")
@@ -818,39 +785,31 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
         {headcrabCompat && !headcrabCompat.compatible && (
-          <PanelSectionRow>
-            <div style={{
-              fontSize: "11px",
-              color: "#aaa",
-              lineHeight: "1.4",
-              padding: "4px 0",
-            }}>
-              <div style={{ color: "#ff8c00", fontWeight: 600, marginBottom: "4px" }}>
-                ⚠ {t("headcrabGameModeBlockTitle")}
-              </div>
-              <div style={{ marginBottom: "6px" }}>
-                {t("headcrabGameModeBlockBody")}
-              </div>
-              <div style={{
-                fontFamily: "monospace",
-                fontSize: "10px",
-                color: "#ccc",
-                background: "rgba(0,0,0,0.3)",
-                padding: "4px 6px",
-                borderRadius: "3px",
-                wordBreak: "break-all",
-              }}>
-                {t("headcrabGameModeBlockCommand")}
-              </div>
-            </div>
-          </PanelSectionRow>
+          <>
+            <PanelSectionRow>
+              <Field
+                icon={<FaExclamationTriangle color="#ff8c00" />}
+                label={t("headcrabGameModeBlockTitle")}
+                description={t("headcrabGameModeBlockBody")}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <Field
+                description={
+                  <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                    {t("headcrabGameModeBlockCommand")}
+                  </span>
+                }
+              />
+            </PanelSectionRow>
+          </>
         )}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
             onClick={handleEnableCR}
             disabled={installingCR}
-            description={confirmInstallCR ? <div style={{ textAlign: "center" }}>{t("enableCRConfirmDesc")}</div> : undefined}
+            description={confirmInstallCR ? t("enableCRConfirmDesc") : undefined}
           >
             {installingCR
               ? t("installingCR")
@@ -864,7 +823,7 @@ export function Settings() {
             layout="below"
             onClick={handleInstallLumalinux}
             disabled={installingLL}
-            description={confirmInstallLL ? <div style={{ textAlign: "center" }}>{t("installLumalinuxConfirmDesc")}</div> : undefined}
+            description={confirmInstallLL ? t("installLumalinuxConfirmDesc") : undefined}
           >
             {installingLL
               ? t("installingLL")
