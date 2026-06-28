@@ -631,6 +631,14 @@ class Plugin:
         from desktop_handoff import run_desktop_handoff_real
         return _j(run_desktop_handoff_real())
 
+    async def run_desktop_handoff_quick_install(self) -> str:
+        """Arm a Desktop hand-off that runs the FULL Quick Install (deps + CR +
+        lumalinux, incl. the Steam downgrade) in Desktop, then returns to Game
+        Mode. For a fresh Deck whose Steam is newer than the headcrab pin, where
+        the downgrade can't run in Game Mode."""
+        from desktop_handoff import run_desktop_handoff_quick_install
+        return _j(run_desktop_handoff_quick_install())
+
     async def run_desktop_handoff_slscheevo(self) -> str:
         """Arm an interactive Desktop hand-off that opens Konsole running the
         SLScheevo binary for its one-time login, then switch to Desktop. No

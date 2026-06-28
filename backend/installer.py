@@ -112,36 +112,47 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 # If upstream changes the wording of these lines, the patch fails and the
 # user gets an explicit "headcrab format changed" error instead of a silent
 # half-broken install.
-_HEADCRAB_PATCHES: tuple[tuple[str, str, str], ...] = (
+# Each patch carries a `gamemode_only` flag. The kill / short-session-relaunch
+# no-ops exist purely to survive SteamOS Game Mode's crash-loop detector; in a
+# Desktop session those kills are normal and REQUIRED (the Steam downgrade needs
+# them to restart Steam), so they're skipped there. The atomic .so copies are
+# robustness fixes for a running Steam and apply in BOTH modes.
+_HEADCRAB_PATCHES: tuple[tuple[str, str, str, bool], ...] = (
     (
         r"killall steam \| true",
         ": # LumaDeck: skip mid-install Steam kill (restart fires at end of install_*)",
         "nuketheclient",
+        True,
     ),
     (
         r"wheresteam -exitsteam",
         ": # LumaDeck: skipped short-session relaunch",
         "exitsteam-A",
+        True,
     ),
     (
         r"wheresteam -clearbeta steam://exit",
         ": # LumaDeck: skipped short-session relaunch",
         "exitsteam-B",
+        True,
     ),
     (
         r"wheresteam -clearbeta -exitsteam",
         ": # LumaDeck: skipped short-session relaunch",
         "exitsteam-C",
+        True,
     ),
     (
         r"cp -f \$InstallDir/(\S+\.so) (\S+SLSsteamInstallDir)/",
         r"cp -f $InstallDir/\1 \2/\1.lumadeck-new && mv -f \2/\1.lumadeck-new \2/\1",
         "atomic-so-copy",
+        False,
     ),
     (
         r'wget -O cloud_redirect\.so "\$CloudRedirectLib" &> /dev/null',
         r'wget -O cloud_redirect.so.lumadeck-new "$CloudRedirectLib" &> /dev/null && mv -f cloud_redirect.so.lumadeck-new cloud_redirect.so',
         "atomic-cr-wget",
+        False,
     ),
 )
 
@@ -152,15 +163,25 @@ _SESSION_TRACKER_RESET = (
 )
 
 
-def _patch_headcrab_script(content: str) -> str:
-    """Apply the Game-Mode safety patches to a freshly downloaded headcrab.sh.
+def _patch_headcrab_script(content: str, gamemode: bool = True) -> str:
+    """Apply the safety patches to a freshly downloaded headcrab.sh.
 
-    Raises RuntimeError if any patch fails to apply — that means upstream
-    changed the wording of a line we patch, and the user needs an updated
-    plugin rather than a silently broken install.
+    gamemode=True (default, Game Mode): apply ALL patches + the gamescope
+    short-session tracker reset — headcrab must not kill/relaunch Steam or it
+    trips the crash-loop wipe.
+
+    gamemode=False (Desktop hand-off): apply ONLY the always-on robustness
+    patches (atomic .so copies) and SKIP the kill/relaunch no-ops + the tracker
+    reset — in Desktop the kills are normal and REQUIRED so the Steam downgrade
+    can restart Steam to step the version down.
+
+    Raises RuntimeError if a patch that SHOULD apply doesn't — upstream changed
+    the wording and the plugin needs updating.
     """
     failed: list[str] = []
-    for pattern, replacement, label in _HEADCRAB_PATCHES:
+    for pattern, replacement, label, gamemode_only in _HEADCRAB_PATCHES:
+        if gamemode_only and not gamemode:
+            continue  # Desktop: leave the kill/relaunch lines intact.
         content, n = re.subn(pattern, replacement, content)
         if n == 0:
             failed.append(label)
@@ -169,6 +190,8 @@ def _patch_headcrab_script(content: str) -> str:
             "headcrab.sh format changed upstream — these LumaDeck patches "
             f"failed to apply: {failed}. Update _HEADCRAB_PATCHES."
         )
+    if not gamemode:
+        return content  # no tracker reset in Desktop (gamescope isn't running).
     # Prepend the tracker reset so it runs before anything else in the script.
     # We keep the shebang on line 1 and inject right after it.
     if content.startswith("#!"):
@@ -264,8 +287,11 @@ async def _download(url: str, dest: str) -> bool:
     return dl.returncode == 0
 
 
-async def install_dependencies() -> dict:
+async def install_dependencies(gamemode: bool = True) -> dict:
     """Run the Game-Mode-safe variant of enter-the-wired.
+
+    gamemode=False runs the Desktop variant: headcrab keeps its Steam kills so
+    the downgrade can restart Steam (safe in Desktop, no gamescope crash-loop).
 
     enter-the-wired chains ACCELA + SLSsteam + headcrab.sh. Headcrab as-is
     kills Steam several times in quick succession; in gamemode that trips
@@ -331,11 +357,11 @@ async def install_dependencies() -> dict:
         try:
             with open(headcrab_path, "r", encoding="utf-8") as f:
                 hc_content = f.read()
-            hc_content = _patch_headcrab_script(hc_content)
+            hc_content = _patch_headcrab_script(hc_content, gamemode)
             with open(headcrab_path, "w", encoding="utf-8") as f:
                 f.write(hc_content)
             os.chmod(headcrab_path, 0o700)
-            logger.info("LumaDeck: headcrab.sh patched OK (%d bytes)", len(hc_content))
+            logger.info("LumaDeck: headcrab.sh patched OK (%d bytes, gamemode=%s)", len(hc_content), gamemode)
         except RuntimeError as exc:
             INSTALL_STATE["status"] = "failed"
             INSTALL_STATE["error"] = str(exc)
@@ -661,12 +687,14 @@ def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
     return False, "SafeMode line missing from SLSsteam config — reinstall dependencies"
 
 
-async def install_cloudredirect() -> dict:
+async def install_cloudredirect(gamemode: bool = True) -> dict:
     """Run the Game-Mode-safe variant of headcrab with DisableCloud: no.
 
     Headcrab gates CR install on `grep "DisableCloud: no" config.yaml`. We
     flip the line, download headcrab.sh, apply _HEADCRAB_PATCHES so the
     install doesn't trip the gamescope-session crash detector, then run it.
+
+    gamemode=False is the Desktop variant (kills kept; see _patch_headcrab_script).
     """
     global CR_INSTALL_STATE
     CR_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
@@ -700,7 +728,7 @@ async def install_cloudredirect() -> dict:
         try:
             with open(script_path, "r", encoding="utf-8") as f:
                 hc_content = f.read()
-            hc_content = _patch_headcrab_script(hc_content)
+            hc_content = _patch_headcrab_script(hc_content, gamemode)
             with open(script_path, "w", encoding="utf-8") as f:
                 f.write(hc_content)
             os.chmod(script_path, 0o700)
@@ -774,8 +802,11 @@ def get_cr_install_status() -> dict:
     return CR_INSTALL_STATE.copy()
 
 
-async def install_lumalinux() -> dict:
+async def install_lumalinux(gamemode: bool = True) -> dict:
     """Run lumalinux/install.sh from the jayool/lumalinux repo.
+
+    (`gamemode` is accepted for a uniform quick_install() call signature but
+    ignored here — lumalinux never touches Steam at runtime, no kills to patch.)
 
     Unlike enter-the-wired and headcrab, this one does NOT touch Steam at
     runtime: it only patches ~/.local/share/Steam/steam.sh (idempotent
@@ -878,13 +909,18 @@ def get_ll_install_status() -> dict:
     return LL_INSTALL_STATE.copy()
 
 
-async def quick_install() -> dict:
+async def quick_install(gamemode: bool = True) -> dict:
     """Run the three installers in dependency order, stopping at the first
     failure:
 
         1. dependencies   — SLSsteam + ACCELA + .NET 9   (install_dependencies)
         2. cloudredirect  — CloudRedirect via headcrab    (install_cloudredirect)
         3. lumalinux      — liblumalinux.so + steam.sh patch (install_lumalinux)
+
+    gamemode=False is the DESKTOP variant (run by the Desktop hand-off launcher
+    when Steam is off the headcrab pin): headcrab keeps its Steam kills so the
+    downgrade actually applies. In Game Mode that would trip the crash-loop wipe,
+    which is exactly why an off-pin install must go through Desktop.
 
     Order matters: steps 1 and 2 both run headcrab, which regenerates steam.sh
     from scratch — that would wipe lumalinux's managed block. lumalinux must
@@ -917,9 +953,9 @@ async def quick_install() -> dict:
         QUICK_INSTALL_STATE["step"] = name
         QUICK_INSTALL_STATE["stepIndex"] = i
         QUICK_INSTALL_STATE["progress"] = f"Installing {name} ({i + 1}/{len(steps)})..."
-        logger.info("LumaDeck: quick_install step %d/%d: %s", i + 1, len(steps), name)
+        logger.info("LumaDeck: quick_install step %d/%d: %s (gamemode=%s)", i + 1, len(steps), name, gamemode)
         try:
-            result = await runner()
+            result = await runner(gamemode)
         except Exception as exc:
             logger.exception("LumaDeck: quick_install step %s crashed: %s", name, exc)
             QUICK_INSTALL_STATE["status"] = "failed"

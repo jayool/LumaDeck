@@ -33,6 +33,7 @@ import {
   getQuickInstallStatus,
   reinjectInstalled,
   runDesktopHandoffReal,
+  runDesktopHandoffQuickInstall,
 } from "../api";
 import { FaExclamationTriangle } from "react-icons/fa";
 import {
@@ -552,6 +553,22 @@ export function GameList() {
       return;
     }
     setConfirmQuickInstall(false);
+
+    // Off-pin (Steam newer than the headcrab pin): the install includes a Steam
+    // downgrade, which can't run in Game Mode (gamescope crash-loop wipe). Hand
+    // off to Desktop, where the SAME quick_install runs (gamemode=false) and
+    // returns to Game Mode on success. Nothing is re-implemented — it's the real
+    // installer code.
+    const compatible = compStatus?.headcrab?.compatible === true;
+    if (!compatible) {
+      const r: any = await runDesktopHandoffQuickInstall();
+      if (r?.switchLaunched) toast(t("quickInstallDesktop"), t("quickInstallDesktopSwitching"), 9000);
+      else if (r?.armed) toast(t("quickInstallDesktop"), t("quickInstallDesktopManual"), 12000);
+      else toast(t("toastError"), r?.error || "", 6000);
+      return;
+    }
+
+    // At the pin: no downgrade needed, safe to run in Game Mode.
     setQuickInstalling(true);
     setQuickProgress(t("quickInstallStarting"));
 
@@ -581,13 +598,17 @@ export function GameList() {
     }
   };
 
-  // First-run gate: show Quick Install only when NONE of the three components
-  // are installed and Steam's build is compatible. As soon as any one is
-  // present, this onboarding entry point disappears (reinstall/repair lives in
-  // Settings via the individual buttons).
+  // First-run gate: show Quick Install whenever NONE of the three components are
+  // installed. NOT gated on headcrab compatibility — a fresh Deck's Steam is
+  // almost always newer than the (lagging) headcrab pin, and Quick Install is
+  // exactly the action that fixes that: when off-pin it routes through Desktop
+  // (where the downgrade is safe) and installs everything there. Gating it on
+  // "already compatible" hid the onboarding from precisely the people who need
+  // it. As soon as any component is present, this entry disappears (reinstall/
+  // repair lives in Settings).
   const showQuickInstall = (() => {
     const cs = compStatus;
-    if (!cs?.success || cs.headcrab?.compatible !== true) return false;
+    if (!cs?.success) return false;
     return (cs.components || []).every((c) => !c.installed);
   })();
 

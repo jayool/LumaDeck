@@ -777,6 +777,35 @@ If per-disk install is ever wanted, it's a backend feature (make
 
 ---
 
+### Off-pin onboarding → Desktop Quick Install — ✅ built (v0.3.61)
+
+A fresh Deck's Steam is almost always **newer** than headcrab's (lagging) pin, so
+`headcrab.compatible` is false and the QAM **Quick Install was hidden from exactly
+the people who need it**. Fixed:
+
+- `showQuickInstall` no longer requires `headcrab.compatible` — it shows whenever
+  no component is installed. (Quick Install is the action that *makes* you
+  compatible; gating it on "already compatible" was backwards.)
+- `handleQuickInstall` branches on `compatible`:
+  - **at pin** → the existing Game-Mode `quick_install()` (no downgrade).
+  - **off pin** → arms a Desktop hand-off (`runDesktopHandoffQuickInstall`).
+- The hand-off runs `backend/quick_install_cli.py`, which calls the REAL
+  `installer.quick_install(gamemode=False)` under the system Python in Desktop —
+  no bash re-implementation, so **no install step is forgotten** (deps + CR
+  config-flip/seed + lumalinux, in order). It streams progress to konsole and
+  writes `~/lumadeck-quickinstall.json` for debugging; returns to Game Mode on
+  success, stays in Desktop on failure.
+- **`gamemode` flag through the installers:** `quick_install` / `install_*` /
+  `_patch_headcrab_script` now take `gamemode`. The kill / short-session-relaunch
+  headcrab patches are tagged Game-Mode-only and **skipped in Desktop** — there
+  the Steam kills are normal and REQUIRED so the downgrade can restart Steam. The
+  atomic-`.so` robustness patches still apply in both modes.
+- ⚠️ Needs on-device validation: the launcher relies on the system `python3`
+  importing the backend (Decky doesn't run in Desktop). The diagnostic file makes
+  a failure (e.g. a missing import) debuggable.
+
+---
+
 ## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)
 
 > Progress: **1** `get_components_status()` ✅ · **2** `apply_component()` ✅ ·
