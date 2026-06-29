@@ -111,7 +111,7 @@ export function Library() {
   };
 
   return (
-    <div style={{ marginTop: "40px", height: "calc(100% - 40px)", overflowY: "scroll" }}>
+    <div style={{ marginTop: "72px", height: "calc(100% - 72px)", overflowY: "scroll" }}>
       <PanelSection title={t("myGames")}>
         <PanelSectionRow>
           <TextField

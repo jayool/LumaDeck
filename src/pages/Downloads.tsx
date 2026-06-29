@@ -77,7 +77,7 @@ export function Downloads() {
   // Plain full-screen page (same wrapper as Library): no SidebarNavigation now
   // that there's a single screen.
   return (
-    <div style={{ marginTop: "40px", height: "calc(100% - 40px)", overflowY: "scroll" }}>
+    <div style={{ marginTop: "72px", height: "calc(100% - 72px)", overflowY: "scroll" }}>
       <PanelSection title={t("workshop")}>
         <PanelSectionRow>
           <TextField
