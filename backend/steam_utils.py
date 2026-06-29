@@ -369,6 +369,51 @@ def open_game_folder(path: str) -> bool:
         return False
 
 
+def get_app_launch_options(appid: int) -> str | None:
+    """Read the current LaunchOptions string for `appid` from localconfig.vdf.
+
+    Returns the string (possibly empty) if the app's block is found, or None if
+    no localconfig.vdf / app block exists. Best-effort: while Steam is running
+    this reflects the last value Steam persisted to disk, which is enough to
+    preserve any user-set options when we merge in our WINEDLLOVERRIDES.
+    Brace-balanced scan so we never read a neighbouring app's LaunchOptions.
+    """
+    steam_path = detect_steam_install_path()
+    if not steam_path:
+        return None
+    userdata_dir = os.path.join(steam_path, "userdata")
+    if not os.path.isdir(userdata_dir):
+        return None
+    appid_str = str(appid)
+    for user_id in os.listdir(userdata_dir):
+        config_path = os.path.join(userdata_dir, user_id, "config", "localconfig.vdf")
+        if not os.path.exists(config_path):
+            continue
+        try:
+            with open(config_path, "r", encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
+        except Exception:
+            continue
+        m = re.search(r'"' + re.escape(appid_str) + r'"\s*\{', content)
+        if not m:
+            continue
+        # Walk to the matching close brace so we stay inside this app's block.
+        i = m.end()
+        depth = 1
+        j = i
+        while j < len(content) and depth > 0:
+            c = content[j]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+            j += 1
+        block = content[i:j]
+        lm = re.search(r'"LaunchOptions"\s*"([^"]*)"', block)
+        return lm.group(1) if lm else ""
+    return None
+
+
 def set_compat_tool_for_app(appid: int, tool_name: str = "proton_experimental") -> bool:
     """Write a CompatToolMapping entry in localconfig.vdf so Steam launches
     the game via the specified Proton/compat tool (default: proton_experimental).

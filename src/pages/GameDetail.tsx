@@ -46,6 +46,7 @@ import {
   unfixGame,
   getUnfixStatus,
   applyLinuxNativeFix,
+  computeFixLaunchOptions,
   uninstallGameFull,
   fetchAppName,
   repairAppmanifest,
@@ -140,6 +141,26 @@ export function GameDetail({ appid }: GameDetailProps) {
           filesCount: f.filesCount || 0,
         }));
       setInstalledFixes(gameFixes);
+    }
+  };
+
+  // After a fix is applied OR removed, force Proton to load (or stop loading)
+  // the fix's Windows DLLs by writing WINEDLLOVERRIDES into the game's launch
+  // options. The backend derives the DLL list from the fix log and merges it
+  // with any existing options; we write the result via SteamClient — the
+  // reliable path the running Steam persists without a restart. Best-effort:
+  // a failure here never blocks the fix flow (an exe-only fix needs nothing).
+  const syncFixLaunchOptions = async () => {
+    if (!installPath) return;
+    try {
+      const r: any = await computeFixLaunchOptions(appid, installPath);
+      if (!r?.success) return;
+      const sc: any = (window as any).SteamClient;
+      if (sc?.Apps?.SetAppLaunchOptions) {
+        sc.Apps.SetAppLaunchOptions(appid, r.launchOptions || "");
+      }
+    } catch {
+      /* never block the fix flow on the override write */
     }
   };
 
@@ -252,6 +273,7 @@ export function GameDetail({ appid }: GameDetailProps) {
         if (status.state.status === "done") {
           toast(t("toastSuccess"), gameName);
           loadInstalledFixes();
+          syncFixLaunchOptions();
         } else if (status.state.status === "failed") {
           toast(t("toastError"), status.state.error || gameName, 5000);
         }
@@ -450,6 +472,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             setBusy("");
             toast(t("toastFixRemoved", status.state.filesRemoved || 0), gameName);
             loadInstalledFixes();
+            syncFixLaunchOptions();
           } else if (status.state.status === "failed") {
             clearInterval(poll);
             setBusy("");
@@ -872,22 +895,6 @@ export function GameDetail({ appid }: GameDetailProps) {
               onClick={handleToggleDlcs}
               disabled={busy === "dlcs"}
             />
-            {installPath && (
-              <ActionButton
-                label={
-                  busy === "goldberg"
-                    ? (goldbergApplied ? t("removingGoldberg") : t("applyingGoldberg"))
-                    : (goldbergApplied ? t("removeGoldberg") : t("applyGoldberg"))
-                }
-                onClick={handleToggleGoldberg}
-                disabled={busy === "goldberg"}
-                description={
-                  goldbergApplied
-                    ? t("restoreOriginalDlls")
-                    : t("replaceWithGoldberg")
-                }
-              />
-            )}
           </>
         )}
       </PanelSection>
@@ -1039,10 +1046,6 @@ export function GameDetail({ appid }: GameDetailProps) {
             />
           </>
         )}
-        <ActionButton
-          label={t("applyLinuxNativeFix")}
-          onClick={handleNativeFix}
-        />
         {!steamlessInstalled ? (
           <ActionButton
             label={
@@ -1074,18 +1077,26 @@ export function GameDetail({ appid }: GameDetailProps) {
             }
           />
         ) : null}
-        <ActionButton
-          label={busy === "sls_reconfig" ? t("reconfiguringSls") : t("reconfigureSls")}
-          onClick={handleReconfigureSls}
-          disabled={busy === "sls_reconfig"}
-          description={t("reconfigureSlsDesc")}
-        />
-        <ActionButton
-          label={busy === "acf" ? t("repairingAcf") : t("repairAppmanifest")}
-          onClick={handleRepairAcf}
-          disabled={busy === "acf"}
-          description={t("regeneratesAcf")}
-        />
+        {/* Goldberg — moved here from Game Management (it's a crack: replaces
+            steam_api with the emulator). Intentionally NOT wired to the
+            WINEDLLOVERRIDES override: it's an in-place steam_api64 replacement
+            that Proton loads without forcing. */}
+        {installPath && (
+          <ActionButton
+            label={
+              busy === "goldberg"
+                ? (goldbergApplied ? t("removingGoldberg") : t("applyingGoldberg"))
+                : (goldbergApplied ? t("removeGoldberg") : t("applyGoldberg"))
+            }
+            onClick={handleToggleGoldberg}
+            disabled={busy === "goldberg"}
+            description={
+              goldbergApplied
+                ? t("restoreOriginalDlls")
+                : t("replaceWithGoldberg")
+            }
+          />
+        )}
       </PanelSection>
 
       {/* Installed Fixes */}
@@ -1131,6 +1142,28 @@ export function GameDetail({ appid }: GameDetailProps) {
           )}
         </PanelSection>
       )}
+
+      {/* Repairs — install/account plumbing, NOT game cracks. Kept in a
+          separate block so the symptom is clear (these don't make a game
+          launch; they fix permissions / SLSsteam config / Steam bookkeeping). */}
+      <PanelSection title={t("repairs")}>
+        <ActionButton
+          label={t("applyLinuxNativeFix")}
+          onClick={handleNativeFix}
+        />
+        <ActionButton
+          label={busy === "sls_reconfig" ? t("reconfiguringSls") : t("reconfigureSls")}
+          onClick={handleReconfigureSls}
+          disabled={busy === "sls_reconfig"}
+          description={t("reconfigureSlsDesc")}
+        />
+        <ActionButton
+          label={busy === "acf" ? t("repairingAcf") : t("repairAppmanifest")}
+          onClick={handleRepairAcf}
+          disabled={busy === "acf"}
+          description={t("regeneratesAcf")}
+        />
+      </PanelSection>
         </>
       ),
     },

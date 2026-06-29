@@ -507,6 +507,10 @@ class Plugin:
         from fixes import apply_linux_native_fix
         return _j(apply_linux_native_fix(install_path))
 
+    async def compute_fix_launch_options(self, appid: int, install_path: str) -> str:
+        from fixes import compute_fix_launch_options
+        return _j(compute_fix_launch_options(appid, install_path))
+
     # ==========================================================================
     # Workshop
     # ==========================================================================

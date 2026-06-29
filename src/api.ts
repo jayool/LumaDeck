@@ -313,6 +313,15 @@ export const applyLinuxNativeFix = async (installPath: string) =>
     await call<[string], string>("apply_linux_native_fix", installPath),
   );
 
+// Compute the launch-options string to write after applying/removing a fix:
+// the game's current options merged with the WINEDLLOVERRIDES for the DLLs the
+// installed fixes dropped (empty list -> override stripped). The frontend writes
+// the returned string via SteamClient.Apps.SetAppLaunchOptions.
+export const computeFixLaunchOptions = async (appid: number, installPath: string) =>
+  parseResult(
+    await call<[number, string], string>("compute_fix_launch_options", appid, installPath),
+  );
+
 // Workshop
 export const startWorkshopDownload = async (appid: number, pubfileId: number, targetLibraryPath: string = "") =>
   parseResult(

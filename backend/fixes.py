@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import os
 import posixpath
+import re
 import zipfile
 from datetime import datetime
 from typing import Any, Dict
 
 from downloads import fetch_app_name
 from http_client import ensure_http_client
-from steam_utils import get_game_install_path_response, _parse_vdf_simple, detect_steam_install_path
+from steam_utils import get_game_install_path_response, _parse_vdf_simple, detect_steam_install_path, get_app_launch_options
 from utils import ensure_temp_download_dir
 
 try:
@@ -230,6 +231,112 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
         os.remove(dest_zip)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# WINEDLLOVERRIDES support
+# ---------------------------------------------------------------------------
+#
+# A fix that drops Windows DLLs (online fixes: OnlineFix64.dll + winmm/dxgi
+# proxies; some generic cracks: a patched steam_api64.dll) only takes effect
+# under Proton if Wine is told to load the native DLL instead of its builtin.
+# The mechanism is a launch option:
+#
+#     WINEDLLOVERRIDES="OnlineFix64=n,b;winmm=n,b" %command%
+#
+# We derive the DLL list from the per-game fix log (the "Files:" entries inside
+# each [FIX] block), so the override always reflects exactly the DLLs the
+# currently-installed fixes dropped. Re-deriving after an apply OR a remove keeps
+# it correct with zero extra bookkeeping: removing a fix deletes its [FIX] block,
+# so its DLLs simply drop out of the recomputed set.
+#
+# Exe-only fixes (e.g. CoD4's iw3sp.exe) yield no DLLs -> no override, exactly as
+# before. Goldberg is NOT logged here (separate flow), so it never contributes.
+
+
+def _installed_fix_dll_stems(appid: int, install_path: str) -> list:
+    """Basenames without extension of every .dll any installed fix dropped,
+    read from the per-game fix log's [FIX] blocks. Deduped, order-stable."""
+    if not install_path:
+        return []
+    log_file = os.path.join(install_path, f"luatools-fix-log-{appid}.log")
+    try:
+        if not os.path.isfile(log_file):
+            return []
+        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+    except Exception:
+        return []
+
+    stems: list = []
+    seen: set = set()
+    # Within each [FIX]..[/FIX] block only the "Files:" list holds paths; the
+    # header lines (Date/Game/Fix Type/Download URL) never end in .dll, so a
+    # plain ".dll line" test is enough.
+    for block in content.split("[FIX]")[1:]:
+        block = block.split("[/FIX]")[0]
+        for line in block.splitlines():
+            s = line.strip()
+            if s.lower().endswith(".dll"):
+                stem = os.path.splitext(os.path.basename(s))[0]
+                key = stem.lower()
+                if key and key not in seen:
+                    seen.add(key)
+                    stems.append(stem)
+    return stems
+
+
+def _build_winedll_value(stems: list) -> str:
+    """'OnlineFix64=n,b;steam_api64=n,b' (no WINEDLLOVERRIDES= prefix). '' if empty."""
+    return ";".join(f"{s}=n,b" for s in stems)
+
+
+def _merge_launch_options(current: str, winedll_value: str) -> str:
+    """Merge our WINEDLLOVERRIDES block into the game's existing launch options.
+
+    Idempotent: strips any prior WINEDLLOVERRIDES="..." (ours or the user's) and
+    re-adds ours at the front. Preserves a single %command% and any other options
+    the user set. When winedll_value is empty (no fix DLLs left) the override is
+    removed; if that leaves only the %command% we added, the options are cleared.
+    """
+    current = current or ""
+    stripped = re.sub(r'WINEDLLOVERRIDES="[^"]*"\s*', "", current).strip()
+    if winedll_value:
+        prefix = f'WINEDLLOVERRIDES="{winedll_value}"'
+        if "%command%" in stripped:
+            return f"{prefix} {stripped}".strip()
+        if stripped:
+            return f"{prefix} {stripped} %command%".strip()
+        return f"{prefix} %command%"
+    # No fix DLLs: drop a stray lone %command% we likely added; keep real options.
+    if stripped == "%command%":
+        return ""
+    return stripped
+
+
+def compute_fix_launch_options(appid: int, install_path: str) -> dict:
+    """Compute the launch-options string the frontend should write for `appid`
+    after applying/removing a fix. Reads the current options from localconfig.vdf
+    and merges in the WINEDLLOVERRIDES derived from the installed fixes' DLLs.
+
+    The frontend writes the result via SteamClient.Apps.SetAppLaunchOptions —
+    the reliable path that the running Steam persists without clobbering."""
+    try:
+        appid = int(appid)
+    except Exception:
+        return {"success": False, "error": "Invalid appid"}
+    stems = _installed_fix_dll_stems(appid, install_path)
+    winedll = _build_winedll_value(stems)
+    current = get_app_launch_options(appid)
+    merged = _merge_launch_options(current or "", winedll)
+    return {
+        "success": True,
+        "appid": appid,
+        "dlls": stems,
+        "winedlloverrides": winedll,
+        "launchOptions": merged,
+        "changed": (current or "") != merged,
+    }
 
 
 async def apply_game_fix(appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "") -> dict:
