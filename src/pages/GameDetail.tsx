@@ -991,7 +991,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       content: (
         <>
       {/* Fixes */}
-      <PanelSection title={t("fixes")}>
+      <PanelSection title={t("gameFixes")}>
         <ActionButton
           label={busy === "fixes" ? t("checkingForFixes") : t("checkForFixes")}
           onClick={handleCheckFixes}
@@ -1002,6 +1002,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             {fixes.genericFix?.available && (
               <ActionButton
                 label={t("applyGenericFix")}
+                description={t("applyGenericFixDesc")}
                 onClick={() =>
                   handleApplyFix(fixes.genericFix.url, "Generic Fix")
                 }
@@ -1012,6 +1013,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             {fixes.onlineFix?.available && (
               <ActionButton
                 label={t("applyOnlineFix")}
+                description={t("applyOnlineFixDesc")}
                 onClick={() =>
                   handleApplyFix(fixes.onlineFix.url, "Online Fix (Unsteam)")
                 }
@@ -1021,7 +1023,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             )}
             {!fixes.genericFix?.available && !fixes.onlineFix?.available && (
               <PanelSectionRow>
-                <Field label={t("noFixesAvailable")} />
+                <Field icon={<FaExclamationTriangle color="#ffaa00" />} label={t("noFixesAvailable")} />
               </PanelSectionRow>
             )}
           </>
@@ -1149,6 +1151,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       <PanelSection title={t("repairs")}>
         <ActionButton
           label={t("applyLinuxNativeFix")}
+          description={t("applyLinuxNativeFixDesc")}
           onClick={handleNativeFix}
         />
         <ActionButton
