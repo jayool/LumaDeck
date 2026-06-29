@@ -291,27 +291,93 @@ def _build_winedll_value(stems: list) -> str:
     return ";".join(f"{s}=n,b" for s in stems)
 
 
-def _merge_launch_options(current: str, winedll_value: str) -> str:
-    """Merge our WINEDLLOVERRIDES block into the game's existing launch options.
+def _installed_fix_launchers(appid: int, install_path: str) -> list:
+    """Relpaths of launcher-style .exe files any installed fix dropped — basename
+    contains 'launcher' (case-insensitive). From the fix log's [FIX] blocks.
 
-    Idempotent: strips any prior WINEDLLOVERRIDES="..." (ours or the user's) and
-    re-adds ours at the front. Preserves a single %command% and any other options
-    the user set. When winedll_value is empty (no fix DLLs left) the override is
-    removed; if that leaves only the %command% we added, the options are cleared.
+    Some cracks ship their own launcher (e.g. 'FC25 Launcher.exe') that must be
+    run instead of the game exe. When present it takes precedence over the DLL
+    override: Steam's Play points at the launcher and Proton runs it."""
+    if not install_path:
+        return []
+    log_file = os.path.join(install_path, f"luatools-fix-log-{appid}.log")
+    try:
+        if not os.path.isfile(log_file):
+            return []
+        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+    except Exception:
+        return []
+
+    rels: list = []
+    seen: set = set()
+    for block in content.split("[FIX]")[1:]:
+        block = block.split("[/FIX]")[0]
+        for line in block.splitlines():
+            s = line.strip()
+            if s.lower().endswith(".exe") and "launcher" in os.path.basename(s).lower():
+                key = s.lower()
+                if key not in seen:
+                    seen.add(key)
+                    rels.append(s)
+    return rels
+
+
+def _pick_launcher(relpaths: list):
+    """Pick the launcher to redirect to: an exact 'launcher.exe' basename wins,
+    else the shallowest path (fewest dirs, then shortest). None if empty."""
+    if not relpaths:
+        return None
+    exact = [r for r in relpaths if os.path.basename(r).lower() == "launcher.exe"]
+    if exact:
+        return exact[0]
+    return min(relpaths, key=lambda r: (r.count("/") + r.count("\\"), len(r)))
+
+
+def _merge_launch_options(current: str, winedll_value: str, launcher_abs: str = "", install_path: str = "") -> str:
+    """Merge our managed prefix into the game's existing launch options.
+
+    The managed prefix is a launcher redirect ("<abs.exe>") when the fix ships a
+    launcher, else a WINEDLLOVERRIDES="..." when it dropped DLLs, else nothing.
+    Idempotent: strips any prior WINEDLLOVERRIDES, AND a leading quoted .exe path
+    that lives inside the game's install dir (our previous launcher redirect — the
+    install-dir check means we never clobber a user wrapper like mangohud). Then
+    re-adds the current prefix at the front, preserving a single %command% and any
+    other options. When nothing is managed and only the %command% we added remains,
+    the options are cleared.
     """
-    current = current or ""
-    stripped = re.sub(r'WINEDLLOVERRIDES="[^"]*"\s*', "", current).strip()
-    if winedll_value:
+    s = re.sub(r'WINEDLLOVERRIDES="[^"]*"\s*', "", current or "").strip()
+
+    # Strip a leading quoted .exe path that points inside the game dir (ours).
+    if install_path:
+        norm_install = os.path.normpath(install_path)
+        m = re.match(r'"([^"]+\.exe)"\s*', s, re.IGNORECASE)
+        if m:
+            p = os.path.normpath(m.group(1))
+            try:
+                inside = os.path.commonpath([norm_install, p]) == norm_install
+            except Exception:
+                inside = p.startswith(norm_install + os.sep)
+            if inside:
+                s = s[m.end():].strip()
+
+    if launcher_abs:
+        prefix = f'"{launcher_abs}"'
+    elif winedll_value:
         prefix = f'WINEDLLOVERRIDES="{winedll_value}"'
-        if "%command%" in stripped:
-            return f"{prefix} {stripped}".strip()
-        if stripped:
-            return f"{prefix} {stripped} %command%".strip()
+    else:
+        prefix = ""
+
+    if prefix:
+        if "%command%" in s:
+            return f"{prefix} {s}".strip()
+        if s:
+            return f"{prefix} {s} %command%".strip()
         return f"{prefix} %command%"
-    # No fix DLLs: drop a stray lone %command% we likely added; keep real options.
-    if stripped == "%command%":
+    # Nothing managed: drop a stray lone %command% we likely added; keep real options.
+    if s == "%command%":
         return ""
-    return stripped
+    return s
 
 
 def compute_fix_launch_options(appid: int, install_path: str) -> dict:
@@ -325,15 +391,27 @@ def compute_fix_launch_options(appid: int, install_path: str) -> dict:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
+
+    # Launcher redirect takes precedence over the DLL override: if a fix shipped
+    # its own launcher, point Play at it (Proton runs the launcher, which loads
+    # whatever it needs) and skip WINEDLLOVERRIDES entirely.
+    launcher_rel = _pick_launcher(_installed_fix_launchers(appid, install_path))
+    launcher_abs = ""
+    if launcher_rel and install_path:
+        launcher_abs = os.path.normpath(
+            os.path.join(install_path, launcher_rel.replace("\\", "/"))
+        )
+
     stems = _installed_fix_dll_stems(appid, install_path)
-    winedll = _build_winedll_value(stems)
+    winedll = "" if launcher_abs else _build_winedll_value(stems)
     current = get_app_launch_options(appid)
-    merged = _merge_launch_options(current or "", winedll)
+    merged = _merge_launch_options(current or "", winedll, launcher_abs, install_path)
     return {
         "success": True,
         "appid": appid,
         "dlls": stems,
         "winedlloverrides": winedll,
+        "launcher": launcher_abs or None,
         "launchOptions": merged,
         "changed": (current or "") != merged,
     }
