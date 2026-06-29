@@ -625,14 +625,14 @@ export function Settings() {
         {deps && (
           <>
             <PanelSectionRow>
-              <Field label="ACCELA" description={deps.accela ? deps.accelaPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="ACCELA" description={deps.accela ? deps.accelaPath : undefined}>
                 <span style={{ color: deps.accela ? "#00cc00" : "#ff4444" }}>
                   {deps.accela ? t("installed") : t("notFound")}
                 </span>
               </Field>
             </PanelSectionRow>
             <PanelSectionRow>
-              <Field label="SLSsteam" description={deps.slssteam ? deps.slssteamPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="SLSsteam" description={deps.slssteam ? deps.slssteamPath : undefined}>
                 <span style={{ color: deps.slssteam ? "#00cc00" : "#ff4444" }}>
                   {deps.slssteam ? t("installed") : t("notFound")}
                 </span>
@@ -641,6 +641,7 @@ export function Settings() {
             {deps.slssteam && slssteamHealth && slssHealthLine(slssteamHealth) && (
               <PanelSectionRow>
                 <Field
+                  focusable highlightOnFocus={false}
                   icon={slssteamHealth.state === "healthy"
                     ? <FaCheckCircle color="#00cc00" />
                     : <FaExclamationTriangle color="#ff8c00" />}
@@ -652,6 +653,7 @@ export function Settings() {
              headcrabCompat && !headcrabCompat.compatible && (
               <PanelSectionRow>
                 <Field
+                  focusable highlightOnFocus={false}
                   icon={<FaInfoCircle color="#9cc4ff" />}
                   label={t("slssUpdateAvailableSub",
                      headcrabCompat.current_build ?? "?",
@@ -660,14 +662,14 @@ export function Settings() {
               </PanelSectionRow>
             )}
             <PanelSectionRow>
-              <Field label=".NET Runtime">
+              <Field focusable highlightOnFocus={false} label=".NET Runtime">
                 <span style={{ color: deps.dotnet ? "#00cc00" : "#ff4444" }}>
                   {deps.dotnet ? t("installed") : t("notFound")}
                 </span>
               </Field>
             </PanelSectionRow>
             <PanelSectionRow>
-              <Field label="lumalinux" description={deps.lumalinux ? deps.lumalinuxPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="lumalinux" description={deps.lumalinux ? deps.lumalinuxPath : undefined}>
                 <span style={{ color: deps.lumalinux ? "#00cc00" : "#ff4444" }}>
                   {deps.lumalinux ? t("installed") : t("notFound")}
                 </span>
@@ -689,6 +691,7 @@ export function Settings() {
               return (
                 <PanelSectionRow>
                   <Field
+                    focusable highlightOnFocus={false}
                     icon={h.state === "healthy"
                       ? <FaCheckCircle color="#00cc00" />
                       : <FaExclamationTriangle color="#ff8c00" />}
@@ -700,6 +703,7 @@ export function Settings() {
             {deps.lumalinux && lumalinuxHealth?.state === "healthy" && llUpdate?.has_update && (
               <PanelSectionRow>
                 <Field
+                  focusable highlightOnFocus={false}
                   icon={<FaInfoCircle color="#9cc4ff" />}
                   label={t("llUpdateAvailableSub",
                      llUpdate.installed ?? "?",
@@ -708,7 +712,7 @@ export function Settings() {
               </PanelSectionRow>
             )}
             <PanelSectionRow>
-              <Field label="CloudRedirect" description={deps.cloudredirect ? deps.cloudredirectPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="CloudRedirect" description={deps.cloudredirect ? deps.cloudredirectPath : undefined}>
                 <span style={{ color: deps.cloudredirect ? "#00cc00" : "#ff4444" }}>
                   {deps.cloudredirect ? t("installed") : t("notFound")}
                 </span>
@@ -733,13 +737,14 @@ export function Settings() {
                   : <FaExclamationTriangle color={color} />;
               return (
                 <PanelSectionRow>
-                  <Field icon={icon} label={line} />
+                  <Field focusable highlightOnFocus={false} icon={icon} label={line} />
                 </PanelSectionRow>
               );
             })()}
             {deps.cloudredirect && crHealth?.state === "healthy" && crUpdate?.has_update && (
               <PanelSectionRow>
                 <Field
+                  focusable highlightOnFocus={false}
                   icon={<FaInfoCircle color="#9cc4ff" />}
                   label={t("crUpdateAvailableSub",
                      crUpdate.installed ?? "?",
@@ -750,6 +755,7 @@ export function Settings() {
             {deps.cloudredirect && (
               <PanelSectionRow>
                 <Field
+                  focusable highlightOnFocus={false}
                   icon={deps.cloudredirectAuthed
                     ? <FaCheckCircle color="#00cc00" />
                     : <FaExclamationTriangle color="#ffaa00" />}
@@ -762,6 +768,7 @@ export function Settings() {
         {headcrabCompat && (
           <PanelSectionRow>
             <Field
+              focusable highlightOnFocus={false}
               icon={headcrabCompat.compatible
                 ? <FaCheckCircle color="#00cc00" />
                 : <FaExclamationTriangle color="#ff8c00" />}
