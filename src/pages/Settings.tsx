@@ -473,6 +473,31 @@ export function Settings() {
       <PanelSection title={t("apiCredentials")}>
         <PanelSectionRow>
           <TextField
+            label={t("hubcapApiKey")}
+            value={hubcapKey}
+            onChange={(e: any) => setHubcapKey(e?.target?.value ?? "")}
+            bIsPassword
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={handleSaveHubcapKey}>
+            {t("saveHubcapKey")}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={handleOpenHubcap}
+            description={t("getHubcapKeyDesc")}
+          >
+            {t("getHubcapKey")}
+          </ButtonItem>
+        </PanelSectionRow>
+        {renderCredLine("hubcap")}
+        {renderHubcapUsage()}
+
+        <PanelSectionRow>
+          <TextField
             label={t("ryuCookie")}
             value={ryuCookie}
             onChange={(e: any) => setRyuCookie(e?.target?.value ?? "")}
@@ -499,31 +524,6 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
         {renderCredLine("ryuu")}
-
-        <PanelSectionRow>
-          <TextField
-            label={t("hubcapApiKey")}
-            value={hubcapKey}
-            onChange={(e: any) => setHubcapKey(e?.target?.value ?? "")}
-            bIsPassword
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleSaveHubcapKey}>
-            {t("saveHubcapKey")}
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={handleOpenHubcap}
-            description={t("getHubcapKeyDesc")}
-          >
-            {t("getHubcapKey")}
-          </ButtonItem>
-        </PanelSectionRow>
-        {renderCredLine("hubcap")}
-        {renderHubcapUsage()}
       </PanelSection>
 
       <PanelSection title={t("apis")}>
