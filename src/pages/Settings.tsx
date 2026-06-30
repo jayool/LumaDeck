@@ -441,6 +441,66 @@ export function Settings() {
     }
   };
 
+  // Render a health/status line as a compact, colored Field *description* (the
+  // small text slot under a component, where the install path used to be) so the
+  // Dependencies list stays short enough that the action buttons stay on screen.
+  // Replaces the old full-size health rows. Kinds: ok (green ✓), warn (amber ⚠),
+  // muted (grey •).
+  const statusDesc = (line: string | null | undefined,
+                      kind: "ok" | "warn" | "muted") => {
+    if (!line) return undefined;
+    const color = kind === "ok" ? "#00cc00" : kind === "muted" ? "#888" : "#ff8c00";
+    const glyph = kind === "ok" ? "✓" : kind === "muted" ? "•" : "⚠";
+    return <span style={{ color }}>{glyph} {line}</span>;
+  };
+
+  const slssHealthDesc = () => {
+    if (!deps?.slssteam || !slssteamHealth) return undefined;
+    return statusDesc(slssHealthLine(slssteamHealth),
+                      slssteamHealth.state === "healthy" ? "ok" : "warn");
+  };
+
+  const llHealthDesc = () => {
+    const h = lumalinuxHealth;
+    if (!deps?.lumalinux || !h || h.state === "not_installed") return undefined;
+    const ver = (h.version || "?").replace(/^v/i, "");
+    let line: string | null = null;
+    switch (h.state) {
+      case "healthy":           line = t("llHealthAllOk", ver); break;
+      case "hooks_failed":      line = t("llHealthDegraded", ver, h.cause || "?"); break;
+      case "hash_blocked":      line = t("llHealthHashBlocked", ver); break;
+      case "not_active":        line = t("llHealthNotActive"); break;
+      case "injection_missing": line = t("llHealthInjectionMissing"); break;
+    }
+    return statusDesc(line, h.state === "healthy" ? "ok" : "warn");
+  };
+
+  // CloudRedirect: health line + provider sign-in, stacked as two small lines.
+  const crHealthDesc = () => {
+    if (!deps?.cloudredirect) return undefined;
+    const lines: any[] = [];
+    if (crHealth) {
+      const ver = crHealth.version || "?";
+      let line: string | null = null;
+      let kind: "ok" | "warn" | "muted" = "ok";
+      switch (crHealth.state) {
+        case "healthy":       line = t("crHealthOk", ver); kind = "ok"; break;
+        case "broken":        line = t("crHealthBroken", ver); kind = "warn"; break;
+        case "not_active":    line = t("crHealthNotActive"); kind = "warn"; break;
+        case "not_authed":    line = t("crHealthNotAuthed"); kind = "warn"; break;
+        case "kill_switched": line = t("crHealthKillSwitched"); kind = "muted"; break;
+      }
+      const d = statusDesc(line, kind);
+      if (d) lines.push(d);
+    }
+    const prov = statusDesc(
+      `${t("cloudredirectProvider")}: ${deps.cloudredirectAuthed ? t("providerConfigured") : t("providerNotConfigured")}`,
+      deps.cloudredirectAuthed ? "ok" : "warn");
+    if (prov) lines.push(prov);
+    if (lines.length === 0) return undefined;
+    return <>{lines.map((n, i) => <div key={i}>{n}</div>)}</>;
+  };
+
   const handleCheckPluginUpdate = async () => {
     setPluginMsg(t("checking"));
     const pu = await checkPluginUpdate();
@@ -641,30 +701,19 @@ export function Settings() {
         {deps && (
           <>
             <PanelSectionRow>
-              <Field focusable highlightOnFocus={false} label="ACCELA" description={deps.accela ? deps.accelaPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="ACCELA">
                 <span style={{ color: deps.accela ? "#00cc00" : "#ff4444" }}>
                   {deps.accela ? t("installed") : t("notFound")}
                 </span>
               </Field>
             </PanelSectionRow>
             <PanelSectionRow>
-              <Field focusable highlightOnFocus={false} label="SLSsteam" description={deps.slssteam ? deps.slssteamPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="SLSsteam" description={slssHealthDesc()}>
                 <span style={{ color: deps.slssteam ? "#00cc00" : "#ff4444" }}>
                   {deps.slssteam ? t("installed") : t("notFound")}
                 </span>
               </Field>
             </PanelSectionRow>
-            {deps.slssteam && slssteamHealth && slssHealthLine(slssteamHealth) && (
-              <PanelSectionRow>
-                <Field
-                  focusable highlightOnFocus={false}
-                  icon={slssteamHealth.state === "healthy"
-                    ? <FaCheckCircle color="#00cc00" />
-                    : <FaExclamationTriangle color="#ff8c00" />}
-                  label={slssHealthLine(slssteamHealth)}
-                />
-              </PanelSectionRow>
-            )}
             {deps.slssteam && slssteamHealth?.state === "healthy" &&
              headcrabCompat && !headcrabCompat.compatible && (
               <PanelSectionRow>
@@ -685,40 +734,12 @@ export function Settings() {
               </Field>
             </PanelSectionRow>
             <PanelSectionRow>
-              <Field focusable highlightOnFocus={false} label="lumalinux" description={deps.lumalinux ? deps.lumalinuxPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="lumalinux" description={llHealthDesc()}>
                 <span style={{ color: deps.lumalinux ? "#00cc00" : "#ff4444" }}>
                   {deps.lumalinux ? t("installed") : t("notFound")}
                 </span>
               </Field>
             </PanelSectionRow>
-            {deps.lumalinux && lumalinuxHealth && (() => {
-              const h = lumalinuxHealth;
-              if (h.state === "not_installed") return null;
-              // lumalinux reports its version already prefixed ("v0.15.0") while
-              // the llHealth* strings prepend their own "v", so strip a leading
-              // one to avoid "vv0.15.0".
-              const ver = (h.version || "?").replace(/^v/i, "");
-              let line: string | null = null;
-              switch (h.state) {
-                case "healthy":      line = t("llHealthAllOk", ver); break;
-                case "hooks_failed": line = t("llHealthDegraded", ver, h.cause || "?"); break;
-                case "hash_blocked": line = t("llHealthHashBlocked", ver); break;
-                case "not_active":   line = t("llHealthNotActive"); break;
-                case "injection_missing": line = t("llHealthInjectionMissing"); break;
-              }
-              if (!line) return null;
-              return (
-                <PanelSectionRow>
-                  <Field
-                    focusable highlightOnFocus={false}
-                    icon={h.state === "healthy"
-                      ? <FaCheckCircle color="#00cc00" />
-                      : <FaExclamationTriangle color="#ff8c00" />}
-                    label={line}
-                  />
-                </PanelSectionRow>
-              );
-            })()}
             {deps.lumalinux && lumalinuxHealth?.state === "healthy" && llUpdate?.has_update && (
               <PanelSectionRow>
                 <Field
@@ -731,35 +752,12 @@ export function Settings() {
               </PanelSectionRow>
             )}
             <PanelSectionRow>
-              <Field focusable highlightOnFocus={false} label="CloudRedirect" description={deps.cloudredirect ? deps.cloudredirectPath : undefined}>
+              <Field focusable highlightOnFocus={false} label="CloudRedirect" description={crHealthDesc()}>
                 <span style={{ color: deps.cloudredirect ? "#00cc00" : "#ff4444" }}>
                   {deps.cloudredirect ? t("installed") : t("notFound")}
                 </span>
               </Field>
             </PanelSectionRow>
-            {deps.cloudredirect && crHealth && (() => {
-              const ver = crHealth.version || "?";
-              let line: string | null = null;
-              let color = "#00cc00";
-              switch (crHealth.state) {
-                case "healthy":       line = t("crHealthOk", ver); break;
-                case "broken":        line = t("crHealthBroken", ver); color = "#ff8c00"; break;
-                case "not_active":    line = t("crHealthNotActive");   color = "#ff8c00"; break;
-                case "not_authed":    line = t("crHealthNotAuthed");   color = "#ffaa00"; break;
-                case "kill_switched": line = t("crHealthKillSwitched"); color = "#888"; break;
-              }
-              if (!line) return null;
-              const icon = crHealth.state === "healthy"
-                ? <FaCheckCircle color={color} />
-                : crHealth.state === "kill_switched"
-                  ? <FaInfoCircle color={color} />
-                  : <FaExclamationTriangle color={color} />;
-              return (
-                <PanelSectionRow>
-                  <Field focusable highlightOnFocus={false} icon={icon} label={line} />
-                </PanelSectionRow>
-              );
-            })()}
             {deps.cloudredirect && crHealth?.state === "healthy" && crUpdate?.has_update && (
               <PanelSectionRow>
                 <Field
@@ -768,17 +766,6 @@ export function Settings() {
                   label={t("crUpdateAvailableSub",
                      crUpdate.installed ?? "?",
                      crUpdate.latest ?? "?")}
-                />
-              </PanelSectionRow>
-            )}
-            {deps.cloudredirect && (
-              <PanelSectionRow>
-                <Field
-                  focusable highlightOnFocus={false}
-                  icon={deps.cloudredirectAuthed
-                    ? <FaCheckCircle color="#00cc00" />
-                    : <FaExclamationTriangle color="#ffaa00" />}
-                  label={`${t("cloudredirectProvider")}: ${deps.cloudredirectAuthed ? t("providerConfigured") : t("providerNotConfigured")}`}
                 />
               </PanelSectionRow>
             )}
