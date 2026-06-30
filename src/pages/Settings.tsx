@@ -694,7 +694,10 @@ export function Settings() {
             {deps.lumalinux && lumalinuxHealth && (() => {
               const h = lumalinuxHealth;
               if (h.state === "not_installed") return null;
-              const ver = h.version || "?";
+              // lumalinux reports its version already prefixed ("v0.15.0") while
+              // the llHealth* strings prepend their own "v", so strip a leading
+              // one to avoid "vv0.15.0".
+              const ver = (h.version || "?").replace(/^v/i, "");
               let line: string | null = null;
               switch (h.state) {
                 case "healthy":      line = t("llHealthAllOk", ver); break;
