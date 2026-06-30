@@ -38,7 +38,7 @@ import {
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
 } from "../api";
-import { checkPluginUpdate, downloadUpdateToDownloads } from "../api";
+import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffReal, runDesktopHandoffQuickInstall } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
 
 export function Settings() {
@@ -100,6 +100,17 @@ export function Settings() {
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || "", duration });
+
+  // Off-pin repairs need the Steam downgrade, which can't run in Game Mode.
+  // Arm the one-shot Desktop hand-off (same mechanism the QAM "Fix in Desktop"
+  // uses) instead of making the user type the headcrab command in a Desktop
+  // terminal by hand. The command line is kept below as a manual fallback.
+  const fixInDesktop = async (fn: () => Promise<any>) => {
+    const r: any = await fn();
+    if (r?.switchLaunched) toast(t("sysSteamTooNew"), t("sysHandoffSwitching"), 8000);
+    else if (r?.armed) toast(t("sysSteamTooNew"), t("sysHandoffManual"), 12000);
+    else toast(t("toastError"), r?.error || "", 6000);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -600,6 +611,11 @@ export function Settings() {
                     />
                   </PanelSectionRow>
                   <PanelSectionRow>
+                    <ButtonItem layout="below" onClick={() => fixInDesktop(runDesktopHandoffReal)}>
+                      {t("sysFixInDesktop")}
+                    </ButtonItem>
+                  </PanelSectionRow>
+                  <PanelSectionRow>
                     <Field
                       description={
                         <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
@@ -800,6 +816,11 @@ export function Settings() {
                 label={t("headcrabGameModeBlockTitle")}
                 description={t("headcrabGameModeBlockBody")}
               />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ButtonItem layout="below" onClick={() => fixInDesktop(runDesktopHandoffQuickInstall)}>
+                {t("sysFixInDesktop")}
+              </ButtonItem>
             </PanelSectionRow>
             <PanelSectionRow>
               <Field
