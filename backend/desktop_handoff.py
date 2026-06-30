@@ -33,26 +33,9 @@ _DESKTOP_FILE = os.path.join(_AUTOSTART, "lumadeck-handoff.desktop")
 _SCRIPT_DIR = os.path.join(_HOME, ".local", "share", "lumadeck")
 _SCRIPT_FILE = os.path.join(_SCRIPT_DIR, "handoff.sh")
 
-# Each payload ends with its own return-to-Game-Mode logic. The dummy always
-# returns; the real one only returns on success (see below).
-_RETURN_TO_GAME_MODE = (
-    'echo " Returning to Game Mode in 4s..."\n'
-    "sleep 4\n"
-    "steamos-session-select gamescope\n"
-)
-
-# Stand-in for enter-the-wired/headcrab: just prints visible output so we can see
-# the round-trip work on-device before trusting it with the real downgrade.
-_DUMMY_PAYLOAD = """
-echo "============================================="
-echo " LumaDeck - Desktop hand-off TEST (dummy)"
-echo " This is where enter-the-wired / headcrab would run."
-echo "============================================="
-for i in 1 2 3 4 5; do echo "  ... step $i/5"; sleep 1; done
-echo
-echo " Dummy task done."
-""" + _RETURN_TO_GAME_MODE
-
+# Each payload ends with its own return-to-Game-Mode logic (the real one only
+# returns on success).
+#
 # REAL payload: aligns Steam to headcrab's pin (enter-the-wired), then re-injects
 # lumalinux so the native-download hooks survive the regenerated steam.sh. This
 # is the ONE fix that can't run in Game Mode (Steam is live there).
@@ -219,12 +202,6 @@ def _run_handoff(payload: str) -> dict:
         info["switchError"] = str(exc)
         info["note"] = "armed OK; auto-switch failed — switch to Desktop manually to test the autostart"
     return _dump(info)
-
-
-def run_desktop_handoff_dummy() -> dict:
-    """Arm the DUMMY task (visible output, always returns) and switch to Desktop.
-    Used to validate the round-trip without touching Steam."""
-    return _run_handoff(_DUMMY_PAYLOAD)
 
 
 def run_desktop_handoff_real() -> dict:

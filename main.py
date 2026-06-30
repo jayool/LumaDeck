@@ -621,13 +621,6 @@ class Plugin:
         from installer import apply_component
         return _j(await apply_component(component_id, op))
 
-    async def run_desktop_handoff_dummy(self) -> str:
-        """TEST: arm a one-shot Desktop autostart (dummy payload) + switch to
-        Desktop; it runs there and returns to Game Mode. Validates the round-trip
-        before wiring the real headcrab downgrade."""
-        from desktop_handoff import run_desktop_handoff_dummy
-        return _j(run_desktop_handoff_dummy())
-
     async def run_desktop_handoff_real(self) -> str:
         """Arm a one-shot Desktop autostart (REAL payload: enter-the-wired Steam
         downgrade + lumalinux re-inject) and switch to Desktop. It runs there and
