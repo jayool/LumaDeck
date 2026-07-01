@@ -780,59 +780,51 @@ export function Settings() {
             />
           </PanelSectionRow>
         )}
+        {/* Off-pin: the main install can't run in Game Mode (headcrab's downgrade
+            crashes gamescope), so the button MORPHS into "Fix in Desktop" (runs
+            the full quick install in Desktop). On-pin it's the normal install. */}
         <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={handleInstallDeps}
-            disabled={installing || (headcrabCompat ? !headcrabCompat.compatible : false)}
-            description={confirmInstallDeps ? t("installDepsConfirmDesc") : undefined}
-          >
-            {installing
-              ? t("installing")
-              : confirmInstallDeps
-                ? t("installDepsConfirm")
-                : t("installReinstallDeps")}
-          </ButtonItem>
+          {headcrabCompat && !headcrabCompat.compatible ? (
+            <ButtonItem
+              layout="below"
+              onClick={() => fixInDesktop(runDesktopHandoffQuickInstall)}
+              description={t("sysSteamTooNewFixDesc")}
+            >
+              {t("sysFixInDesktop")}
+            </ButtonItem>
+          ) : (
+            <ButtonItem
+              layout="below"
+              onClick={handleInstallDeps}
+              disabled={installing}
+              description={confirmInstallDeps ? t("installDepsConfirmDesc") : undefined}
+            >
+              {installing
+                ? t("installing")
+                : confirmInstallDeps
+                  ? t("installDepsConfirm")
+                  : t("installReinstallDeps")}
+            </ButtonItem>
+          )}
         </PanelSectionRow>
-        {headcrabCompat && !headcrabCompat.compatible && (
-          <>
-            <PanelSectionRow>
-              <Field
-                icon={<FaExclamationTriangle color="#ff8c00" />}
-                label={t("headcrabGameModeBlockTitle")}
-                description={t("headcrabGameModeBlockBody")}
-              />
-            </PanelSectionRow>
-            <PanelSectionRow>
-              <ButtonItem layout="below" onClick={() => fixInDesktop(runDesktopHandoffQuickInstall)}>
-                {t("sysFixInDesktop")}
-              </ButtonItem>
-            </PanelSectionRow>
-            <PanelSectionRow>
-              <Field
-                description={
-                  <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
-                    {t("headcrabGameModeBlockCommand")}
-                  </span>
-                }
-              />
-            </PanelSectionRow>
-          </>
+        {/* Enable CloudRedirect also runs headcrab, so it's hidden off-pin
+            (would crash gamescope, and "Fix in Desktop" already installs CR). */}
+        {(!headcrabCompat || headcrabCompat.compatible) && (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={handleEnableCR}
+              disabled={installingCR}
+              description={confirmInstallCR ? t("enableCRConfirmDesc") : undefined}
+            >
+              {installingCR
+                ? t("installingCR")
+                : confirmInstallCR
+                  ? t("enableCRConfirm")
+                  : t("enableCloudRedirect")}
+            </ButtonItem>
+          </PanelSectionRow>
         )}
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={handleEnableCR}
-            disabled={installingCR}
-            description={confirmInstallCR ? t("enableCRConfirmDesc") : undefined}
-          >
-            {installingCR
-              ? t("installingCR")
-              : confirmInstallCR
-                ? t("enableCRConfirm")
-                : t("enableCloudRedirect")}
-          </ButtonItem>
-        </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem
             layout="below"
