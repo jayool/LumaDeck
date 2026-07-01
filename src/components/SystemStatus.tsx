@@ -55,6 +55,28 @@ const INFO = "#5b9eff";
 const REPAIRABLE = ["injection_missing", "hooks_failed", "broken"];
 const UNSUPPORTED = ["broken", "hash_blocked"]; // "can't hook this Steam build"
 
+export type PrimaryAction = "downgrade" | "core" | "repair" | "restart" | null;
+
+// The single highest-priority SYSTEM action for the current status — the exact
+// priority buildRows() uses for its one system-problem row (downgrade > core >
+// repair > restart), exported so the Dependencies page can drive its one
+// morphing action button from the same logic. Keep in sync with buildRows.
+export function primarySystemAction(status: ComponentsStatus | null): PrimaryAction {
+  if (!status?.success) return null;
+  const comps = status.components || [];
+  const sls = comps.find((c) => c.id === "slssteam");
+  const ll = comps.find((c) => c.id === "lumalinux");
+  const incompatible = status.headcrab?.compatible === false;
+  const coreHalf =
+    (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
+  const anyUnsupported = comps.some((c) => c.installed && UNSUPPORTED.includes(c.health));
+  if (anyUnsupported && incompatible) return "downgrade";
+  if (coreHalf) return "core";
+  if (comps.some((c) => c.installed && REPAIRABLE.includes(c.health))) return "repair";
+  if (comps.some((c) => c.installed && c.health === "not_active")) return "restart";
+  return null;
+}
+
 // Collapse the per-component status into the minimum the user needs: at most one
 // system "problem" row (by priority), CloudRedirect login if pending, any stuck
 // games, then the update track. See DESIGN_UI.md "Component model".

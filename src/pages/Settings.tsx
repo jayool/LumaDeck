@@ -36,6 +36,9 @@ import {
   checkCloudredirectUpdate,
   checkLumalinuxUpdate,
   checkHeadcrabCompat,
+  getComponentsStatus,
+  reinjectInstalled,
+  applyComponent,
   listAdditionalApps,
   addToAdditionalApps,
   removeFromAdditionalApps,
@@ -45,6 +48,7 @@ import {
 } from "../api";
 import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
+import { primarySystemAction, ComponentsStatus } from "../components/SystemStatus";
 
 export function Settings() {
   const t = useT();
@@ -52,6 +56,8 @@ export function Settings() {
   const [hubcapKey, setHubcapKey] = useState("");
   const [cred, setCred] = useState<any>(null);
   const [deps, setDeps] = useState<any>(null);
+  const [componentsStatus, setComponentsStatus] = useState<ComponentsStatus | null>(null);
+  const [applyingFix, setApplyingFix] = useState(false);
   const [platform, setPlatform] = useState<any>(null);
   const [playNotOwned, setPlayNotOwned] = useState(false);
   // SLSsteam advanced config editors (AdditionalApps list + FakeAppIds map).
@@ -122,6 +128,34 @@ export function Settings() {
     else toast(t("toastError"), r?.error || "", 6000);
   };
 
+  // Re-fetch everything the Dependencies view renders (component state + the
+  // unified status the morphing button reads).
+  const reloadStatus = async () => {
+    const [d, cs, sls, ll, cr] = await Promise.all([
+      checkDependencies(), getComponentsStatus(),
+      getSlssteamHealth(), getLumalinuxHealth(), getCloudredirectHealth(),
+    ]);
+    if (d?.success) setDeps(d);
+    if (cs?.success) setComponentsStatus(cs);
+    if (sls?.state) setSlssteamHealth(sls);
+    if (ll?.state) setLumalinuxHealth(ll);
+    if (cr?.state) setCrHealth(cr);
+  };
+
+  // Run a fix action (reinject / apply_component / install), then restart Steam
+  // to apply and refresh the view. All of these own the steam.sh ordering.
+  const runFix = async (fn: () => Promise<any>) => {
+    setApplyingFix(true);
+    const r: any = await fn();
+    if (r?.success) {
+      await restartSteam();
+      await reloadStatus();
+    } else {
+      toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
+    }
+    setApplyingFix(false);
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -129,6 +163,8 @@ export function Settings() {
       if (cancelled) return;
       const depsResult = await checkDependencies();
       if (!cancelled && depsResult.success) setDeps(depsResult);
+      const cs = await getComponentsStatus();
+      if (!cancelled && cs?.success) setComponentsStatus(cs);
       const [sls, ll, cr, cru, llu] = await Promise.all([
         getSlssteamHealth(), getLumalinuxHealth(),
         getCloudredirectHealth(), checkCloudredirectUpdate(),
@@ -797,65 +833,59 @@ export function Settings() {
             />
           </PanelSectionRow>
         )}
-        {/* Off-pin: the main install can't run in Game Mode (headcrab's downgrade
-            crashes gamescope), so the button MORPHS into "Fix in Desktop" (runs
-            the full quick install in Desktop). On-pin it's the normal install. */}
-        <PanelSectionRow>
-          {headcrabCompat && !headcrabCompat.compatible ? (
-            <ButtonItem
-              layout="below"
-              onClick={() => fixInDesktop(runDesktopHandoffQuickInstall)}
-              description={t("sysSteamTooNewFixDesc")}
-            >
-              {t("sysFixInDesktop")}
-            </ButtonItem>
-          ) : (
-            <ButtonItem
-              layout="below"
-              onClick={handleInstallDeps}
-              disabled={installing}
-              description={confirmInstallDeps ? t("installDepsConfirmDesc") : undefined}
-            >
-              {installing
-                ? t("installing")
-                : confirmInstallDeps
-                  ? t("installDepsConfirm")
-                  : t("installReinstallDeps")}
-            </ButtonItem>
-          )}
-        </PanelSectionRow>
-        {/* Enable CloudRedirect also runs headcrab, so it's hidden off-pin
-            (would crash gamescope, and "Fix in Desktop" already installs CR). */}
-        {(!headcrabCompat || headcrabCompat.compatible) && (
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={handleEnableCR}
-              disabled={installingCR}
-              description={confirmInstallCR ? t("enableCRConfirmDesc") : undefined}
-            >
-              {installingCR
-                ? t("installingCR")
-                : confirmInstallCR
-                  ? t("enableCRConfirm")
-                  : t("enableCloudRedirect")}
-            </ButtonItem>
-          </PanelSectionRow>
-        )}
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={handleInstallLumalinux}
-            disabled={installingLL}
-            description={confirmInstallLL ? t("installLumalinuxConfirmDesc") : undefined}
-          >
-            {installingLL
-              ? t("installingLL")
-              : confirmInstallLL
-                ? t("installLumalinuxConfirm")
-                : t("installLumalinux")}
-          </ButtonItem>
-        </PanelSectionRow>
+        {/* ONE morphing action button, same priority/dispatch as the QAM
+            (SystemStatus). Off-pin → Fix in Desktop; else the highest-priority
+            fix from primarySystemAction (Reinstall Core / Repair / Restart);
+            else a manual Install / Reinstall. Every fix owns the shared steam.sh
+            ordering (reinject / apply_component), so there are no per-component
+            installers that could wipe the others. */}
+        {(() => {
+          const offPin = !!headcrabCompat && !headcrabCompat.compatible;
+          const coreInstalled = !!(deps?.slssteam && deps?.lumalinux);
+          const primary = offPin ? "downgrade" : primarySystemAction(componentsStatus);
+          let label = t("installReinstallDeps");
+          let desc: string | undefined;
+          let onClick: () => any;
+          if (offPin) {
+            label = t("sysFixInDesktop");
+            desc = t("sysSteamTooNewFixDesc");
+            onClick = () => fixInDesktop(runDesktopHandoffQuickInstall);
+          } else if (primary === "core") {
+            label = t("sysReinstall");
+            onClick = () => runFix(() => applyComponent("core", "install"));
+          } else if (primary === "repair") {
+            label = t("sysRepair");
+            onClick = () => runFix(() => reinjectInstalled());
+          } else if (primary === "restart") {
+            label = t("restartSteam");
+            onClick = () => runFix(async () => ({ success: true })); // restart + refresh
+          } else {
+            // healthy on-pin: manual maintenance — reinstall what's installed,
+            // or a fresh install if core isn't there yet.
+            onClick = () => runFix(() =>
+              coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
+          }
+          return (
+            <>
+              <PanelSectionRow>
+                <ButtonItem layout="below" disabled={applyingFix}
+                  description={desc} onClick={onClick}>
+                  {applyingFix ? t("installing") : label}
+                </ButtonItem>
+              </PanelSectionRow>
+              {/* Add optional CloudRedirect (cloud saves) when it's not installed
+                  and we're on-pin — the one thing the fix dispatch won't add. */}
+              {!offPin && coreInstalled && !deps?.cloudredirect && (
+                <PanelSectionRow>
+                  <ButtonItem layout="below" disabled={applyingFix}
+                    onClick={() => runFix(() => applyComponent("cloudredirect", "install"))}>
+                    {t("enableCloudRedirect")}
+                  </ButtonItem>
+                </PanelSectionRow>
+              )}
+            </>
+          );
+        })()}
       </PanelSection>
       ),
     },
