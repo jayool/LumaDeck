@@ -782,8 +782,10 @@ export function Settings() {
             label = t("restartSteam");
             onClick = () => runFix(async () => ({ success: true })); // restart + refresh
           } else {
-            // healthy on-pin: manual maintenance — reinstall what's installed,
-            // or a fresh install if core isn't there yet.
+            // healthy on-pin: manual maintenance. Reflect the real state in the
+            // label — "Reinstall" when the core is already there (nothing is
+            // missing), "Install" only on a fresh device.
+            label = coreInstalled ? t("reinstallDeps") : t("installDeps");
             onClick = () => runFix(() =>
               coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
           }
