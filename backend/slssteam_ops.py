@@ -126,6 +126,38 @@ def check_fake_app_id_status(appid: int) -> dict:
         return {"success": True, "exists": False}
 
 
+def list_fake_app_ids() -> dict:
+    """Read the current FakeAppIds map from config.yaml as {realId: fakeId}.
+    Comment-safe: only parses the indented lines under the `FakeAppIds:` key."""
+    try:
+        config_path = _config_path()
+        entries: dict = {}
+        if not os.path.exists(config_path):
+            return {"success": True, "entries": entries}
+        with open(config_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        in_block = False
+        for line in lines:
+            stripped = line.strip()
+            if not in_block:
+                if stripped.lower().startswith("fakeappids:"):
+                    in_block = True
+                continue
+            indent = len(line) - len(line.lstrip())
+            if stripped and not stripped.startswith("#") and indent == 0:
+                break  # next top-level key ends the block
+            if not stripped or stripped.startswith("#"):
+                continue
+            key, _, val = stripped.partition(":")
+            key = key.strip().strip("'\"")
+            val = val.strip().strip("'\"")
+            if key:
+                entries[key] = val
+        return {"success": True, "entries": entries}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ==========================================
 #  ADDITIONAL APPS MANAGEMENT
 # ==========================================
@@ -165,6 +197,55 @@ def add_to_additional_apps(appid: int) -> dict:
             f.writelines(new_lines)
         os.replace(tmp, config_path)
         return {"success": True, "message": f"AppID {appid} added to AdditionalApps"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def list_additional_apps() -> dict:
+    """Read the current AdditionalApps list from config.yaml as [appid, ...].
+    Comment-safe: only parses the indented `- N` lines under `AdditionalApps:`."""
+    try:
+        config_path = _config_path()
+        appids: list = []
+        if not os.path.exists(config_path):
+            return {"success": True, "appids": appids}
+        with open(config_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        in_block = False
+        for line in lines:
+            stripped = line.strip()
+            if not in_block:
+                if stripped.lower().startswith("additionalapps:"):
+                    in_block = True
+                continue
+            indent = len(line) - len(line.lstrip())
+            if stripped and not stripped.startswith("#") and indent == 0:
+                break
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("-"):
+                appids.append(stripped[1:].strip().strip("'\""))
+        return {"success": True, "appids": appids}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def remove_from_additional_apps(appid: int) -> dict:
+    """Public wrapper: drop `- appid` from the AdditionalApps list."""
+    try:
+        config_path = _config_path()
+        if not os.path.exists(config_path):
+            return {"success": True, "message": "Config not found"}
+        with open(config_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        target = f"- {appid}"
+        new_lines = [ln for ln in lines if ln.strip() != target]
+        if len(new_lines) != len(lines):
+            tmp = config_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            os.replace(tmp, config_path)
+        return {"success": True, "message": f"AppID {appid} removed from AdditionalApps"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

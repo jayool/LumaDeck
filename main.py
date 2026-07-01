@@ -379,6 +379,22 @@ class Plugin:
         from slssteam_ops import check_fake_app_id_status
         return _j(check_fake_app_id_status(appid))
 
+    async def list_fake_app_ids(self) -> str:
+        from slssteam_ops import list_fake_app_ids
+        return _j(list_fake_app_ids())
+
+    async def list_additional_apps(self) -> str:
+        from slssteam_ops import list_additional_apps
+        return _j(list_additional_apps())
+
+    async def add_to_additional_apps(self, appid: int) -> str:
+        from slssteam_ops import add_to_additional_apps
+        return _j(add_to_additional_apps(appid))
+
+    async def remove_from_additional_apps(self, appid: int) -> str:
+        from slssteam_ops import remove_from_additional_apps
+        return _j(remove_from_additional_apps(appid))
+
     async def add_game_token(self, appid: int) -> str:
         from slssteam_ops import add_game_token
         return _j(add_game_token(appid))

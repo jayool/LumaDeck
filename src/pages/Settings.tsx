@@ -37,6 +37,12 @@ import {
   checkLumalinuxUpdate,
   checkHeadcrabCompat,
   repairSlssteamHeadcrab,
+  listAdditionalApps,
+  addToAdditionalApps,
+  removeFromAdditionalApps,
+  listFakeAppIds,
+  addFakeAppId,
+  removeFakeAppId,
 } from "../api";
 import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffReal, runDesktopHandoffQuickInstall } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
@@ -49,6 +55,12 @@ export function Settings() {
   const [deps, setDeps] = useState<any>(null);
   const [platform, setPlatform] = useState<any>(null);
   const [playNotOwned, setPlayNotOwned] = useState(false);
+  // SLSsteam advanced config editors (AdditionalApps list + FakeAppIds map).
+  const [addlApps, setAddlApps] = useState<string[]>([]);
+  const [newAddlApp, setNewAddlApp] = useState("");
+  const [fakeAppIds, setFakeAppIds] = useState<Record<string, string>>({});
+  const [newFakeReal, setNewFakeReal] = useState("");
+  const [newFakeFake, setNewFakeFake] = useState("");
   const [installing, setInstalling] = useState(false);
   const [confirmInstallDeps, setConfirmInstallDeps] = useState(false);
   const [installingCR, setInstallingCR] = useState(false);
@@ -160,6 +172,10 @@ export function Settings() {
 
       const playResult = await getSlsPlayStatus();
       if (!cancelled && playResult.success) setPlayNotOwned(playResult.enabled);
+
+      const [addl, fake] = await Promise.all([listAdditionalApps(), listFakeAppIds()]);
+      if (!cancelled && addl?.success) setAddlApps(addl.appids ?? []);
+      if (!cancelled && fake?.success) setFakeAppIds(fake.entries ?? {});
 
       const [sls, ll, cr, cru, llu] = await Promise.all([
         getSlssteamHealth(), getLumalinuxHealth(),
@@ -412,6 +428,42 @@ export function Settings() {
     await setSlsPlayStatus(value);
   };
 
+  // SLSsteam advanced editors — re-read the config after every change so the UI
+  // always shows the real on-disk values. Changes apply after a Steam restart.
+  const refreshSlsAdvanced = async () => {
+    const [addl, fake] = await Promise.all([listAdditionalApps(), listFakeAppIds()]);
+    if (addl?.success) setAddlApps(addl.appids ?? []);
+    if (fake?.success) setFakeAppIds(fake.entries ?? {});
+  };
+
+  const handleAddAddlApp = async () => {
+    const id = parseInt(newAddlApp.trim(), 10);
+    if (!Number.isFinite(id)) return;
+    await addToAdditionalApps(id);
+    setNewAddlApp("");
+    await refreshSlsAdvanced();
+  };
+
+  const handleRemoveAddlApp = async (appid: string) => {
+    await removeFromAdditionalApps(parseInt(appid, 10));
+    await refreshSlsAdvanced();
+  };
+
+  const handleAddFakeAppId = async () => {
+    const real = parseInt(newFakeReal.trim(), 10);
+    const fake = parseInt(newFakeFake.trim(), 10);
+    if (!Number.isFinite(real) || !Number.isFinite(fake)) return;
+    await addFakeAppId(real, fake);
+    setNewFakeReal("");
+    setNewFakeFake("");
+    await refreshSlsAdvanced();
+  };
+
+  const handleRemoveFakeAppId = async (real: string) => {
+    await removeFakeAppId(parseInt(real, 10));
+    await refreshSlsAdvanced();
+  };
+
   const handleRepairHeadcrab = async () => {
     setRepairing(true);
     toast(t("repairingHeadcrab"), t("repairingHeadcrabBody"), 20000);
@@ -625,6 +677,51 @@ export function Settings() {
             {t("restartSteam")}
           </ButtonItem>
         </PanelSectionRow>
+
+        {/* ── Advanced: AdditionalApps — force specific AppIDs as owned ── */}
+        <PanelSectionRow>
+          <Field focusable highlightOnFocus={false}
+            label={t("slssAddlAppsTitle")} description={t("slssAddlAppsDesc")} />
+        </PanelSectionRow>
+        {addlApps.map((id) => (
+          <PanelSectionRow key={`addl-${id}`}>
+            <ButtonItem layout="below" onClick={() => handleRemoveAddlApp(id)}>
+              {id}   ✕
+            </ButtonItem>
+          </PanelSectionRow>
+        ))}
+        <PanelSectionRow>
+          <TextField label={t("slssAppIdLabel")} value={newAddlApp}
+            onChange={(e: any) => setNewAddlApp(e?.target?.value ?? "")} />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={handleAddAddlApp}>{t("slssAddButton")}</ButtonItem>
+        </PanelSectionRow>
+
+        {/* ── Advanced: FakeAppIds — remap AppIDs for networking ── */}
+        <PanelSectionRow>
+          <Field focusable highlightOnFocus={false}
+            label={t("slssFakeIdsTitle")} description={t("slssFakeIdsDesc")} />
+        </PanelSectionRow>
+        {Object.entries(fakeAppIds).map(([real, fake]) => (
+          <PanelSectionRow key={`fake-${real}`}>
+            <ButtonItem layout="below" onClick={() => handleRemoveFakeAppId(real)}>
+              {real === "0" ? t("slssFakeAllUnowned") : real} → {fake}   ✕
+            </ButtonItem>
+          </PanelSectionRow>
+        ))}
+        <PanelSectionRow>
+          <TextField label={t("slssFakeRealLabel")} value={newFakeReal}
+            onChange={(e: any) => setNewFakeReal(e?.target?.value ?? "")} />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <TextField label={t("slssFakeFakeLabel")} value={newFakeFake}
+            onChange={(e: any) => setNewFakeFake(e?.target?.value ?? "")} />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={handleAddFakeAppId}>{t("slssAddButton")}</ButtonItem>
+        </PanelSectionRow>
+
         {/* Repair / Apply-Update zone — fires when SLSsteam is broken OR when an
             update is available. Both use the same handler (headcrab.sh) and the
             same gamemode gate (compat=false → must run from Desktop). The notice

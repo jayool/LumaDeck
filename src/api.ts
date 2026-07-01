@@ -180,6 +180,18 @@ export const removeFakeAppId = async (appid: number) =>
 export const checkFakeAppIdStatus = async (appid: number) =>
   parseResult(await call<[number], string>("check_fake_app_id_status", appid));
 
+export const listFakeAppIds = async () =>
+  parseResult(await call<[], string>("list_fake_app_ids"));
+
+export const listAdditionalApps = async () =>
+  parseResult(await call<[], string>("list_additional_apps"));
+
+export const addToAdditionalApps = async (appid: number) =>
+  parseResult(await call<[number], string>("add_to_additional_apps", appid));
+
+export const removeFromAdditionalApps = async (appid: number) =>
+  parseResult(await call<[number], string>("remove_from_additional_apps", appid));
+
 export const addGameToken = async (appid: number) =>
   parseResult(await call<[number], string>("add_game_token", appid));
 
