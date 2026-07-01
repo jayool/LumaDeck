@@ -36,7 +36,6 @@ import {
   checkCloudredirectUpdate,
   checkLumalinuxUpdate,
   checkHeadcrabCompat,
-  repairSlssteamHeadcrab,
   listAdditionalApps,
   addToAdditionalApps,
   removeFromAdditionalApps,
@@ -44,7 +43,7 @@ import {
   addFakeAppId,
   removeFakeAppId,
 } from "../api";
-import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffReal, runDesktopHandoffQuickInstall } from "../api";
+import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
 
 export function Settings() {
@@ -67,7 +66,6 @@ export function Settings() {
   const [confirmInstallCR, setConfirmInstallCR] = useState(false);
   const [installingLL, setInstallingLL] = useState(false);
   const [confirmInstallLL, setConfirmInstallLL] = useState(false);
-  const [repairing, setRepairing] = useState(false);
   const [slssteamHealth, setSlssteamHealth] = useState<{
     state: string;
     cause: string | null;
@@ -464,20 +462,6 @@ export function Settings() {
     await refreshSlsAdvanced();
   };
 
-  const handleRepairHeadcrab = async () => {
-    setRepairing(true);
-    toast(t("repairingHeadcrab"), t("repairingHeadcrabBody"), 20000);
-    const result = await repairSlssteamHeadcrab();
-    setRepairing(false);
-    if (result.success) {
-      const [sls, ll] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth()]);
-      if (sls.state) setSlssteamHealth(sls);
-      if (ll.state)  setLumalinuxHealth(ll);
-      toast(t("headcrabRepaired"), t("headcrabRepairedBody"), 6000);
-    } else {
-      toast(t("toastError"), result.error || `step: ${result.step}`, 6000);
-    }
-  };
 
   // Map an SLSsteam health state to its Dependencies sub-row string.
   const slssHealthLine = (h: { state: string; cause: string | null }): string | null => {
@@ -722,70 +706,6 @@ export function Settings() {
           <ButtonItem layout="below" onClick={handleAddFakeAppId}>{t("slssAddButton")}</ButtonItem>
         </PanelSectionRow>
 
-        {/* Repair / Apply-Update zone — fires when SLSsteam is broken OR when an
-            update is available. Both use the same handler (headcrab.sh) and the
-            same gamemode gate (compat=false → must run from Desktop). The notice
-            colour changes per intent: orange for "broken", blue for "update". */}
-        {(() => {
-          const broken = slssteamHealth &&
-            (slssteamHealth.state === "broken" || slssteamHealth.state === "injection_missing");
-          const updateAvailable = slssteamHealth?.state === "healthy" &&
-            headcrabCompat && !headcrabCompat.compatible;
-          if (!broken && !updateAvailable) return null;
-          const gamemodeBlocked = headcrabCompat && !headcrabCompat.compatible;
-          return (
-            <>
-              <PanelSectionRow>
-                <Field
-                  icon={broken
-                    ? <FaExclamationTriangle color="#ffaa00" />
-                    : <FaInfoCircle color="#9cc4ff" />}
-                  label={broken
-                    ? slssHealthLine(slssteamHealth!)
-                    : t("slssUpdateAvailableSub",
-                         headcrabCompat?.current_build ?? "?",
-                         headcrabCompat?.target ?? "?")}
-                />
-              </PanelSectionRow>
-              <PanelSectionRow>
-                <ButtonItem
-                  layout="below"
-                  onClick={handleRepairHeadcrab}
-                  disabled={repairing || !!gamemodeBlocked}
-                >
-                  {repairing ? t("repairingHeadcrab") : t("repairSlssteamHeadcrab")}
-                </ButtonItem>
-              </PanelSectionRow>
-              {gamemodeBlocked && (
-                <>
-                  {/* Must-run-in-Desktop notice → native Field (title + body) +
-                      a monospace command line (no dark box). */}
-                  <PanelSectionRow>
-                    <Field
-                      icon={<FaExclamationTriangle color={broken ? "#ff8c00" : "#5b9eff"} />}
-                      label={broken ? t("headcrabGameModeBlockTitle") : t("slssUpdateApplyTitle")}
-                      description={broken ? t("headcrabGameModeBlockBody") : t("slssUpdateApplyBody")}
-                    />
-                  </PanelSectionRow>
-                  <PanelSectionRow>
-                    <ButtonItem layout="below" onClick={() => fixInDesktop(runDesktopHandoffReal)}>
-                      {t("sysFixInDesktop")}
-                    </ButtonItem>
-                  </PanelSectionRow>
-                  <PanelSectionRow>
-                    <Field
-                      description={
-                        <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
-                          {t("headcrabGameModeBlockCommand")}
-                        </span>
-                      }
-                    />
-                  </PanelSectionRow>
-                </>
-              )}
-            </>
-          );
-        })()}
       </PanelSection>
       ),
     },
