@@ -22,9 +22,6 @@ import {
   getCredentialStatus,
   fetchFreeApisNow,
   checkDependencies,
-  installDependencies,
-  installCloudredirect,
-  installLumalinux,
   getPlatformSummary,
   getSlsPlayStatus,
   setSlsPlayStatus,
@@ -66,12 +63,6 @@ export function Settings() {
   const [fakeAppIds, setFakeAppIds] = useState<Record<string, string>>({});
   const [newFakeReal, setNewFakeReal] = useState("");
   const [newFakeFake, setNewFakeFake] = useState("");
-  const [installing, setInstalling] = useState(false);
-  const [confirmInstallDeps, setConfirmInstallDeps] = useState(false);
-  const [installingCR, setInstallingCR] = useState(false);
-  const [confirmInstallCR, setConfirmInstallCR] = useState(false);
-  const [installingLL, setInstallingLL] = useState(false);
-  const [confirmInstallLL, setConfirmInstallLL] = useState(false);
   const [slssteamHealth, setSlssteamHealth] = useState<{
     state: string;
     cause: string | null;
@@ -385,75 +376,6 @@ export function Settings() {
       toast(t("toastApisUpdated", result.count));
     } else {
       toast(t("toastError"), result.error || t("updateFailed"), 4000);
-    }
-  };
-
-  const handleInstallDeps = async () => {
-    // Two-click confirm pattern (same as handleEnableCR / handleUninstall):
-    // first click flips a flag and arms a 5 s timeout to reset it, second
-    // click within that window triggers the actual install. The confirm is
-    // not because the install kills Steam mid-flight (we patch the killall
-    // out and only restart at the end), but because the install does a
-    // single controlled Steam restart at the very end — same one-tap flow
-    // as Install lumalinux.
-    if (!confirmInstallDeps) {
-      setConfirmInstallDeps(true);
-      setTimeout(() => setConfirmInstallDeps(false), 5000);
-      return;
-    }
-    setConfirmInstallDeps(false);
-    setInstalling(true);
-    const installResult = await installDependencies();
-    const result = await checkDependencies();
-    if (result.success) setDeps(result);
-    setInstalling(false);
-    if (installResult.success) {
-      await restartSteam();
-    }
-  };
-
-  const handleEnableCR = async () => {
-    // Two-click confirm pattern. Install runs with Steam alive (we no-op
-    // the killall in _HEADCRAB_PATCHES) so the Flatpak download finishes
-    // cleanly. After success we fire one controlled `steam -shutdown` to
-    // let gamescope respawn Steam with the new steam.sh + CR LD_PRELOAD
-    // already in place.
-    if (!confirmInstallCR) {
-      setConfirmInstallCR(true);
-      setTimeout(() => setConfirmInstallCR(false), 5000);
-      return;
-    }
-    setConfirmInstallCR(false);
-    setInstallingCR(true);
-    const result = await installCloudredirect();
-    const depsResult = await checkDependencies();
-    if (depsResult.success) setDeps(depsResult);
-    setInstallingCR(false);
-    if (result.success) {
-      await restartSteam();
-    }
-  };
-
-  const handleInstallLumalinux = async () => {
-    // Two-click confirm pattern (consistent with handleInstallDeps and
-    // handleEnableCR): first tap arms the confirm + a 5 s reset timer,
-    // second tap inside that window triggers the actual install. Same
-    // reason as the other two: after success this handler fires a
-    // controlled `steam -shutdown`, so the user gets a single
-    // intentional Steam restart instead of being surprised by one.
-    if (!confirmInstallLL) {
-      setConfirmInstallLL(true);
-      setTimeout(() => setConfirmInstallLL(false), 5000);
-      return;
-    }
-    setConfirmInstallLL(false);
-    setInstallingLL(true);
-    const result = await installLumalinux();
-    const depsResult = await checkDependencies();
-    if (depsResult.success) setDeps(depsResult);
-    setInstallingLL(false);
-    if (result.success) {
-      await restartSteam();
     }
   };
 
