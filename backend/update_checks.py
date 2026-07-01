@@ -88,11 +88,13 @@ def _normalise(tag: str) -> str:
     return tag
 
 
-async def get_latest_release(owner: str, repo: str) -> Optional[dict]:
+async def get_latest_release(owner: str, repo: str, force: bool = False) -> Optional[dict]:
     """Return {"tag": str, "tag_normalised": str, "url": str} for the latest
     release of owner/repo, or None if unreachable. Reads cache first (6 h TTL),
-    refetches on miss, falls back to a stale cache entry on network failure."""
-    cached = _read_cache(owner, repo)
+    refetches on miss, falls back to a stale cache entry on network failure.
+    force=True skips the fresh-cache read so a manual refresh always re-fetches
+    (the stale-cache fallback on network failure still applies)."""
+    cached = None if force else _read_cache(owner, repo)
     if cached and cached.get("tag"):
         return {
             "tag": cached["tag"],
@@ -126,14 +128,15 @@ async def get_latest_release(owner: str, repo: str) -> Optional[dict]:
     return None
 
 
-async def has_update(owner: str, repo: str, installed_version: Optional[str]) -> dict:
+async def has_update(owner: str, repo: str, installed_version: Optional[str],
+                     force: bool = False) -> dict:
     """Compare an installed version string against the latest release tag.
 
     Returns {"installed", "latest", "has_update", "url"}. has_update is False
     when we can't determine it (unknown installed, unreachable latest) — the
-    safe default is "no nag".
+    safe default is "no nag". force=True bypasses the release cache.
     """
-    latest = await get_latest_release(owner, repo)
+    latest = await get_latest_release(owner, repo, force=force)
     if not latest or not installed_version:
         return {
             "installed": installed_version,

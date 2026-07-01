@@ -139,9 +139,12 @@ export function GameList() {
   // One fetch for the whole system-status surface (component health + updates +
   // headcrab gate + plugin) plus the per-game stuck check. Re-run after any
   // system action so the rows reflect the new state.
-  const refreshStatus = useCallback(async () => {
+  // force=true bypasses the 6 h update caches (lumalinux release + CR hash) — used
+  // by the manual Refresh icon so a just-cut release shows up immediately. Auto
+  // calls (mount, post-action) stay cached to respect GitHub's anon rate limit.
+  const refreshStatus = useCallback(async (force = false) => {
     try {
-      const [cs, stuck] = await Promise.all([getComponentsStatus(), checkStuckUpdates()]);
+      const [cs, stuck] = await Promise.all([getComponentsStatus(force), checkStuckUpdates()]);
       if (cs?.success) setCompStatus(cs);
       if (stuck?.success && Array.isArray(stuck.stuck)) setStuckUpdates(stuck.stuck);
     } catch { }
@@ -282,9 +285,11 @@ export function GameList() {
   // Let the Refresh icon in the native title bar (index.tsx titleView) reload
   // the panel, since it lives in a separate React tree.
   useEffect(() => {
-    setRefreshHandler(loadGames);
+    // The title-bar Refresh reloads the library AND force-refreshes the update
+    // status (bypassing the 6 h caches), so a just-cut release surfaces at once.
+    setRefreshHandler(() => { loadGames(); refreshStatus(true); });
     return () => setRefreshHandler(null);
-  }, [loadGames]);
+  }, [loadGames, refreshStatus]);
 
   useEffect(() => {
     loadGames();

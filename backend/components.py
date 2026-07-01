@@ -83,10 +83,11 @@ def _write_cr_cache(remote_hash: str) -> None:
         logger.warning(f"components: failed to write CR hash cache: {exc}")
 
 
-async def _remote_cr_hash() -> Optional[str]:
+async def _remote_cr_hash(force: bool = False) -> Optional[str]:
     """sha256 of the current linux-test cloud_redirect.so, cached 6 h. None on
-    network failure (caller then reports no-update, the safe default)."""
-    cached = _read_cr_cache()
+    network failure (caller then reports no-update, the safe default).
+    force=True bypasses the cache so a manual refresh always re-fetches."""
+    cached = None if force else _read_cr_cache()
     if cached:
         return cached
     try:
@@ -102,17 +103,18 @@ async def _remote_cr_hash() -> Optional[str]:
     return None
 
 
-async def check_cloudredirect_update() -> dict:
+async def check_cloudredirect_update(force: bool = False) -> dict:
     """CloudRedirect has no semver of its own — its "version" is which build of
     the linux-test cloud_redirect.so is on disk. has_update = installed .so
     differs from the current linux-test asset. Returns the has_update shape with
-    short hashes in installed/latest for display/debug."""
+    short hashes in installed/latest for display/debug. force=True bypasses the
+    remote-hash cache."""
     from paths import cloudredirect_so_path
     local_path = cloudredirect_so_path()
     local = _sha256_file(local_path) if local_path else None
     if not local:
         return {"installed": None, "latest": None, "has_update": False, "url": None}
-    remote = await _remote_cr_hash()
+    remote = await _remote_cr_hash(force=force)
     if not remote:
         return {"installed": local[:12], "latest": None, "has_update": False, "url": None}
     return {
@@ -141,10 +143,11 @@ def _component(id_: str, name: str, installed: bool, health: dict, update: dict)
     }
 
 
-async def get_components_status() -> dict:
+async def get_components_status(force: bool = False) -> dict:
     """One uniform payload for the system-status surface — per-component health +
     update, plus the headcrab compat gate and the plugin. Wraps existing
-    detection; nothing here re-implements it."""
+    detection; nothing here re-implements it. force=True bypasses the update
+    caches (lumalinux release + CloudRedirect hash) for a manual refresh."""
     from paths import (
         read_slssteam_health,
         read_lumalinux_health,
@@ -184,8 +187,8 @@ async def get_components_status() -> dict:
     # call. check_slssteam_update() stays defined for if we ever record the
     # version at install time.
     sls_update = dict(no_update)
-    ll_update = await _safe(has_update("jayool", "lumalinux", ll_health.get("version")), no_update)
-    cr_update = await _safe(check_cloudredirect_update(), no_update)
+    ll_update = await _safe(has_update("jayool", "lumalinux", ll_health.get("version"), force=force), no_update)
+    cr_update = await _safe(check_cloudredirect_update(force=force), no_update)
 
     headcrab = await _safe(check_headcrab_compat(), {"compatible": None, "target": None, "current_build": None})
     plugin = await _safe(check_plugin_update(), {"installed": None, "latest": None, "has_update": False})

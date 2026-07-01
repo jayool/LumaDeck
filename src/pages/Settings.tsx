@@ -441,34 +441,47 @@ export function Settings() {
   const compStatus = (present: boolean, healthy?: boolean) =>
     !present ? t("notFound") : healthy ? t("installedLoaded") : t("installed");
 
-  // A warning shown ONLY when something is wrong — as a small colored line under
-  // the component (where the path used to be). Nothing renders when healthy, so
-  // the normal screen is just the component list. warn = amber ⚠, muted = grey •.
-  const warnDesc = (line: string | null | undefined, kind: "warn" | "muted" = "warn") => {
+  // A small colored line under the component (where the path used to be). Nothing
+  // renders when healthy and up to date, so the normal screen is just the list.
+  // warn = amber ⚠ (something wrong), muted = grey • (benign), info = blue ↑
+  // (update available — same subtext slot as the warnings, per component).
+  const warnDesc = (line: string | null | undefined, kind: "warn" | "muted" | "info" = "warn") => {
     if (!line) return undefined;
-    return <span style={{ color: kind === "muted" ? "#888" : "#ff8c00" }}>
-      {kind === "muted" ? "•" : "⚠"} {line}
-    </span>;
+    const color = kind === "muted" ? "#888" : kind === "info" ? "#9cc4ff" : "#ff8c00";
+    const marker = kind === "muted" ? "•" : kind === "info" ? "↑" : "⚠";
+    return <span style={{ color }}>{marker} {line}</span>;
   };
 
   const slssHealthDesc = () => {
     const h = slssteamHealth;
-    if (!deps?.slssteam || !h || h.state === "healthy") return undefined;
-    return warnDesc(slssHealthLine(h));
+    if (!deps?.slssteam) return undefined;
+    if (h && h.state !== "healthy") return warnDesc(slssHealthLine(h));
+    // Healthy → surface the update (headcrab pin ahead of the local Steam build)
+    // in the same subtext slot as the warnings.
+    if (h?.state === "healthy" && headcrabCompat && !headcrabCompat.compatible)
+      return warnDesc(
+        t("slssUpdateAvailableSub", headcrabCompat.current_build ?? "?", headcrabCompat.target ?? "?"),
+        "info");
+    return undefined;
   };
 
   const llHealthDesc = () => {
     const h = lumalinuxHealth;
-    if (!deps?.lumalinux || !h || h.state === "healthy" || h.state === "not_installed")
-      return undefined;
-    let line: string | null = null;
-    switch (h.state) {
-      case "hooks_failed":      line = t("llHealthDegraded"); break;
-      case "hash_blocked":      line = t("llHealthHashBlocked"); break;
-      case "not_active":        line = t("llHealthNotActive"); break;
-      case "injection_missing": line = t("llHealthInjectionMissing"); break;
+    if (!deps?.lumalinux || !h || h.state === "not_installed") return undefined;
+    if (h.state !== "healthy") {
+      let line: string | null = null;
+      switch (h.state) {
+        case "hooks_failed":      line = t("llHealthDegraded"); break;
+        case "hash_blocked":      line = t("llHealthHashBlocked"); break;
+        case "not_active":        line = t("llHealthNotActive"); break;
+        case "injection_missing": line = t("llHealthInjectionMissing"); break;
+      }
+      return warnDesc(line);
     }
-    return warnDesc(line);
+    // Healthy → update available in the same subtext slot.
+    if (llUpdate?.has_update)
+      return warnDesc(t("llUpdateAvailableSub", llUpdate.installed ?? "?", llUpdate.latest ?? "?"), "info");
+    return undefined;
   };
 
   // CloudRedirect: a hook warning (if the hooks broke) and/or a sign-in warning
@@ -489,6 +502,11 @@ export function Settings() {
     }
     if (!deps.cloudredirectAuthed) {
       const d = warnDesc(t("providerNotConfigured"));
+      if (d) lines.push(d);
+    }
+    // Update available → same subtext slot (blue ↑), only when the hooks are OK.
+    if (crHealth?.state === "healthy" && crUpdate?.has_update) {
+      const d = warnDesc(t("crUpdateAvailableSub", crUpdate.installed ?? "?", crUpdate.latest ?? "?"), "info");
       if (d) lines.push(d);
     }
     if (lines.length === 0) return undefined;
@@ -689,18 +707,6 @@ export function Settings() {
                 </span>
               </Field>
             </PanelSectionRow>
-            {deps.slssteam && slssteamHealth?.state === "healthy" &&
-             headcrabCompat && !headcrabCompat.compatible && (
-              <PanelSectionRow>
-                <Field
-                  focusable highlightOnFocus={false}
-                  icon={<FaInfoCircle color="#9cc4ff" />}
-                  label={t("slssUpdateAvailableSub",
-                     headcrabCompat.current_build ?? "?",
-                     headcrabCompat.target ?? "?")}
-                />
-              </PanelSectionRow>
-            )}
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label=".NET Runtime">
                 <span style={{ color: deps.dotnet ? "#00cc00" : "#ff4444" }}>
@@ -715,17 +721,6 @@ export function Settings() {
                 </span>
               </Field>
             </PanelSectionRow>
-            {deps.lumalinux && lumalinuxHealth?.state === "healthy" && llUpdate?.has_update && (
-              <PanelSectionRow>
-                <Field
-                  focusable highlightOnFocus={false}
-                  icon={<FaInfoCircle color="#9cc4ff" />}
-                  label={t("llUpdateAvailableSub",
-                     llUpdate.installed ?? "?",
-                     llUpdate.latest ?? "?")}
-                />
-              </PanelSectionRow>
-            )}
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="CloudRedirect" description={crHealthDesc()}>
                 <span style={{ color: deps.cloudredirect ? "#00cc00" : "#ff4444" }}>
@@ -733,17 +728,6 @@ export function Settings() {
                 </span>
               </Field>
             </PanelSectionRow>
-            {deps.cloudredirect && crHealth?.state === "healthy" && crUpdate?.has_update && (
-              <PanelSectionRow>
-                <Field
-                  focusable highlightOnFocus={false}
-                  icon={<FaInfoCircle color="#9cc4ff" />}
-                  label={t("crUpdateAvailableSub",
-                     crUpdate.installed ?? "?",
-                     crUpdate.latest ?? "?")}
-                />
-              </PanelSectionRow>
-            )}
           </>
         )}
         {headcrabCompat && !headcrabCompat.compatible && (

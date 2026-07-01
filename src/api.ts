@@ -61,8 +61,8 @@ export const checkHeadcrabCompat = async () =>
 // per-component { installed, health, cause, action, update:{installed,latest,
 // available} } for slssteam/cloudredirect/lumalinux, plus headcrab {compatible,
 // target, current} and plugin {installed,latest,available}.
-export const getComponentsStatus = async () =>
-  parseResult(await call<[], string>("get_components_status"));
+export const getComponentsStatus = async (force = false) =>
+  parseResult(await call<[boolean], string>("get_components_status", force));
 
 export const repairSlssteamHeadcrab = async () =>
   parseResult(await call<[], string>("repair_slssteam_headcrab"));
