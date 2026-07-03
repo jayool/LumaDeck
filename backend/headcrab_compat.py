@@ -38,6 +38,14 @@ _CACHE_DIR = "/home/deck/.cache/lumadeck"
 _CACHE_FILE = os.path.join(_CACHE_DIR, "headcrab_target")
 _FETCH_TIMEOUT = 5.0
 
+# lumalinux publishes, in res/updates.yaml (Builds section, v0.16+), the Steam
+# client build versions its pattern set supports. Headcrab bumps its pin on
+# SLSsteam + CloudRedirect readiness only — NOT lumalinux — so a user could align
+# Steam to a build lumalinux can't hook yet and break native downloads. We gate
+# the Steam-update offer on lumalinux ALSO being ready for the target build.
+_LUMALINUX_UPDATES_URL = "https://raw.githubusercontent.com/jayool/lumalinux/main/res/updates.yaml"
+_LL_CACHE_FILE = os.path.join(_CACHE_DIR, "lumalinux_updates.yaml")
+
 
 def _manifest_path() -> str | None:
     """Find Steam's installed-client manifest.
@@ -133,10 +141,56 @@ async def headcrab_target() -> int | None:
     return _load_cache()
 
 
+async def lumalinux_supports_build(target: int | None) -> bool | None:
+    """Whether lumalinux's published pattern set supports Steam build `target`.
+
+    Scans the Builds section of lumalinux's res/updates.yaml (v0.16+): a
+    `steam_version: <target>` line means a pattern group is published for that
+    build, so an installed lumalinux will hook it (self-healing via its runtime
+    pattern fetch). Dependency-free text scan — Decky's bundled Python has no
+    YAML lib. Cached to disk. Returns None when unknown (unreachable + no cache,
+    or a pre-v0.16 file with no steam_version) so callers do NOT hard-block on
+    ambiguity.
+    """
+    if target is None:
+        return None
+
+    text = None
+    try:
+        client = await ensure_http_client(context="headcrab_compat")
+        resp = await client.get(_LUMALINUX_UPDATES_URL, timeout=_FETCH_TIMEOUT)
+        if resp.status_code == 200:
+            text = resp.text
+            try:
+                os.makedirs(_CACHE_DIR, exist_ok=True)
+                with open(_LL_CACHE_FILE, "w", encoding="utf-8") as f:
+                    f.write(text)
+            except Exception as exc:
+                logger.warning(f"headcrab_compat: failed to cache lumalinux updates: {exc}")
+        else:
+            logger.info(f"headcrab_compat: HTTP {resp.status_code} for lumalinux updates, trying cache")
+    except Exception as exc:
+        logger.info(f"headcrab_compat: lumalinux updates fetch failed ({exc}), trying cache")
+
+    if text is None:
+        try:
+            with open(_LL_CACHE_FILE, "r", encoding="utf-8") as f:
+                text = f.read()
+        except Exception:
+            return None
+
+    # A pre-v0.16 file has no steam_version anywhere -> unknown, don't false-block.
+    if "steam_version" not in text:
+        return None
+    return re.search(rf"steam_version:\s*{target}\b", text) is not None
+
+
 async def check_headcrab_compat() -> dict:
-    """Return whether the current Steam build matches Headcrab's pinned target."""
+    """Return whether the current Steam build matches Headcrab's pinned target,
+    and whether lumalinux is ALSO ready for that target (v0.16 gate)."""
     build = current_steam_build()
     target = await headcrab_target()
+    ll_ready = await lumalinux_supports_build(target)
     return {
         "success": True,
         "current_build": build,
@@ -146,4 +200,10 @@ async def check_headcrab_compat() -> dict:
             and target is not None
             and build == target
         ),
+        # v0.16: is lumalinux's pattern set published for the pinned target?
+        # Callers should gate the Steam-update offer on this being True so a user
+        # never aligns Steam to a build lumalinux can't hook yet. None = unknown
+        # (unreachable / pre-schema file) — treat as "don't hard-block", i.e. fall
+        # back to the prior behaviour rather than refusing the update.
+        "lumalinux_ready": ll_ready,
     }

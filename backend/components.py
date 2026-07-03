@@ -206,6 +206,11 @@ async def get_components_status(force: bool = False) -> dict:
             "compatible": headcrab.get("compatible"),
             "target": headcrab.get("target"),
             "current": headcrab.get("current_build"),
+            # v0.16: is lumalinux's pattern set published for the pinned target?
+            # The frontend gates the Steam-update / desktop-handoff offer on this
+            # so a user never aligns Steam ahead of lumalinux. None = unknown
+            # (don't hard-block; fall back to prior behaviour).
+            "lumalinux_ready": headcrab.get("lumalinux_ready"),
         },
         "plugin": {
             "installed": plugin.get("installed"),
