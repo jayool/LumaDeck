@@ -208,6 +208,26 @@ function buildRows(
   // pin. SLSsteam/CloudRedirect updates RIDE headcrab — re-running it would move
   // the Steam build — so they're only offered when Steam is already at the pin.
   if (!needsDowngrade) {
+    // Steam sits BEHIND Headcrab's pin (the pin was bumped forward) and lumalinux
+    // is confirmed ready for the new target — offer to move Steam up to the pin as
+    // a normal update (info, not a problem). Requires lumalinux_ready === true, not
+    // just "not false": pushing a WORKING user up to a build lumalinux can't hook
+    // yet would regress them, so only nudge when support is positively published.
+    // The button reuses the downgrade hand-off — headcrab.sh applies the pinned
+    // Steam build in either direction, so aligning UP is the same machinery.
+    const target = status.headcrab?.target;
+    const current = status.headcrab?.current;
+    const steamBehindPin = target != null && current != null && current < target;
+    if (steamBehindPin && llReady === true) {
+      rows.push({
+        key: "steam-update", severity: "info",
+        label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),
+        actionLabel: busy ? t("sysWorking") : t("sysSteamUpdateBtn"),
+        onAction: actions.downgrade,
+        confirmFirst: true,
+      });
+    }
+
     const llUpdate = !!ll?.installed && !!ll.update?.available;
     // SLSsteam updates are NOT surfaced (choice B): it exposes no readable
     // installed version, and it rides headcrab + is gated anyway. Of the
