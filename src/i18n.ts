@@ -327,6 +327,8 @@ const strings: Record<Lang, Record<string, string>> = {
     // System status (unified component model) — jargon-free, outcome-led
     sysSteamTooNew: "Steam updated too far",
     sysSteamTooNewDesc: "A recent Steam update broke compatibility. This will switch to Desktop, roll Steam back, and return you here automatically.",
+    sysLumalinuxNotReady: "Waiting for lumalinux",
+    sysLumalinuxNotReadyDesc: "lumalinux doesn't support this Steam build yet, so changing Steam wouldn't fix it. No action needed — it self-heals automatically on the next launch once support is published.",
     sysCoreIncomplete: "Setup is incomplete",
     sysCoreIncompleteDesc: "Part of the base install is missing. Reinstall to finish it.",
     sysNeedsRepair: "Setup needs repair",
@@ -798,6 +800,8 @@ const strings: Record<Lang, Record<string, string>> = {
     // System status (modelo unificado de componentes)
     sysSteamTooNew: "A Steam atualizou demais",
     sysSteamTooNewDesc: "Uma atualização recente da Steam quebrou a compatibilidade. Isto vai para o Desktop, reverte a Steam e te traz de volta automaticamente.",
+    sysLumalinuxNotReady: "Aguardando o lumalinux",
+    sysLumalinuxNotReadyDesc: "O lumalinux ainda não suporta esta versão da Steam, então mudar a Steam não resolveria. Nenhuma ação necessária — ele se corrige sozinho na próxima inicialização assim que o suporte for publicado.",
     sysCoreIncomplete: "Instalação incompleta",
     sysCoreIncompleteDesc: "Falta parte da instalação base. Reinstale para concluir.",
     sysNeedsRepair: "A instalação precisa de reparo",

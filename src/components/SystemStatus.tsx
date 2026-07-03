@@ -21,7 +21,15 @@ export interface Component {
 export interface ComponentsStatus {
   success: boolean;
   components: Component[];
-  headcrab: { compatible: boolean | null; target: number | null; current: number | null };
+  headcrab: {
+    compatible: boolean | null;
+    target: number | null;
+    current: number | null;
+    // v0.16: is lumalinux's pattern set published for the pinned target build?
+    // null = unknown (don't hard-block). Gates the align-Steam-to-pin action so
+    // we never push the user onto a build lumalinux can't hook yet.
+    lumalinux_ready?: boolean | null;
+  };
   plugin: { installed: string | null; latest: string | null; available: boolean };
 }
 
@@ -70,7 +78,11 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
   const coreHalf =
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
   const anyUnsupported = comps.some((c) => c.installed && UNSUPPORTED.includes(c.health));
-  if (anyUnsupported && incompatible) return "downgrade";
+  // Align-Steam-to-pin only helps when lumalinux ALSO supports the pinned build;
+  // if it doesn't (lumalinux_ready === false) there's no good action — the status
+  // row explains it. null = unknown -> keep the prior behaviour (offer it).
+  if (anyUnsupported && incompatible)
+    return status.headcrab?.lumalinux_ready === false ? null : "downgrade";
   if (coreHalf) return "core";
   if (comps.some((c) => c.installed && REPAIRABLE.includes(c.health))) return "repair";
   if (comps.some((c) => c.installed && c.health === "not_active")) return "restart";
@@ -100,9 +112,15 @@ function buildRows(
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
 
   const anyUnsupported = comps.some((c) => c.installed && UNSUPPORTED.includes(c.health));
+  // v0.16: is lumalinux ready for the pinned target build? Aligning Steam to the
+  // pin only helps when it is; if not, don't push the align — surface a "waiting
+  // for lumalinux" info instead (it self-heals on next launch once support ships).
+  // null = unknown -> keep prior behaviour (offer the align).
+  const llReady = status.headcrab?.lumalinux_ready;
   // "Steam too new" only when headcrab confirms Steam is off its pin; otherwise a
   // broken/hash_blocked is a genuine reinstall, handled by Repair.
-  const needsDowngrade = anyUnsupported && incompatible;
+  const needsDowngrade = anyUnsupported && incompatible && llReady !== false;
+  const lumalinuxNotReady = anyUnsupported && incompatible && llReady === false;
 
   // ---- one system problem, by priority ----
   if (needsDowngrade) {
@@ -115,6 +133,14 @@ function buildRows(
       actionLabel: busy ? t("sysWorking") : t("sysFixInDesktop"),
       onAction: actions.downgrade,
       confirmFirst: true,
+    });
+  } else if (lumalinuxNotReady) {
+    // Steam is off the pin AND lumalinux has no published support for the pinned
+    // build yet — aligning Steam wouldn't fix lumalinux. No action: it self-heals
+    // on the next launch once the pattern set is published.
+    rows.push({
+      key: "ll-not-ready", severity: "problem",
+      label: t("sysLumalinuxNotReady"), description: t("sysLumalinuxNotReadyDesc"),
     });
   } else if (coreHalf) {
     rows.push({
