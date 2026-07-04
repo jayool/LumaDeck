@@ -38,8 +38,8 @@ _CACHE_DIR = "/home/deck/.cache/lumadeck"
 _CACHE_FILE = os.path.join(_CACHE_DIR, "headcrab_target")
 _FETCH_TIMEOUT = 5.0
 
-# lumalinux publishes, in res/updates.yaml (Builds section, v0.16+), the Steam
-# client build versions its pattern set supports. Headcrab bumps its pin on
+# lumalinux annotates each whitelisted hash in res/updates.yaml with a
+# `# steam_version: <build>` comment (SafeModeHashes). Headcrab bumps its pin on
 # SLSsteam + CloudRedirect readiness only — NOT lumalinux — so a user could align
 # Steam to a build lumalinux can't hook yet and break native downloads. We gate
 # the Steam-update offer on lumalinux ALSO being ready for the target build.
@@ -144,13 +144,13 @@ async def headcrab_target() -> int | None:
 async def lumalinux_supports_build(target: int | None) -> bool | None:
     """Whether lumalinux's published pattern set supports Steam build `target`.
 
-    Scans the Builds section of lumalinux's res/updates.yaml (v0.16+): a
-    `steam_version: <target>` line means a pattern group is published for that
-    build, so an installed lumalinux will hook it (self-healing via its runtime
-    pattern fetch). Dependency-free text scan — Decky's bundled Python has no
-    YAML lib. Cached to disk. Returns None when unknown (unreachable + no cache,
-    or a pre-v0.16 file with no steam_version) so callers do NOT hard-block on
-    ambiguity.
+    Text-scans lumalinux's res/updates.yaml for a `steam_version: <target>`
+    annotation (a `# steam_version:` comment next to a whitelisted hash in
+    SafeModeHashes) — its presence means that build's steamclient.so is
+    whitelisted, so an installed lumalinux will hook it. Dependency-free text scan
+    — Decky's bundled Python has no YAML lib. Cached to disk. Returns None when
+    unknown (unreachable + no cache, or a file with no steam_version at all) so
+    callers do NOT hard-block on ambiguity.
     """
     if target is None:
         return None
