@@ -188,6 +188,7 @@ _SKIP_PATTERNS = [
     r".*handler.*\.exe$",
     r".*unity.*\.exe$",
     r".*\.original\.exe$",
+    r".*\.unpacked\.exe$",
 ]
 
 def _should_skip(fname: str, fpath: str) -> bool:
@@ -249,6 +250,48 @@ def _scan_executables(game_dir: str) -> list:
             found.append((fpath, _exe_priority(fname, game_name, fpath)))
     found.sort(key=lambda x: x[1], reverse=True)
     return [f for f, _ in found]
+
+
+def _swap_in_unpacked(exe_path: str) -> bool:
+    """Put the DRM-free exe in place of the original after a successful Steamless
+    run — the step LumaDeck was missing, so the game kept launching the still
+    protected original.
+
+    Steamless.CLI is non-destructive by design: `-f X.exe` writes a NEW file
+    `X.exe.unpacked.exe` and never touches `X.exe`. The caller must swap it in.
+    This mirrors what the ACCELA app does around the same CLI: back the original
+    up to `<name>.original.exe` (which the scan skip-list ignores, so it's never
+    re-processed) and move the unpacked exe onto the real name.
+
+    Idempotent: on a re-run the pristine `.original.exe` backup is preserved, not
+    clobbered with an already-patched exe. Returns True only if the swap happened.
+    """
+    unpacked = exe_path + ".unpacked.exe"
+    if not os.path.isfile(unpacked):
+        # Some Steamless builds name it "<base>.unpacked.exe" instead.
+        alt = os.path.splitext(exe_path)[0] + ".unpacked.exe"
+        if os.path.isfile(alt):
+            unpacked = alt
+        else:
+            return False
+
+    backup = os.path.splitext(exe_path)[0] + ".original.exe"
+    try:
+        if not os.path.exists(backup):
+            shutil.move(exe_path, backup)        # keep the pristine original once
+        elif os.path.exists(exe_path):
+            os.remove(exe_path)                  # already backed up; drop the packed one
+        shutil.move(unpacked, exe_path)          # DRM-free exe takes the real name
+        try:
+            st = os.stat(exe_path)
+            os.chmod(exe_path, st.st_mode | 0o111)  # keep it executable
+        except OSError:
+            pass
+        return True
+    except OSError as e:
+        logger.error(f"[LumaDeck/Steamless] swap-in failed for "
+                     f"{os.path.basename(exe_path)}: {e}")
+        return False
 
 
 async def run_steamless(install_path: str) -> str:
@@ -321,12 +364,22 @@ async def _run_task(dotnet: str, cli: str, exes: list):
             # exit 0 = DRM removed; exit 1 = no DRM found; >1 = error
             success = rc == 0
             no_drm = rc == 1
-            results.append({"file": fname, "success": success})
             if success:
-                logger.info(f"[LumaDeck/Steamless] unpacked: {fname}")
+                # DRM stripped from the copy — now put it in place (ACCELA's step).
+                # If the swap fails, this is NOT a real success: the game would
+                # still launch the protected original, so report it honestly.
+                replaced = _swap_in_unpacked(exe_path)
+                results.append({"file": fname, "success": replaced, "unpacked": True})
+                if replaced:
+                    logger.info(f"[LumaDeck/Steamless] unpacked + swapped in: {fname}")
+                else:
+                    logger.warning(f"[LumaDeck/Steamless] unpacked but swap-in failed "
+                                   f"(original still in place): {fname}")
             elif no_drm:
+                results.append({"file": fname, "success": False, "noDrm": True})
                 logger.info(f"[LumaDeck/Steamless] no DRM: {fname}")
             else:
+                results.append({"file": fname, "success": False})
                 logger.warning(f"[LumaDeck/Steamless] error (rc={rc}): {fname} — {output[:200]}")
         except asyncio.TimeoutError:
             results.append({"file": fname, "success": False, "error": "timeout"})
