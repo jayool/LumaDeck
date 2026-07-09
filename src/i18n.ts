@@ -318,7 +318,6 @@ const strings: Record<Lang, Record<string, string>> = {
     crBannerBodyBroken: "Loaded but hooks failed — Steam may have updated. Cloud saves won't sync until reinstalled.",
     crBannerBodyNotActive: "Installed but not loaded. Restart Steam to activate.",
     crBannerBodyNotAuthed: "No cloud provider configured. Switch to Desktop Mode and open the CloudRedirect app to sign in — cloud saves won't sync until you do.",
-    crBannerActionReinstall: "Reinstall CloudRedirect",
     crBannerActionRestart: "Restart Steam",
     // Health rows (normalized, DESIGN_UI.md §3c)
     healthImpactSlss: "SLSsteam — games won't launch",
@@ -784,7 +783,6 @@ const strings: Record<Lang, Record<string, string>> = {
     crBannerBodyBroken: "Carregado mas hooks falharam — a Steam pode ter atualizado. Os saves na nuvem não vão sincronizar até reinstalar.",
     crBannerBodyNotActive: "Instalado mas não carregado. Reinicie a Steam para ativar.",
     crBannerBodyNotAuthed: "Nenhum provedor de nuvem configurado. Vá pro Desktop Mode e abra o app CloudRedirect para fazer login — saves na nuvem não vão sincronizar até você fazer isso.",
-    crBannerActionReinstall: "Reinstalar CloudRedirect",
     crBannerActionRestart: "Reiniciar Steam",
     // Health rows (normalized, DESIGN_UI.md §3c)
     healthImpactSlss: "SLSsteam — os jogos não vão abrir",

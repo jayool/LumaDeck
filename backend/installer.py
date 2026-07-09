@@ -39,12 +39,6 @@ INSTALL_STATE = {
     "error": None,
 }
 
-CR_INSTALL_STATE = {
-    "status": "idle",
-    "progress": "",
-    "error": None,
-}
-
 LL_INSTALL_STATE = {
     "status": "idle",
     "progress": "",
@@ -384,9 +378,9 @@ async def install_dependencies(gamemode: bool = True) -> dict:
 
                 # CloudRedirect rides the same headcrab run (DisableCloud: no was
                 # set above). A transient wget/steam.sh drop can leave it missing,
-                # so verify both post-conditions — the same #19 defense
-                # install_cloudredirect used. Non-fatal: SLSsteam is the critical
-                # piece; a CR miss just gets surfaced so the user can retry.
+                # so verify both post-conditions (cloud_redirect.so on disk AND
+                # INJECT_CR in steam.sh) — the #19 defense. Non-fatal: SLSsteam is
+                # the critical piece; a CR miss just gets surfaced so users retry.
                 cr_ok = check_cloudredirect_installed() and _cloudredirect_injected_in_steam_sh()
                 if not cr_ok:
                     logger.warning("LumaDeck: CloudRedirect not installed/injected after headcrab "
@@ -651,121 +645,6 @@ def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
     return False, "SafeMode line missing from SLSsteam config — reinstall dependencies"
 
 
-async def install_cloudredirect(gamemode: bool = True) -> dict:
-    """Run the Game-Mode-safe variant of headcrab with DisableCloud: no.
-
-    Headcrab gates CR install on `grep "DisableCloud: no" config.yaml`. We
-    flip the line, download headcrab.sh, apply _HEADCRAB_PATCHES so the
-    install doesn't trip the gamescope-session crash detector, then run it.
-
-    gamemode=False is the Desktop variant (kills kept; see _patch_headcrab_script).
-    """
-    global CR_INSTALL_STATE
-    CR_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
-    logger.info("LumaDeck: install_cloudredirect() entered")
-
-    tmp_dir = None
-    try:
-        config_path = get_slssteam_config_path()
-        # If SLSsteam is installed but hasn't run yet (no config.yaml — the
-        # Quick Install case, where CR runs right after deps without a Steam
-        # restart in between), seed SLSsteam's own default config so we can
-        # flip DisableCloud without waiting for SLSsteam to create it. No-op
-        # in the normal flow where a restart already made config.yaml exist.
-        _seed_slssteam_config_if_missing()
-        CR_INSTALL_STATE["progress"] = "Enabling DisableCloud: no in SLSsteam config..."
-        ok, msg = _set_disablecloud_no(config_path)
-        if not ok:
-            CR_INSTALL_STATE["status"] = "failed"
-            CR_INSTALL_STATE["error"] = msg
-            return {"success": False}
-
-        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_cr_")
-        script_path = os.path.join(tmp_dir, "headcrab_patched.sh")
-        CR_INSTALL_STATE["progress"] = "Downloading + patching headcrab.sh..."
-        logger.info("LumaDeck: fetching headcrab.sh for CR")
-        if not await _download(_HEADCRAB_RAW_URL, script_path):
-            CR_INSTALL_STATE["status"] = "failed"
-            CR_INSTALL_STATE["error"] = "Failed to download headcrab.sh"
-            return {"success": False}
-
-        try:
-            with open(script_path, "r", encoding="utf-8") as f:
-                hc_content = f.read()
-            hc_content = _patch_headcrab_script(hc_content, gamemode)
-            with open(script_path, "w", encoding="utf-8") as f:
-                f.write(hc_content)
-            os.chmod(script_path, 0o700)
-            logger.info("LumaDeck: headcrab.sh patched OK (%d bytes)", len(hc_content))
-        except RuntimeError as exc:
-            CR_INSTALL_STATE["status"] = "failed"
-            CR_INSTALL_STATE["error"] = str(exc)
-            return {"success": False}
-
-        CR_INSTALL_STATE["progress"] = "Running installer..."
-        process = await asyncio.create_subprocess_shell(
-            f"yes y | bash {script_path}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd=tmp_dir,
-            env=clean_env(),
-        )
-
-        async def _read_output():
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
-                CR_INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
-
-        asyncio.create_task(_read_output())
-        await process.wait()
-
-        if process.returncode == 0:
-            # #19: headcrab can exit 0 with steam.sh left unpatched (transient
-            # wget drop). Verify the post-condition — cloud_redirect.so on disk
-            # AND the INJECT_CR line in steam.sh — instead of the exit code.
-            if not check_cloudredirect_installed():
-                CR_INSTALL_STATE["status"] = "failed"
-                CR_INSTALL_STATE["error"] = (
-                    "Installer finished but cloud_redirect.so was not deployed "
-                    "(likely a transient network drop). Click Install CloudRedirect "
-                    "again to retry."
-                )
-            elif not _cloudredirect_injected_in_steam_sh():
-                CR_INSTALL_STATE["status"] = "failed"
-                CR_INSTALL_STATE["error"] = (
-                    "Installer finished but CloudRedirect was not injected into "
-                    "steam.sh (likely a transient network drop during Headcrab's "
-                    "downloads). Click Install CloudRedirect again to retry."
-                )
-            else:
-                CR_INSTALL_STATE["status"] = "done"
-                CR_INSTALL_STATE["progress"] = "CloudRedirect installed!"
-        else:
-            CR_INSTALL_STATE["status"] = "failed"
-            CR_INSTALL_STATE["error"] = f"Installer exited with code {process.returncode}"
-
-    except Exception as exc:
-        CR_INSTALL_STATE["status"] = "failed"
-        CR_INSTALL_STATE["error"] = str(exc)
-        logger.exception("LumaDeck: install_cloudredirect crashed: %s", exc)
-    finally:
-        if tmp_dir:
-            import shutil
-            try:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            except Exception:
-                pass
-
-    logger.info("LumaDeck: install_cloudredirect finished, state=%s", CR_INSTALL_STATE)
-    return {"success": CR_INSTALL_STATE["status"] == "done"}
-
-
-def get_cr_install_status() -> dict:
-    return CR_INSTALL_STATE.copy()
-
-
 async def install_lumalinux(gamemode: bool = True) -> dict:
     """Run lumalinux/install.sh from the jayool/lumalinux repo.
 
@@ -949,7 +828,6 @@ def get_quick_install_status() -> dict:
     if state.get("status") == "installing":
         live_getter = {
             "dependencies": get_install_status,
-            "cloudredirect": get_cr_install_status,
             "lumalinux": get_ll_install_status,
         }.get(state.get("step"))
         if live_getter:
@@ -972,8 +850,10 @@ async def reinject_installed() -> dict:
 
     Repairing injection with a single installer would silently break the others.
     This re-runs the installers for the components that are actually installed,
-    in order (SLSsteam+CloudRedirect) -> lumalinux. It never installs a component
-    the user doesn't have.
+    in order (SLSsteam+CloudRedirect) -> lumalinux. SLSsteam and CloudRedirect are
+    one unit now (same headcrab), so a repair on a legacy SLSsteam-only setup also
+    (re)installs CloudRedirect — harmless, it's inert until a provider is set. It
+    never pulls in lumalinux if the user doesn't have it.
 
     Used to repair SLSsteam `injection_missing` and CloudRedirect `broken` (any
     repair that runs headcrab). Shares QUICK_INSTALL_STATE so the frontend polls
@@ -1046,26 +926,18 @@ async def apply_component(component_id: str, op: str = "repair") -> dict:
     update run identical code; `op` is only the trigger/label. The per-component
     cascade follows DESIGN_UI.md §3b:
 
-      - slssteam:      its installer runs headcrab (regenerates steam.sh, wiping
-                       CR + lumalinux) → re-inject the whole installed set in
+      - slssteam /
+        cloudredirect: both are installed by the same headcrab run, so repairing
+                       either re-runs it and re-injects the whole installed set in
                        order = reinject_installed.
-      - cloudredirect: its installer runs headcrab (re-adds SLSsteam + CR) but
-                       wipes lumalinux → install_cloudredirect, then
-                       install_lumalinux if installed.
       - lumalinux:     patch-only, touches nobody else → install_lumalinux alone.
       - core:          install_dependencies (SLSsteam + CloudRedirect in one
                        headcrab) → install_lumalinux.
 
     Drives QUICK_INSTALL_STATE; poll get_quick_install_status.
     """
-    if component_id == "slssteam":
+    if component_id in ("slssteam", "cloudredirect"):
         return await reinject_installed()
-
-    if component_id == "cloudredirect":
-        steps = [("cloudredirect", install_cloudredirect, get_cr_install_status)]
-        if check_lumalinux_installed():
-            steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
-        return await _run_install_steps(steps, "Applying")
 
     if component_id == "lumalinux":
         return await _run_install_steps(
