@@ -1,4 +1,11 @@
-"""Steamless DRM removal — extracts Steamless CLI from ACCELA AppImage, runs independently."""
+"""Steamless DRM removal — runs the bundled Steamless.CLI (.NET 9) directly.
+
+Steamless.CLI ships inside the plugin at backend/deps/Steamless (a ~450 KB
+.NET 9 build: the atom0s unpacker Variant plugins + SharpDisasm). It used to be
+extracted from the ACCELA AppImage; bundling it drops that dependency entirely.
+The only runtime requirement is the .NET 9 runtime, which dotnet.py installs
+on demand from Microsoft's official script — also independent of ACCELA.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +13,9 @@ import asyncio
 import json
 import os
 import shutil
-import tempfile
 
-from paths import data_dir, find_accela_root
+from paths import data_dir, backend_path
+from dotnet import find_dotnet_path, ensure_dotnet_available
 
 try:
     import decky  # type: ignore
@@ -36,47 +43,41 @@ _steamless_state: dict = {}
 # Paths
 # ---------------------------------------------------------------------------
 
-def _get_steamless_dir() -> str:
-    return os.path.join(data_dir(), "Steamless")
+def _steamless_search_roots() -> list[str]:
+    """Where Steamless.CLI may live, most-preferred first.
+
+    1. backend/deps/Steamless — bundled with the plugin build (the normal case).
+    2. data_dir()/Steamless — legacy location where the old ACCELA-extraction
+       path installed it; kept so an existing install still resolves.
+    """
+    return [backend_path(os.path.join("deps", "Steamless")),
+            os.path.join(data_dir(), "Steamless")]
 
 
 def _find_steamless_cli() -> str | None:
-    """Find Steamless.CLI.dll in the plugin's data directory."""
-    root = _get_steamless_dir()
-    if not os.path.isdir(root):
-        return None
-    # Walk to handle zip layouts that may create a subdirectory
-    for dirpath, _, files in os.walk(root):
-        if "Steamless.CLI.dll" in files:
-            return os.path.join(dirpath, "Steamless.CLI.dll")
+    """Find Steamless.CLI.dll in the bundled deps (or the legacy data dir)."""
+    for root in _steamless_search_roots():
+        if not os.path.isdir(root):
+            continue
+        # Walk to handle any nested layout.
+        for dirpath, _, files in os.walk(root):
+            if "Steamless.CLI.dll" in files:
+                return os.path.join(dirpath, "Steamless.CLI.dll")
     return None
 
 
-def _find_dotnet() -> str | None:
-    """Find a working dotnet binary. Checks common Steam Deck locations."""
-    import shutil
-    import subprocess
+async def _ensure_dotnet_async() -> str | None:
+    """Return a working .NET 9 path, installing it if missing. None on failure.
 
-    candidates = [
-        "/home/deck/.dotnet/dotnet",
-        "/home/deck/.local/share/dotnet/dotnet",
-        os.path.expanduser("~/.dotnet/dotnet"),
-        os.path.expanduser("~/.local/share/dotnet/dotnet"),
-    ]
-    system = shutil.which("dotnet")
-    if system:
-        candidates.insert(0, system)
-
-    for path in candidates:
-        if not os.path.isfile(path):
-            continue
-        try:
-            r = subprocess.run([path, "--list-runtimes"], capture_output=True, timeout=5)
-            if r.returncode == 0:
-                return path
-        except Exception:
-            continue
-    return None
+    ensure_dotnet_available() blocks (downloads Microsoft's installer script and
+    runs it), so it runs in a thread to keep the event loop responsive.
+    """
+    dotnet = find_dotnet_path()
+    if dotnet:
+        return dotnet
+    loop = asyncio.get_running_loop()
+    ok = await loop.run_in_executor(None, ensure_dotnet_available)
+    return find_dotnet_path() if ok else None
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +86,7 @@ def _find_dotnet() -> str | None:
 
 def check_steamless_installed() -> str:
     cli = _find_steamless_cli()
-    dotnet = _find_dotnet()
+    dotnet = find_dotnet_path()
     return json.dumps({
         "success": True,
         "installed": cli is not None,
@@ -96,71 +97,36 @@ def check_steamless_installed() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Download
+# Prepare (.NET runtime)
 # ---------------------------------------------------------------------------
 
 async def download_steamless() -> str:
+    """Steamless.CLI is bundled — there is nothing to download. The only
+    prerequisite is the .NET 9 runtime, so this now installs that on demand.
+    Kept under the original name so the existing frontend call still works."""
     global _download_state
     if _download_state.get("status") == "downloading":
-        return json.dumps({"success": False, "error": "Download already in progress."})
+        return json.dumps({"success": False, "error": "Already in progress."})
+    if not _find_steamless_cli():
+        return json.dumps({"success": False, "error": "Steamless.CLI is missing from this build."})
 
-    accela_dir = find_accela_root()
-    appimage = os.path.join(accela_dir, "ACCELA.AppImage") if accela_dir else None
-    if not appimage or not os.path.isfile(appimage):
-        return json.dumps({"success": False, "error": "ACCELA.AppImage not found. Install ACCELA first."})
-
-    _download_state = {"status": "downloading", "progress": "Extracting from ACCELA AppImage..."}
-    asyncio.ensure_future(_extract_task(appimage))
+    _download_state = {"status": "downloading", "progress": "Ensuring .NET 9 runtime..."}
+    asyncio.ensure_future(_prepare_task())
     return json.dumps({"success": True})
 
 
-async def _extract_task(appimage: str):
+async def _prepare_task():
     global _download_state
-    tmp_dir = None
     try:
-        loop = asyncio.get_running_loop()
-
-        # Run AppImage extraction in executor (blocking)
-        tmp_dir = tempfile.mkdtemp(prefix="steamless_extract_")
-        logger.info(f"[LumaDeck/Steamless] Extracting from AppImage to {tmp_dir}")
-
-        proc = await asyncio.create_subprocess_exec(
-            appimage, "--appimage-extract", "bin/src/deps/Steamless/*",
-            cwd=tmp_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        await asyncio.wait_for(proc.communicate(), timeout=60)
-
-        src = os.path.join(tmp_dir, "squashfs-root", "bin", "src", "deps", "Steamless")
-        if not os.path.isdir(src):
-            _download_state = {"status": "error", "error": "Steamless not found in AppImage."}
-            return
-
-        dest = _get_steamless_dir()
-        if os.path.isdir(dest):
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest)
-
-        cli = _find_steamless_cli()
-        if cli:
-            logger.info(f"[LumaDeck/Steamless] Installed at: {cli}")
+        dotnet = await _ensure_dotnet_async()
+        if dotnet:
+            logger.info(f"[LumaDeck/Steamless] Ready (.NET at {dotnet})")
             _download_state = {"status": "done"}
         else:
-            _download_state = {"status": "error", "error": "Steamless.CLI.dll not found after extraction."}
-
-    except asyncio.TimeoutError:
-        _download_state = {"status": "error", "error": "AppImage extraction timed out."}
-        logger.error("[LumaDeck/Steamless] Extraction timeout")
+            _download_state = {"status": "error", "error": ".NET 9 install failed."}
     except Exception as e:
-        logger.error(f"[LumaDeck/Steamless] Extraction error: {e}")
+        logger.error(f"[LumaDeck/Steamless] Prepare error: {e}")
         _download_state = {"status": "error", "error": str(e)}
-    finally:
-        if tmp_dir and os.path.isdir(tmp_dir):
-            try:
-                shutil.rmtree(tmp_dir)
-            except Exception:
-                pass
 
 
 def get_steamless_download_status() -> str:
@@ -300,13 +266,9 @@ async def run_steamless(install_path: str) -> str:
     if not install_path or not os.path.isdir(install_path):
         return json.dumps({"success": False, "error": "Game directory not found."})
 
-    dotnet = _find_dotnet()
-    if not dotnet:
-        return json.dumps({"success": False, "error": ".NET not found. Install it via the installer."})
-
     cli = _find_steamless_cli()
     if not cli:
-        return json.dumps({"success": False, "error": "Steamless not installed. Download it first."})
+        return json.dumps({"success": False, "error": "Steamless.CLI is missing from this build."})
 
     exes = _scan_executables(install_path)
     if not exes:
@@ -328,13 +290,31 @@ async def run_steamless(install_path: str) -> str:
         "results": [],
     }
 
-    asyncio.ensure_future(_run_task(dotnet, cli, exes))
+    asyncio.ensure_future(_run_task(cli, exes))
     return json.dumps({"success": True, "total": len(exes)})
 
 
-async def _run_task(dotnet: str, cli: str, exes: list):
+async def _run_task(cli: str, exes: list):
     global _steamless_state
     results = []
+
+    # Ensure the .NET 9 runtime, installing it on first use (from Microsoft's
+    # official script via dotnet.py — no ACCELA). Surfaced as progress so the
+    # first run doesn't look stalled while .NET downloads.
+    _steamless_state["current"] = "Preparing .NET 9 runtime..."
+    dotnet = await _ensure_dotnet_async()
+    if not dotnet:
+        _steamless_state = {
+            "status": "error",
+            "total": len(exes),
+            "processed": 0,
+            "successCount": 0,
+            "current": "",
+            "results": [],
+            "error": ".NET 9 runtime unavailable (auto-install failed).",
+        }
+        logger.error("[LumaDeck/Steamless] .NET 9 unavailable — aborting run")
+        return
 
     steamless_dir = os.path.dirname(cli)
     env = None
