@@ -624,10 +624,6 @@ class Plugin:
         from installer import check_dependencies
         return _j(check_dependencies())
 
-    async def install_dependencies(self) -> str:
-        from installer import install_dependencies
-        return _j(await install_dependencies())
-
     async def reinject_installed(self) -> str:
         from installer import reinject_installed
         return _j(await reinject_installed())
@@ -663,18 +659,6 @@ class Plugin:
     async def disarm_desktop_handoff(self) -> str:
         from desktop_handoff import disarm_desktop_handoff
         return _j(disarm_desktop_handoff())
-
-    async def get_install_status(self) -> str:
-        from installer import get_install_status
-        return _j(get_install_status())
-
-    async def install_cloudredirect(self) -> str:
-        from installer import install_cloudredirect
-        return _j(await install_cloudredirect())
-
-    async def get_cr_install_status(self) -> str:
-        from installer import get_cr_install_status
-        return _j(get_cr_install_status())
 
     async def install_lumalinux(self) -> str:
         from installer import install_lumalinux

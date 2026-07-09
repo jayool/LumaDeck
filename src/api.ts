@@ -381,15 +381,6 @@ export const detectStoreAppid = async () =>
 export const checkDependencies = async () =>
   parseResult(await call<[], string>("check_dependencies"));
 
-export const installDependencies = async () =>
-  parseResult(await call<[], string>("install_dependencies"));
-
-export const installCloudredirect = async () =>
-  parseResult(await call<[], string>("install_cloudredirect"));
-
-export const getCrInstallStatus = async () =>
-  parseResult(await call<[], string>("get_cr_install_status"));
-
 export const installLumalinux = async () =>
   parseResult(await call<[], string>("install_lumalinux"));
 
