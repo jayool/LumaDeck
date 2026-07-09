@@ -355,38 +355,41 @@ lagging component still supports it.
   type arrows into labels, and never put a value in the QAM that forces a data
   load purely to display it.
 
-### 6. Sync Achievements (SLScheevo) — QAM entry — ✅ built
+### 6. Achievements (SLScheevo) — QAM entry → dedicated page — ✅ built (v0.3.75)
 
 - **What it is:** SLScheevo (third-party, xamionex) generates a game's
-  achievement files so Steam recognises them. **Full setup lives on the
-  per-game page** (`GameDetail.tsx` → "Achievements" section): download the
-  binary, the one-time interactive Steam login (Desktop/Konsole only — Game Mode
-  has no terminal), per-game **Generate**, status machine
-  (`not_installed` → `not_configured` → `ready`/`generating`/`generated`).
-- **What the QAM button does:** *only* the batch shortcut — "generate for **all**
-  games at once" (every game with lua + files). It does **not** install or
-  configure; it only fires generation with the already-saved login, so it is
-  gated on `slscheevoReady` (`check_slscheevo_installed`) and is hidden for users
-  without SLScheevo. Decision: **keep it in the QAM** (a whole-library shortcut),
-  setup stays in GameDetail.
-- **How shown:** native `ButtonItem` in a title-less `PanelSection`; `disabled`
-  while running; completion/failure via the native `toaster.toast`.
-- **Made native (this pass):** progress was crammed into the **button label**
-  (`"Syncing 3/12…"`). `done/total` is a real percentage, and we already use
-  `ProgressBarWithInfo` for downloads (§4d) — so the running state is now a
-  native **`ProgressBarWithInfo`** below the button (`nProgress` =
-  `done/total·100`, `sOperationText` = `"3 / 12"`), and the button label is a
-  plain `t("syncingAchievements")` ("Syncing achievements…"). The
-  `syncingAchievements` key dropped its `{0}/{1}` placeholders (the count lives
-  in the bar now).
+  achievement files so Steam recognises them.
+- **Split (v0.3.75):** everything **global** — install the binary, the one-time
+  interactive Steam login (Desktop/Konsole only — Game Mode has no terminal),
+  **Sync All**, and a "X of Y generated" overview — lives on a **dedicated
+  full-screen Achievements page** (`Achievements.tsx`, `ROUTE_ACHIEVEMENTS`).
+  **Per-game** generation stays on the game page (`GameDetail.tsx` →
+  "Achievements" section): status machine
+  (`not_installed` → `not_configured` → `ready`/`generating`/`generated`) plus
+  the per-game **Generate** button. In the two setup states GameDetail shows the
+  reason + a button that navigates to the Achievements page — it no longer
+  carries the global download/login buttons.
+- **What the QAM button does:** *only* navigate — one plain `ButtonItem`
+  (`t("achievements")`) in the bottom-nav `PanelSection`, next to My Games /
+  Workshop, routing to `ROUTE_ACHIEVEMENTS`. No achievement logic in the QAM
+  anymore (the inline Sync All + its `slscheevoReady`/`syncState` plumbing were
+  removed).
+- **Why a page, not a sidebar:** the page is a single concern (setup + sync), so
+  a plain scroll page (same wrapper as Downloads/Library) reads cleaner than a
+  one-item `SidebarNavigation`. Convert to a sidebar only if it grows sections.
+- **Sync All (now on the page):** native `ButtonItem`, `disabled` while running,
+  a native **`ProgressBarWithInfo`** below it (`nProgress` = `done/total·100`,
+  `sOperationText` = `"3 / 12"`), completion/failure via `toaster.toast`.
 - **Native or custom:** 🟢 fully native — `ButtonItem` + native progress bar +
-  native toast. No `<div>`.
-- **Rule:** a discrete-count batch with a known total uses a native
-  `ProgressBarWithInfo` (real `done/total` percentage), not a count stuffed into
-  a button label. The button label is the *action/idle* text only.
-- **Known follow-up (carried from §5):** this is the QAM's **last** consumer of
-  the full `games` list. Moving the batch to the My Games full-screen page would
-  finally let the panel skip the library load — deferred, not done.
+  native toast. No `<div>` for actions.
+- **Rule:** global one-time setup does not belong on a per-item page. When an
+  action is library-wide (install a shared binary, a bulk sync), give it its own
+  entry; the per-item page keeps only what is per-item.
+- **Known follow-up (carried from §5):** moving Sync All off the QAM removed the
+  last consumer of the panel's `games` list, so `GameList` now loads the whole
+  library on mount for nothing (`games`/`loading` are write-only after the move).
+  The lazy-load win §5 wanted is now *unblocked* — dropping `loadGames` from the
+  QAM panel is the remaining cleanup. Deferred, not done.
 
 ---
 
