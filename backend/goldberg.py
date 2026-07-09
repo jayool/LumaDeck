@@ -104,7 +104,7 @@ def _elf_is_64bit(path: str) -> bool | None:
             head = f.read(5)
     except OSError:
         return None
-    if head[:4] != b"\x7fELF":
+    if len(head) < 5 or head[:4] != b"\x7fELF":
         return None
     return head[4] == 2  # EI_CLASS: 1 = 32-bit, 2 = 64-bit
 
@@ -171,10 +171,13 @@ def apply_goldberg(install_path: str, appid: int) -> dict:
                 if not os.path.exists(gb_src):
                     logger.warning(f"LumaDeck/Goldberg: bundled {base} missing")
                     continue
-                # Generate interfaces from the ORIGINAL before we touch it.
-                n = _write_interfaces(src_path, settings_dir)
-                logger.info(f"LumaDeck/Goldberg: {base} -> {n} interfaces")
+                # Generate interfaces from the PRISTINE original. On a re-apply
+                # src_path is already the emulator DLL and the real one is in
+                # .valve, so scan the backup when it exists.
                 backup = src_path + ".valve"
+                original = backup if os.path.exists(backup) else src_path
+                n = _write_interfaces(original, settings_dir)
+                logger.info(f"LumaDeck/Goldberg: {base} -> {n} interfaces")
                 if not os.path.exists(backup):
                     os.replace(src_path, backup)
                 elif os.path.exists(src_path):
@@ -189,7 +192,8 @@ def apply_goldberg(install_path: str, appid: int) -> dict:
                 arch_ref = backup if os.path.exists(backup) else so_path
                 gb_src = _linux_source_for(arch_ref, goldberg_dir)
                 if gb_src:
-                    n = _write_interfaces(so_path, settings_dir)
+                    # arch_ref is the pristine original (.valve on re-apply).
+                    n = _write_interfaces(arch_ref, settings_dir)
                     logger.info(f"LumaDeck/Goldberg: {_LINUX_API} -> {n} interfaces")
                     if not os.path.exists(backup):
                         os.replace(so_path, backup)

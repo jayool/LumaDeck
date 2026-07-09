@@ -286,8 +286,12 @@ async def install_dependencies(gamemode: bool = True) -> dict:
     try:
         # Seed SLSsteam's default config if it doesn't exist yet and set
         # DisableCloud: no, so the single headcrab run below installs CloudRedirect
-        # too (headcrab gates CR on that flag). SafeMode: yes is set afterwards.
-        _seed_slssteam_config_if_missing()
+        # too (headcrab gates CR on that flag). require_slssteam=False because
+        # headcrab is about to install SLSsteam in this same run — on a fresh
+        # device the config must exist BEFORE headcrab reads DisableCloud, and
+        # the default gate (SLSsteam already installed) would skip it and leave
+        # CR uninstalled. SafeMode: yes is set afterwards.
+        _seed_slssteam_config_if_missing(require_slssteam=False)
         dc_ok, dc_msg = _set_disablecloud_no(get_slssteam_config_path())
         logger.info("LumaDeck: DisableCloud:no for CR: ok=%s (%s)", dc_ok, dc_msg)
 
@@ -377,19 +381,35 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                 _seed_slssteam_config_if_missing()
                 sm_ok, sm_msg = _set_safemode_yes(get_slssteam_config_path())
                 logger.info("LumaDeck: SafeMode repair: ok=%s (%s)", sm_ok, sm_msg)
+
+                # CloudRedirect rides the same headcrab run (DisableCloud: no was
+                # set above). A transient wget/steam.sh drop can leave it missing,
+                # so verify both post-conditions — the same #19 defense
+                # install_cloudredirect used. Non-fatal: SLSsteam is the critical
+                # piece; a CR miss just gets surfaced so the user can retry.
+                cr_ok = check_cloudredirect_installed() and _cloudredirect_injected_in_steam_sh()
+                if not cr_ok:
+                    logger.warning("LumaDeck: CloudRedirect not installed/injected after headcrab "
+                                   "(dc_ok=%s) — likely a transient drop", dc_ok)
+
                 # headcrab installs SLSsteam but not .NET 9. Steamless needs it,
                 # so we install it here in the same "Install / Reinstall" click.
                 # ensure_dotnet_available() is a no-op if .NET 9 is already there.
                 INSTALL_STATE["progress"] = "Installing .NET 9 runtime if missing..."
                 loop = asyncio.get_event_loop()
                 dotnet_ok = await loop.run_in_executor(None, ensure_dotnet_available)
-                if dotnet_ok:
-                    INSTALL_STATE["status"] = "done"
+
+                INSTALL_STATE["status"] = "done"
+                if dotnet_ok and cr_ok:
                     INSTALL_STATE["progress"] = "Installation complete!"
-                else:
-                    INSTALL_STATE["status"] = "done"
+                elif not dotnet_ok:
                     INSTALL_STATE["progress"] = (
                         "SLSsteam installed. .NET 9 install failed — "
+                        "click Install / Reinstall Dependencies again to retry."
+                    )
+                else:
+                    INSTALL_STATE["progress"] = (
+                        "SLSsteam installed, but CloudRedirect didn't (cloud saves) — "
                         "click Install / Reinstall Dependencies again to retry."
                     )
         else:
@@ -513,16 +533,19 @@ ExtendedLogging: no
 """
 
 
-def _seed_slssteam_config_if_missing() -> bool:
+def _seed_slssteam_config_if_missing(require_slssteam: bool = True) -> bool:
     """Write SLSsteam's default config.yaml if it doesn't exist yet.
 
-    No-op (returns False) when the config already exists, or when SLSsteam
-    isn't installed (we must not create an orphan config for a missing
-    SLSsteam — that would mask the real "install dependencies first" error).
-    Returns True only when it actually seeded the file.
+    No-op (returns False) when the config already exists, or — with the default
+    require_slssteam=True — when SLSsteam isn't installed (we must not create an
+    orphan config for a missing SLSsteam, which would mask the real "install
+    dependencies first" error). Pass require_slssteam=False from a caller that is
+    itself about to install SLSsteam in the same run (install_dependencies), so
+    the config exists before headcrab reads DisableCloud. Returns True only when
+    it actually seeded the file.
     """
     try:
-        if not check_slssteam_installed():
+        if require_slssteam and not check_slssteam_installed():
             return False
         config_path = get_slssteam_config_path()
         if os.path.exists(config_path):
