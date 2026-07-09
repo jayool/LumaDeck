@@ -9,3 +9,7 @@ askpass*
 deploy.sh
 deploy.bat
 backend/appaccesstokens.json
+# gbe_fork Goldberg binaries (~40-65 MB) are fetched into the release zip by
+# CI (.github/workflows/release.yml), never committed. Steamless.CLI is small
+# enough to live in git, so backend/deps/Steamless is NOT ignored.
+backend/deps/Goldberg/

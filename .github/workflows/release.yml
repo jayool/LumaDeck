@@ -32,6 +32,48 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # Fetch the Goldberg (gbe_fork) emulator into backend/deps/Goldberg and
+      # reshape it to the flat layout goldberg.py expects. These binaries are
+      # ~40 MB, gitignored, and only pulled in here for the release zip — the
+      # same model as dist/. Steamless.CLI is committed (small) so it needs no
+      # fetch step. Pinned to a known release for reproducible builds.
+      - name: Fetch Goldberg (gbe_fork)
+        env:
+          GBE_TAG: release-2026_05_30
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full
+          base="https://github.com/Detanup01/gbe_fork/releases/download/${GBE_TAG}"
+          work="$(mktemp -d)"
+          dest="backend/deps/Goldberg"
+          mkdir -p "$dest/steam_settings"
+
+          curl -fsSL -o "$work/lin.tar.bz2" "$base/emu-linux-release.tar.bz2"
+          curl -fsSL -o "$work/win.7z"      "$base/emu-win-release.7z"
+          mkdir -p "$work/lin" "$work/win"
+          tar -xjf "$work/lin.tar.bz2" -C "$work/lin"
+          7z x -y -o"$work/win" "$work/win.7z" >/dev/null
+
+          # Locate the arch-specific libraries robustly (regular, not experimental).
+          lin_x86="$(find "$work/lin" -path '*regular/x86/libsteam_api.so' | head -1)"
+          lin_x64="$(find "$work/lin" -path '*regular/x64/libsteam_api.so' | head -1)"
+          win_x86="$(find "$work/win" -path '*regular/x86/steam_api.dll'   | head -1)"
+          win_x64="$(find "$work/win" -path '*regular/x64/steam_api64.dll' | head -1)"
+          for v in "$lin_x86" "$lin_x64" "$win_x86" "$win_x64"; do
+            [ -n "$v" ] || { echo "::error::gbe_fork layout changed — missing a steam_api binary"; exit 1; }
+          done
+          cp "$lin_x86" "$dest/libsteam_api.so"
+          cp "$lin_x64" "$dest/libsteam_api64.so"
+          cp "$win_x86" "$dest/steam_api.dll"
+          cp "$win_x64" "$dest/steam_api64.dll"
+
+          # Example steam_settings (overlay/user configs) — best-effort.
+          ex="$(find "$work/lin" -type d -iname 'steam_settings*' | head -1)"
+          if [ -n "$ex" ]; then
+            find "$ex" -maxdepth 1 -type f -name 'configs.*.ini' -exec cp {} "$dest/steam_settings/" \; || true
+          fi
+          echo "Goldberg bundled:"; ls -la "$dest"
+
       - name: Create plugin zip
         run: |
           mkdir -p LumaDeck
