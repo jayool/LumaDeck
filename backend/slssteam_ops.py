@@ -299,25 +299,13 @@ def add_game_token(appid: int) -> dict:
 
         token = tokens_db.get(str(appid))
         if not token:
-            # Fallback: read the main-app token directly from the installed Lua
-            try:
-                import re as _re
-                from steam_utils import detect_steam_install_path
-                steam_path = detect_steam_install_path() or "/home/deck/.local/share/Steam"
-                lua_path = os.path.join(steam_path, "config", "stplug-in", f"{appid}.lua")
-                if os.path.exists(lua_path):
-                    with open(lua_path, "r", encoding="utf-8") as _lf:
-                        lua_text = _lf.read()
-                    # First addappid for the main appid: addappid(415200, 1, "token...")
-                    m = _re.search(
-                        rf'addappid\(\s*{appid}\s*,\s*\d+\s*,\s*"([0-9a-fA-F]{{64}})"\s*\)',
-                        lua_text,
-                    )
-                    if m:
-                        token = m.group(1)
-            except Exception:
-                pass
-        if not token:
+            # No local fallback. The app access token is a uint64 that SLSsteam
+            # feeds to PICS to fetch ProductInfo; it only lives in
+            # appaccesstokens.json. The installed .lua only carries 64-hex depot
+            # *decryption* keys (see downloads.py — those go into config.vdf
+            # DecryptionKeys / keys.txt), a different value for a different job.
+            # Reading the lua here wrote a depot key into AppTokens: and reported
+            # a bogus success, so we fail honestly instead.
             return {"success": False, "error": f"Token not found for AppID {appid}"}
 
         with open(config_path, "r", encoding="utf-8") as f:
