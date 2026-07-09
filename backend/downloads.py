@@ -77,8 +77,30 @@ def _find_steamidra_lite_script() -> str:
     return get_steamidra_lite_script() or ""
 
 
+_STEAMIDRA_SUPPORTS_NAME: bool | None = None
+
+
+async def _steamidra_supports_name(python: str, script: str) -> bool:
+    """Whether the DEPLOYED steamidra_lite.py accepts --name. Older lumalinux
+    builds don't, and argparse errors out (exit 2) on an unknown flag — which
+    would break the install. Probed once via --help and cached for the session."""
+    global _STEAMIDRA_SUPPORTS_NAME
+    if _STEAMIDRA_SUPPORTS_NAME is None:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                python, script, "--help",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+            _STEAMIDRA_SUPPORTS_NAME = b"--name" in (out or b"")
+        except Exception:
+            _STEAMIDRA_SUPPORTS_NAME = False
+    return _STEAMIDRA_SUPPORTS_NAME
+
+
 async def _invoke_steamidra_lite(
     input_path: str, manifests_dir: str = "", appid_for_log: int = 0,
+    game_name: str = "",
 ) -> tuple[bool, str]:
     """Run steamidra_lite.py on `input_path` (a Hubcap zip, or — when
     `manifests_dir` is supplied — a bare .lua file alongside an extracted
@@ -99,6 +121,13 @@ async def _invoke_steamidra_lite(
     cmd = [python, script, input_path]
     if manifests_dir:
         cmd.extend(["--manifests-dir", manifests_dir])
+    # Pass the canonical name so steamidra writes it as the .acf installdir
+    # instead of falling back to the appid (which makes Steam re-download the
+    # whole game if the .acf is later regenerated — e.g. by Repair appmanifest).
+    # Gated on the deployed steamidra supporting --name (older lumalinux would
+    # argparse-error on it and fail the install).
+    if game_name and await _steamidra_supports_name(python, script):
+        cmd.extend(["--name", game_name])
 
     logger.info(f"LumaDeck: invoking steamidra_lite: {' '.join(cmd)}")
     try:
@@ -850,10 +879,15 @@ async def _process_and_install_lua(appid: int, zip_path: str) -> None:
         # keys.txt, config.vdf, config.yaml, .acf stub, stplug-in lua,
         # ACCELA markers, .depot tracker.
         _set_download_state(appid, {"status": "installing"})
+        # Resolve the canonical name (local applist cache first, store API
+        # fallback) so steamidra writes it as the .acf installdir. Empty on a
+        # miss — steamidra then does its own lookup / appid fallback.
+        game_name = await fetch_app_name(appid)
         ok, output = await _invoke_steamidra_lite(
             str(lua_path),
             manifests_dir=str(manifests_dir),
             appid_for_log=appid,
+            game_name=game_name or "",
         )
         if not ok:
             raise RuntimeError(
