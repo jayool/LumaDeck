@@ -43,8 +43,20 @@ def add_fake_app_id(appid: int, fake_id: int = 480) -> dict:
 
         entry_line = f"  {appid}: {fake_id}\n"
         target = str(appid)
+        # Only treat the appid as "already configured" if it appears as a key
+        # INSIDE the FakeAppIds: block. Scanning the whole file would false-
+        # positive on the same appid living under AppTokens:/DlcData: etc.
+        in_block = False
         for line in lines:
             stripped = line.strip()
+            if not in_block:
+                if stripped.lower().startswith("fakeappids:"):
+                    in_block = True
+                continue
+            indent = len(line) - len(line.lstrip())
+            if stripped and not stripped.startswith("#") and indent == 0:
+                in_block = False  # next top-level key ends the block
+                continue
             if stripped.startswith(f"{target}:") or stripped.startswith(f"'{target}':") or stripped.startswith(f'"{target}":'):
                 return {"success": True, "message": "FakeAppId already configured"}
 
@@ -83,11 +95,23 @@ def remove_fake_app_id(appid: int) -> dict:
         new_lines = []
         modified = False
         target = str(appid)
+        # Scope the deletion to the FakeAppIds: block only. A whole-file scan
+        # would also strip the same appid's entries from AppTokens:/DlcData:
+        # (and orphan DlcData child lines, corrupting the YAML).
+        in_block = False
         for line in lines:
             stripped = line.strip()
-            if (stripped.startswith(f"{target}:") or stripped.startswith(f"'{target}':") or stripped.startswith(f'"{target}":')):
-                modified = True
+            if stripped.lower().startswith("fakeappids:"):
+                in_block = True
+                new_lines.append(line)
                 continue
+            if in_block:
+                indent = len(line) - len(line.lstrip())
+                if stripped and not stripped.startswith("#") and indent == 0:
+                    in_block = False  # next top-level key ends the block
+                elif (stripped.startswith(f"{target}:") or stripped.startswith(f"'{target}':") or stripped.startswith(f'"{target}":')):
+                    modified = True
+                    continue
             new_lines.append(line)
 
         if modified:
