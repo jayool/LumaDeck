@@ -20,8 +20,6 @@ import {
   searchHubcap,
   checkSlscheevoInstalled,
   checkAllAchievementsStatus,
-  generateAllAchievements,
-  getSyncAllStatus,
   getGameNotices,
   restartSteam,
   getComponentsStatus,
@@ -41,7 +39,7 @@ import {
   ComponentsStatus,
   SystemStatusActions,
 } from "../components/SystemStatus";
-import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL } from "../routes";
+import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, ROUTE_ACHIEVEMENTS } from "../routes";
 import { setRefreshHandler } from "../refresh";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
@@ -90,12 +88,10 @@ export function GameList() {
   const [quickInstalling, setQuickInstalling] = useState(false);
   const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
   const [quickProgress, setQuickProgress] = useState("");
-  const [syncState, setSyncState] = useState<any>(null);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
   const [pendingGameInfo, setPendingGameInfo] = useState<any>(null);
   const [cred, setCred] = useState<any>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadGames = useCallback(async () => {
     try {
@@ -278,7 +274,6 @@ export function GameList() {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
-      if (syncPollRef.current) clearInterval(syncPollRef.current);
     };
   }, []);
 
@@ -457,35 +452,6 @@ export function GameList() {
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || "", duration });
-
-  const handleSyncAllAchievements = async () => {
-    const appids = games.filter((g) => g.hasLua && g.hasGameFiles).map((g) => g.appid);
-    if (appids.length === 0) return;
-
-    const result = await generateAllAchievements(appids);
-    if (!result.success) {
-      toast(t("toastSyncFailed"), result.error || "");
-      return;
-    }
-
-    setSyncState({ status: "running", done: 0, total: appids.length });
-
-    syncPollRef.current = setInterval(async () => {
-      try {
-        const status = await getSyncAllStatus();
-        if (status.success && status.state) {
-          setSyncState(status.state);
-          if (status.state.status === "done") {
-            if (syncPollRef.current) clearInterval(syncPollRef.current);
-            syncPollRef.current = null;
-            toast(t("toastSyncComplete"));
-            loadGames();
-            setTimeout(() => setSyncState(null), 3000);
-          }
-        }
-      } catch { }
-    }, 2000);
-  };
 
   // Add-Game mode toggle, tab-style: two native DialogButtons. Focusing one
   // selects its mode, so moving L/R swaps the content below — like native
@@ -898,33 +864,14 @@ export function GameList() {
           </ButtonItem>
         </PanelSectionRow>
 
-        {slscheevoReady && (
-          <>
-            <PanelSectionRow>
-              <ButtonItem
-                layout="below"
-                onClick={handleSyncAllAchievements}
-                disabled={syncState?.status === "running"}
-              >
-                {syncState?.status === "running"
-                  ? t("syncingAchievements")
-                  : t("syncAllAchievements")}
-              </ButtonItem>
-            </PanelSectionRow>
-            {syncState?.status === "running" && (
-              <PanelSectionRow>
-                <ProgressBarWithInfo
-                  nProgress={
-                    syncState.total > 0
-                      ? Math.round((syncState.done / syncState.total) * 100)
-                      : 0
-                  }
-                  sOperationText={`${syncState.done || 0} / ${syncState.total || 0}`}
-                />
-              </PanelSectionRow>
-            )}
-          </>
-        )}
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={() => Navigation.Navigate(ROUTE_ACHIEVEMENTS)}
+          >
+            {t("achievements")}
+          </ButtonItem>
+        </PanelSectionRow>
 
         <PanelSectionRow>
           <ButtonItem

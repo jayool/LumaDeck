@@ -15,6 +15,7 @@ import { GameDetail } from "./pages/GameDetail";
 import { Settings } from "./pages/Settings";
 import { Downloads } from "./pages/Downloads";
 import { Library } from "./pages/Library";
+import { Achievements } from "./pages/Achievements";
 import { AppPageButton } from "./components/AppPageButton";
 import { requestRefresh } from "./refresh";
 import {
@@ -22,6 +23,7 @@ import {
   ROUTE_SETTINGS,
   ROUTE_DOWNLOADS,
   ROUTE_LIBRARY,
+  ROUTE_ACHIEVEMENTS,
 } from "./routes";
 
 // Compact icon button for the native title bar (titleView). Only the size is
@@ -98,6 +100,7 @@ export default definePlugin(() => {
   routerHook.addRoute(ROUTE_SETTINGS, () => <Settings />);
   routerHook.addRoute(ROUTE_DOWNLOADS, () => <Downloads />);
   routerHook.addRoute(ROUTE_LIBRARY, () => <Library />);
+  routerHook.addRoute(ROUTE_ACHIEVEMENTS, () => <Achievements />);
 
   // Patch library app detail page to show "Added via LumaDeck" badge
   const libraryPatch = patchLibraryApp();
@@ -140,6 +143,7 @@ export default definePlugin(() => {
       routerHook.removeRoute(ROUTE_SETTINGS);
       routerHook.removeRoute(ROUTE_DOWNLOADS);
       routerHook.removeRoute(ROUTE_LIBRARY);
+      routerHook.removeRoute(ROUTE_ACHIEVEMENTS);
       routerHook.removePatch("/library/app/:appid", libraryPatch);
     },
   };

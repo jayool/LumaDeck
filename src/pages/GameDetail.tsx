@@ -22,7 +22,7 @@ import {
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { ActionButton } from "../components/ActionButton";
-import { ROUTE_SETTINGS } from "../routes";
+import { ROUTE_SETTINGS, ROUTE_ACHIEVEMENTS } from "../routes";
 import {
   startDownload,
   getDownloadStatus,
@@ -61,9 +61,6 @@ import {
   checkAchievementsStatus,
   generateAchievements,
   getGenerateStatus,
-  downloadSlscheevo,
-  getSlscheevoDownloadStatus,
-  runDesktopHandoffSlscheevo,
   checkSteamlessInstalled,
   downloadSteamless,
   getSteamlessDownloadStatus,
@@ -119,7 +116,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [goldbergApplied, setGoldbergApplied] = useState(false);
   const [achievementStatus, setAchievementStatus] = useState("");
   const [achievementGenState, setAchievementGenState] = useState<any>(null);
-  const [slscheevoBinaryPath, setSlscheevoBinaryPath] = useState("");
   const [busy, setBusy] = useState("");
   const [steamlessInstalled, setSteamlessInstalled] = useState(false);
   const [steamlessDotnet, setSteamlessDotnet] = useState(false);
@@ -219,7 +215,6 @@ export function GameDetail({ appid }: GameDetailProps) {
       const achResult = await checkAchievementsStatus(appid);
       if (achResult.success) {
         setAchievementStatus(achResult.status);
-        if (achResult.binaryPath) setSlscheevoBinaryPath(achResult.binaryPath);
       }
 
       const slResult = await checkSteamlessInstalled();
@@ -548,49 +543,6 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
-  const handleDownloadSlscheevo = async () => {
-    setBusy("slscheevo");
-    const result = await downloadSlscheevo();
-    if (result.success) {
-      const poll = setInterval(async () => {
-        const status = await getSlscheevoDownloadStatus();
-        if (status.success && status.state) {
-          if (status.state.status === "done") {
-            clearInterval(poll);
-            setBusy("");
-            // Refresh status to get binaryPath
-            const achResult = await checkAchievementsStatus(appid);
-            if (achResult.success) {
-              setAchievementStatus(achResult.status);
-              if (achResult.binaryPath) setSlscheevoBinaryPath(achResult.binaryPath);
-            } else {
-              setAchievementStatus("not_configured");
-            }
-            toast(t("toastSlscheevoInstalled"), gameName);
-          } else if (status.state.status === "error") {
-            clearInterval(poll);
-            setBusy("");
-            toast(t("toastSlscheevoDownloadFailed"), status.state.error || "", 5000);
-          }
-        }
-      }, 1000);
-      setTimeout(() => { clearInterval(poll); setBusy(""); }, 120000);
-    } else {
-      setBusy("");
-      toast(t("toastError"), result.error || "", 4000);
-    }
-  };
-
-  const handleConfigureSlscheevo = async () => {
-    // SLScheevo's login is an interactive terminal flow — Desktop only. Arm a
-    // hand-off that opens Konsole already running it, then switch to Desktop.
-    // No auto-return: the user logs in and switches back to Game Mode by hand.
-    const r: any = await runDesktopHandoffSlscheevo();
-    if (r?.switchLaunched) toast(t("achievements"), t("slscheevoConfigSwitching"), 8000);
-    else if (r?.armed) toast(t("achievements"), t("slscheevoConfigManual"), 12000);
-    else toast(t("toastError"), r?.error || "", 6000);
-  };
-
   const handleDownloadSteamless = async () => {
     const result = await downloadSteamless();
     if (result.success) {
@@ -896,48 +848,26 @@ export function GameDetail({ appid }: GameDetailProps) {
         <>
       {/* Achievements */}
       <PanelSection title={t("achievements")}>
-        {achievementStatus === "not_installed" ? (
+        {achievementStatus === "not_installed" || achievementStatus === "not_configured" ? (
           <>
-            <PanelSectionRow>
-              <Field label={t("achievementStatusNotInstalled")} />
-            </PanelSectionRow>
-            <ActionButton
-              label={busy === "slscheevo" ? t("downloadingSlscheevo") : t("downloadSlscheevo")}
-              onClick={handleDownloadSlscheevo}
-              disabled={busy === "slscheevo"}
-            />
-          </>
-        ) : achievementStatus === "not_configured" ? (
-          <>
-            {/* Login is an interactive terminal flow (Desktop only). The button
-                opens Konsole already running SLScheevo; the monospace line is the
-                same command, kept as a manual fallback. */}
+            {/* Global setup (install SLScheevo + one-time login) lives on the
+                Achievements page now, not per-game. Show why it's not ready and
+                send the user there. */}
             <PanelSectionRow>
               <Field
                 icon={<FaExclamationTriangle color="#ffaa00" />}
-                label={t("achievementStatusNotConfigured")}
+                label={
+                  achievementStatus === "not_installed"
+                    ? t("achievementStatusNotInstalled")
+                    : t("achievementStatusNotConfigured")
+                }
               />
             </PanelSectionRow>
             <ActionButton
-              label={t("configureInDesktop")}
-              onClick={handleConfigureSlscheevo}
+              label={t("openAchievements")}
+              onClick={() => Navigation.Navigate(ROUTE_ACHIEVEMENTS)}
               variant="primary"
             />
-            {slscheevoBinaryPath && (
-              <PanelSectionRow>
-                <Field
-                  label={t("slscheevoRunInTerminal")}
-                  description={
-                    <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
-                      {t("slscheevoPath",
-                        slscheevoBinaryPath.substring(0, slscheevoBinaryPath.lastIndexOf("/")),
-                        slscheevoBinaryPath.substring(slscheevoBinaryPath.lastIndexOf("/") + 1),
-                      )}
-                    </span>
-                  }
-                />
-              </PanelSectionRow>
-            )}
           </>
         ) : achievementStatus === "generating" ? (
           <PanelSectionRow>
