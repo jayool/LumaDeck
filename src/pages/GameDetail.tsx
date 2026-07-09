@@ -113,7 +113,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const [isStuck, setIsStuck] = useState(false);
@@ -861,42 +860,30 @@ export function GameDetail({ appid }: GameDetailProps) {
       {/* Game Management */}
       <PanelSection title={t("gameManagement")}>
         <PanelSectionRow>
-          <ToggleField
-            label={t("advancedOptions")}
-            checked={showAdvancedOptions}
-            onChange={setShowAdvancedOptions}
+          <TextField
+            label="FakeAppId"
+            value={fakeIdValue}
+            onChange={(e: any) => setFakeIdValue(e?.target?.value ?? "480")}
+            disabled={fakeAppId}
           />
         </PanelSectionRow>
-
-        {showAdvancedOptions && (
-          <>
-            <PanelSectionRow>
-              <TextField
-                label="FakeAppId"
-                value={fakeIdValue}
-                onChange={(e: any) => setFakeIdValue(e?.target?.value ?? "480")}
-                disabled={fakeAppId}
-              />
-            </PanelSectionRow>
-            <ActionButton
-              label={
-                fakeAppId
-                  ? `${t("removeFakeAppId")} (${fakeIdValue})`
-                  : `${t("addFakeAppId")} (${fakeIdValue})`
-              }
-              onClick={handleToggleFakeAppId}
-            />
-            <ActionButton
-              label={hasToken ? t("removeToken") : t("addToken")}
-              onClick={handleToggleToken}
-            />
-            <ActionButton
-              label={busy === "dlcs" ? t("fetchingDlcs") : dlcLabel}
-              onClick={handleToggleDlcs}
-              disabled={busy === "dlcs"}
-            />
-          </>
-        )}
+        <ActionButton
+          label={
+            fakeAppId
+              ? `${t("removeFakeAppId")} (${fakeIdValue})`
+              : `${t("addFakeAppId")} (${fakeIdValue})`
+          }
+          onClick={handleToggleFakeAppId}
+        />
+        <ActionButton
+          label={hasToken ? t("removeToken") : t("addToken")}
+          onClick={handleToggleToken}
+        />
+        <ActionButton
+          label={busy === "dlcs" ? t("fetchingDlcs") : dlcLabel}
+          onClick={handleToggleDlcs}
+          disabled={busy === "dlcs"}
+        />
       </PanelSection>
         </>
       ),
