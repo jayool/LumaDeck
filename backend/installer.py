@@ -8,10 +8,8 @@ import re
 import tempfile
 
 from paths import (
-    find_accela_root,
     find_slssteam_root,
     check_slssteam_installed,
-    check_accela_installed,
     find_lumalinux_root,
     check_lumalinux_installed,
     check_lumalinux_active,
@@ -206,10 +204,8 @@ def _patch_headcrab_script(content: str, gamemode: bool = True) -> str:
 
 
 def check_dependencies() -> dict:
-    """Check if ACCELA, SLSsteam, and .NET runtime are available."""
-    accela_installed = check_accela_installed()
+    """Check if SLSsteam, CloudRedirect, lumalinux and the .NET runtime are available."""
     slssteam_installed = check_slssteam_installed()
-    accela_root = find_accela_root()
 
     # .NET 9 detection — delegated to backend/dotnet.py so the path list and
     # the version check (--list-runtimes must mention "Microsoft.NETCore.App 9.")
@@ -221,16 +217,10 @@ def check_dependencies() -> dict:
 
     return {
         "success": True,
-        "accela": accela_installed,
-        "accelaPath": accela_root,
         "slssteam": slssteam_installed,
         "slssteamPath": find_slssteam_root(),
         "dotnet": dotnet_available,
         "dotnetPath": dotnet_path,
-        # LumaDeck-specific: report on lumalinux + CloudRedirect too. These
-        # aren't installed by enter-the-wired (that only covers ACCELA + .NET
-        # + SLSsteam) — the user installs them manually. The plugin only
-        # detects and reports their state for the Settings UI to display.
         # `*_active` is True when the .so is mapped into a running process
         # (i.e. LD_PRELOAD actually took effect, not just present on disk).
         "lumalinux": check_lumalinux_installed(),
@@ -272,10 +262,11 @@ async def install_dependencies(gamemode: bool = True) -> dict:
     short-cycle relaunches, so the gamescope-session crash-loop detector doesn't
     wipe the Steam install. Then we run it.
 
-    CloudRedirect is intentionally NOT forced here — headcrab only installs CR
-    when `DisableCloud: no` is present in config.yaml, which is
-    install_cloudredirect's job. This keeps the SLSsteam base install separate
-    from cloud saves.
+    CloudRedirect ships with the base install: headcrab installs it whenever
+    `DisableCloud: no` is present in config.yaml, so we seed the config and set
+    that flag before running headcrab. CR is inert until the user configures a
+    provider, so bundling it here (rather than a separate opt-in step) removes
+    the second headcrab run without forcing anything on.
 
     ACCELA used to come from enter-the-wired for Steamless + Goldberg; both now
     ship bundled with the plugin, so enter-the-wired/ACCELA is gone entirely. We
@@ -293,6 +284,13 @@ async def install_dependencies(gamemode: bool = True) -> dict:
 
     tmp_dir = None
     try:
+        # Seed SLSsteam's default config if it doesn't exist yet and set
+        # DisableCloud: no, so the single headcrab run below installs CloudRedirect
+        # too (headcrab gates CR on that flag). SafeMode: yes is set afterwards.
+        _seed_slssteam_config_if_missing()
+        dc_ok, dc_msg = _set_disablecloud_no(get_slssteam_config_path())
+        logger.info("LumaDeck: DisableCloud:no for CR: ok=%s (%s)", dc_ok, dc_msg)
+
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_deps_")
         script_path = os.path.join(tmp_dir, "headcrab_patched.sh")
         INSTALL_STATE["progress"] = "Downloading + patching headcrab.sh..."
@@ -853,22 +851,23 @@ def get_ll_install_status() -> dict:
 
 
 async def quick_install(gamemode: bool = True) -> dict:
-    """Run the three installers in dependency order, stopping at the first
-    failure:
+    """Run the installers in dependency order, stopping at the first failure:
 
-        1. dependencies   — SLSsteam + .NET 9             (install_dependencies)
-        2. cloudredirect  — CloudRedirect via headcrab    (install_cloudredirect)
-        3. lumalinux      — liblumalinux.so + steam.sh patch (install_lumalinux)
+        1. dependencies   — SLSsteam + CloudRedirect + .NET 9 (install_dependencies)
+        2. lumalinux      — liblumalinux.so + steam.sh patch   (install_lumalinux)
+
+    dependencies now installs CloudRedirect in the same headcrab run (it sets
+    DisableCloud: no first), so there's no separate CR step — one headcrab, not
+    two.
 
     gamemode=False is the DESKTOP variant (run by the Desktop hand-off launcher
     when Steam is off the headcrab pin): headcrab keeps its Steam kills so the
     downgrade actually applies. In Game Mode that would trip the crash-loop wipe,
     which is exactly why an off-pin install must go through Desktop.
 
-    Order matters: steps 1 and 2 both run headcrab, which regenerates steam.sh
-    from scratch — that would wipe lumalinux's managed block. lumalinux must
-    therefore run LAST so its steam.sh patch survives. This mirrors doing the
-    three existing buttons by hand, top to bottom.
+    Order matters: dependencies runs headcrab, which regenerates steam.sh from
+    scratch — that would wipe lumalinux's managed block. lumalinux must therefore
+    run LAST (it's patch-only and idempotent) so its steam.sh patch survives.
 
     Each sub-installer keeps updating its own state global with live progress;
     get_quick_install_status() merges that in for the currently-running step.
@@ -879,7 +878,6 @@ async def quick_install(gamemode: bool = True) -> dict:
 
     steps = [
         ("dependencies", install_dependencies, get_install_status),
-        ("cloudredirect", install_cloudredirect, get_cr_install_status),
         ("lumalinux", install_lumalinux, get_ll_install_status),
     ]
     QUICK_INSTALL_STATE = {
@@ -944,26 +942,25 @@ async def reinject_installed() -> dict:
     """Re-inject every INSTALLED component into steam.sh, in dependency order.
 
     steam.sh is shared: SLSsteam, CloudRedirect and lumalinux each inject a
-    block. The SLSsteam installer (install_dependencies) and the CloudRedirect
-    installer both run headcrab, which REGENERATES steam.sh from scratch —
-    wiping the other components' blocks. install_lumalinux only patches
-    (idempotent), so it never wipes the others and must run LAST to survive the
-    headcrab regenerations.
+    block. install_dependencies runs headcrab, which REGENERATES steam.sh from
+    scratch (installing + re-injecting BOTH SLSsteam and CloudRedirect in one
+    pass). install_lumalinux only patches (idempotent), so it never wipes the
+    others and must run LAST to survive the headcrab regeneration.
 
-    Repairing one component's injection with a single installer therefore
-    silently breaks the others. This re-runs the installers for the components
-    that are actually installed, in order SLSsteam -> CloudRedirect -> lumalinux.
-    It never installs a component the user doesn't have.
+    Repairing injection with a single installer would silently break the others.
+    This re-runs the installers for the components that are actually installed,
+    in order (SLSsteam+CloudRedirect) -> lumalinux. It never installs a component
+    the user doesn't have.
 
     Used to repair SLSsteam `injection_missing` and CloudRedirect `broken` (any
     repair that runs headcrab). Shares QUICK_INSTALL_STATE so the frontend polls
     the same get_quick_install_status().
     """
     steps = []
-    if check_slssteam_installed():
+    # One headcrab (install_dependencies) re-installs and re-injects BOTH
+    # SLSsteam and CloudRedirect, so run it when either is present.
+    if check_slssteam_installed() or check_cloudredirect_installed():
         steps.append(("dependencies", install_dependencies, get_install_status))
-    if check_cloudredirect_installed():
-        steps.append(("cloudredirect", install_cloudredirect, get_cr_install_status))
     if check_lumalinux_installed():
         steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
 
@@ -1033,8 +1030,8 @@ async def apply_component(component_id: str, op: str = "repair") -> dict:
                        wipes lumalinux → install_cloudredirect, then
                        install_lumalinux if installed.
       - lumalinux:     patch-only, touches nobody else → install_lumalinux alone.
-      - core:          ensure BOTH core pieces (half-installed / onboarding) +
-                       CR if present, in order.
+      - core:          install_dependencies (SLSsteam + CloudRedirect in one
+                       headcrab) → install_lumalinux.
 
     Drives QUICK_INSTALL_STATE; poll get_quick_install_status.
     """
@@ -1052,9 +1049,9 @@ async def apply_component(component_id: str, op: str = "repair") -> dict:
             [("lumalinux", install_lumalinux, get_ll_install_status)], "Applying")
 
     if component_id == "core":
+        # install_dependencies installs SLSsteam + CloudRedirect together, so no
+        # separate CR step is needed.
         steps = [("dependencies", install_dependencies, get_install_status)]
-        if check_cloudredirect_installed():
-            steps.append(("cloudredirect", install_cloudredirect, get_cr_install_status))
         steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
         return await _run_install_steps(steps, "Installing")
 

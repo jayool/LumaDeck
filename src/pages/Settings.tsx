@@ -767,24 +767,12 @@ export function Settings() {
               coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
           }
           return (
-            <>
-              <PanelSectionRow>
-                <ButtonItem layout="below" disabled={applyingFix}
-                  description={desc} onClick={onClick}>
-                  {applyingFix ? t("installing") : label}
-                </ButtonItem>
-              </PanelSectionRow>
-              {/* Add optional CloudRedirect (cloud saves) when it's not installed
-                  and we're on-pin — the one thing the fix dispatch won't add. */}
-              {!offPin && coreInstalled && !deps?.cloudredirect && (
-                <PanelSectionRow>
-                  <ButtonItem layout="below" disabled={applyingFix}
-                    onClick={() => runFix(() => applyComponent("cloudredirect", "install"))}>
-                    {t("enableCloudRedirect")}
-                  </ButtonItem>
-                </PanelSectionRow>
-              )}
-            </>
+            <PanelSectionRow>
+              <ButtonItem layout="below" disabled={applyingFix}
+                description={desc} onClick={onClick}>
+                {applyingFix ? t("installing") : label}
+              </ButtonItem>
+            </PanelSectionRow>
           );
         })()}
       </PanelSection>
