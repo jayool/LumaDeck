@@ -128,35 +128,34 @@ Principles are **derived** from these entries as patterns emerge (see
 ### 3b. Repair architecture — the shared `steam.sh` cascade — ⚠️ correctness
 
 `steam.sh` is **shared**: SLSsteam, CloudRedirect and lumalinux each inject a
-block into it. Both the SLSsteam installer (`install_dependencies`) and the
-CloudRedirect installer (`install_cloudredirect`) run **headcrab**, which
-**regenerates `steam.sh` from scratch** — wiping the *other* components' blocks.
+block into it. `install_dependencies` runs **headcrab**, which installs and
+re-injects **both SLSsteam and CloudRedirect in one pass** and **regenerates
+`steam.sh` from scratch** — wiping any *other* component's block.
 `install_lumalinux` is the exception: it only *patches* (idempotent), so it
 never wipes the others, and it must run **last** so its block survives the
-headcrab regenerations.
+headcrab regeneration.
 
 Consequence — a per-component repair that runs headcrab **silently breaks the
 others**:
 
-- SLSsteam `injection_missing` repaired with `install_dependencies` alone →
-  re-injects SLSsteam but **wipes CloudRedirect + lumalinux**.
-- CloudRedirect `broken` repaired with `install_cloudredirect` alone →
-  re-injects SLSsteam (headcrab) + CR but **wipes lumalinux**.
+- SLSsteam `injection_missing` or CloudRedirect `broken` repaired with
+  `install_dependencies` alone → re-injects SLSsteam + CloudRedirect (one
+  headcrab) but **wipes lumalinux**.
 
 **Rule:** any repair that runs headcrab must **re-inject every *installed*
-component, in order `SLSsteam → CloudRedirect → lumalinux`** — not a single
-installer. This is a dedicated routine, `reinject_installed()` (= `quick_install`
-gated on `check_*_installed()`; never installs a component the user doesn't
+component, in order `SLSsteam + CloudRedirect → lumalinux`** — not a bare
+`install_dependencies`. This is a dedicated routine, `reinject_installed()`
+(gated on `check_*_installed()`; never installs a component the user doesn't
 have). Wire SLSsteam `injection_missing` and CloudRedirect `broken` to it.
 `restart` (no `steam.sh` change) and `install_lumalinux` (patch-only) are safe
 standalone and stay as-is.
 
 **What `injection_missing`'s repair does, concretely** — `reinject_installed()`:
-re-runs SLSsteam (`install_dependencies`) **if installed**, then CloudRedirect
-(`install_cloudredirect`) **if installed** (omitted otherwise), then lumalinux
-(`install_lumalinux`) **if installed**, in that order — rebuilding a correct
-shared `steam.sh`. Each step is gated on `check_*_installed()`, so it only ever
-re-injects what the user already had; it never installs a new component.
+re-runs `install_dependencies` (SLSsteam + CloudRedirect, one headcrab) **if
+either is installed**, then lumalinux (`install_lumalinux`) **if installed**, in
+that order — rebuilding a correct shared `steam.sh`. Each step is gated on
+`check_*_installed()`, so it only ever re-injects what the user already had; it
+never installs a new component.
 
 **`steam.sh` ordering has two reasons, not one.** lumalinux's `install.sh`
 *preserves* CloudRedirect's `LD_PRELOAD` (it appends `cloud_redirect.so` rather
@@ -176,8 +175,9 @@ component, because they share one cause and one fix.
 **Why `unsupported` is one state + one fix:** SLSsteam `patterns`/`hash` and
 lumalinux `hash_blocked`/`hooks_failed` and CloudRedirect `broken` all mean the
 same thing to the user — *Steam updated past what this component supports*. The
-fix is the same: **run enter-the-wired in Desktop**, which (via headcrab)
-downgrades Steam to the blessed stable build `1782257239` (2026-06-10). Verified
+fix is the same: **run the Steam downgrade in Desktop** ("Fix in Desktop"),
+which (via headcrab) downgrades Steam to the blessed stable build `1782257239`
+(2026-06-10). Verified
 that build is supported by all three: CloudRedirect lists it explicitly
 (`SUPPORTED_STEAM_VERSIONS`), it is SLSsteam's headcrab target by definition,
 and lumalinux's current hash set covers that era (shared `steamclient.so` hashes
@@ -194,7 +194,7 @@ lagging component still supports it.
 |---|---|---|
 | `not_active` | "Not active." | 🔘 **Restart Steam** |
 | `injection_missing` | "Not correctly installed." | 🔘 **Repair** → `reinjectInstalled` |
-| `unsupported` (= `broken` patterns/hash) | "Unsupported Steam version. Run enter-the-wired in Desktop." | 📄 Field |
+| `unsupported` (= `broken` patterns/hash) | "Unsupported Steam version. Run the Steam downgrade in Desktop." | 📄 Field |
 
 **lumalinux** — impact: *"downloads disabled (installed games OK)"*
 
@@ -202,14 +202,14 @@ lagging component still supports it.
 |---|---|---|
 | `not_active` | "Not active." | 🔘 **Restart Steam** |
 | `injection_missing` | "Not correctly installed." | 🔘 **Repair** → `install_lumalinux` (patch-only, safe alone) |
-| `unsupported` (= `hash_blocked` / `hooks_failed`) | "Unsupported Steam version. Run enter-the-wired in Desktop." | 📄 Field |
+| `unsupported` (= `hash_blocked` / `hooks_failed`) | "Unsupported Steam version. Run the Steam downgrade in Desktop." | 📄 Field |
 
 **CloudRedirect** — impact: *"cloud saves off"*
 
 | State (backend) | description | control |
 |---|---|---|
 | `not_active` | "Not active." | 🔘 **Restart Steam** |
-| `unsupported` (= `broken`) | "Unsupported Steam version. Run enter-the-wired in Desktop." | 📄 Field |
+| `unsupported` (= `broken`) | "Unsupported Steam version. Run the Steam downgrade in Desktop." | 📄 Field |
 | `not_authed` | "Sign in via the CloudRedirect app in Desktop." | 📄 Field |
 
 **Wiring notes:**
@@ -528,20 +528,24 @@ principle. Kept as-is.
 
 #### 8c. Game Management page — ✅ built (v0.3.53)
 
-- **What:** the "Advanced Options" toggle gating FakeAppId / token / DLCs /
-  Goldberg controls.
+- **What:** the FakeAppId / token / DLCs / Goldberg controls. **No "Advanced
+  Options" toggle** — the controls are **always visible**; the toggle that used
+  to gate them was removed (hiding routine per-game management behind an extra
+  tap added nothing).
 - **Was:** already almost fully native (`ToggleField`, `TextField`,
-  `ActionButton`s). Two warts: (1) the FakeAppId `TextField` was wrapped in two
-  pointless `<div>` flex containers (leftover from an old side-by-side layout),
-  and (2) the "Advanced Options" toggle's `description` was `t("gameManagement")`
-  — which just repeats the section title verbatim as a meaningless sub-line.
-- **Now:** the wrapper `<div>`s removed (TextField is a direct `PanelSectionRow`
-  child like every other row); the redundant toggle `description` dropped
-  entirely. `"FakeAppId"` stays a hardcoded literal (technical term, like AppID).
+  `ActionButton`s), but gated behind an "Advanced Options" toggle whose
+  `description` was `t("gameManagement")` — repeating the section title verbatim
+  as a meaningless sub-line — and the FakeAppId `TextField` was wrapped in two
+  pointless `<div>` flex containers (leftover from an old side-by-side layout).
+- **Now:** the gating toggle is gone (controls always shown); the wrapper
+  `<div>`s removed (TextField is a direct `PanelSectionRow` child like every
+  other row). `"FakeAppId"` stays a hardcoded literal (technical term, like
+  AppID).
 - **Native or custom:** 🟢 fully native, no inline styles left on this page.
 - **Rule:** don't wrap a native control in layout `<div>`s "just in case"; a
-  control is a direct row child. A `description` must add information — never
-  echo the section title.
+  control is a direct row child. Don't hide routine per-game controls behind an
+  extra toggle. A `description` must add information — never echo a section
+  title.
 
 #### 8d. Achievements page — ✅ built (v0.3.54)
 
@@ -662,7 +666,7 @@ monospace `description`, custom bar → `ProgressBarWithInfo`.
 
 The dense "advanced 1%" per-component breakdown — the biggest custom-chrome
 cluster (~16 spots). Converted with the two patterns:
-- **Install-status rows** (ACCELA, SLSsteam, .NET Runtime, lumalinux,
+- **Install-status rows** (SLSsteam, .NET Runtime, lumalinux,
   CloudRedirect) → native `Field` (8a pattern): `label` = component name,
   coloured value child (green "Installed" / red "Not found"), install path as
   `description`.
@@ -812,7 +816,7 @@ the people who need it**. Fixed:
 > **3** one fetch + `SystemStatus` renderer (5-action collapse + update track),
 > old builders/banners deleted ✅ · **4** Stuck into the renderer ✅ (folded into
 > step 3) · **5** Desktop autostart for the downgrade ✅ (v0.3.50 — the "Fix in
-> Desktop" row arms a one-shot autostart that runs enter-the-wired + lumalinux
+> Desktop" row arms a one-shot autostart that runs headcrab + lumalinux
 > re-inject in Desktop and auto-returns to Game Mode) · **6** i18n cleanup (drop
 > the now-unused per-component update strings) — pending.
 

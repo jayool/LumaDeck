@@ -9,9 +9,8 @@ states mean.
 
 | Component | What it does |
 | --- | --- |
-| **ACCELA** | Dependency installer (Goldberg, DepotDownloader, .NET). Also the source of the Steamless CLI used by [DRM removal](managing-a-game.md#remove-drm-steamless). |
 | **SLSsteam** | The ownership / licensing layer — makes Steam treat configured apps as owned. |
-| **.NET 9 runtime** | Runtime needed by some bundled tools. |
+| **.NET 9 runtime** | Runtime needed by the bundled Steamless CLI used by [DRM removal](managing-a-game.md#remove-drm-steamless). Installed on demand via Microsoft's official installer. |
 | **lumalinux** | The native hooks in `steamclient.so` (Linux i386) that let Steam fetch and decrypt depots. This is what makes native downloads work. |
 | **CloudRedirect** *(optional)* | Redirects Steam Cloud saves to a third-party provider. See [Cloud saves](cloud-saves.md). |
 | **Headcrab** | The SLSsteam launcher wrapper. Its build-ID must match the current Steam client (the panel checks this). |
@@ -57,7 +56,7 @@ component, and if it's blocked in Game Mode, do it from Desktop.
 | State | Meaning / fix |
 | --- | --- |
 | `healthy` | Working and signed in. |
-| `not_installed` | Enable CloudRedirect from Dependencies. |
+| `not_installed` | Install / Reinstall Dependencies — CloudRedirect ships with the base install. |
 | `not_active` | Installed but not loaded — restart Steam. |
 | `broken` | The hook failed — reinstall. |
 | `not_authed` | No cloud provider signed in — sign in from Desktop ([Cloud saves](cloud-saves.md)). |

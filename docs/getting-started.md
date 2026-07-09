@@ -29,14 +29,12 @@ replaced by the individual controls in Settings.)
 To install them **individually** (or to reinstall later), open
 **Settings ▸ Dependencies** and run them **in this order**:
 
-1. **Install / Reinstall Dependencies** — runs [enter-the-wired](https://github.com/ciscosweater/enter-the-wired)
-   in the background: installs ACCELA, SLSsteam and the .NET 9 runtime, and
-   patches Steam.
-2. **Enable CloudRedirect** *(optional)* — flips `DisableCloud: yes → no` in
-   SLSsteam's config and runs [headcrab.pages.dev](https://headcrab.pages.dev),
-   which installs the CloudRedirect Flatpak + `cloud_redirect.so`. For cloud
-   saves; see [Cloud saves](cloud-saves.md).
-3. **Install / Reapply lumalinux** — **always do this last.** Runs
+1. **Install / Reinstall Dependencies** — runs [headcrab.sh](https://github.com/Deadboy666/h3adcr-b)
+   in the background: installs **SLSsteam + CloudRedirect** in one pass, plus the
+   **.NET 9 runtime** (via Microsoft's official installer script), and patches
+   Steam. CloudRedirect ships with the base install but stays inert until you
+   sign into a provider — for cloud saves see [Cloud saves](cloud-saves.md).
+2. **Install / Reapply lumalinux** — **always do this last.** Runs
    [lumalinux's `install.sh`](https://github.com/jayool/lumalinux/blob/main/install.sh):
    deploys `liblumalinux.so` plus the `tools/` scripts and patches Steam's
    `steam.sh` with the `LD_PRELOAD` block. The earlier steps regenerate

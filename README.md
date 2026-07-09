@@ -2,7 +2,7 @@
 
 Decky Loader plugin for Steam Deck — game library and configuration manager with a **lumalinux backend**. Fork of [DeckTools](https://github.com/lopesleo/DeckTools) by lopesleo.
 
-> ⚠️ **Educational / research use only.** Use it with your own Steam account and content. The plugin does not host or distribute any third-party content; it only orchestrates installs around SLSsteam, lumalinux, ACCELA and (optionally) CloudRedirect.
+> ⚠️ **Educational / research use only.** Use it with your own Steam account and content. The plugin does not host or distribute any third-party content; it only orchestrates installs around SLSsteam, lumalinux, Goldberg, Steamless and (optionally) CloudRedirect.
 
 ## Installation
 
@@ -10,13 +10,13 @@ Decky Loader plugin for Steam Deck — game library and configuration manager wi
 
 2. **Install it in Decky Loader** as a custom plugin: in the Decky settings on the Deck, point it at the downloaded zip. Decky unpacks the plugin and restarts itself.
 
-3. **Install the components from the QAM.** Open LumaDeck in the QAM. On a fresh setup (nothing installed yet) it shows a **Quick Install** button that installs and configures everything — ACCELA, SLSsteam, the .NET 9 runtime, lumalinux, and optionally CloudRedirect — in the correct order in one tap. This is the recommended path.
+3. **Install the components from the QAM.** Open LumaDeck in the QAM. On a fresh setup (nothing installed yet) it shows a **Quick Install** button that installs and configures everything — SLSsteam + CloudRedirect, the .NET 9 runtime, and lumalinux — in the correct order in one tap. This is the recommended path.
 
    To install or reapply components **individually** (or after a Steam update), use **Settings → Dependencies**. The wiki documents each one and the order they go in: see [Getting started](docs/getting-started.md#2-install-the-components) and [Components & health](docs/components-and-health.md).
 
 4. **(Optional) Sign into your cloud provider.**
 
-   If you enabled CloudRedirect in step 3, the *library* is in place but no provider is signed in. The CloudRedirect Flatpak's sign-in opens a real browser, which gamemode can't drive — switch to desktop mode once, open the **CloudRedirect** app from the application menu, and sign into Google Drive / OneDrive / Dropbox. The Dependencies panel will then show *CloudRedirect provider: Configured* once tokens exist at `~/.config/CloudRedirect/tokens_<provider>.json`.
+   CloudRedirect is installed with the base dependencies in step 3, so the *library* is in place but no provider is signed in. The CloudRedirect Flatpak's sign-in opens a real browser, which gamemode can't drive — switch to desktop mode once, open the **CloudRedirect** app from the application menu, and sign into Google Drive / OneDrive / Dropbox. The Dependencies panel will then show *CloudRedirect provider: Configured* once tokens exist at `~/.config/CloudRedirect/tokens_<provider>.json`.
 
 ### After a Headcrab/SLSsteam update
 
@@ -100,11 +100,10 @@ LumaDeck is a fork of [DeckTools](https://github.com/lopesleo/DeckTools) by **lo
 | [SLSsteam](https://github.com/AceSLS/SLSsteam)                             | AceSLS            | Steam ownership / licensing layer                                             |
 | [lumalinux](https://github.com/jayool/lumalinux)                           | jayool            | Native depot-key / manifest hooks for `steamclient.so` (Linux i386)           |
 | [SLScheevo](https://github.com/xamionex/SLScheevo)                         | xamionex          | Achievement file generator for SLSsteam-managed games                         |
-| [ACCELA](https://github.com/nichelimux/ACCELA)                             | nichelimux        | Dependency installer (Goldberg, DepotDownloader, .NET) — still used for fixes |
+| [ACCELA](https://github.com/nichelimux/ACCELA)                             | nichelimux        | Standalone desktop app — not a dependency; LumaDeck writes interop markers so it recognises LumaDeck-installed games |
 | [Goldberg Steam Emulator](https://gitlab.com/nichelimux/goldberg_emulator) | nichelimux        | Steam API emulator                                                            |
 | [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)          | SteamDeckHomebrew | Plugin platform                                                               |
 | [Hubcap](https://hubcapmanifest.com)                                       | Hubcap            | Manifest API (formerly Morrenus)                                              |
-| [enter-the-wired](https://github.com/ciscosweater/enter-the-wired)         | ciscosweater      | Bootstrap script that chains ACCELA + SLSsteam + .NET installs                |
 | [Headcrab / h3adcr-b](https://github.com/Deadboy666/h3adcr-b)              | Deadboy666        | SLSsteam launcher wrapper + CloudRedirect installer (`headcrab.pages.dev`)    |
 | [CloudRedirect](https://github.com/Selectively11/CloudRedirect)            | Selectively11     | Cloud-save RPC redirector to third-party providers                            |
 

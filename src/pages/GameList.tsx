@@ -515,7 +515,7 @@ export function GameList() {
       else toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
     }),
     downgrade: () => runSysAction(async () => {
-      // Arm the one-shot Desktop autostart (enter-the-wired + lumalinux
+      // Arm the one-shot Desktop autostart (headcrab downgrade + lumalinux
       // re-inject) and switch to Desktop. The script runs there and returns to
       // Game Mode on success. If the auto-switch can't fire, tell the user to
       // switch to Desktop manually — the task is already armed.

@@ -409,7 +409,7 @@ export const applyComponent = async (
   op: "install" | "repair" | "update" = "repair",
 ) => parseResult(await call<[string, string], string>("apply_component", componentId, op));
 
-// REAL Desktop hand-off: enter-the-wired Steam downgrade + lumalinux re-inject.
+// REAL Desktop hand-off: headcrab Steam downgrade + lumalinux re-inject.
 // Arms a one-shot autostart + switches to Desktop; returns to Game Mode on success.
 export const runDesktopHandoffReal = async () =>
   parseResult(await call<[], string>("run_desktop_handoff_real"));

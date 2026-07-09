@@ -78,8 +78,8 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 #
 #   2) atomic .so copies (atomic-so-copy) — upstream's wheresteamdir() uses
 #      `cp -f $InstallDir/<file>.so $...SLSsteamInstallDir/`, which truncates
-#      the destination file in place. On re-installs (Enable CR after Install
-#      Dependencies, or any later Repair) Steam is already running with those
+#      the destination file in place. On re-installs (any later Repair /
+#      Reinstall Dependencies) Steam is already running with those
 #      .so files mmap'd, and the in-place rewrite leaves the kernel serving
 #      pages from a file whose on-disk content has been swapped underneath —
 #      Steam crashes / its UI subsystem (CEF) disconnects mid-install, the
@@ -564,8 +564,8 @@ def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
     the script doesn't do it itself.
 
     Returns (ok, message). ok=False only when the config is missing or the
-    DisableCloud line is absent entirely (= SLSsteam wasn't initialised via
-    enter-the-wired yet).
+    DisableCloud line is absent entirely (= SLSsteam wasn't installed/
+    initialised yet).
     """
     if not os.path.isfile(config_path):
         return False, f"SLSsteam config not found at {config_path} — install dependencies first"
@@ -651,7 +651,7 @@ async def install_lumalinux(gamemode: bool = True) -> dict:
     (`gamemode` is accepted for a uniform quick_install() call signature but
     ignored here — lumalinux never touches Steam at runtime, no kills to patch.)
 
-    Unlike enter-the-wired and headcrab, this one does NOT touch Steam at
+    Unlike headcrab, this one does NOT touch Steam at
     runtime: it only patches ~/.local/share/Steam/steam.sh (idempotent
     managed-block insert before `source $STEAM_CLIENT`) and drops the .so +
     keys dir. No killall, no exec of Steam with env vars, no downgrade.

@@ -51,7 +51,7 @@ backend/          Python (async) — all plugin logic
   paths.py        Steam/SLSsteam path detection and injection
   downloads.py    Manifest download, depot handling, ACF repair
   slssteam_ops.py SLSsteam configuration (tokens, DLCs, FakeAppId)
-  installer.py    Dependency installer (enter-the-wired)
+  installer.py    Dependency installer (headcrab: SLSsteam + CloudRedirect)
   steam_utils.py  VDF parser, library detection, game path resolution
   fixes.py        Community fix download/apply/remove
   workshop.py     Workshop content downloads

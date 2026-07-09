@@ -4,7 +4,7 @@ Desktop login and returns to Game Mode.
 There are two payloads:
   - DUMMY: prints visible output, always returns to Game Mode. Used to validate
     the round-trip.
-  - REAL: runs enter-the-wired/headcrab (the Steam downgrade that can't run in
+  - REAL: runs headcrab (the Steam downgrade that can't run in
     Game Mode) and re-injects lumalinux afterwards. Only returns to Game Mode on
     success; on failure it stays in Desktop (--hold) so the error is readable.
 
@@ -36,12 +36,12 @@ _SCRIPT_FILE = os.path.join(_SCRIPT_DIR, "handoff.sh")
 # Each payload ends with its own return-to-Game-Mode logic (the real one only
 # returns on success).
 #
-# REAL payload: aligns Steam to headcrab's pin (enter-the-wired), then re-injects
+# REAL payload: aligns Steam to headcrab's pin, then re-injects
 # lumalinux so the native-download hooks survive the regenerated steam.sh. This
 # is the ONE fix that can't run in Game Mode (Steam is live there).
 #
 #   - `set +e`: never abort the script on a sub-command failure; we branch
-#     explicitly on the enter-the-wired exit code.
+#     explicitly on the headcrab exit code.
 #   - lumalinux re-inject is GATED on lumalinux being installed (the .so present)
 #     and mirrors install_lumalinux(): download install.sh from main and bash it.
 #     It's patch-only and idempotent, and MUST run last (after headcrab
@@ -52,13 +52,13 @@ _REAL_PAYLOAD = """
 set +e
 echo "================================================================"
 echo " LumaDeck - Aligning Steam to the supported build"
-echo " (this runs enter-the-wired / headcrab, then re-injects lumalinux)"
+echo " (this runs headcrab, then re-injects lumalinux)"
 echo "================================================================"
 echo
-echo ">>> Running enter-the-wired (Steam downgrade)..."
+echo ">>> Running headcrab (Steam downgrade)..."
 if curl -fsSL headcrab.pages.dev | bash; then
   echo
-  echo ">>> enter-the-wired finished OK."
+  echo ">>> headcrab finished OK."
   if [ -f "$HOME/.local/share/lumalinux/liblumalinux.so" ]; then
     echo ">>> Re-injecting lumalinux..."
     curl -fsSL https://raw.githubusercontent.com/jayool/lumalinux/main/install.sh | bash
@@ -72,7 +72,7 @@ if curl -fsSL headcrab.pages.dev | bash; then
   steamos-session-select gamescope
 else
   echo
-  echo "!! enter-the-wired FAILED. Staying in Desktop so you can read the error."
+  echo "!! headcrab FAILED. Staying in Desktop so you can read the error."
   echo "!! Close this window and switch back to Game Mode manually when ready."
 fi
 """
@@ -205,7 +205,7 @@ def _run_handoff(payload: str) -> dict:
 
 
 def run_desktop_handoff_real() -> dict:
-    """Arm the REAL task (enter-the-wired downgrade + lumalinux re-inject) and
+    """Arm the REAL task (headcrab downgrade + lumalinux re-inject) and
     switch to Desktop. Returns to Game Mode only on success; stays in Desktop on
     failure so the error is readable."""
     return _run_handoff(_REAL_PAYLOAD)

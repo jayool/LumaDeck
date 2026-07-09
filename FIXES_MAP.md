@@ -38,8 +38,8 @@ The Game Detail → **Fixes** tab, after the v0.3.64 reorg, has two blocks.
 | **Check for Fixes** | Probes whether a fix exists for the appid. Downloads nothing. | `HEAD files.luatools.work/GameBypasses/{appid}.zip` and `/OnlineFix1/{appid}.zip` | none |
 | **Apply Crack / Bypass** (Generic Fix) | Crack so the game launches (problem A). | `files.luatools.work/GameBypasses/{appid}.zip` (luatools CDN) | download zip → extract into the game dir, overwriting. Logs a `[FIX]` block in `luatools-fix-log-{appid}.log`. |
 | **Apply Online Fix** (Unsteam) | Emulates the network so cracked copies play together (problem C). | `files.luatools.work/OnlineFix1/{appid}.zip` | same extract + patches `unsteam.ini`'s `<appid>` placeholder |
-| **Remove Steam DRM** (Steamless) | Unpacks the SteamStub DRM shell from the game's `.exe` (problem B). | `Steamless.CLI` (atom0s), bundled in **ACCELA** (`bin/src/deps/Steamless/`); needs .NET | runs Steamless on each `.exe`, in place, keeps `.exe.bak` |
-| **Apply Goldberg** | Steam emulator: fakes ownership + offline achievements (problem A). Overlaps SLSsteam, so use only when SLSsteam isn't enough. | gbe_fork (Detanup01), bundled in **ACCELA** (`bin/src/deps/Goldberg/`) | renames game `steam_api(64).dll` to `.valve`, drops Goldberg's + `steam_settings/` + `steam_appid.txt` |
+| **Remove Steam DRM** (Steamless) | Unpacks the SteamStub DRM shell from the game's `.exe` (problem B). | `Steamless.CLI` (atom0s), bundled in the plugin (`backend/deps/Steamless/`); needs .NET | runs Steamless on each `.exe`, keeps `.original.exe`, swaps the unpacked exe in |
+| **Apply Goldberg** | Steam emulator: fakes ownership + offline achievements (problem A). Overlaps SLSsteam, so use only when SLSsteam isn't enough. | gbe_fork (Detanup01), bundled in the plugin (`backend/deps/Goldberg/`) | renames game `steam_api(64).dll` to `.valve`, drops Goldberg's + `steam_settings/` + `steam_appid.txt` |
 | **Installed Fixes** | Lists applied CDN fixes (from the log) with per-fix / all remove. | — | un-fix deletes the fix's files and rewrites the log |
 
 ### Block: Repairs (plumbing, NOT cracks)

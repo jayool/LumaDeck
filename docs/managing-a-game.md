@@ -94,9 +94,9 @@ game's install folder, for titles that don't launch cleanly under SLSsteam.
 ## Remove DRM (Steamless)
 
 **Remove DRM (Steamless)** strips SteamStub DRM from the game executable using
-[Steamless](https://github.com/atom0s/Steamless) (extracted from ACCELA). It
-reports back if the executable has no DRM to remove. The Steamless CLI is
-downloaded on first use.
+[Steamless](https://github.com/atom0s/Steamless), which ships **bundled with the
+plugin**. It reports back if the executable has no DRM to remove. The only
+prerequisite is the .NET 9 runtime, installed on demand on first use.
 
 ## Achievements
 

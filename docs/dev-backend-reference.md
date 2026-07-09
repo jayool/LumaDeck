@@ -8,13 +8,13 @@ through thin wrappers in `main.py` — see [Architecture](dev-architecture.md).
 | `api_manifest.py` | Manages the free-API manifest (`api.json`), the Hubcap key, the Ryuu cookie, Hubcap search, and credential-expiry status. |
 | `ryuu_cookie.py` | Imports the Ryuu `session` cookie from Steam's CEF (Chromium) cookie store — finds the SQLite DB, decrypts the `v10` value, captures its expiry. |
 | `downloads.py` | Game-manifest download flows and related utilities (async). Also per-game pin/unpin (auto-update freeze). |
-| `installer.py` | Dependency installer — checks and installs ACCELA, SLSsteam, the .NET runtime. |
+| `installer.py` | Dependency installer — checks and installs SLSsteam, CloudRedirect and the .NET runtime (via headcrab + dotnet.py). |
 | `slssteam_ops.py` | SLSsteam config operations: FakeAppId, GameToken, DLCs, PlayStatus, Uninstall. |
 | `slssteam_config.py` | Read/write helpers for SLSsteam's config file. |
 | `headcrab_compat.py` | Headcrab build-ID compatibility check against the current Steam client. |
 | `fixes.py` | Community game-fix lookup, application and removal (async). |
 | `goldberg.py` | Goldberg Steam Emulator management (apply/remove). |
-| `steamless.py` | Steamless DRM removal — extracts the CLI from the ACCELA AppImage and runs it. |
+| `steamless.py` | Steamless DRM removal — runs the bundled `Steamless.CLI` (.NET 9) from `backend/deps/Steamless/`. |
 | `achievements.py` | SLScheevo achievement generation. |
 | `workshop.py` | Workshop item downloads via DepotDownloaderMod (async). |
 | `self_update.py` | In-plugin self-update from GitHub releases (#23). |

@@ -635,7 +635,7 @@ class Plugin:
         return _j(await apply_component(component_id, op))
 
     async def run_desktop_handoff_real(self) -> str:
-        """Arm a one-shot Desktop autostart (REAL payload: enter-the-wired Steam
+        """Arm a one-shot Desktop autostart (REAL payload: headcrab Steam
         downgrade + lumalinux re-inject) and switch to Desktop. It runs there and
         returns to Game Mode on success; stays in Desktop on failure."""
         from desktop_handoff import run_desktop_handoff_real

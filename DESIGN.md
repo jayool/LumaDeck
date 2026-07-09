@@ -59,17 +59,17 @@ LumaDeck/
 │   │                                # uninstall_game_full / Headcrab repair
 │   ├── achievements.py              # SLScheevo integration
 │   ├── fixes.py                     # Community fixes (online-fix etc.)
-│   ├── goldberg.py                  # Goldberg emulator toggle (uses ACCELA's
-│   │                                # bundled DLLs)
-│   ├── steamless.py                 # Steam DRM remover (uses ACCELA's
-│   │                                # bundled .NET binary)
+│   ├── goldberg.py                  # Goldberg emulator toggle (uses the
+│   │                                # bundled backend/deps/Goldberg DLLs)
+│   ├── steamless.py                 # Steam DRM remover (runs the bundled
+│   │                                # backend/deps/Steamless .NET CLI)
 │   ├── workshop.py                  # Workshop downloader via DDM (its own
 │   │                                # self-contained binary lookup)
 │   ├── paths.py                     # Steam/SLSsteam/ACCELA/lumalinux/
 │   │                                # CloudRedirect path detection; SLSsteam
 │   │                                # auto-injection via /usr/bin/steam
-│   ├── installer.py                 # check_dependencies + enter-the-wired
-│   │                                # bootstrap
+│   ├── installer.py                 # check_dependencies + headcrab
+│   │                                # bootstrap (SLSsteam + CloudRedirect)
 │   ├── http_client.py               # urllib-backed async client (no httpx
 │   │                                # runtime dep)
 │   ├── utils.py                     # File / JSON helpers
@@ -319,10 +319,10 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 - API credentials (Ryuu cookie + Hubcap API key, masked input).
 - SLSsteam toggles (PlayNotOwnedGames + verify injection +
   Headcrab repair when needed) + manual Restart Steam.
-- Dependency status: ACCELA, SLSsteam, .NET, lumalinux,
-  CloudRedirect (the last two added when the plugin was forked).
-- Reinstall dependencies via enter-the-wired (covers
-  ACCELA + .NET + SLSsteam only; lumalinux and CloudRedirect are manual).
+- Dependency status: SLSsteam, CloudRedirect, .NET, lumalinux
+  (CloudRedirect + lumalinux added when the plugin was forked).
+- Reinstall dependencies via headcrab (covers SLSsteam + CloudRedirect
+  + .NET in one run; lumalinux is installed as Quick Install's second step).
 - Language switcher (EN / PT-BR).
 
 ## Assumptions
@@ -337,8 +337,10 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 - The Hubcap / Ryuu / Sushi / Spinoza / Forced Ryu API contracts stay
   stable enough that the upstream `api.json` (in Star123451's repo) is
   kept current.
-- ACCELA, when installed, ships the AppImage with the bundled binaries
-  the plugin's Steamless / Goldberg / Workshop features need.
+- Steamless and Goldberg binaries ship bundled inside the plugin
+  (`backend/deps/Steamless`, `backend/deps/Goldberg`); only .NET 9 is
+  fetched on demand. The Workshop feature still needs a
+  DepotDownloaderMod binary the user supplies.
 
 ## Decision Log
 
@@ -347,7 +349,7 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 | 1   | Flow: buy in store → list in plugin → install                             | Manual AppID; external list                        | Natural UX, integrates with SLSsteam (inherited from DeckTools)        |
 | 2   | Advanced options (depot, manifest, fixes)                                 | Simple install-only button                         | Feature parity with LuaToolsLinux (inherited from DeckTools)           |
 | 3   | Same API matrix as upstream (Hubcap, Ryuu, Sushi, Spinoza)                | Hubcap only; custom API                            | Already proven, dropping any of them shrinks the catalog               |
-| 4   | Auto-install ACCELA + SLSsteam + .NET via enter-the-wired                 | Require pre-install                                | Inherited from DeckTools; lumalinux + CloudRedirect remain manual      |
+| 4   | Auto-install SLSsteam + CloudRedirect + .NET via headcrab                 | Require pre-install                                | One headcrab run installs SLSsteam + CloudRedirect + the Steam downgrade; .NET via dotnet.py; lumalinux runs as Quick Install's second step |
 | 5   | Hierarchical menu (list → detail)                                         | Single screen; tabs                                | Best use of QAM space                                                  |
 | 6   | **Steam native install via lumalinux hooks** instead of DDL               | Keep DDL; offer both as a toggle                   | Disk layout identical to a normal install; updates handled by Steam; progress shown in Steam library |
 | 7   | Port DeckTools' backend instead of writing the plugin from scratch        | Rewrite; shell wrapper                             | DeckTools' frontend / SLSsteam ops / fixes / achievements are exactly what we want; only the download engine needed changing |
