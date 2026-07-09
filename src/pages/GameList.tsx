@@ -10,16 +10,13 @@ import {
   Field,
   ProgressBarWithInfo,
 } from "@decky/ui";
-import { GameInfo } from "../components/GameCard";
 import {
-  getInstalledLuaScripts,
   getDownloadStatus,
   getActiveDownloads,
   startDownload,
   detectStoreAppid,
   searchHubcap,
   checkSlscheevoInstalled,
-  checkAllAchievementsStatus,
   getGameNotices,
   restartSteam,
   getComponentsStatus,
@@ -60,8 +57,6 @@ const PROTONDB_TIER_COLOR: Record<string, string> = {
 
 export function GameList() {
   const t = useT();
-  const [games, setGames] = useState<GameInfo[]>([]);
-  const [loading, setLoading] = useState(true);
   const [addAppId, setAddAppId] = useState("");
   const [addStatus, setAddStatus] = useState("");
   const [activeDownloadId, setActiveDownloadId] = useState<number | null>(null);
@@ -92,45 +87,6 @@ export function GameList() {
   const [pendingGameInfo, setPendingGameInfo] = useState<any>(null);
   const [cred, setCred] = useState<any>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const loadGames = useCallback(async () => {
-    try {
-      const luaResult = await getInstalledLuaScripts();
-      const gameList: GameInfo[] = [];
-
-      if (luaResult.success && luaResult.scripts) {
-        for (const s of luaResult.scripts) {
-          gameList.push({
-            appid: s.appid,
-            name: s.gameName || `Unknown (${s.appid})`,
-            hasLua: true,
-            isDisabled: s.isDisabled,
-            hasGameFiles: s.hasGameFiles,
-          });
-        }
-      }
-
-      // Check achievement status for all games
-      const appids = gameList.map((g) => g.appid);
-      if (appids.length > 0) {
-        try {
-          const achResult = await checkAllAchievementsStatus(appids);
-          if (achResult.success && achResult.map) {
-            for (const g of gameList) {
-              g.hasAchievements = !!achResult.map[g.appid];
-            }
-          }
-        } catch { }
-      }
-
-      gameList.sort((a, b) => a.name.localeCompare(b.name));
-      setGames(gameList);
-    } catch (err) {
-      console.error("GameList: load error", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   // One fetch for the whole system-status surface (component health + updates +
   // headcrab gate + plugin) plus the per-game stuck check. Re-run after any
@@ -205,7 +161,6 @@ export function GameList() {
             setActiveDownloadId(null);
             setActiveDownloadPhase("");
             setDownloadPct(0); setDownloadSpeed(0); setDownloadBytes({ read: 0, total: 0 });
-            loadGames();
             setTimeout(() => setAddStatus(""), 6000);
           } else if (phase === "failed") {
             if (pollRef.current) clearInterval(pollRef.current);
@@ -268,7 +223,7 @@ export function GameList() {
         pollRef.current = null;
       }, 3600000);
     },
-    [formatStatus, loadGames, t],
+    [formatStatus, t],
   );
 
   useEffect(() => {
@@ -280,15 +235,15 @@ export function GameList() {
   // Let the Refresh icon in the native title bar (index.tsx titleView) reload
   // the panel, since it lives in a separate React tree.
   useEffect(() => {
-    // The title-bar Refresh reloads the library AND force-refreshes the update
-    // status (bypassing the 6 h caches), so a just-cut release surfaces at once.
-    setRefreshHandler(() => { loadGames(); refreshStatus(true); });
+    // The title-bar Refresh force-refreshes the system status (bypassing the 6 h
+    // caches), so a just-cut release surfaces at once. The QAM panel no longer
+    // renders the games list (that lives on the Library page), so there's no
+    // library reload here.
+    setRefreshHandler(() => { refreshStatus(true); });
     return () => setRefreshHandler(null);
-  }, [loadGames, refreshStatus]);
+  }, [refreshStatus]);
 
   useEffect(() => {
-    loadGames();
-
     // Check SLScheevo availability
     (async () => {
       try {
@@ -354,7 +309,7 @@ export function GameList() {
     })();
 
     return () => cleanup1();
-  }, [loadGames, formatStatus, startPolling]);
+  }, [formatStatus, startPolling]);
 
   const doStartDownload = async (id: number, libraryPath: string = "") => {
     setAddStatus(t("startingDownload"));

@@ -346,10 +346,10 @@ lagging component still supports it.
     costs a **full library load** just to render a number. Label is now just
     `t("myGames")`.
 - **Native or custom:** 🟢 native `ButtonItem`, no title, no glyph, no count.
-- **Known follow-up (not this section):** the panel **still** loads the whole
-  library on mount, because the Sync-all-achievements button (§6) consumes
-  `games`. So removing the count did *not* yet make the panel lazy — that only
-  lands when §6 is reworked. Documented honestly rather than claimed as a win.
+- **Follow-up — ✅ done (v0.3.75):** the panel used to load the whole library on
+  mount because the Sync-all-achievements button (§6) consumed `games`. §6 moved
+  Sync All to its own page and `loadGames` was dropped from the QAM, so the panel
+  is now lazy — it no longer loads the library just to render a launcher.
 - **Rule:** a navigation entry is **one** plain `ButtonItem`; the label names the
   destination. Never repeat the destination in a section title above it, never
   type arrows into labels, and never put a value in the QAM that forces a data
@@ -385,11 +385,13 @@ lagging component still supports it.
 - **Rule:** global one-time setup does not belong on a per-item page. When an
   action is library-wide (install a shared binary, a bulk sync), give it its own
   entry; the per-item page keeps only what is per-item.
-- **Known follow-up (carried from §5):** moving Sync All off the QAM removed the
-  last consumer of the panel's `games` list, so `GameList` now loads the whole
-  library on mount for nothing (`games`/`loading` are write-only after the move).
-  The lazy-load win §5 wanted is now *unblocked* — dropping `loadGames` from the
-  QAM panel is the remaining cleanup. Deferred, not done.
+- **Follow-up (carried from §5) — ✅ done (v0.3.75):** moving Sync All off the
+  QAM removed the last consumer of the panel's `games` list. `loadGames`,
+  `games`, `loading`, and the `getInstalledLuaScripts`/`checkAllAchievementsStatus`
+  calls are gone from `GameList`, so the QAM panel no longer loads the whole
+  library on mount — it only fetches system status. The lazy-load win §5 wanted
+  is now realised. The full games list (with achievement badges) is loaded only
+  by the Library page, which owns its own `loadGames`.
 
 ---
 
