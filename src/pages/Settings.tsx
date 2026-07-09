@@ -694,13 +694,6 @@ export function Settings() {
         {deps && (
           <>
             <PanelSectionRow>
-              <Field focusable highlightOnFocus={false} label="ACCELA">
-                <span style={{ color: deps.accela ? "#00cc00" : "#ff4444" }}>
-                  {deps.accela ? t("installed") : t("notFound")}
-                </span>
-              </Field>
-            </PanelSectionRow>
-            <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="SLSsteam" description={slssHealthDesc()}>
                 <span style={{ color: deps.slssteam ? "#00cc00" : "#ff4444" }}>
                   {compStatus(deps.slssteam, slssteamHealth?.state === "healthy")}

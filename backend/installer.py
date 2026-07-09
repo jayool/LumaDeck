@@ -1,4 +1,4 @@
-"""Dependency installer — check and install ACCELA, SLSsteam, .NET runtime."""
+"""Dependency installer — check and install SLSsteam, CloudRedirect, .NET runtime."""
 
 from __future__ import annotations
 
@@ -205,30 +205,6 @@ def _patch_headcrab_script(content: str, gamemode: bool = True) -> str:
     return content
 
 
-# enter-the-wired (ciscosweater) downloads headcrab.sh via curl right before
-# executing it. We rewrite those curl calls to `cp` from our pre-patched local
-# copy so the in-place patches survive the indirection.
-_ENTER_THE_WIRED_HEADCRAB_PATTERN = re.compile(
-    r'curl -fsSL --retry 3 --retry-delay 2 (?:"\$SLS_URL"|"https://raw\.githubusercontent\.com/Deadboy666/h3adcr-b/main/headcrab\.sh\?t=\$\(date \+%s\)") -o "\$tmp_headcrab_script"'
-)
-
-
-def _patch_enter_the_wired(content: str, patched_headcrab_path: str) -> str:
-    """Rewrite enter-the-wired so it copies our patched headcrab instead of curl'ing.
-
-    Raises RuntimeError if no occurrence of the curl line was found (upstream
-    has been refactored and the patch needs an update).
-    """
-    replacement = f'cp "{patched_headcrab_path}" "$tmp_headcrab_script"'
-    new_content, n = _ENTER_THE_WIRED_HEADCRAB_PATTERN.subn(replacement, content)
-    if n == 0:
-        raise RuntimeError(
-            "enter-the-wired format changed upstream — could not find the "
-            "headcrab fetch line to redirect. Update _ENTER_THE_WIRED_HEADCRAB_PATTERN."
-        )
-    return new_content
-
-
 def check_dependencies() -> dict:
     """Check if ACCELA, SLSsteam, and .NET runtime are available."""
     accela_installed = check_accela_installed()
@@ -288,25 +264,28 @@ async def _download(url: str, dest: str) -> bool:
 
 
 async def install_dependencies(gamemode: bool = True) -> dict:
-    """Run the Game-Mode-safe variant of enter-the-wired.
+    """Install SLSsteam via the patched headcrab.sh — no ACCELA, no enter-the-wired.
 
-    gamemode=False runs the Desktop variant: headcrab keeps its Steam kills so
-    the downgrade can restart Steam (safe in Desktop, no gamescope crash-loop).
+    headcrab.sh (Deadboy666/h3adcr-b) installs SLSsteam and performs the Steam
+    version downgrade. We download it and apply _HEADCRAB_PATCHES: in Game Mode
+    that replaces the Steam kills with `steam -shutdown` and skips the
+    short-cycle relaunches, so the gamescope-session crash-loop detector doesn't
+    wipe the Steam install. Then we run it.
 
-    enter-the-wired chains ACCELA + SLSsteam + headcrab.sh. Headcrab as-is
-    kills Steam several times in quick succession; in gamemode that trips
-    the gamescope-session crash-loop detector and SteamOS wipes the Steam
-    install. We:
-      1. Download enter-the-wired + accela + fix-deps as usual.
-      2. Download headcrab.sh ourselves and apply _HEADCRAB_PATCHES (replace
-         killall with steam -shutdown, skip the short-cycle relaunches).
-      3. Patch enter-the-wired so its internal curl(headcrab.sh) becomes
-         cp(our_patched_copy).
-      4. Run the patched enter-the-wired exactly like upstream meant to —
-         ACCELA, SLSsteam, the patched headcrab, then .NET 9 on our end.
+    CloudRedirect is intentionally NOT forced here — headcrab only installs CR
+    when `DisableCloud: no` is present in config.yaml, which is
+    install_cloudredirect's job. This keeps the SLSsteam base install separate
+    from cloud saves.
 
-    If upstream wording of any patched line changes, the install fails fast
-    with a clear "format changed" error instead of bricking Steam.
+    ACCELA used to come from enter-the-wired for Steamless + Goldberg; both now
+    ship bundled with the plugin, so enter-the-wired/ACCELA is gone entirely. We
+    still install .NET 9 (Steamless uses it) via dotnet.py — Microsoft's own
+    installer script, not ACCELA.
+
+    gamemode=False is the Desktop variant (kills kept; see _patch_headcrab_script).
+
+    If upstream wording of any patched line changes, the install fails fast with
+    a clear "format changed" error instead of bricking Steam.
     """
     global INSTALL_STATE
     INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
@@ -314,53 +293,21 @@ async def install_dependencies(gamemode: bool = True) -> dict:
 
     tmp_dir = None
     try:
-        BASE_URL = "https://raw.githubusercontent.com/ciscosweater/enter-the-wired/main"
-        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_etw_")
-        scripts = {
-            "enter-the-wired": f"{BASE_URL}/enter-the-wired",
-            "accela": f"{BASE_URL}/accela",
-            "fix-deps": f"{BASE_URL}/fix-deps",
-        }
-
-        for name, url in scripts.items():
-            INSTALL_STATE["progress"] = f"Downloading {name}..."
-            logger.info("LumaDeck: downloading %s", name)
-            dest = os.path.join(tmp_dir, name)
-            if not await _download(url, dest):
-                INSTALL_STATE["status"] = "failed"
-                INSTALL_STATE["error"] = f"Failed to download {name}"
-                logger.error("LumaDeck: download failed: %s", name)
-                return {"success": False}
-            os.chmod(dest, 0o700)
-
-        main_script = os.path.join(tmp_dir, "enter-the-wired")
-        try:
-            with open(main_script, "r", encoding="utf-8", errors="replace") as f:
-                first_line = f.readline(256)
-            if not first_line.startswith("#"):
-                INSTALL_STATE["status"] = "failed"
-                INSTALL_STATE["error"] = "Downloaded file does not look like a shell script"
-                return {"success": False}
-        except Exception as read_exc:
-            INSTALL_STATE["status"] = "failed"
-            INSTALL_STATE["error"] = f"Cannot read installer script: {read_exc}"
-            return {"success": False}
-
-        # Pre-fetch headcrab.sh and apply our Game-Mode safety patches.
+        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_deps_")
+        script_path = os.path.join(tmp_dir, "headcrab_patched.sh")
         INSTALL_STATE["progress"] = "Downloading + patching headcrab.sh..."
         logger.info("LumaDeck: fetching headcrab.sh")
-        headcrab_path = os.path.join(tmp_dir, "headcrab_patched.sh")
-        if not await _download(_HEADCRAB_RAW_URL, headcrab_path):
+        if not await _download(_HEADCRAB_RAW_URL, script_path):
             INSTALL_STATE["status"] = "failed"
             INSTALL_STATE["error"] = "Failed to download headcrab.sh"
             return {"success": False}
         try:
-            with open(headcrab_path, "r", encoding="utf-8") as f:
+            with open(script_path, "r", encoding="utf-8") as f:
                 hc_content = f.read()
             hc_content = _patch_headcrab_script(hc_content, gamemode)
-            with open(headcrab_path, "w", encoding="utf-8") as f:
+            with open(script_path, "w", encoding="utf-8") as f:
                 f.write(hc_content)
-            os.chmod(headcrab_path, 0o700)
+            os.chmod(script_path, 0o700)
             logger.info("LumaDeck: headcrab.sh patched OK (%d bytes, gamemode=%s)", len(hc_content), gamemode)
         except RuntimeError as exc:
             INSTALL_STATE["status"] = "failed"
@@ -368,27 +315,11 @@ async def install_dependencies(gamemode: bool = True) -> dict:
             logger.error("LumaDeck: headcrab patch failed: %s", exc)
             return {"success": False}
 
-        # Patch enter-the-wired so it cp's our patched headcrab instead of curl'ing.
-        try:
-            with open(main_script, "r", encoding="utf-8") as f:
-                etw_content = f.read()
-            etw_content = _patch_enter_the_wired(etw_content, headcrab_path)
-            with open(main_script, "w", encoding="utf-8") as f:
-                f.write(etw_content)
-            logger.info("LumaDeck: enter-the-wired patched OK")
-        except RuntimeError as exc:
-            INSTALL_STATE["status"] = "failed"
-            INSTALL_STATE["error"] = str(exc)
-            logger.error("LumaDeck: enter-the-wired patch failed: %s", exc)
-            return {"success": False}
-
         INSTALL_STATE["progress"] = "Running installer..."
-        # Pipe `yes y` into bash so any interactive prompt that survives the
-        # script chain (ACCELAINSTALL is the only known case) gets confirmed.
-        # None of the bash scripts use `read` themselves and pacman calls are
-        # --noconfirm, so the y's are absorbed only by ACCELAINSTALL.
+        # `yes y` covers any interactive prompt in the script (harmless — headcrab
+        # itself doesn't `read`, and pacman calls are --noconfirm).
         process = await asyncio.create_subprocess_shell(
-            f"yes y | bash {main_script}",
+            f"yes y | bash {script_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=tmp_dir,
@@ -406,7 +337,7 @@ async def install_dependencies(gamemode: bool = True) -> dict:
         await process.wait()
 
         if process.returncode == 0:
-            # #19: enter-the-wired/Headcrab can exit 0 even when a transient
+            # #19: Headcrab can exit 0 even when a transient
             # wget drop left steam.sh unpatched (its wgets are `&> /dev/null`).
             # Verify the post-condition (INJECT_SLS in steam.sh) instead of
             # trusting the exit code, so we don't report a green "done" that
@@ -448,8 +379,7 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                 _seed_slssteam_config_if_missing()
                 sm_ok, sm_msg = _set_safemode_yes(get_slssteam_config_path())
                 logger.info("LumaDeck: SafeMode repair: ok=%s (%s)", sm_ok, sm_msg)
-                # enter-the-wired installed SLSsteam + ACCELA but does NOT install
-                # .NET 9. ACCELA's depot downloads and Steamless features need it,
+                # headcrab installs SLSsteam but not .NET 9. Steamless needs it,
                 # so we install it here in the same "Install / Reinstall" click.
                 # ensure_dotnet_available() is a no-op if .NET 9 is already there.
                 INSTALL_STATE["progress"] = "Installing .NET 9 runtime if missing..."
@@ -461,7 +391,7 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                 else:
                     INSTALL_STATE["status"] = "done"
                     INSTALL_STATE["progress"] = (
-                        "SLSsteam and ACCELA installed. .NET 9 install failed — "
+                        "SLSsteam installed. .NET 9 install failed — "
                         "click Install / Reinstall Dependencies again to retry."
                     )
         else:
@@ -926,7 +856,7 @@ async def quick_install(gamemode: bool = True) -> dict:
     """Run the three installers in dependency order, stopping at the first
     failure:
 
-        1. dependencies   — SLSsteam + ACCELA + .NET 9   (install_dependencies)
+        1. dependencies   — SLSsteam + .NET 9             (install_dependencies)
         2. cloudredirect  — CloudRedirect via headcrab    (install_cloudredirect)
         3. lumalinux      — liblumalinux.so + steam.sh patch (install_lumalinux)
 
