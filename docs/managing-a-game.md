@@ -37,8 +37,11 @@ These tell **SLSsteam** how to present the game to Steam. Each can be added or
 removed, with a live status. A normal install configures them automatically —
 reach for them to fix a game whose config drifted.
 
-- **FakeAppId** — maps the game onto a fake owned app (Spacewar, AppID `480`,
-  which every account owns) so Steam treats it as owned.
+- **FakeAppId** — makes the game present itself as Spacewar (AppID `480`) so its
+  Steam networking (lobbies, matchmaking, P2P) works, for playing **online** on
+  titles that use Steam's servers. It does **not** grant ownership — that's
+  AdditionalApps. SLSsteam tracks the real AppID per launch, so don't run two
+  FakeAppId-enabled games at once.
 - **Token** — writes the game's **app access token** into SLSsteam's
   `AppTokens:`. SLSsteam uses it to query the app's product information from
   Steam; in practice it mainly fixes the *"invalid configuration"* error on some

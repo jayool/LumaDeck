@@ -46,7 +46,7 @@ const strings: Record<Lang, Record<string, string>> = {
       "Set a manifest credential first in Settings ▸ API Credentials.",
     helpFeatures: "Features",
     helpFakeAppId:
-      "Maps the game onto a fake owned app (Spacewar, AppID 480, which every account owns) so Steam treats it as owned.",
+      "Makes the game present itself as Spacewar (AppID 480) so its Steam networking — lobbies, matchmaking, P2P — works, for playing online on titles that use Steam's servers. It does NOT grant ownership (that's AdditionalApps). Don't launch two FakeAppId games at once.",
     helpToken:
       "Writes the game's app access token into SLSsteam so it can query the app's product info; mainly fixes the \"invalid configuration\" error on some games. Not a Denuvo unlock.",
     helpDlcs:
