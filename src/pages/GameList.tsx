@@ -16,7 +16,7 @@ import {
   startDownload,
   detectStoreAppid,
   searchHubcap,
-  checkSlscheevoInstalled,
+  getApiKeyStatus,
   getGameNotices,
   restartSteam,
   getComponentsStatus,
@@ -75,7 +75,7 @@ export function GameList() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [showMoreResults, setShowMoreResults] = useState(false);
-  const [slscheevoReady, setSlscheevoReady] = useState(false);
+  const [achievementsReady, setAchievementsReady] = useState(false);
   // Unified system status (one fetch). Replaces the 7 health/update states.
   const [compStatus, setCompStatus] = useState<ComponentsStatus | null>(null);
   const [stuckUpdates, setStuckUpdates] = useState<{ appid: number; name: string }[]>([]);
@@ -244,12 +244,12 @@ export function GameList() {
   }, [refreshStatus]);
 
   useEffect(() => {
-    // Check SLScheevo availability
+    // Achievements are ready to generate once the Steam Web API key is set.
     (async () => {
       try {
-        const result = await checkSlscheevoInstalled();
-        if (result.success && result.installed) {
-          setSlscheevoReady(true);
+        const result = await getApiKeyStatus();
+        if (result.success && result.keySet) {
+          setAchievementsReady(true);
         }
       } catch { }
     })();
@@ -677,7 +677,7 @@ export function GameList() {
                   bottomSeparator="standard"
                 />
               </PanelSectionRow>
-              {pendingGameInfo.achievements > 0 && !slscheevoReady && (
+              {pendingGameInfo.achievements > 0 && !achievementsReady && (
                 <PanelSectionRow>
                   <div style={{ fontSize: "11px", color: "#c8a84b", display: "flex", gap: "6px", alignItems: "flex-start" }}>
                     <span style={{ flexShrink: 0 }}>⚡</span>

@@ -167,45 +167,8 @@ def get_accela_run_script() -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# SLScheevo paths
+# Steam appcache
 # ---------------------------------------------------------------------------
-
-_SLSCHEEVO_CANDIDATES = [
-    "/home/deck/.local/share/SLScheevo/SLScheevo",
-    os.path.expanduser("~/.local/share/SLScheevo/SLScheevo"),
-]
-
-
-def find_slscheevo_binary() -> Optional[str]:
-    """Return path to SLScheevo binary, or None if not found."""
-    for path in _SLSCHEEVO_CANDIDATES:
-        if os.path.isfile(path):
-            return path
-    # Check plugin data dir with possible binary names
-    scheevo_data = os.path.join(data_dir(), "SLScheevo")
-    for name in ("SLScheevo", "SLScheevo-Linux"):
-        candidate = os.path.join(scheevo_data, name)
-        if os.path.isfile(candidate):
-            return candidate
-    return None
-
-
-def get_slscheevo_dir() -> str:
-    """Return the directory where SLScheevo is (or should be) installed."""
-    binary = find_slscheevo_binary()
-    if binary:
-        return os.path.dirname(binary)
-    return os.path.join(data_dir(), "SLScheevo")
-
-
-def get_slscheevo_login_token_path() -> Optional[str]:
-    """Return path to SLScheevo's saved login token, or None."""
-    scheevo_dir = get_slscheevo_dir()
-    token_path = os.path.join(scheevo_dir, "data", "saved_logins.encrypted")
-    if os.path.isfile(token_path):
-        return token_path
-    return None
-
 
 def get_steam_appcache_stats_dir() -> Optional[str]:
     """Return path to Steam/appcache/stats/ directory."""
@@ -787,8 +750,6 @@ def get_platform_summary() -> dict:
         "slssteam_root": find_slssteam_root(),
         "accela_installed": check_accela_installed(),
         "accela_dir": find_accela_root(),
-        "slscheevo_installed": find_slscheevo_binary() is not None,
-        "slscheevo_login_ready": get_slscheevo_login_token_path() is not None,
         "lumalinux_installed": check_lumalinux_installed(),
         "lumalinux_root": find_lumalinux_root(),
         "lumalinux_active": check_lumalinux_active(),

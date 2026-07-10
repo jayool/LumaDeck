@@ -449,12 +449,16 @@ class Plugin:
         return _j(remove_goldberg(install_path, appid))
 
     # ==========================================================================
-    # Achievements (SLScheevo)
+    # Achievements (Steam Web API)
     # ==========================================================================
 
-    async def check_slscheevo_installed(self) -> str:
-        from achievements import check_slscheevo_installed
-        return _j(check_slscheevo_installed())
+    async def get_api_key_status(self) -> str:
+        from achievements import get_api_key_status
+        return _j(get_api_key_status())
+
+    async def set_steam_api_key(self, key: str) -> str:
+        from achievements import set_steam_api_key
+        return _j(set_steam_api_key(key))
 
     async def check_achievements_status(self, appid: int) -> str:
         from achievements import check_achievements_status
@@ -467,14 +471,6 @@ class Plugin:
     async def get_generate_status(self, appid: int) -> str:
         from achievements import get_generate_status
         return _j(get_generate_status(appid))
-
-    async def download_slscheevo(self) -> str:
-        from achievements import download_slscheevo
-        return _j(download_slscheevo())
-
-    async def get_slscheevo_download_status(self) -> str:
-        from achievements import get_slscheevo_download_status
-        return _j(get_slscheevo_download_status())
 
     async def check_all_achievements_status(self, appids: list) -> str:
         from achievements import check_all_achievements_status
@@ -648,13 +644,6 @@ class Plugin:
         the downgrade can't run in Game Mode."""
         from desktop_handoff import run_desktop_handoff_quick_install
         return _j(run_desktop_handoff_quick_install())
-
-    async def run_desktop_handoff_slscheevo(self) -> str:
-        """Arm an interactive Desktop hand-off that opens Konsole running the
-        SLScheevo binary for its one-time login, then switch to Desktop. No
-        auto-return (the user logs in and switches back manually)."""
-        from desktop_handoff import run_desktop_handoff_slscheevo
-        return _j(run_desktop_handoff_slscheevo())
 
     async def disarm_desktop_handoff(self) -> str:
         from desktop_handoff import disarm_desktop_handoff

@@ -848,19 +848,14 @@ export function GameDetail({ appid }: GameDetailProps) {
         <>
       {/* Achievements */}
       <PanelSection title={t("achievements")}>
-        {achievementStatus === "not_installed" || achievementStatus === "not_configured" ? (
+        {achievementStatus === "not_configured" ? (
           <>
-            {/* Global setup (install SLScheevo + one-time login) lives on the
-                Achievements page now, not per-game. Show why it's not ready and
-                send the user there. */}
+            {/* Global setup (the Steam Web API key) lives on the Achievements
+                page. Show why it's not ready and send the user there. */}
             <PanelSectionRow>
               <Field
                 icon={<FaExclamationTriangle color="#ffaa00" />}
-                label={
-                  achievementStatus === "not_installed"
-                    ? t("achievementStatusNotInstalled")
-                    : t("achievementStatusNotConfigured")
-                }
+                label={t("achievementStatusNotConfigured")}
               />
             </PanelSectionRow>
             <ActionButton

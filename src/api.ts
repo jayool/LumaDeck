@@ -244,9 +244,12 @@ export const removeGoldberg = async (installPath: string, appid: number) =>
     await call<[string, number], string>("remove_goldberg", installPath, appid),
   );
 
-// Achievements (SLScheevo)
-export const checkSlscheevoInstalled = async () =>
-  parseResult(await call<[], string>("check_slscheevo_installed"));
+// Achievements (Steam Web API)
+export const getApiKeyStatus = async () =>
+  parseResult(await call<[], string>("get_api_key_status"));
+
+export const setSteamApiKey = async (key: string) =>
+  parseResult(await call<[string], string>("set_steam_api_key", key));
 
 export const checkAchievementsStatus = async (appid: number) =>
   parseResult(await call<[number], string>("check_achievements_status", appid));
@@ -256,12 +259,6 @@ export const generateAchievements = async (appid: number) =>
 
 export const getGenerateStatus = async (appid: number) =>
   parseResult(await call<[number], string>("get_generate_status", appid));
-
-export const downloadSlscheevo = async () =>
-  parseResult(await call<[], string>("download_slscheevo"));
-
-export const getSlscheevoDownloadStatus = async () =>
-  parseResult(await call<[], string>("get_slscheevo_download_status"));
 
 export const checkAllAchievementsStatus = async (appids: number[]) =>
   parseResult(await call<[number[]], string>("check_all_achievements_status", appids));
@@ -413,11 +410,6 @@ export const applyComponent = async (
 // Arms a one-shot autostart + switches to Desktop; returns to Game Mode on success.
 export const runDesktopHandoffReal = async () =>
   parseResult(await call<[], string>("run_desktop_handoff_real"));
-
-// Interactive Desktop hand-off: opens Konsole running the SLScheevo binary for
-// its one-time login. No auto-return (the user logs in, then switches back).
-export const runDesktopHandoffSlscheevo = async () =>
-  parseResult(await call<[], string>("run_desktop_handoff_slscheevo"));
 
 // Desktop hand-off that runs the FULL Quick Install (deps + CR + lumalinux,
 // incl. the Steam downgrade) in Desktop, then returns to Game Mode on success.

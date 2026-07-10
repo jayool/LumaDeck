@@ -1,23 +1,30 @@
-"""SLScheevo achievement generation for LumaDeck.
+"""Achievement schema generation for LumaDeck — Steam Web API method.
 
-Downloads, manages, and runs the SLScheevo binary as an async subprocess
-to generate achievement files for SLSsteam-managed games.
+Generates ``UserGameStatsSchema_<appid>.bin`` files by fetching each game's
+achievement schema from the Steam Web API (``ISteamUserStats/GetSchemaForGame``)
+and encoding it as binary VDF, then seeding an empty ``UserGameStats`` file.
+SLSsteam forces "offline stat usage", so the game reads/writes those local files
+and achievements unlock. Steam reads them on the next start.
+
+No external tool, no interactive Steam login, no .NET — just the user's Steam
+Web API key (generated once at https://steamcommunity.com/dev/apikey). The key is
+revocable and cannot log into the account; it only grants read access to the Web
+API. Replaces the old SLScheevo integration (unmaintained + fragile).
+
+Validated on-device: the Web-API-built schema unlocks and persists exactly like
+the raw client-protocol schema.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
-import stat
-import tarfile
-from typing import Any, Dict
+import re
+import struct
+from typing import Any, Dict, Optional
 
-from paths import (
-    find_slscheevo_binary,
-    get_slscheevo_dir,
-    get_slscheevo_login_token_path,
-    get_steam_appcache_stats_dir,
-)
+from paths import get_steam_appcache_stats_dir, find_steam_root, settings_dir
 
 try:
     import decky  # type: ignore
@@ -27,259 +34,282 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 
-# ---------------------------------------------------------------------------
-# Per-AppID generation state
-# ---------------------------------------------------------------------------
+GET_SCHEMA_URL = "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/"
 
+# Per-appid generation state, polled by the frontend.
 ACHIEVEMENT_STATE: Dict[int, Dict[str, Any]] = {}
+ACHIEVEMENT_SYNC_STATE: Dict[str, Any] = {"status": "idle"}
 
-SLSCHEEVO_DOWNLOAD_STATE: Dict[str, Any] = {"status": "idle"}
 
-# Exit codes as defined by SLScheevo itself (SLScheevo.py: EXIT_* constants).
-# The previous map here was invented and mislabelled every code (e.g. it called
-# 2 "Invalid arguments" when 2 is LOGIN_FAILED), so error toasts lied. Keep this
-# in sync with xamionex/SLScheevo.
-_EXIT_CODES = {
-    0: "Success",
-    1: "General error",
-    2: "Login failed (token couldn't be used — try re-running the login setup)",
-    3: "No account ID",
-    4: "No app IDs provided",
-    5: "Interactive input required (run the login setup in Desktop first)",
-    6: "No achievement schema found for this app",
-    7: "File error (couldn't write the stats files)",
-    8: "Steam not found",
-    9: "Token error",
-    10: "Nothing to do",
-    11: "Not supported",
-    12: "Failed to read machine ID (HWID)",
-    13: "No account specified",
-    14: "Failed to parse ID",
-}
+# ---------------------------------------------------------------------------
+# API key store (shared credentials.json in the settings dir)
+# ---------------------------------------------------------------------------
+
+def _cred_store_path() -> str:
+    return os.path.join(settings_dir(), "credentials.json")
+
+
+def _read_cred_store() -> dict:
+    try:
+        p = _cred_store_path()
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f) or {}
+    except Exception:
+        pass
+    return {}
+
+
+def get_api_key() -> str:
+    return str(_read_cred_store().get("steam_webapi_key", "") or "").strip()
+
+
+def set_steam_api_key(key: str) -> dict:
+    """Persist the Steam Web API key. A key is 32 hex chars."""
+    key = (key or "").strip()
+    if not re.fullmatch(r"[0-9A-Fa-f]{32}", key):
+        return {"success": False, "error": "That doesn't look like a Steam Web API key (32 hex characters)."}
+    try:
+        store = _read_cred_store()
+        store["steam_webapi_key"] = key.upper()
+        p = _cred_store_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(store, f, indent=2)
+        return {"success": True}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def get_api_key_status() -> dict:
+    return {"success": True, "keySet": bool(get_api_key())}
+
+
+# ---------------------------------------------------------------------------
+# Binary VDF encoder — verified byte-identical to ValvePython/vdf.binary_dumps
+# ---------------------------------------------------------------------------
+
+_I32 = struct.Struct("<i")
+
+
+def _bin_gen(obj: dict):
+    for key, value in obj.items():
+        kb = key.encode("utf-8")
+        if isinstance(value, dict):
+            yield b"\x00" + kb + b"\x00"
+            for chunk in _bin_gen(value):
+                yield chunk
+        elif isinstance(value, bool):
+            yield b"\x02" + kb + b"\x00" + _I32.pack(int(value))
+        elif isinstance(value, int):
+            yield b"\x02" + kb + b"\x00" + _I32.pack(value)
+        else:
+            yield b"\x01" + kb + b"\x00" + str(value).encode("utf-8") + b"\x00"
+    yield b"\x08"
+
+
+def _binary_dumps(obj: dict) -> bytes:
+    return b"".join(_bin_gen(obj))
+
+
+# Empty "cache { crc, PendingChanges }" UserGameStats seed (38 bytes). Steam
+# grows this as achievements unlock. Same bytes AceSLS's schema-grabber and
+# SLScheevo write.
+_STATS_SEED = bytes([
+    0x00, 0x63, 0x61, 0x63, 0x68, 0x65, 0x00, 0x02, 0x63, 0x72, 0x63, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x02, 0x50, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x43, 0x68, 0x61, 0x6e,
+    0x67, 0x65, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x08,
+])
+
+
+def _account_id() -> Optional[int]:
+    """The Steam account id (SteamID64 & 0xffffffff) used in the UserGameStats
+    filename. Read from loginusers.vdf (most recent user)."""
+    root = find_steam_root()
+    if not root:
+        return None
+    path = os.path.join(root, "config", "loginusers.vdf")
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            txt = f.read()
+    except Exception:
+        return None
+    best = None
+    for m in re.finditer(r'"(7656\d{10,})"\s*\{([^}]*)\}', txt):
+        sid, body = m.group(1), m.group(2)
+        if best is None:
+            best = sid
+        if re.search(r'"MostRecent"\s*"1"', body):
+            best = sid
+            break
+    if not best:
+        return None
+    return int(best) & 0xFFFFFFFF
+
+
+def _build_schema_blob(appid: int, game: dict) -> Optional[bytes]:
+    """Build the binary VDF UserGameStatsSchema from a GetSchemaForGame payload,
+    or None if the game has no achievements."""
+    achs = (game.get("availableGameStats", {}) or {}).get("achievements", []) or []
+    if not achs:
+        return None
+    stats: Dict[str, Any] = {}
+    for i, a in enumerate(achs):
+        block, bit = str(i // 32 + 1), i % 32
+        stats.setdefault(block, {"type": "4", "id": block, "bits": {}})
+        stats[block]["bits"][str(bit)] = {
+            "name": a["name"],
+            "bit": bit,
+            "display": {
+                "name": {"english": a.get("displayName", ""), "token": f"NEW_ACHIEVEMENT_{block}_{bit}_NAME"},
+                "desc": {"english": a.get("description", ""), "token": f"NEW_ACHIEVEMENT_{block}_{bit}_DESC"},
+                "hidden": str(a.get("hidden", 0)),
+                "icon": str(a.get("icon", "")).split("/")[-1],
+                "icon_gray": str(a.get("icongray", "")).split("/")[-1],
+            },
+        }
+    schema = {
+        str(appid): {
+            "gamename": game.get("gameName", str(appid)),
+            "version": str(game.get("gameVersion", "1")),
+            "stats": stats,
+        }
+    }
+    return _binary_dumps(schema)
 
 
 # ---------------------------------------------------------------------------
 # Status checks
 # ---------------------------------------------------------------------------
 
-def check_slscheevo_installed() -> dict:
-    """Check if SLScheevo binary exists and login token is available."""
-    binary = find_slscheevo_binary()
-    token = get_slscheevo_login_token_path()
-    scheevo_dir = get_slscheevo_dir() if binary else None
-    return {
-        "success": True,
-        "installed": binary is not None,
-        "binaryPath": binary,
-        "binaryDir": scheevo_dir,
-        "loginReady": token is not None,
-    }
-
-
 def check_achievements_status(appid: int) -> dict:
-    """Check if achievement files exist for a given appid."""
+    """Status for one appid: needs the API key, then whether a schema exists."""
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
 
+    key_set = bool(get_api_key())
     stats_dir = get_steam_appcache_stats_dir()
     schema_exists = False
-    user_stats_exists = False
-
     if stats_dir and os.path.isdir(stats_dir):
-        schema_file = os.path.join(stats_dir, f"UserGameStatsSchema_{appid}.bin")
-        schema_exists = os.path.isfile(schema_file)
+        schema_exists = os.path.isfile(os.path.join(stats_dir, f"UserGameStatsSchema_{appid}.bin"))
 
-        suffix = f"_{appid}.bin"
-        for fname in os.listdir(stats_dir):
-            if fname.startswith("UserGameStats_") and not fname.startswith("UserGameStatsSchema_") and fname.endswith(suffix):
-                user_stats_exists = True
-                break
-
-    binary = find_slscheevo_binary()
-    token = get_slscheevo_login_token_path()
-
-    if not binary:
-        status = "not_installed"
-    elif not token:
-        status = "not_configured"
+    if not key_set:
+        status = "not_configured"      # no API key yet
     elif schema_exists:
         status = "generated"
     else:
         status = "ready"
 
-    gen_state = ACHIEVEMENT_STATE.get(appid, {})
-    if gen_state.get("status") == "running":
+    gen = ACHIEVEMENT_STATE.get(appid, {})
+    if gen.get("status") == "running":
         status = "generating"
 
     return {
         "success": True,
         "status": status,
         "generated": schema_exists,
-        "schemaExists": schema_exists,
-        "userStatsExists": user_stats_exists,
-        "installed": binary is not None,
-        "loginReady": token is not None,
-        "binaryPath": binary,
+        "keySet": key_set,
     }
 
 
-# ---------------------------------------------------------------------------
-# Achievement generation (async subprocess)
-# ---------------------------------------------------------------------------
-
-async def _run_slscheevo(appid: int) -> None:
-    """Run SLScheevo as async subprocess."""
-    binary = find_slscheevo_binary()
-    if not binary:
-        ACHIEVEMENT_STATE[appid] = {"status": "error", "error": "SLScheevo binary not found"}
-        return
-
-    token = get_slscheevo_login_token_path()
-    if not token:
-        ACHIEVEMENT_STATE[appid] = {"status": "error", "error": "SLScheevo login not configured"}
-        return
-
-    try:
+def check_all_achievements_status(appids: list) -> dict:
+    """Which appids already have a schema file (batch)."""
+    stats_dir = get_steam_appcache_stats_dir()
+    have: set = set()
+    if stats_dir and os.path.isdir(stats_dir):
+        for fname in os.listdir(stats_dir):
+            if fname.startswith("UserGameStatsSchema_") and fname.endswith(".bin"):
+                have.add(fname)
+    result_map = {}
+    for appid in appids:
         try:
-            st = os.stat(binary)
-            os.chmod(binary, st.st_mode | stat.S_IEXEC)
-        except Exception:
-            pass
+            aid = int(appid)
+            result_map[aid] = f"UserGameStatsSchema_{aid}.bin" in have
+        except (ValueError, TypeError):
+            continue
+    return {"success": True, "map": result_map}
 
-        scheevo_dir = os.path.dirname(binary)
 
-        # Ensure template file exists (not included in release tar)
-        template_path = os.path.join(scheevo_dir, "data", "UserGameStats_TEMPLATE.bin")
-        if not os.path.isfile(template_path):
-            try:
-                from http_client import ensure_http_client
-                client = await ensure_http_client("SLScheevo template")
-                os.makedirs(os.path.dirname(template_path), exist_ok=True)
-                tmpl_resp = await client.get(SLSCHEEVO_TEMPLATE_URL, follow_redirects=True, timeout=15)
-                tmpl_resp.raise_for_status()
-                tmpl_data: bytes = tmpl_resp.content  # type: ignore[attr-defined]
-                with open(template_path, "wb") as f:
-                    f.write(tmpl_data)
-                import subprocess
-                subprocess.run(["chown", "deck:deck", template_path], timeout=5, capture_output=True)
-                logger.info(f"LumaDeck: Downloaded missing template ({len(tmpl_data)} bytes)")
-            except Exception as exc:
-                logger.warning(f"LumaDeck: Failed to download template: {exc}")
+# ---------------------------------------------------------------------------
+# Schema generation
+# ---------------------------------------------------------------------------
 
-        clean_env = os.environ.copy()
-        clean_env.pop("LD_LIBRARY_PATH", None)
-        clean_env.pop("LD_PRELOAD", None)
-        clean_env.pop("STEAM_RUNTIME", None)
-        # HOME must point to deck's home so SLScheevo finds Steam at
-        # ~/.local/share/Steam.
-        clean_env["HOME"] = "/home/deck"
-        # SLScheevo encrypts its saved login with a key derived from
-        # getpass.getuser() + /etc/machine-id. getpass.getuser() reads LOGNAME
-        # FIRST, then USER/LNAME/USERNAME. The token was saved from the deck
-        # Desktop session where LOGNAME=deck; if LOGNAME here is unset or stale,
-        # a different key is derived, the token can't be decrypted, and headless
-        # login fails with EXIT_LOGIN_FAILED (2). Pin all four to deck so the key
-        # matches what the interactive login wrote.
-        clean_env["USER"] = "deck"
-        clean_env["LOGNAME"] = "deck"
-        clean_env["LNAME"] = "deck"
-        clean_env["USERNAME"] = "deck"
-        clean_env["TERM"] = "xterm"
+async def _fetch_and_write(appid: int, key: str, stats_dir: str, acc: Optional[int]) -> tuple[bool, str]:
+    """Fetch the schema for one appid and write the .bin files. Returns (ok, msg)."""
+    from http_client import ensure_http_client
+    client = await ensure_http_client("achievements")
+    resp = await client.get(GET_SCHEMA_URL, params={"key": key, "appid": str(appid), "l": "english"}, timeout=20)
+    if resp.status_code == 403:
+        return False, "The Steam Web API key was rejected (403). Re-check it."
+    resp.raise_for_status()
+    data = resp.json()
+    game = data.get("game", {}) or {}
+    blob = _build_schema_blob(appid, game)
+    if blob is None:
+        return False, "no_achievements"
 
-        # SLScheevo must run as the deck user so it can decrypt its per-UID
-        # login token (saved as deck). How we get there depends on which user
-        # Decky runs this backend as:
-        #   - root: drop to deck via runuser (root can, and this is the same
-        #     invocation the Steam-restart path uses successfully).
-        #   - non-root (Decky running unprivileged as deck): we're ALREADY the
-        #     right user, so run the binary directly. runuser here fails outright
-        #     ("runuser may not be used by non-root users") — the error users hit
-        #     on the Generate button — and is pointless when we're already deck.
-        if os.geteuid() == 0:
-            cmd = ["runuser", "-u", "deck", "--", binary, "--appid", str(appid), "--silent"]
+    os.makedirs(stats_dir, exist_ok=True)
+    schema_path = os.path.join(stats_dir, f"UserGameStatsSchema_{appid}.bin")
+    with open(schema_path, "wb") as f:
+        f.write(blob)
+
+    if acc is not None:
+        user_path = os.path.join(stats_dir, f"UserGameStats_{acc}_{appid}.bin")
+        if not os.path.exists(user_path):
+            with open(user_path, "wb") as f:
+                f.write(_STATS_SEED)
+
+    # Decky runs as root (or deck); ensure Steam can read the files.
+    try:
+        import subprocess
+        subprocess.run(["chown", "deck:deck", schema_path], timeout=5, capture_output=True)
+    except Exception:
+        pass
+    return True, "ok"
+
+
+async def _run_generate(appid: int) -> None:
+    key = get_api_key()
+    if not key:
+        ACHIEVEMENT_STATE[appid] = {"status": "error", "error": "No Steam Web API key set"}
+        return
+    stats_dir = get_steam_appcache_stats_dir()
+    if not stats_dir:
+        ACHIEVEMENT_STATE[appid] = {"status": "error", "error": "Steam not found"}
+        return
+    acc = _account_id()
+    ACHIEVEMENT_STATE[appid] = {"status": "running", "progress": "Fetching schema...", "error": None}
+    try:
+        ok, msg = await _fetch_and_write(appid, key, stats_dir, acc)
+        if ok:
+            ACHIEVEMENT_STATE[appid] = {"status": "done", "progress": "Achievements generated!", "error": None}
+        elif msg == "no_achievements":
+            ACHIEVEMENT_STATE[appid] = {"status": "error", "error": "This game has no achievements."}
         else:
-            cmd = [binary, "--appid", str(appid), "--silent"]
-        logger.info(f"LumaDeck: Running SLScheevo (euid={os.geteuid()}): {' '.join(cmd)}")
-
-        ACHIEVEMENT_STATE[appid] = {
-            "status": "running",
-            "progress": "Generating achievements...",
-            "error": None,
-        }
-
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd=scheevo_dir,
-            env=clean_env,
-        )
-
-        last_line = ""
-        assert process.stdout is not None
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            clean_line = line.decode("utf-8", errors="replace").strip()
-            if clean_line:
-                last_line = clean_line
-                ACHIEVEMENT_STATE[appid]["progress"] = clean_line
-                logger.info(f"LumaDeck: SLScheevo[{appid}]: {clean_line}")
-
-        await process.wait()
-        rc = process.returncode
-
-        logger.info(f"LumaDeck: SLScheevo exit code: {rc} ({_EXIT_CODES.get(rc or -1, 'unknown')})")
-
-        if rc == 0:
-            stats_dir = get_steam_appcache_stats_dir()
-            if stats_dir:
-                try:
-                    import subprocess
-                    subprocess.run(
-                        ["chown", "-R", "deck:deck", stats_dir],
-                        timeout=30, capture_output=True,
-                    )
-                except Exception as chown_exc:
-                    logger.warning(f"LumaDeck: chown failed for stats dir: {chown_exc}")
-
-            ACHIEVEMENT_STATE[appid] = {
-                "status": "done",
-                "progress": "Achievements generated!",
-                "error": None,
-            }
-        else:
-            error_msg = _EXIT_CODES.get(rc or -1, f"Unknown error (exit code {rc})")
-            if last_line:
-                error_msg = f"{error_msg}: {last_line}"
-            ACHIEVEMENT_STATE[appid] = {"status": "error", "error": error_msg}
-
+            ACHIEVEMENT_STATE[appid] = {"status": "error", "error": msg}
     except Exception as exc:
-        logger.error(f"LumaDeck: SLScheevo error: {exc}")
+        logger.error("LumaDeck: achievement generation failed for %s: %s", appid, exc)
         ACHIEVEMENT_STATE[appid] = {"status": "error", "error": str(exc)}
 
 
 def generate_achievements(appid: int) -> dict:
-    """Start achievement generation. Returns immediately; poll with get_generate_status()."""
+    """Start generation for one appid. Poll with get_generate_status()."""
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
-
-    current = ACHIEVEMENT_STATE.get(appid, {})
-    if current.get("status") == "running":
+    if not get_api_key():
+        return {"success": False, "error": "Set your Steam Web API key first."}
+    if ACHIEVEMENT_STATE.get(appid, {}).get("status") == "running":
         return {"success": False, "error": "Generation already in progress"}
-
     ACHIEVEMENT_STATE[appid] = {"status": "running", "progress": "Starting...", "error": None}
-    asyncio.create_task(_run_slscheevo(appid))
+    asyncio.create_task(_run_generate(appid))
     return {"success": True}
 
 
 def get_generate_status(appid: int) -> dict:
-    """Return current generation status for an appid."""
     try:
         appid = int(appid)
     except Exception:
@@ -288,229 +318,52 @@ def get_generate_status(appid: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Batch achievement status & sync all
+# Batch ("Sync All")
 # ---------------------------------------------------------------------------
 
-ACHIEVEMENT_SYNC_STATE: Dict[str, Any] = {"status": "idle"}
-
-
-def check_all_achievements_status(appids: list) -> dict:
-    """Check which appids have achievement files generated (batch)."""
-    stats_dir = get_steam_appcache_stats_dir()
-    schema_files: set = set()
-
-    if stats_dir and os.path.isdir(stats_dir):
-        for fname in os.listdir(stats_dir):
-            if fname.startswith("UserGameStatsSchema_") and fname.endswith(".bin"):
-                schema_files.add(fname)
-
-    result_map = {}
-    for appid in appids:
-        try:
-            aid = int(appid)
-            result_map[aid] = f"UserGameStatsSchema_{aid}.bin" in schema_files
-        except (ValueError, TypeError):
-            continue
-
-    return {"success": True, "map": result_map}
-
-
 async def _run_sync_all(appids: list) -> None:
-    """Generate achievements for multiple appids sequentially."""
     global ACHIEVEMENT_SYNC_STATE
-
+    key = get_api_key()
     stats_dir = get_steam_appcache_stats_dir()
-    schema_files: set = set()
-    if stats_dir and os.path.isdir(stats_dir):
-        for fname in os.listdir(stats_dir):
-            if fname.startswith("UserGameStatsSchema_") and fname.endswith(".bin"):
-                schema_files.add(fname)
+    if not key or not stats_dir:
+        ACHIEVEMENT_SYNC_STATE = {"status": "error", "error": "Missing API key or Steam", "done": 0, "total": 0}
+        return
+    acc = _account_id()
 
     pending = []
     for appid in appids:
         try:
             aid = int(appid)
-            if f"UserGameStatsSchema_{aid}.bin" not in schema_files:
-                pending.append(aid)
         except (ValueError, TypeError):
             continue
-
-    if not pending:
-        ACHIEVEMENT_SYNC_STATE = {"status": "done", "done": 0, "total": 0, "errors": []}
-        return
+        if not os.path.isfile(os.path.join(stats_dir, f"UserGameStatsSchema_{aid}.bin")):
+            pending.append(aid)
 
     total = len(pending)
     errors = []
-    ACHIEVEMENT_SYNC_STATE = {"status": "running", "current": pending[0], "done": 0, "total": total, "errors": []}
-
-    for i, appid in enumerate(pending):
-        ACHIEVEMENT_SYNC_STATE["current"] = appid
+    ACHIEVEMENT_SYNC_STATE = {"status": "running", "current": pending[0] if pending else None,
+                              "done": 0, "total": total, "errors": []}
+    for i, aid in enumerate(pending):
+        ACHIEVEMENT_SYNC_STATE["current"] = aid
         ACHIEVEMENT_SYNC_STATE["done"] = i
-
-        await _run_slscheevo(appid)
-
-        state = ACHIEVEMENT_STATE.get(appid, {})
-        if state.get("status") == "error":
-            errors.append({"appid": appid, "error": state.get("error", "Unknown")})
-
+        try:
+            ok, msg = await _fetch_and_write(aid, key, stats_dir, acc)
+            if not ok and msg not in ("no_achievements",):
+                errors.append({"appid": aid, "error": msg})
+        except Exception as exc:
+            errors.append({"appid": aid, "error": str(exc)})
     ACHIEVEMENT_SYNC_STATE = {"status": "done", "done": total, "total": total, "errors": errors}
-    logger.info(f"LumaDeck: Sync all complete. {total} games, {len(errors)} errors")
+    logger.info("LumaDeck: Sync All complete. %d games, %d errors", total, len(errors))
 
 
 def generate_all_achievements(appids: list) -> dict:
-    """Start batch achievement generation. Poll with get_sync_all_status()."""
-    binary = find_slscheevo_binary()
-    if not binary:
-        return {"success": False, "error": "SLScheevo not installed"}
-
-    token = get_slscheevo_login_token_path()
-    if not token:
-        return {"success": False, "error": "SLScheevo login not configured"}
-
+    if not get_api_key():
+        return {"success": False, "error": "Set your Steam Web API key first."}
     if ACHIEVEMENT_SYNC_STATE.get("status") == "running":
         return {"success": False, "error": "Sync already in progress"}
-
     asyncio.create_task(_run_sync_all(appids))
     return {"success": True}
 
 
 def get_sync_all_status() -> dict:
-    """Return current batch sync status."""
     return {"success": True, "state": ACHIEVEMENT_SYNC_STATE.copy()}
-
-
-# ---------------------------------------------------------------------------
-# SLScheevo binary download
-# ---------------------------------------------------------------------------
-
-SLSCHEEVO_RELEASE_API = "https://api.github.com/repos/xamionex/SLScheevo/releases/latest"
-SLSCHEEVO_TEMPLATE_URL = "https://raw.githubusercontent.com/xamionex/SLScheevo/main/data/UserGameStats_TEMPLATE.bin"
-
-
-async def _download_slscheevo_binary() -> None:
-    """Download and extract latest SLScheevo Linux binary from GitHub releases."""
-    global SLSCHEEVO_DOWNLOAD_STATE
-
-    try:
-        from http_client import ensure_http_client
-        client = await ensure_http_client("SLScheevo download")
-
-        SLSCHEEVO_DOWNLOAD_STATE = {
-            "status": "downloading",
-            "progress": "Fetching release info...",
-            "error": None,
-        }
-
-        resp = await client.get(SLSCHEEVO_RELEASE_API, timeout=15)
-        resp.raise_for_status()
-        release = resp.json()
-
-        linux_asset = None
-        for asset in release.get("assets", []):
-            name = asset.get("name", "")
-            if "Linux" in name and name.endswith(".tar.gz"):
-                linux_asset = asset
-                break
-
-        if not linux_asset:
-            SLSCHEEVO_DOWNLOAD_STATE = {"status": "error", "error": "No Linux binary found in latest release"}
-            return
-
-        download_url = linux_asset["browser_download_url"]
-        file_size = linux_asset.get("size", 0)
-
-        SLSCHEEVO_DOWNLOAD_STATE = {
-            "status": "downloading",
-            "progress": "Downloading SLScheevo...",
-            "error": None,
-        }
-
-        dest_dir = get_slscheevo_dir()
-        os.makedirs(dest_dir, exist_ok=True)
-        tmp_archive = os.path.join(dest_dir, "SLScheevo-Linux.tar.gz")
-
-        async with client.stream("GET", download_url, follow_redirects=True, timeout=120) as stream_resp:
-            stream_resp.raise_for_status()
-
-            bytes_read = 0
-            with open(tmp_archive, "wb") as output:
-                async for chunk in stream_resp.aiter_bytes():
-                    if not chunk:
-                        continue
-                    output.write(chunk)
-                    bytes_read += len(chunk)
-
-        SLSCHEEVO_DOWNLOAD_STATE["progress"] = "Extracting..."
-        SLSCHEEVO_DOWNLOAD_STATE["status"] = "extracting"
-
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, _extract_slscheevo_tar, tmp_archive, dest_dir)
-
-        # Download UserGameStats_TEMPLATE.bin (not included in release tar)
-        template_dir = os.path.join(dest_dir, "data")
-        os.makedirs(template_dir, exist_ok=True)
-        template_path = os.path.join(template_dir, "UserGameStats_TEMPLATE.bin")
-        if not os.path.isfile(template_path):
-            SLSCHEEVO_DOWNLOAD_STATE["progress"] = "Downloading template file..."
-            try:
-                tmpl_resp = await client.get(SLSCHEEVO_TEMPLATE_URL, follow_redirects=True, timeout=15)
-                tmpl_resp.raise_for_status()
-                tmpl_data2: bytes = tmpl_resp.content  # type: ignore[attr-defined]
-                with open(template_path, "wb") as f:
-                    f.write(tmpl_data2)
-                logger.info(f"LumaDeck: Downloaded UserGameStats_TEMPLATE.bin ({len(tmpl_data2)} bytes)")
-            except Exception as tmpl_exc:
-                logger.warning(f"LumaDeck: Failed to download template: {tmpl_exc}")
-
-        binary_path = os.path.join(dest_dir, "SLScheevo")
-        if not os.path.isfile(binary_path):
-            binary_path = os.path.join(dest_dir, "SLScheevo-Linux")
-        if os.path.isfile(binary_path):
-            os.chmod(binary_path, 0o755)
-
-        # Decky runs as root — make the directory writable by deck user
-        # so they can run SLScheevo in terminal and save login token
-        try:
-            import subprocess
-            subprocess.run(
-                ["chown", "-R", "deck:deck", dest_dir],
-                timeout=10, capture_output=True,
-            )
-        except Exception as chown_exc:
-            logger.warning(f"LumaDeck: chown failed for SLScheevo dir: {chown_exc}")
-
-        try:
-            os.remove(tmp_archive)
-        except Exception:
-            pass
-
-        SLSCHEEVO_DOWNLOAD_STATE = {"status": "done", "progress": "SLScheevo installed!", "error": None}
-        logger.info(f"LumaDeck: SLScheevo installed to {dest_dir}")
-
-    except Exception as exc:
-        logger.error(f"LumaDeck: SLScheevo download failed: {exc}")
-        SLSCHEEVO_DOWNLOAD_STATE = {"status": "error", "error": str(exc)}
-
-
-def _extract_slscheevo_tar(archive_path: str, dest_dir: str) -> None:
-    """Extract SLScheevo tar.gz safely."""
-    real_dest = os.path.realpath(dest_dir)
-    with tarfile.open(archive_path, "r:gz") as tar:
-        for member in tar.getmembers():
-            member_path = os.path.realpath(os.path.join(dest_dir, member.name))
-            if not member_path.startswith(real_dest + os.sep) and member_path != real_dest:
-                raise RuntimeError(f"Tar path traversal blocked: {member.name}")
-        tar.extractall(dest_dir)
-
-
-def download_slscheevo() -> dict:
-    """Start downloading SLScheevo binary. Poll get_slscheevo_download_status()."""
-    if SLSCHEEVO_DOWNLOAD_STATE.get("status") in ("downloading", "extracting"):
-        return {"success": False, "error": "Download already in progress"}
-    asyncio.create_task(_download_slscheevo_binary())
-    return {"success": True}
-
-
-def get_slscheevo_download_status() -> dict:
-    """Return current SLScheevo binary download status."""
-    return {"success": True, "state": SLSCHEEVO_DOWNLOAD_STATE.copy()}

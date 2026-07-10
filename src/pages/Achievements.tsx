@@ -4,16 +4,15 @@ import {
   PanelSectionRow,
   ButtonItem,
   Field,
+  TextField,
   ProgressBarWithInfo,
 } from "@decky/ui";
 import { toaster } from "@decky/api";
 import {
   getInstalledLuaScripts,
-  checkSlscheevoInstalled,
+  getApiKeyStatus,
+  setSteamApiKey,
   checkAllAchievementsStatus,
-  downloadSlscheevo,
-  getSlscheevoDownloadStatus,
-  runDesktopHandoffSlscheevo,
   generateAllAchievements,
   getSyncAllStatus,
   restartSteam,
@@ -22,42 +21,24 @@ import { useT } from "../i18n";
 import { FaCheckCircle, FaExclamationTriangle } from "react-icons/fa";
 
 // Full-screen global Achievements page (route ROUTE_ACHIEVEMENTS). Everything
-// GLOBAL to SLScheevo lives here — installing the binary, the one-time login,
-// and "Sync All". Per-game generation stays on the game page (GameDetail).
-// No SidebarNavigation: it's a single concern, so a plain scroll page (same
-// wrapper as Downloads/Library) reads cleaner than a one-item sidebar.
+// GLOBAL lives here — the Steam Web API key and "Sync All". Per-game generation
+// stays on the game page (GameDetail). No SidebarNavigation: single concern.
 export function Achievements() {
   const t = useT();
-  const [slscheevo, setSlscheevo] = useState<{
-    installed: boolean;
-    loginReady: boolean;
-    binaryPath?: string | null;
-  }>({ installed: false, loginReady: false, binaryPath: null });
+  const [keySet, setKeySet] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
   const [overview, setOverview] = useState<{ done: number; total: number } | null>(null);
-  const [downloadBusy, setDownloadBusy] = useState(false);
   const [syncState, setSyncState] = useState<any>(null);
 
-  const dlPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const dlTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || "", duration });
 
-  // Appids of games with a Lua and downloaded files — the sync set. Also used
-  // for the "X of Y generated" overview.
   const loadState = async () => {
-    const [sls, lua] = await Promise.all([
-      checkSlscheevoInstalled(),
-      getInstalledLuaScripts(),
-    ]);
-    if (sls?.success) {
-      setSlscheevo({
-        installed: !!sls.installed,
-        loginReady: !!sls.loginReady,
-        binaryPath: sls.binaryPath,
-      });
-    }
+    const [ks, lua] = await Promise.all([getApiKeyStatus(), getInstalledLuaScripts()]);
+    if (ks?.success) setKeySet(!!ks.keySet);
     const appids: number[] =
       lua?.success && lua.scripts
         ? lua.scripts.filter((s: any) => s.hasGameFiles).map((s: any) => s.appid)
@@ -80,50 +61,21 @@ export function Achievements() {
   useEffect(() => {
     loadState();
     return () => {
-      if (dlPollRef.current) clearInterval(dlPollRef.current);
-      if (dlTimeoutRef.current) clearTimeout(dlTimeoutRef.current);
       if (syncPollRef.current) clearInterval(syncPollRef.current);
     };
   }, []);
 
-  const handleDownload = async () => {
-    setDownloadBusy(true);
-    const result = await downloadSlscheevo();
-    if (!result.success) {
-      setDownloadBusy(false);
-      toast(t("toastError"), result.error || "", 4000);
-      return;
+  const handleSaveKey = async () => {
+    setSavingKey(true);
+    const r = await setSteamApiKey(keyInput.trim());
+    setSavingKey(false);
+    if (r?.success) {
+      setKeyInput("");
+      await loadState();
+      toast(t("apiKeySaved"));
+    } else {
+      toast(t("toastError"), r?.error || "", 5000);
     }
-    dlPollRef.current = setInterval(async () => {
-      const status = await getSlscheevoDownloadStatus();
-      if (status?.success && status.state) {
-        if (status.state.status === "done") {
-          if (dlPollRef.current) clearInterval(dlPollRef.current);
-          if (dlTimeoutRef.current) clearTimeout(dlTimeoutRef.current);
-          setDownloadBusy(false);
-          await loadState();
-          toast(t("toastSlscheevoInstalled"));
-        } else if (status.state.status === "error") {
-          if (dlPollRef.current) clearInterval(dlPollRef.current);
-          if (dlTimeoutRef.current) clearTimeout(dlTimeoutRef.current);
-          setDownloadBusy(false);
-          toast(t("toastSlscheevoDownloadFailed"), status.state.error || "", 5000);
-        }
-      }
-    }, 1000);
-    dlTimeoutRef.current = setTimeout(() => {
-      if (dlPollRef.current) clearInterval(dlPollRef.current);
-      setDownloadBusy(false);
-    }, 120000);
-  };
-
-  const handleConfigureLogin = async () => {
-    // SLScheevo's login is an interactive terminal flow — Desktop only. Arm a
-    // hand-off that opens Konsole already running it, then switch to Desktop.
-    const r: any = await runDesktopHandoffSlscheevo();
-    if (r?.switchLaunched) toast(t("achievements"), t("slscheevoConfigSwitching"), 8000);
-    else if (r?.armed) toast(t("achievements"), t("slscheevoConfigManual"), 12000);
-    else toast(t("toastError"), r?.error || "", 6000);
   };
 
   const handleSyncAll = async () => {
@@ -157,15 +109,8 @@ export function Achievements() {
     }, 2000);
   };
 
-  const scheevoDir = slscheevo.binaryPath
-    ? slscheevo.binaryPath.substring(0, slscheevo.binaryPath.lastIndexOf("/"))
-    : "";
-  const scheevoBin = slscheevo.binaryPath
-    ? slscheevo.binaryPath.substring(slscheevo.binaryPath.lastIndexOf("/") + 1)
-    : "";
   const syncing = syncState?.status === "running";
 
-  // Plain full-screen page (same wrapper as Downloads/Library): no sidebar.
   return (
     <div style={{ marginTop: "72px", height: "calc(100% - 72px)", overflowY: "scroll" }}>
       <PanelSection title={t("achievements")}>
@@ -175,65 +120,52 @@ export function Achievements() {
       </PanelSection>
 
       <PanelSection title={t("achievementsSetup")}>
-        {/* Status: binary + login */}
         <PanelSectionRow>
-          <Field focusable highlightOnFocus={false} label="SLScheevo">
-            <span style={{ color: slscheevo.installed ? "#00cc00" : "#ff4444" }}>
-              {slscheevo.installed ? t("installed") : t("notFound")}
+          <Field focusable highlightOnFocus={false} label={t("apiKeyLabel")}>
+            <span style={{ color: keySet ? "#00cc00" : "#ffaa00" }}>
+              {keySet ? t("apiKeySet") : t("apiKeyMissing")}
             </span>
           </Field>
         </PanelSectionRow>
-        {slscheevo.installed && (
-          <PanelSectionRow>
-            <Field focusable highlightOnFocus={false} label={t("achievementsLogin")}>
-              <span style={{ color: slscheevo.loginReady ? "#00cc00" : "#ffaa00" }}>
-                {slscheevo.loginReady ? t("slscheevoLoginReady") : t("slscheevoLoginNeeded")}
-              </span>
-            </Field>
-          </PanelSectionRow>
-        )}
 
-        {/* Step 1: install the binary */}
-        {!slscheevo.installed && (
-          <PanelSectionRow>
-            <ButtonItem layout="below" disabled={downloadBusy} onClick={handleDownload}>
-              {downloadBusy ? t("downloadingSlscheevo") : t("downloadSlscheevo")}
-            </ButtonItem>
-          </PanelSectionRow>
-        )}
-
-        {/* Step 2: one-time login (Desktop) */}
-        {slscheevo.installed && !slscheevo.loginReady && (
+        {!keySet && (
           <>
             <PanelSectionRow>
-              <ButtonItem layout="below" onClick={handleConfigureLogin}>
-                {t("configureInDesktop")}
+              <div style={{ fontSize: "12px", opacity: 0.8 }}>
+                {t("apiKeyHelp")}{" "}
+                <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                  steamcommunity.com/dev/apikey
+                </span>
+              </div>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <TextField
+                label={t("apiKeyLabel")}
+                value={keyInput}
+                bIsPassword={true}
+                onChange={(e: any) => setKeyInput(e?.target?.value ?? "")}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                disabled={savingKey || keyInput.trim().length < 32}
+                onClick={handleSaveKey}
+              >
+                {savingKey ? t("saving") : t("saveApiKey")}
               </ButtonItem>
             </PanelSectionRow>
-            {slscheevo.binaryPath && (
-              <PanelSectionRow>
-                <Field
-                  label={t("slscheevoRunInTerminal")}
-                  description={
-                    <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
-                      {t("slscheevoPath", scheevoDir, scheevoBin)}
-                    </span>
-                  }
-                />
-              </PanelSectionRow>
-            )}
           </>
         )}
 
-        {slscheevo.installed && slscheevo.loginReady && (
+        {keySet && (
           <PanelSectionRow>
             <Field icon={<FaCheckCircle color="#00cc00" />} label={t("achievementsReadyAll")} />
           </PanelSectionRow>
         )}
       </PanelSection>
 
-      {/* Sync All + overview — only once setup is done */}
-      {slscheevo.installed && slscheevo.loginReady && (
+      {keySet && (
         <PanelSection title={t("syncAllAchievements")}>
           {overview && (
             <PanelSectionRow>
