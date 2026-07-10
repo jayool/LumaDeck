@@ -35,22 +35,26 @@ ACHIEVEMENT_STATE: Dict[int, Dict[str, Any]] = {}
 
 SLSCHEEVO_DOWNLOAD_STATE: Dict[str, Any] = {"status": "idle"}
 
+# Exit codes as defined by SLScheevo itself (SLScheevo.py: EXIT_* constants).
+# The previous map here was invented and mislabelled every code (e.g. it called
+# 2 "Invalid arguments" when 2 is LOGIN_FAILED), so error toasts lied. Keep this
+# in sync with xamionex/SLScheevo.
 _EXIT_CODES = {
     0: "Success",
     1: "General error",
-    2: "Invalid arguments",
-    3: "Login failed",
-    4: "Steam Guard required",
-    5: "Rate limited",
-    6: "App not found",
-    7: "No achievements for this app",
-    8: "Network error",
-    9: "File write error",
-    10: "Token expired",
-    11: "Account locked",
-    12: "Invalid app ID",
-    13: "Service unavailable",
-    14: "Unknown error",
+    2: "Login failed (token couldn't be used — try re-running the login setup)",
+    3: "No account ID",
+    4: "No app IDs provided",
+    5: "Interactive input required (run the login setup in Desktop first)",
+    6: "No achievement schema found for this app",
+    7: "File error (couldn't write the stats files)",
+    8: "Steam not found",
+    9: "Token error",
+    10: "Nothing to do",
+    11: "Not supported",
+    12: "Failed to read machine ID (HWID)",
+    13: "No account specified",
+    14: "Failed to parse ID",
 }
 
 
@@ -168,10 +172,20 @@ async def _run_slscheevo(appid: int) -> None:
         clean_env.pop("LD_LIBRARY_PATH", None)
         clean_env.pop("LD_PRELOAD", None)
         clean_env.pop("STEAM_RUNTIME", None)
-        # Decky runs as root — SLScheevo needs HOME pointing to deck's home
-        # so it can find Steam at ~/.local/share/Steam
+        # HOME must point to deck's home so SLScheevo finds Steam at
+        # ~/.local/share/Steam.
         clean_env["HOME"] = "/home/deck"
+        # SLScheevo encrypts its saved login with a key derived from
+        # getpass.getuser() + /etc/machine-id. getpass.getuser() reads LOGNAME
+        # FIRST, then USER/LNAME/USERNAME. The token was saved from the deck
+        # Desktop session where LOGNAME=deck; if LOGNAME here is unset or stale,
+        # a different key is derived, the token can't be decrypted, and headless
+        # login fails with EXIT_LOGIN_FAILED (2). Pin all four to deck so the key
+        # matches what the interactive login wrote.
         clean_env["USER"] = "deck"
+        clean_env["LOGNAME"] = "deck"
+        clean_env["LNAME"] = "deck"
+        clean_env["USERNAME"] = "deck"
         clean_env["TERM"] = "xterm"
 
         # SLScheevo must run as the deck user so it can decrypt its per-UID
