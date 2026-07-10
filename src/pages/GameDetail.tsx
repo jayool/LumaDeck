@@ -22,7 +22,7 @@ import {
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { ActionButton } from "../components/ActionButton";
-import { ROUTE_SETTINGS, ROUTE_ACHIEVEMENTS } from "../routes";
+import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import {
   startDownload,
   getDownloadStatus,
@@ -851,7 +851,7 @@ export function GameDetail({ appid }: GameDetailProps) {
         {achievementStatus === "not_configured" ? (
           <>
             {/* Global setup (the Steam Web API key) lives on the Achievements
-                page. Show why it's not ready and send the user there. */}
+                tab in Settings. Show why it's not ready and send the user there. */}
             <PanelSectionRow>
               <Field
                 icon={<FaExclamationTriangle color="#ffaa00" />}
@@ -860,7 +860,10 @@ export function GameDetail({ appid }: GameDetailProps) {
             </PanelSectionRow>
             <ActionButton
               label={t("openAchievements")}
-              onClick={() => Navigation.Navigate(ROUTE_ACHIEVEMENTS)}
+              onClick={() => {
+                setPendingSettingsTab(SETTINGS_TAB_ACHIEVEMENTS);
+                Navigation.Navigate(ROUTE_SETTINGS);
+              }}
               variant="primary"
             />
           </>

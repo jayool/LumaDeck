@@ -36,7 +36,7 @@ import {
   ComponentsStatus,
   SystemStatusActions,
 } from "../components/SystemStatus";
-import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, ROUTE_ACHIEVEMENTS } from "../routes";
+import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { setRefreshHandler } from "../refresh";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
@@ -834,7 +834,10 @@ export function GameList() {
         <PanelSectionRow>
           <ButtonItem
             layout="below"
-            onClick={() => Navigation.Navigate(ROUTE_ACHIEVEMENTS)}
+            onClick={() => {
+              setPendingSettingsTab(SETTINGS_TAB_ACHIEVEMENTS);
+              Navigation.Navigate(ROUTE_SETTINGS);
+            }}
           >
             {t("achievements")}
           </ButtonItem>

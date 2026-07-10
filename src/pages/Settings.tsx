@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   PanelSection,
   PanelSectionRow,
@@ -10,7 +10,7 @@ import {
   Navigation,
   SidebarNavigation,
 } from "@decky/ui";
-import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle, FaCheckCircle, FaExclamationTriangle } from "react-icons/fa";
+import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle, FaCheckCircle, FaExclamationTriangle, FaTrophy } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { HelpContent } from "./Help";
 import {
@@ -44,6 +44,19 @@ import {
   removeFakeAppId,
 } from "../api";
 import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall } from "../api";
+import {
+  getInstalledLuaScripts,
+  getApiKeyStatus,
+  setSteamApiKey,
+  checkAllAchievementsStatus,
+  generateAllAchievements,
+  getSyncAllStatus,
+} from "../api";
+import {
+  SETTINGS_TAB_CREDENTIALS,
+  SETTINGS_TAB_ACHIEVEMENTS,
+  takePendingSettingsTab,
+} from "../routes";
 import { useT, getLanguage, setLanguage } from "../i18n";
 import { primarySystemAction, ComponentsStatus } from "../components/SystemStatus";
 
@@ -104,6 +117,22 @@ export function Settings() {
   } | null>(null);
   const [updatingPlugin, setUpdatingPlugin] = useState(false);
   const [pluginMsg, setPluginMsg] = useState<string | null>(null);
+
+  // Achievements tab (Steam Web API key + Sync All). Moved here from the old
+  // full-screen page — the "global setup" is now just a credential.
+  const [keySet, setKeySet] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+  const [achOverview, setAchOverview] = useState<{ done: number; total: number } | null>(null);
+  const [syncState, setSyncState] = useState<any>(null);
+  const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Controlled sidebar tab so callers can deep-link (e.g. the QAM "Achievements"
+  // button, or GameDetail's "set up achievements first"). Initial value is the
+  // pending tab stashed before navigation, else the first (credentials) tab.
+  const [tab, setTab] = useState<string>(
+    () => takePendingSettingsTab() ?? SETTINGS_TAB_CREDENTIALS,
+  );
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || "", duration });
@@ -261,6 +290,82 @@ export function Settings() {
     const credResult = await getCredentialStatus();
     if (credResult.success) setCred(credResult);
   };
+
+  // ── Achievements tab state ────────────────────────────────────────────────
+  const loadAchState = async () => {
+    const [ks, lua] = await Promise.all([getApiKeyStatus(), getInstalledLuaScripts()]);
+    if (ks?.success) setKeySet(!!ks.keySet);
+    const appids: number[] =
+      lua?.success && lua.scripts
+        ? lua.scripts.filter((s: any) => s.hasGameFiles).map((s: any) => s.appid)
+        : [];
+    if (appids.length > 0) {
+      try {
+        const ach = await checkAllAchievementsStatus(appids);
+        if (ach?.success && ach.map) {
+          const done = appids.filter((id) => ach.map[id]).length;
+          setAchOverview({ done, total: appids.length });
+        }
+      } catch {
+        setAchOverview(null);
+      }
+    } else {
+      setAchOverview({ done: 0, total: 0 });
+    }
+  };
+
+  useEffect(() => {
+    loadAchState();
+    return () => {
+      if (syncPollRef.current) clearInterval(syncPollRef.current);
+    };
+  }, []);
+
+  const handleSaveKey = async () => {
+    setSavingKey(true);
+    const r = await setSteamApiKey(keyInput.trim());
+    setSavingKey(false);
+    if (r?.success) {
+      setKeyInput("");
+      await loadAchState();
+      toast(t("apiKeySaved"));
+    } else {
+      toast(t("toastError"), r?.error || "", 5000);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    const lua = await getInstalledLuaScripts();
+    const appids: number[] =
+      lua?.success && lua.scripts
+        ? lua.scripts.filter((s: any) => s.hasGameFiles).map((s: any) => s.appid)
+        : [];
+    if (appids.length === 0) return;
+
+    const result = await generateAllAchievements(appids);
+    if (!result.success) {
+      toast(t("toastSyncFailed"), result.error || "");
+      return;
+    }
+    setSyncState({ status: "running", done: 0, total: appids.length });
+    syncPollRef.current = setInterval(async () => {
+      try {
+        const status = await getSyncAllStatus();
+        if (status?.success && status.state) {
+          setSyncState(status.state);
+          if (status.state.status === "done") {
+            if (syncPollRef.current) clearInterval(syncPollRef.current);
+            syncPollRef.current = null;
+            toast(t("toastSyncComplete"));
+            await loadAchState();
+            setTimeout(() => setSyncState(null), 3000);
+          }
+        }
+      } catch {}
+    }, 2000);
+  };
+
+  const syncing = syncState?.status === "running";
 
   // Humanise days-left: whole days normally, hours when under a day (matters
   // for the short-lived Ryuu cookie). fmtDate → short "Jun 25" style label.
@@ -549,6 +654,8 @@ export function Settings() {
   const pages = [
     {
       title: t("apiCredentials"),
+      identifier: SETTINGS_TAB_CREDENTIALS,
+      route: SETTINGS_TAB_CREDENTIALS,
       icon: <FaKey />,
       hideTitle: true,
       content: (
@@ -620,7 +727,109 @@ export function Settings() {
       ),
     },
     {
+      title: t("achievements"),
+      identifier: SETTINGS_TAB_ACHIEVEMENTS,
+      route: SETTINGS_TAB_ACHIEVEMENTS,
+      icon: <FaTrophy />,
+      hideTitle: true,
+      content: (
+        <>
+      <PanelSection title={t("achievements")}>
+        <PanelSectionRow>
+          <div style={{ fontSize: "12px", opacity: 0.8 }}>{t("achievementsPageIntro")}</div>
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title={t("achievementsSetup")}>
+        <PanelSectionRow>
+          <Field focusable highlightOnFocus={false} label={t("apiKeyLabel")}>
+            <span style={{ color: keySet ? "#00cc00" : "#ffaa00" }}>
+              {keySet ? t("apiKeySet") : t("apiKeyMissing")}
+            </span>
+          </Field>
+        </PanelSectionRow>
+
+        {!keySet && (
+          <>
+            <PanelSectionRow>
+              <div style={{ fontSize: "12px", opacity: 0.8 }}>
+                {t("apiKeyHelp")}{" "}
+                <span style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                  steamcommunity.com/dev/apikey
+                </span>
+              </div>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <TextField
+                label={t("apiKeyLabel")}
+                value={keyInput}
+                bIsPassword={true}
+                onChange={(e: any) => setKeyInput(e?.target?.value ?? "")}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                disabled={savingKey || keyInput.trim().length < 32}
+                onClick={handleSaveKey}
+              >
+                {savingKey ? t("saving") : t("saveApiKey")}
+              </ButtonItem>
+            </PanelSectionRow>
+          </>
+        )}
+
+        {keySet && (
+          <PanelSectionRow>
+            <Field icon={<FaCheckCircle color="#00cc00" />} label={t("achievementsReadyAll")} />
+          </PanelSectionRow>
+        )}
+      </PanelSection>
+
+      {keySet && (
+        <PanelSection title={t("syncAllAchievements")}>
+          {achOverview && (
+            <PanelSectionRow>
+              <Field label={t("achievementsOverview", achOverview.done, achOverview.total)} />
+            </PanelSectionRow>
+          )}
+          <PanelSectionRow>
+            <ButtonItem layout="below" disabled={syncing} onClick={handleSyncAll}>
+              {syncing ? t("syncingAchievements") : t("syncAllAchievements")}
+            </ButtonItem>
+          </PanelSectionRow>
+          {syncing && (
+            <PanelSectionRow>
+              <ProgressBarWithInfo
+                nProgress={
+                  syncState.total > 0
+                    ? Math.round((syncState.done / syncState.total) * 100)
+                    : 0
+                }
+                sOperationText={`${syncState.done || 0} / ${syncState.total || 0}`}
+              />
+            </PanelSectionRow>
+          )}
+          <PanelSectionRow>
+            <Field
+              icon={<FaExclamationTriangle color="#c8a84b" />}
+              label={t("achievementsRestartHint")}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => restartSteam()}>
+              {t("restartSteam")}
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
+      )}
+        </>
+      ),
+    },
+    {
       title: t("slssteam"),
+      identifier: "slssteam",
+      route: "slssteam",
       icon: <FaShieldAlt />,
       hideTitle: true,
       content: (
@@ -687,6 +896,8 @@ export function Settings() {
     },
     {
       title: t("dependencies"),
+      identifier: "dependencies",
+      route: "dependencies",
       icon: <FaDownload />,
       hideTitle: true,
       content: (
@@ -780,6 +991,8 @@ export function Settings() {
     },
     {
       title: t("settingsSystem"),
+      identifier: "system",
+      route: "system",
       icon: <FaCog />,
       hideTitle: true,
       content: (
@@ -840,6 +1053,8 @@ export function Settings() {
     },
     {
       title: t("about"),
+      identifier: "about",
+      route: "about",
       icon: <FaInfoCircle />,
       hideTitle: true,
       content: (
@@ -888,11 +1103,21 @@ export function Settings() {
     },
     {
       title: t("help"),
+      identifier: "help",
+      route: "help",
       icon: <FaQuestionCircle />,
       hideTitle: true,
       content: <HelpContent />,
     },
   ];
 
-  return <SidebarNavigation title="LumaDeck" pages={pages} />;
+  return (
+    <SidebarNavigation
+      title="LumaDeck"
+      pages={pages}
+      page={tab}
+      onPageRequested={setTab}
+      disableRouteReporting={true}
+    />
+  );
 }
