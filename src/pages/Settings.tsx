@@ -367,6 +367,14 @@ export function Settings() {
 
   const syncing = syncState?.status === "running";
 
+  const handleOpenSteamApiKey = () => {
+    // Same pattern as Hubcap: open the official key page in Game Mode's built-in
+    // Steam browser so the user can log in and register a key without dropping to
+    // the desktop, then copy it into the field above. (No scraping — the page is
+    // opened as-is; registering a new key needs the Steam mobile confirmation.)
+    Navigation.NavigateToExternalWeb("https://steamcommunity.com/dev/apikey");
+  };
+
   // Humanise days-left: whole days normally, hours when under a day (matters
   // for the short-lived Ryuu cookie). fmtDate → short "Jun 25" style label.
   const fmtLeft = (d: number) =>
@@ -774,6 +782,15 @@ export function Settings() {
                 onClick={handleSaveKey}
               >
                 {savingKey ? t("saving") : t("saveApiKey")}
+              </ButtonItem>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                onClick={handleOpenSteamApiKey}
+                description={t("getSteamApiKeyDesc")}
+              >
+                {t("getSteamApiKey")}
               </ButtonItem>
             </PanelSectionRow>
           </>
