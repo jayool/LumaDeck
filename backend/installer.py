@@ -45,13 +45,13 @@ LL_INSTALL_STATE = {
     "error": None,
 }
 
-# Combined state for the "Quick Install" flow, which chains the three
-# installers below in dependency order.
+# Combined state for the "Quick Install" flow, which chains the two installers
+# below in dependency order (dependencies [= SLSsteam + CloudRedirect] → lumalinux).
 QUICK_INSTALL_STATE = {
     "status": "idle",
     "step": None,
     "stepIndex": 0,
-    "totalSteps": 3,
+    "totalSteps": 2,
     "progress": "",
     "error": None,
 }
@@ -376,6 +376,19 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                 sm_ok, sm_msg = _set_safemode_yes(get_slssteam_config_path())
                 logger.info("LumaDeck: SafeMode repair: ok=%s (%s)", sm_ok, sm_msg)
 
+                # Headcrab forces PlayNotOwnedGames: yes (its whole purpose is
+                # playing non-owned games globally). LumaDeck's model is targeted:
+                # every added game gets an AdditionalApps entry (steamidra_lite),
+                # so the global "own everything" flag is redundant AND broader
+                # than intended — it would make ANY non-owned appid look owned,
+                # not just the ones the user added. Flip it back to no after
+                # headcrab, same post-headcrab pattern as SafeMode/DisableCloud,
+                # and verify it stuck.
+                pno_ok, pno_msg = _set_playnotowned_no(get_slssteam_config_path())
+                logger.info("LumaDeck: PlayNotOwnedGames->no: ok=%s (%s)", pno_ok, pno_msg)
+                if not pno_ok:
+                    logger.warning("LumaDeck: PlayNotOwnedGames not confirmed at no (%s)", pno_msg)
+
                 # CloudRedirect rides the same headcrab run (DisableCloud: no was
                 # set above). A transient wget/steam.sh drop can leave it missing,
                 # so verify both post-conditions (cloud_redirect.so on disk AND
@@ -643,6 +656,52 @@ def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
         return True, "SafeMode already set to yes"
 
     return False, "SafeMode line missing from SLSsteam config — reinstall dependencies"
+
+
+def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:
+    """Flip `PlayNotOwnedGames: yes` -> `PlayNotOwnedGames: no` in config.yaml.
+
+    Headcrab forces PlayNotOwnedGames: yes (`sed -i .../PlayNotOwnedGames: yes/`
+    in headcrab.sh), which makes SLSsteam treat ANY non-owned appid as owned.
+    LumaDeck instead injects each added game into AdditionalApps (via
+    steamidra_lite), so ownership is already targeted per-game — the global flag
+    is redundant and broader than intended. We flip it back to no after headcrab,
+    exactly like SafeMode/DisableCloud, so only the games the user actually added
+    are treated as owned.
+
+    Returns (ok, message). ok=False only when the config is missing or has no
+    PlayNotOwnedGames line.
+    """
+    if not os.path.isfile(config_path):
+        return False, f"SLSsteam config not found at {config_path} — install dependencies first"
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as exc:
+        return False, f"Cannot read SLSsteam config: {exc}"
+
+    new_content, n = re.subn(
+        r"^(\s*PlayNotOwnedGames\s*:\s*)yes\s*$",
+        r"\1no",
+        content,
+        flags=re.MULTILINE,
+    )
+
+    if n > 0:
+        try:
+            tmp = config_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            os.replace(tmp, config_path)
+            return True, "PlayNotOwnedGames flipped to no"
+        except Exception as exc:
+            return False, f"Cannot write SLSsteam config: {exc}"
+
+    if re.search(r"^\s*PlayNotOwnedGames\s*:\s*no\s*$", content, flags=re.MULTILINE):
+        return True, "PlayNotOwnedGames already set to no"
+
+    return False, "PlayNotOwnedGames line missing from SLSsteam config — reinstall dependencies"
 
 
 async def install_lumalinux(gamemode: bool = True) -> dict:

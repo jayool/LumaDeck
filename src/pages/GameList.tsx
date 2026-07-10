@@ -502,7 +502,7 @@ export function GameList() {
       try {
         const s = await getQuickInstallStatus();
         const step = s.step
-          ? `[${(s.stepIndex ?? 0) + 1}/${s.totalSteps ?? 3}] ${s.step} — `
+          ? `[${(s.stepIndex ?? 0) + 1}/${s.totalSteps ?? 2}] ${s.step} — `
           : "";
         if (s.progress) setQuickProgress(`${step}${s.progress}`);
       } catch { }
@@ -538,6 +538,12 @@ export function GameList() {
     return (cs.components || []).every((c) => !c.installed);
   })();
 
+  // Off-pin = Steam newer than the headcrab pin → Quick Install routes to
+  // Desktop (see handleQuickInstall). Mirror its exact test so the confirm text
+  // matches what will actually happen (Desktop hand-off, not an in-place Steam
+  // restart).
+  const quickInstallOffPin = compStatus?.headcrab?.compatible !== true;
+
   // Credential warnings shown ONLY when a game is staged for download (the
   // game-info section is filled). Expired/missing credentials would block the
   // download, so they're worth a heads-up here — but nagging about them on
@@ -572,7 +578,11 @@ export function GameList() {
               disabled={quickInstalling}
               description={
                 confirmQuickInstall ? (
-                  <div style={{ textAlign: "center" }}>{t("quickInstallConfirmDesc")}</div>
+                  <div style={{ textAlign: "center" }}>
+                    {quickInstallOffPin
+                      ? t("quickInstallConfirmDesktopDesc")
+                      : t("quickInstallConfirmDesc")}
+                  </div>
                 ) : (
                   t("quickInstallDesc")
                 )
@@ -581,7 +591,9 @@ export function GameList() {
               {quickInstalling
                 ? t("quickInstalling")
                 : confirmQuickInstall
-                  ? t("quickInstallConfirm")
+                  ? quickInstallOffPin
+                    ? t("quickInstallConfirmDesktop")
+                    : t("quickInstallConfirm")
                   : t("quickInstall")}
             </ButtonItem>
           </PanelSectionRow>
