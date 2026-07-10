@@ -174,10 +174,20 @@ async def _run_slscheevo(appid: int) -> None:
         clean_env["USER"] = "deck"
         clean_env["TERM"] = "xterm"
 
-        # Run as deck user so SLScheevo can decrypt login tokens
-        # (tokens are encrypted per-UID; Decky runs as root but tokens were saved as deck)
-        cmd = ["runuser", "-u", "deck", "--", binary, "--appid", str(appid), "--silent"]
-        logger.info(f"LumaDeck: Running SLScheevo: {' '.join(cmd)}")
+        # SLScheevo must run as the deck user so it can decrypt its per-UID
+        # login token (saved as deck). How we get there depends on which user
+        # Decky runs this backend as:
+        #   - root: drop to deck via runuser (root can, and this is the same
+        #     invocation the Steam-restart path uses successfully).
+        #   - non-root (Decky running unprivileged as deck): we're ALREADY the
+        #     right user, so run the binary directly. runuser here fails outright
+        #     ("runuser may not be used by non-root users") — the error users hit
+        #     on the Generate button — and is pointless when we're already deck.
+        if os.geteuid() == 0:
+            cmd = ["runuser", "-u", "deck", "--", binary, "--appid", str(appid), "--silent"]
+        else:
+            cmd = [binary, "--appid", str(appid), "--silent"]
+        logger.info(f"LumaDeck: Running SLScheevo (euid={os.geteuid()}): {' '.join(cmd)}")
 
         ACHIEVEMENT_STATE[appid] = {
             "status": "running",

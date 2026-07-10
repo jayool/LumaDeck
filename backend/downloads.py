@@ -1014,8 +1014,17 @@ async def _restart_steam_delayed(delay: int = 5) -> None:
         import subprocess
         from subprocess_env import clean_env
         logger.info("LumaDeck: Restarting Steam (steam -shutdown as deck)...")
+        # As root, drop to deck via runuser (Steam's IPC is per-user). If Decky
+        # runs this backend unprivileged (as deck) instead, runuser fails
+        # ("may not be used by non-root users") — we're already deck, so call
+        # steam directly. Either way the process runs as deck with deck's runtime
+        # dir, which is what `steam -shutdown` needs to reach the live client.
+        if os.geteuid() == 0:
+            cmd = ["runuser", "-u", "deck", "--", "/usr/bin/steam", "-shutdown"]
+        else:
+            cmd = ["/usr/bin/steam", "-shutdown"]
         subprocess.Popen(
-            ["runuser", "-u", "deck", "--", "/usr/bin/steam", "-shutdown"],
+            cmd,
             env=clean_env(HOME="/home/deck", XDG_RUNTIME_DIR="/run/user/1000"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
