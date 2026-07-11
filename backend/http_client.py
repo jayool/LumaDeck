@@ -11,10 +11,24 @@ import json
 import os
 import ssl
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, AsyncIterator, Dict, Optional
 
 from config import HTTP_TIMEOUT_SECONDS, USER_AGENT
+
+
+def _apply_params(url: str, params: Dict[str, Any] | None) -> str:
+    """Merge a params dict into a URL's query string (httpx-parity). The native
+    client used to silently drop `params`, so a caller relying on it (e.g. the
+    Steam Web API schema fetch) sent an argument-less request and got HTTP 400.
+    Merges with any query string already on the URL rather than replacing it."""
+    if not params:
+        return url
+    parts = urllib.parse.urlparse(url)
+    q = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    q += [(k, str(v)) for k, v in params.items()]
+    return urllib.parse.urlunparse(parts._replace(query=urllib.parse.urlencode(q)))
 
 try:
     import decky  # type: ignore
@@ -221,9 +235,11 @@ class NativeAsyncClient:
     async def get(
         self, url: str, *, timeout: float | None = None,
         follow_redirects: bool = True, headers: Dict[str, str] | None = None,
+        params: Dict[str, Any] | None = None,
         **_: Any,
     ) -> NativeResponse:
         t = timeout if timeout is not None else self._timeout
+        url = _apply_params(url, params)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, self._sync_request, "GET", url, t, follow_redirects, headers or {},
@@ -233,9 +249,11 @@ class NativeAsyncClient:
 
     async def head(
         self, url: str, *, timeout: float | None = None,
-        follow_redirects: bool = True, **_: Any,
+        follow_redirects: bool = True, params: Dict[str, Any] | None = None,
+        **_: Any,
     ) -> NativeResponse:
         t = timeout if timeout is not None else self._timeout
+        url = _apply_params(url, params)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, self._sync_request, "HEAD", url, t, follow_redirects, {},
@@ -246,9 +264,11 @@ class NativeAsyncClient:
     def stream(
         self, method: str, url: str, *,
         follow_redirects: bool = True, timeout: float | None = None,
-        headers: Dict[str, str] | None = None, **_: Any,
+        headers: Dict[str, str] | None = None, params: Dict[str, Any] | None = None,
+        **_: Any,
     ) -> _StreamContext:
         t = timeout if timeout is not None else self._timeout
+        url = _apply_params(url, params)
         return _StreamContext(url, headers or {}, t, self._ssl_ctx)
 
     # -- CLOSE --------------------------------------------------------------
