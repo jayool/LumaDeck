@@ -1003,6 +1003,18 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
         except Exception as e:
             logger.warning(f"LumaDeck: lumalinux/config.vdf cleanup error: {e}")
 
+        # 6. Remove achievement files. The schema (LumaDeck-written definitions)
+        # always goes; the unlocked-achievement progress file only on the full
+        # "remove Proton prefix / my data too" path, so a normal uninstall →
+        # reinstall keeps earned achievements.
+        try:
+            from achievements import remove_achievement_files
+            ach_res = remove_achievement_files(appid, remove_progress=remove_compatdata)
+            removed.extend(ach_res.get("removed", []))
+            errors.extend(ach_res.get("errors", []))
+        except Exception as e:
+            logger.warning(f"LumaDeck: achievement cleanup error: {e}")
+
         logger.info(f"LumaDeck: Uninstall {appid} complete. Removed: {removed}")
         return {"success": True, "removed": removed, "errors": errors}
     except Exception as e:  # noqa: E722 (kept for symmetry with original)

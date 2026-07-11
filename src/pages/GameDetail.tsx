@@ -1108,6 +1108,7 @@ export function GameDetail({ appid }: GameDetailProps) {
               t("uninstallItemDepots"),
               t("uninstallItemSteamConfig"),
               t("uninstallItemKeys"),
+              t("uninstallItemAchievements"),
             ].join(" · ")}
           />
         </PanelSectionRow>

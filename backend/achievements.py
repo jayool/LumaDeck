@@ -317,6 +317,50 @@ def get_generate_status(appid: int) -> dict:
     return {"success": True, "state": ACHIEVEMENT_STATE.get(appid, {}).copy()}
 
 
+def remove_achievement_files(appid: int, remove_progress: bool = False) -> dict:
+    """Delete this game's achievement .bin files from Steam's appcache/stats,
+    for the uninstall flow. Returns {removed: [...], errors: [...]}.
+
+    The schema (UserGameStatsSchema_<appid>.bin) is always removed — it's just
+    the LumaDeck-written definitions and is regenerated on reinstall. The
+    per-user UserGameStats_<accountid>_<appid>.bin holds *unlocked* achievement
+    progress (local-only for non-owned games — Steam won't restore it), so it's
+    only removed when remove_progress is set, matching the "remove Proton
+    prefix / my data too" intent of the uninstall toggle."""
+    result = {"removed": [], "errors": []}
+    try:
+        appid = int(appid)
+    except Exception:
+        result["errors"].append("invalid_appid")
+        return result
+    stats_dir = get_steam_appcache_stats_dir()
+    if not stats_dir or not os.path.isdir(stats_dir):
+        return result
+
+    schema = os.path.join(stats_dir, f"UserGameStatsSchema_{appid}.bin")
+    if os.path.isfile(schema):
+        try:
+            os.remove(schema)
+            result["removed"].append("achievement_schema")
+        except Exception as exc:
+            result["errors"].append(f"schema: {exc}")
+
+    if remove_progress:
+        # UserGameStats_<accountid>_<appid>.bin. Match by the "_<appid>.bin"
+        # suffix (the leading underscore anchors the appid so 48 can't match
+        # 1148) and the "UserGameStats_" prefix, which excludes the schema
+        # file ("UserGameStatsSchema_...").
+        suffix = f"_{appid}.bin"
+        for fname in os.listdir(stats_dir):
+            if fname.startswith("UserGameStats_") and fname.endswith(suffix):
+                try:
+                    os.remove(os.path.join(stats_dir, fname))
+                    result["removed"].append("achievement_progress")
+                except Exception as exc:
+                    result["errors"].append(f"progress: {exc}")
+    return result
+
+
 async def auto_generate_on_install(appid: int) -> dict:
     """Best-effort schema generation for the install flow. Only does anything
     when a Steam Web API key is configured; otherwise it's a silent no-op so
