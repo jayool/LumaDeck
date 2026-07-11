@@ -52,11 +52,6 @@ import {
   generateAllAchievements,
   getSyncAllStatus,
 } from "../api";
-import {
-  SETTINGS_TAB_CREDENTIALS,
-  SETTINGS_TAB_ACHIEVEMENTS,
-  takePendingSettingsTab,
-} from "../routes";
 import { useT, getLanguage, setLanguage } from "../i18n";
 import { primarySystemAction, ComponentsStatus } from "../components/SystemStatus";
 
@@ -126,13 +121,6 @@ export function Settings() {
   const [achOverview, setAchOverview] = useState<{ done: number; total: number } | null>(null);
   const [syncState, setSyncState] = useState<any>(null);
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Controlled sidebar tab so callers can deep-link (e.g. the QAM "Achievements"
-  // button, or GameDetail's "set up achievements first"). Initial value is the
-  // pending tab stashed before navigation, else the first (credentials) tab.
-  const [tab, setTab] = useState<string>(
-    () => takePendingSettingsTab() ?? SETTINGS_TAB_CREDENTIALS,
-  );
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || "", duration });
@@ -662,8 +650,6 @@ export function Settings() {
   const pages = [
     {
       title: t("apiCredentials"),
-      identifier: SETTINGS_TAB_CREDENTIALS,
-      route: SETTINGS_TAB_CREDENTIALS,
       icon: <FaKey />,
       hideTitle: true,
       content: (
@@ -736,8 +722,6 @@ export function Settings() {
     },
     {
       title: t("achievements"),
-      identifier: SETTINGS_TAB_ACHIEVEMENTS,
-      route: SETTINGS_TAB_ACHIEVEMENTS,
       icon: <FaTrophy />,
       hideTitle: true,
       content: (
@@ -845,8 +829,6 @@ export function Settings() {
     },
     {
       title: t("slssteam"),
-      identifier: "slssteam",
-      route: "slssteam",
       icon: <FaShieldAlt />,
       hideTitle: true,
       content: (
@@ -913,8 +895,6 @@ export function Settings() {
     },
     {
       title: t("dependencies"),
-      identifier: "dependencies",
-      route: "dependencies",
       icon: <FaDownload />,
       hideTitle: true,
       content: (
@@ -1008,8 +988,6 @@ export function Settings() {
     },
     {
       title: t("settingsSystem"),
-      identifier: "system",
-      route: "system",
       icon: <FaCog />,
       hideTitle: true,
       content: (
@@ -1070,8 +1048,6 @@ export function Settings() {
     },
     {
       title: t("about"),
-      identifier: "about",
-      route: "about",
       icon: <FaInfoCircle />,
       hideTitle: true,
       content: (
@@ -1120,21 +1096,11 @@ export function Settings() {
     },
     {
       title: t("help"),
-      identifier: "help",
-      route: "help",
       icon: <FaQuestionCircle />,
       hideTitle: true,
       content: <HelpContent />,
     },
   ];
 
-  return (
-    <SidebarNavigation
-      title="LumaDeck"
-      pages={pages}
-      page={tab}
-      onPageRequested={setTab}
-      disableRouteReporting={true}
-    />
-  );
+  return <SidebarNavigation title="LumaDeck" pages={pages} />;
 }
