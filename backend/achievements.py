@@ -317,6 +317,31 @@ def get_generate_status(appid: int) -> dict:
     return {"success": True, "state": ACHIEVEMENT_STATE.get(appid, {}).copy()}
 
 
+async def auto_generate_on_install(appid: int) -> dict:
+    """Best-effort schema generation for the install flow. Only does anything
+    when a Steam Web API key is configured; otherwise it's a silent no-op so
+    users who never set up achievements are unaffected. Never raises — the
+    install must not fail because achievement generation did. The on-disk
+    schema file is the source of truth check_achievements_status() reads, so
+    writing it is all that's needed for the UI to show "generated"."""
+    try:
+        appid = int(appid)
+    except Exception:
+        return {"generated": False, "reason": "invalid_appid"}
+    key = get_api_key()
+    if not key:
+        return {"generated": False, "reason": "no_key"}
+    stats_dir = get_steam_appcache_stats_dir()
+    if not stats_dir:
+        return {"generated": False, "reason": "no_steam"}
+    try:
+        ok, msg = await _fetch_and_write(appid, key, stats_dir, _account_id())
+        return {"generated": True} if ok else {"generated": False, "reason": msg}
+    except Exception as exc:
+        logger.warning("LumaDeck: auto achievement generation failed for %s: %s", appid, exc)
+        return {"generated": False, "reason": str(exc)}
+
+
 # ---------------------------------------------------------------------------
 # Batch ("Sync All")
 # ---------------------------------------------------------------------------

@@ -1270,6 +1270,18 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     except Exception as dlc_exc:
                         logger.warning(f"LumaDeck: SLSsteam DLC enrichment failed: {dlc_exc}")
 
+                    # If achievements are set up (Steam Web API key present),
+                    # generate the schema now so it's on disk before the Steam
+                    # restart below — Steam reads it on relaunch. No-op when no
+                    # key is configured; best-effort so it can never fail the
+                    # install (network error, or the game has no achievements).
+                    try:
+                        from achievements import auto_generate_on_install
+                        ach_result = await auto_generate_on_install(appid)
+                        logger.info(f"LumaDeck: achievement auto-gen({appid}): {ach_result}")
+                    except Exception as ach_exc:
+                        logger.warning(f"LumaDeck: achievement auto-gen failed: {ach_exc}")
+
                     # Force Proton if no Linux depot was added during the
                     # enrich pass — Steam wouldn't otherwise launch a Windows
                     # binary on the Deck without explicit compat tool.
