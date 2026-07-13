@@ -383,7 +383,8 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                 # than intended — it would make ANY non-owned appid look owned,
                 # not just the ones the user added. Flip it back to no after
                 # headcrab, same post-headcrab pattern as SafeMode/DisableCloud,
-                # and verify it stuck.
+                # and verify it stuck. (SLSsteam 20260707+ removed the option
+                # entirely, so this is a no-op there; kept for older builds.)
                 pno_ok, pno_msg = _set_playnotowned_no(get_slssteam_config_path())
                 logger.info("LumaDeck: PlayNotOwnedGames->no: ok=%s (%s)", pno_ok, pno_msg)
                 if not pno_ok:
@@ -669,8 +670,15 @@ def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:
     exactly like SafeMode/DisableCloud, so only the games the user actually added
     are treated as owned.
 
-    Returns (ok, message). ok=False only when the config is missing or has no
-    PlayNotOwnedGames line.
+    NOTE: SLSsteam removed the PlayNotOwnedGames option in 20260707 (commit
+    84c3672). On that build and later the key is simply absent and there is
+    nothing to flip, so a missing line is now treated as success (no-op), not an
+    error; otherwise a healthy new-SLSsteam install would report a false
+    "reinstall dependencies". The flip is kept for users still on an older
+    SLSsteam where the option (and Headcrab's forced `yes`) still exist.
+
+    Returns (ok, message). ok=False only on an IO error reading/writing the
+    config; a missing PlayNotOwnedGames line is ok=True (no-op).
     """
     if not os.path.isfile(config_path):
         return False, f"SLSsteam config not found at {config_path} — install dependencies first"
@@ -701,7 +709,7 @@ def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:
     if re.search(r"^\s*PlayNotOwnedGames\s*:\s*no\s*$", content, flags=re.MULTILINE):
         return True, "PlayNotOwnedGames already set to no"
 
-    return False, "PlayNotOwnedGames line missing from SLSsteam config — reinstall dependencies"
+    return True, "PlayNotOwnedGames absent (removed in SLSsteam 20260707+): nothing to flip"
 
 
 async def install_lumalinux(gamemode: bool = True) -> dict:
