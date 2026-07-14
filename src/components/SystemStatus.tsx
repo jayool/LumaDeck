@@ -170,9 +170,11 @@ function buildRows(
   }
 
   // ---- CloudRedirect sign-in (optional, Desktop, independent of the above) ----
+  // Not a failure — nothing is broken, cloud saves just aren't linked yet — so it
+  // rides the info track (blue ↑), not the warning track.
   if (cr?.installed && cr.health === "not_authed" && !anyUnsupported) {
     rows.push({
-      key: "cr-auth", severity: "problem",
+      key: "cr-auth", severity: "info",
       label: t("sysCloudLogin"), description: t("sysCloudLoginDesc"),
     });
   }

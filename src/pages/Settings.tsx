@@ -586,7 +586,8 @@ export function Settings() {
       if (d) lines.push(d);
     }
     if (!deps.cloudredirectAuthed) {
-      const d = warnDesc(t("providerNotConfigured"));
+      // Sign-in is a pending step, not a failure → info blue, matches the QAM.
+      const d = warnDesc(t("providerNotConfigured"), "info");
       if (d) lines.push(d);
     }
     // Update available → same subtext slot (blue ↑), only when the hooks are OK.
