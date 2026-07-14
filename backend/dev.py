@@ -21,14 +21,16 @@ _FILE = os.path.join(_DIR, "data", "dev_overrides.json")
 # action per (component, state), mirroring the real read_*_health() functions
 # so the components model dispatches the same button it would in reality.
 _ACTION = {
-    "slssteam": {"not_installed": "install", "not_active": "restart",
-                 "injection_missing": "repair", "broken": "repair", "healthy": None},
-    "lumalinux": {"not_installed": "install", "not_active": "restart",
-                  "injection_missing": "reinstall", "hash_blocked": "reinstall",
-                  "hooks_failed": "reinstall", "healthy": None},
-    "cloudredirect": {"not_installed": "install", "kill_switched": None,
-                      "not_active": "restart", "broken": "reinstall",
-                      "not_authed": "configure_desktop", "healthy": None},
+    "slssteam": {"not_installed": "install", "not_loaded": "restart",
+                 "not_injected": "restart", "not_supported": "downgrade",
+                 "healthy": None},
+    "lumalinux": {"not_installed": "install", "not_loaded": "restart",
+                  "not_injected": "restart", "not_supported": "downgrade",
+                  "healthy": None},
+    "cloudredirect": {"not_installed": "install", "disabled": None,
+                      "not_loaded": "restart", "not_injected": "restart",
+                      "not_supported": "downgrade", "not_authed": "configure_desktop",
+                      "healthy": None},
 }
 
 

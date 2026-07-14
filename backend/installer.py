@@ -922,8 +922,8 @@ async def reinject_installed() -> dict:
     (re)installs CloudRedirect — harmless, it's inert until a provider is set. It
     never pulls in lumalinux if the user doesn't have it.
 
-    Used to repair SLSsteam `injection_missing` and CloudRedirect `broken` (any
-    repair that runs headcrab). Shares QUICK_INSTALL_STATE so the frontend polls
+    Used to repair a `not_injected` component (any repair that runs headcrab).
+    Shares QUICK_INSTALL_STATE so the frontend polls
     the same get_quick_install_status().
     """
     steps = []

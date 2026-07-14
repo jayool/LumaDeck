@@ -519,17 +519,16 @@ export function Settings() {
   };
 
 
-  // Map an SLSsteam health state to its Dependencies sub-row string.
-  const slssHealthLine = (h: { state: string; cause: string | null }): string | null => {
-    switch (h.state) {
-      case "healthy":           return t("slssHealthOk");
-      case "not_active":        return t("slssHealthNotActive");
-      case "injection_missing": return t("slssHealthInjectionMissing");
-      case "broken":
-        return h.cause === "hash"
-          ? t("slssHealthBrokenHash")
-          : t("slssHealthBrokenPatterns");
-      default:                  return null; // not_installed → red dot already says it
+  // Canonical state → shared Dependencies sub-row text. Identical wording for
+  // every component: from the user's side there are only two fixes, "Restart
+  // Steam" and "Fix in Desktop", so a broken component only ever says one of
+  // those. healthy / not_installed / not_authed / disabled are handled elsewhere.
+  const healthLine = (state: string): string | null => {
+    switch (state) {
+      case "not_loaded":
+      case "not_injected":  return t("healthNotLoaded");
+      case "not_supported": return t("healthNeedsDesktop");
+      default:              return null;
     }
   };
 
@@ -553,7 +552,7 @@ export function Settings() {
   const slssHealthDesc = () => {
     const h = slssteamHealth;
     if (!deps?.slssteam) return undefined;
-    if (h && h.state !== "healthy") return warnDesc(slssHealthLine(h));
+    if (h && h.state !== "healthy") return warnDesc(healthLine(h.state));
     // Healthy → surface the update (headcrab pin ahead of the local Steam build)
     // in the same subtext slot as the warnings.
     if (h?.state === "healthy" && headcrabCompat && !headcrabCompat.compatible)
@@ -566,16 +565,7 @@ export function Settings() {
   const llHealthDesc = () => {
     const h = lumalinuxHealth;
     if (!deps?.lumalinux || !h || h.state === "not_installed") return undefined;
-    if (h.state !== "healthy") {
-      let line: string | null = null;
-      switch (h.state) {
-        case "hooks_failed":      line = t("llHealthDegraded"); break;
-        case "hash_blocked":      line = t("llHealthHashBlocked"); break;
-        case "not_active":        line = t("llHealthNotActive"); break;
-        case "injection_missing": line = t("llHealthInjectionMissing"); break;
-      }
-      return warnDesc(line);
-    }
+    if (h.state !== "healthy") return warnDesc(healthLine(h.state));
     // Healthy → update available in the same subtext slot.
     if (llUpdate?.has_update)
       return warnDesc(t("llUpdateAvailableSub", llUpdate.installed ?? "?", llUpdate.latest ?? "?"), "info");
@@ -588,14 +578,11 @@ export function Settings() {
     if (!deps?.cloudredirect) return undefined;
     const lines: any[] = [];
     if (crHealth && crHealth.state !== "healthy" && crHealth.state !== "not_authed") {
-      let line: string | null = null;
-      let kind: "warn" | "muted" = "warn";
-      switch (crHealth.state) {
-        case "broken":        line = t("crHealthBroken"); break;
-        case "not_active":    line = t("crHealthNotActive"); break;
-        case "kill_switched": line = t("crHealthKillSwitched"); kind = "muted"; break;
-      }
-      const d = warnDesc(line, kind);
+      // disabled is a deliberate opt-out → muted grey line, no warning. Every
+      // other non-healthy state maps to the shared restart/desktop wording.
+      const isDisabled = crHealth.state === "disabled";
+      const line = isDisabled ? t("healthDisabled") : healthLine(crHealth.state);
+      const d = warnDesc(line, isDisabled ? "muted" : "warn");
       if (d) lines.push(d);
     }
     if (!deps.cloudredirectAuthed) {
@@ -647,9 +634,9 @@ export function Settings() {
   // ── Dev preview: force UI states (backend/dev.py). Only forges what the UI
   //    reads (health + credentials); nothing real is touched. ────────────────
   const devControls = [
-    { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_active", "injection_missing", "broken"] },
-    { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_active", "injection_missing", "hash_blocked", "hooks_failed"] },
-    { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_active", "broken", "not_authed", "kill_switched"] },
+    { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
+    { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
+    { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "not_authed", "disabled"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
     { key: "ryuu_cred", label: "Ryuu cookie", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
   ];
@@ -963,9 +950,10 @@ export function Settings() {
           </PanelSectionRow>
         )}
         {/* ONE morphing action button, same priority/dispatch as the QAM
-            (SystemStatus). Off-pin → Fix in Desktop; else the highest-priority
-            fix from primarySystemAction (Reinstall Core / Repair / Restart);
-            else a manual Install / Reinstall. Every fix owns the shared steam.sh
+            (SystemStatus). Off-pin or not_supported → Fix in Desktop; else the
+            highest-priority in-place fix from primarySystemAction (Restart Steam,
+            which re-injects steam.sh first when a component is not_injected); else
+            a manual Install / Reinstall. Every fix owns the shared steam.sh
             ordering (reinject / apply_component), so there are no per-component
             installers that could wipe the others. */}
         {(() => {
@@ -975,15 +963,14 @@ export function Settings() {
           let label = t("installReinstallDeps");
           let desc: string | undefined;
           let onClick: () => any;
-          if (offPin) {
+          if (offPin || primary === "downgrade") {
             label = t("sysFixInDesktop");
             desc = t("sysSteamTooNewFixDesc");
             onClick = () => fixInDesktop(runDesktopHandoffQuickInstall);
-          } else if (primary === "core") {
-            label = t("sysReinstall");
-            onClick = () => runFix(() => applyComponent("core", "install"));
-          } else if (primary === "repair") {
-            label = t("sysRepair");
+          } else if (primary === "reinject") {
+            // not_injected: steam.sh lost the line. Re-patch it, then restart.
+            // Same "Restart Steam" label the user sees in the QAM.
+            label = t("restartSteam");
             onClick = () => runFix(() => reinjectInstalled());
           } else if (primary === "restart") {
             label = t("restartSteam");

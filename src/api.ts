@@ -27,23 +27,25 @@ export const getInjectionStatus = async () =>
 export const checkSlssteamHashStatus = async () =>
   parseResult(await call<[], string>("check_slssteam_hash_status"));
 
-// Resolved SLSsteam state for the UI. Returns:
-//   { state: "not_installed"|"not_active"|"injection_missing"|"broken"|"healthy",
-//     cause: null|"patterns"|"hash", action: null|"install"|"restart"|"repair" }
+// Resolved SLSsteam state for the UI. Canonical state set (shared by all three
+// components). Returns:
+//   { state: "not_installed"|"not_loaded"|"not_injected"|"not_supported"|"healthy",
+//     cause: null|"version"|"hooks", action: null|"install"|"restart"|"downgrade" }
 export const getSlssteamHealth = async () =>
   parseResult(await call<[], string>("get_slssteam_health"));
 
 // Resolved lumalinux state for the UI. Returns:
-//   { state: "not_installed"|"not_active"|"hash_blocked"|"hooks_failed"|"healthy",
-//     cause: null|string, version: null|string,
-//     action: null|"install"|"restart"|"reinstall" }
+//   { state: "not_installed"|"not_loaded"|"not_injected"|"not_supported"|"healthy",
+//     cause: null|"version"|"hooks", version: null|string,
+//     action: null|"install"|"restart"|"downgrade" }
 export const getLumalinuxHealth = async () =>
   parseResult(await call<[], string>("get_lumalinux_health"));
 
-// Resolved CloudRedirect state for the UI. Returns:
-//   { state: "not_installed"|"kill_switched"|"not_active"|"broken"|"not_authed"|"healthy",
-//     cause: null|"no_steam"|"incompatible"|"hook", version: null|string,
-//     action: null|"install"|"restart"|"reinstall"|"configure_desktop" }
+// Resolved CloudRedirect state for the UI. Adds two CR-only states (not_authed,
+// disabled) to the canonical set. Returns:
+//   { state: "not_installed"|"disabled"|"not_loaded"|"not_injected"|"not_supported"|"not_authed"|"healthy",
+//     cause: null|"version"|"hooks", version: null|string,
+//     action: null|"install"|"restart"|"downgrade"|"configure_desktop" }
 export const getCloudredirectHealth = async () =>
   parseResult(await call<[], string>("get_cloudredirect_health"));
 

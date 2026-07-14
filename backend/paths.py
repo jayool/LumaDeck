@@ -348,16 +348,17 @@ def read_lumalinux_health() -> dict:
     """Resolve lumalinux into a single UI state. Symmetric to read_slssteam_health.
 
     Shape: {"state": str, "cause": str|None, "version": str|None, "action": str|None}.
-    States:
-        not_installed     — .so not on disk                  → install
-        not_active        — installed, steam.sh still injects it, no live
-                            status.json                       → restart Steam
-        injection_missing — installed, but steam.sh lost the lumalinux block
-                            (e.g. a CloudRedirect/Headcrab run regenerated
-                            steam.sh)                          → reinstall
-        hash_blocked      — status: blocked=hash_unverified   → reinstall
-        hooks_failed      — status: any hook in "failed"      → reinstall
-        healthy           — status present, no block, all hooks installed
+    Canonical states (shared with SLSsteam / CloudRedirect):
+        not_installed  — .so not on disk                  → install
+        not_loaded     — installed, steam.sh still injects it, no live
+                         status.json                       → restart Steam
+        not_injected   — installed, but steam.sh lost the lumalinux block
+                         (e.g. a CloudRedirect/Headcrab run regenerated
+                         steam.sh)                          → restart (re-injects)
+        not_supported  — status blocked=hash_unverified (cause "version"), or a
+                         hook reported "failed" (cause "hooks") — both mean Steam
+                         moved off a build we hook           → fix in Desktop
+        healthy        — status present, no block, all hooks installed
     """
     try:
         import dev
@@ -372,24 +373,27 @@ def read_lumalinux_health() -> dict:
     status = read_lumalinux_status()
     if status is None:
         # On disk but no live snapshot — Steam not running with lumalinux this
-        # session. Mirror SLSsteam's not_active vs injection_missing split: a
+        # session. Mirror SLSsteam's not_loaded vs not_injected split: a
         # plain restart only helps if steam.sh STILL carries the lumalinux
         # block. Headcrab regenerates steam.sh on its own runs (notably a
         # CloudRedirect install), wiping the block — then a restart won't
-        # reload the .so and the user must reinstall to re-patch steam.sh.
+        # reload the .so and it must re-inject to re-patch steam.sh first.
         if _lumalinux_injected_in_steam_sh():
-            return {"state": "not_active", "cause": None, "version": None, "action": "restart"}
-        return {"state": "injection_missing", "cause": "steam_sh", "version": None, "action": "reinstall"}
+            return {"state": "not_loaded", "cause": None, "version": None, "action": "restart"}
+        return {"state": "not_injected", "cause": "steam_sh", "version": None, "action": "restart"}
 
     version = status.get("version")
     blocked = status.get("blocked")
     if blocked:
-        return {"state": "hash_blocked", "cause": blocked, "version": version, "action": "reinstall"}
+        # Steam is a build lumalinux can't verify → align Steam in Desktop.
+        return {"state": "not_supported", "cause": "version", "version": version, "action": "downgrade"}
 
     hooks = status.get("hooks") or {}
     failed = [name for name, outcome in hooks.items() if outcome == "failed"]
     if failed:
-        return {"state": "hooks_failed", "cause": ",".join(failed), "version": version, "action": "reinstall"}
+        # A hook didn't install — in practice the byte patterns moved under a
+        # Steam update → not_supported (cause "hooks"), fixed in Desktop.
+        return {"state": "not_supported", "cause": "hooks", "version": version, "action": "downgrade"}
 
     return {"state": "healthy", "cause": None, "version": version, "action": None}
 
@@ -538,13 +542,16 @@ def _cloudredirect_log_inspect() -> tuple[Optional[str], Optional[str]]:
 def read_cloudredirect_health() -> dict:
     """Resolve CloudRedirect into one UI state. Read-only.
 
-    States (action in parens):
-        not_installed   — .so not on disk                    (install)
-        kill_switched   — ~/.config/CloudRedirect/disable    (none — user choice)
-        not_active      — installed, .so not in /proc        (restart Steam)
-        broken          — mapped + log "Init failed: ..."    (reinstall)
-        not_authed      — healthy hooks + no provider tokens (configure in desktop)
-        healthy         — mapped + clean log + tokens present
+    Canonical states (action in parens):
+        not_installed  — .so not on disk                    (install)
+        disabled       — ~/.config/CloudRedirect/disable    (none — user choice)
+        not_loaded     — not mapped, steam.sh has INJECT_CR (restart Steam)
+        not_injected   — not mapped, steam.sh lost INJECT_CR(restart, re-injects)
+        not_supported  — mapped + log "Init failed: ..."    (fix in Desktop)
+                         (cause "version" for vtable/steam issues, "hooks" for a
+                         failed trampoline install)
+        not_authed     — healthy hooks + no provider tokens (sign in, desktop)
+        healthy        — mapped + clean log + tokens present
     """
     try:
         import dev
@@ -557,16 +564,24 @@ def read_cloudredirect_health() -> dict:
         return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
 
     if _cloudredirect_kill_switched():
-        return {"state": "kill_switched", "cause": None, "version": None, "action": None}
+        return {"state": "disabled", "cause": None, "version": None, "action": None}
 
     mapped = check_cloudredirect_active()
     version, cause = _cloudredirect_log_inspect()
 
     if not mapped:
-        return {"state": "not_active", "cause": None, "version": version, "action": "restart"}
+        # Symmetric with SLSsteam / lumalinux: a plain restart only helps if
+        # steam.sh STILL injects CR; if the INJECT_CR line was wiped (a Headcrab
+        # regeneration) the restart must re-inject first.
+        if _cloudredirect_injected_in_steam_sh():
+            return {"state": "not_loaded", "cause": None, "version": version, "action": "restart"}
+        return {"state": "not_injected", "cause": "steam_sh", "version": version, "action": "restart"}
 
     if cause:
-        return {"state": "broken", "cause": cause, "version": version, "action": "reinstall"}
+        # no_steam / incompatible = Steam-side (cause "version"); hook = a failed
+        # trampoline install (cause "hooks"). Both → fix in Desktop.
+        canon = "hooks" if cause == "hook" else "version"
+        return {"state": "not_supported", "cause": canon, "version": version, "action": "downgrade"}
 
     if not check_cloudredirect_authed():
         return {"state": "not_authed", "cause": None, "version": version, "action": "configure_desktop"}
@@ -689,13 +704,14 @@ def verify_slssteam_injected() -> dict:
 # its lines always describe the current session when the .so is mapped. The
 # fatal outcomes each print a distinct "...Aborting..." line.
 #
-# Resulting states (see also the design in this PR):
-#   not_installed     — .so not on disk                         → install
-#   not_active        — not mapped, steam.sh has INJECT_SLS     → restart Steam
-#   injection_missing — not mapped, steam.sh lost INJECT_SLS    → repair
-#   broken            — mapped + an "Aborting" line in the log  → repair
-#                       (cause: "patterns" | "hash")
-#   healthy           — mapped + no abort line                  → nothing
+# Resulting states (canonical set, shared across all three components):
+#   not_installed  — .so not on disk                         → install
+#   not_loaded     — not mapped, steam.sh has INJECT_SLS     → restart Steam
+#   not_injected   — not mapped, steam.sh lost INJECT_SLS    → restart (re-injects)
+#   not_supported  — mapped + an "Aborting" line in the log  → fix in Desktop
+#                    (cause: "version" for the hash abort, "hooks" for the
+#                    pattern abort — both mean Steam moved off a build we hook)
+#   healthy        — mapped + no abort line                  → nothing
 
 
 def _slssteam_log_path() -> Optional[str]:
@@ -753,14 +769,17 @@ def read_slssteam_health() -> dict:
     if not mapped:
         if inj.get("method") == "steam_sh_configured":
             # Configured, just not loaded yet (Steam not running / not restarted).
-            return {"state": "not_active", "cause": None, "action": "restart"}
+            return {"state": "not_loaded", "cause": None, "action": "restart"}
         # steam.sh has no INJECT_SLS line, or wasn't found — injection is lost.
-        return {"state": "injection_missing", "cause": None, "action": "repair"}
+        return {"state": "not_injected", "cause": None, "action": "restart"}
 
     # Mapped — but mapped != working. The log is the only honest discriminator.
+    # Both aborts mean Steam moved off a build SLSsteam can hook (patterns after a
+    # Steam update, unknown hash under SafeMode) → not_supported, fixed in Desktop.
     cause = _slssteam_log_abort_cause()
     if cause:
-        return {"state": "broken", "cause": cause, "action": "repair"}
+        canon = "version" if cause == "hash" else "hooks"
+        return {"state": "not_supported", "cause": canon, "action": "downgrade"}
     return {"state": "healthy", "cause": None, "action": None}
 
 
