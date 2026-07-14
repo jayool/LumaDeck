@@ -967,6 +967,11 @@ export function Settings() {
             label = t("sysFixInDesktop");
             desc = t("sysSteamTooNewFixDesc");
             onClick = () => fixInDesktop(runDesktopHandoffQuickInstall);
+          } else if (primary === "core") {
+            // Partial install, Steam at the pin → install the missing core in
+            // place (Game Mode safe), then restart.
+            label = t("sysFinishSetup");
+            onClick = () => runFix(() => applyComponent("core", "install"));
           } else if (primary === "reinject") {
             // not_injected: steam.sh lost the line. Re-patch it, then restart.
             // Same "Restart Steam" label the user sees in the QAM.

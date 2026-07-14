@@ -67,7 +67,7 @@ const INFO = "#5b9eff";
 //   downgrade — not_supported / partial install: hand off to Desktop
 //   reinject  — not_injected: re-patch steam.sh, then restart (label: Restart)
 //   restart   — not_loaded: plain restart (label: Restart)
-export type PrimaryAction = "downgrade" | "reinject" | "restart" | null;
+export type PrimaryAction = "downgrade" | "core" | "reinject" | "restart" | null;
 
 // The single highest-priority SYSTEM action for the current status, exported so
 // the Dependencies page drives its one morphing button from the same logic as
@@ -79,7 +79,7 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
   const installed = comps.filter((c) => c.installed);
   const sls = comps.find((c) => c.id === "slssteam");
   const ll = comps.find((c) => c.id === "lumalinux");
-  const coreHalf =
+  const notComplete =
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
   const anyUnsupported = installed.some((c) => c.health === "not_supported");
   // lumalinux with no support for the pinned build yet — aligning wouldn't help;
@@ -88,7 +88,8 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
       status.headcrab?.lumalinux_ready === false &&
       !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported"))
     return null;
-  if (anyUnsupported || coreHalf) return "downgrade";
+  if (anyUnsupported) return "downgrade";
+  if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
   if (installed.some((c) => c.health === "not_injected")) return "reinject";
   if (installed.some((c) => c.health === "not_loaded")) return "restart";
   return null;
@@ -113,7 +114,8 @@ function buildRows(
   const compatible = status.headcrab?.compatible === true;
   const installed = comps.filter((c) => c.installed);
 
-  const coreHalf =
+  // A core component is installed but its partner isn't (a failed/partial install).
+  const notComplete =
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
 
   const anyUnsupported = installed.some((c) => c.health === "not_supported");
@@ -129,28 +131,32 @@ function buildRows(
     !!ll?.installed && ll.health === "not_supported" &&
     !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported");
 
-  // The two-action model: Fix in Desktop (not_supported or a partial install) has
-  // priority over Restart (not_loaded / not_injected), because if Steam moved a
-  // restart won't help.
-  const fixInDesktop = (anyUnsupported || coreHalf) && !waitingForSupport;
-
-  // ---- one system problem, by priority: Fix in Desktop > Restart ----
+  // ---- one system problem, by priority ----
+  //   Waiting > Steam-unsupported (Desktop) > incomplete install (in place) > Restart
   if (waitingForSupport) {
     rows.push({
       key: "ll-not-ready", severity: "problem",
       label: t("sysLumalinuxNotReady"), description: t("sysLumalinuxNotReadyDesc"),
     });
-  } else if (fixInDesktop) {
-    // Desktop-only (Steam is live in Game Mode). The button arms a one-shot
-    // autostart and switches to Desktop, where it runs (aligns Steam / finishes
-    // the install) and returns automatically. Two-tap confirm because it leaves
-    // Game Mode.
+  } else if (anyUnsupported) {
+    // Steam moved off a build the hooks can handle. Only a Steam re-align fixes it,
+    // and that can't run in Game Mode → hand off to Desktop. Two-tap confirm.
     rows.push({
       key: "desktop", severity: "problem",
-      label: t("sysNeedsFix"), description: t("sysNeedsFixDesc"),
+      label: t("sysUnsupported"), description: t("sysUnsupportedDesc"),
       actionLabel: busy ? t("sysWorking") : t("sysFixInDesktop"),
       onAction: actions.downgrade,
       confirmFirst: true,
+    });
+  } else if (notComplete) {
+    // A core component is missing. Steam is at the pin here (if it weren't, the
+    // installed component would be not_supported and the row above would win), so
+    // finishing the install is safe in Game Mode — no Desktop hand-off.
+    rows.push({
+      key: "incomplete", severity: "problem",
+      label: t("sysNotComplete"), description: t("sysNotCompleteDesc"),
+      actionLabel: busy ? t("sysWorking") : t("sysFinishSetup"),
+      onAction: actions.reinstallCore,
     });
   } else if (anyInjectLost || anyNotLoaded) {
     rows.push({
@@ -164,7 +170,7 @@ function buildRows(
   }
 
   // ---- CloudRedirect sign-in (optional, Desktop, independent of the above) ----
-  if (cr?.installed && cr.health === "not_authed" && !fixInDesktop) {
+  if (cr?.installed && cr.health === "not_authed" && !anyUnsupported) {
     rows.push({
       key: "cr-auth", severity: "problem",
       label: t("sysCloudLogin"), description: t("sysCloudLoginDesc"),
@@ -185,7 +191,7 @@ function buildRows(
   // hash check) → its update shows whenever available, regardless of the Steam
   // pin. SLSsteam/CloudRedirect updates RIDE headcrab — re-running it would move
   // the Steam build — so they're only offered when Steam is already at the pin.
-  if (!fixInDesktop) {
+  if (!anyUnsupported) {
     // Steam sits BEHIND Headcrab's pin (the pin was bumped forward) and lumalinux
     // is confirmed ready for the new target — offer to move Steam up to the pin as
     // a normal update (info, not a problem). Requires lumalinux_ready === true, not
