@@ -64,7 +64,7 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 
 # String replacements applied to the downloaded headcrab.sh BEFORE we run it.
 #
-# Three classes of patch:
+# Four classes of patch:
 #
 #   1) no-op the Steam-killing lines (killall steam | true,
 #      wheresteam -exitsteam variants) — in SteamOS Game Mode,
@@ -100,6 +100,15 @@ _HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/
 #      exception unwind abort during shutdown). Different crash signatures,
 #      same root cause. Fix mirrors (2): download to .lumadeck-new and only
 #      mv on success.
+#
+#   4) force CloudRedirect install (force-cr-install) — upstream gates every
+#      CloudRedirect step behind `crconfigcheck`, which greps the SLSsteam
+#      config.yaml for `DisableCloud: no`. On a fresh device that config doesn't
+#      exist yet (SLSsteam only writes it on its first injected run), so the gate
+#      fails and CR is skipped. We no-op the gate's grep to `true` so CR always
+#      installs, and set `DisableCloud: no` (+ `DisableUpdates: no`) AFTER the
+#      install on the real config SLSsteam generates itself. This removes the
+#      need to seed a fake config.yaml before headcrab just to pass the grep.
 #
 # If upstream changes the wording of these lines, the patch fails and the
 # user gets an explicit "headcrab format changed" error instead of a silent
@@ -144,6 +153,12 @@ _HEADCRAB_PATCHES: tuple[tuple[str, str, str, bool], ...] = (
         r'wget -O cloud_redirect\.so "\$CloudRedirectLib" &> /dev/null',
         r'wget -O cloud_redirect.so.lumadeck-new "$CloudRedirectLib" &> /dev/null && mv -f cloud_redirect.so.lumadeck-new cloud_redirect.so',
         "atomic-cr-wget",
+        False,
+    ),
+    (
+        r'grep -F "DisableCloud: no" config\.yaml &> /dev/null',
+        "true # LumaDeck: force CloudRedirect (gate; DisableCloud/DisableUpdates flipped post-install)",
+        "force-cr-install",
         False,
     ),
 )
