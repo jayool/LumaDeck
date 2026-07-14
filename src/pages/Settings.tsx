@@ -65,6 +65,10 @@ export function Settings() {
   const [deps, setDeps] = useState<any>(null);
   const [componentsStatus, setComponentsStatus] = useState<ComponentsStatus | null>(null);
   const [applyingFix, setApplyingFix] = useState(false);
+  // Two-tap confirm for the morphing button ONLY when it's Fix in Desktop (it
+  // leaves Game Mode). Other button states (Restart / Repair / Finish setup) fire
+  // on the first press, untouched by this.
+  const [confirmDesktop, setConfirmDesktop] = useState(false);
   const [platform, setPlatform] = useState<any>(null);
   const [devState, setDevStateLocal] = useState<Record<string, string>>({});
   // SLSsteam advanced config editors (AdditionalApps list + FakeAppIds map).
@@ -971,9 +975,18 @@ export function Settings() {
           let desc: string | undefined;
           let onClick: () => any;
           if (offPin || primary === "downgrade") {
-            label = t("sysFixInDesktop");
+            label = confirmDesktop ? t("sysConfirmTap") : t("sysFixInDesktop");
             desc = t("sysSteamTooNewFixDesc");
-            onClick = () => fixInDesktop(runDesktopHandoffQuickInstall);
+            onClick = () => {
+              // First press arms, second press fires. Auto-disarms after 5s.
+              if (!confirmDesktop) {
+                setConfirmDesktop(true);
+                setTimeout(() => setConfirmDesktop(false), 5000);
+                return;
+              }
+              setConfirmDesktop(false);
+              fixInDesktop(runDesktopHandoffQuickInstall);
+            };
           } else if (primary === "core") {
             // Partial install, Steam at the pin → install the missing core in
             // place (Game Mode safe), then restart.

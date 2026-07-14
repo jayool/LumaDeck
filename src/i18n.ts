@@ -297,7 +297,7 @@ const strings: Record<Lang, Record<string, string>> = {
     repair: "Repair",
     healthNotLoaded: "Not loaded. Press \"Restart Steam\" to reload.",
     healthNotInjected: "Not injected. Press \"Repair\" to re-inject.",
-    healthNeedsDesktop: "Needs a fix in Desktop.",
+    healthNeedsDesktop: "Steam build not supported. Press \"Fix in Desktop\" to repair.",
     healthDisabled: "Disabled.",
     // SLSsteam update available (Dependencies sub-row, info blue)
     slssUpdateAvailableSub: "Update available (Steam build {0} → {1})",
@@ -723,7 +723,7 @@ const strings: Record<Lang, Record<string, string>> = {
     repair: "Reparar",
     healthNotLoaded: "Não carregado. Toque em \"Reiniciar Steam\" para recarregar.",
     healthNotInjected: "Não injetado. Toque em \"Reparar\" para reinjetar.",
-    healthNeedsDesktop: "Precisa de uma correção no Desktop.",
+    healthNeedsDesktop: "Build da Steam não suportada. Toque em \"Corrigir no Desktop\" para reparar.",
     healthDisabled: "Desabilitado.",
     slssUpdateAvailableSub: "Atualização disponível (build da Steam {0} → {1})",
     // System status (modelo unificado de componentes)
