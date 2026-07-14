@@ -359,6 +359,13 @@ def read_lumalinux_health() -> dict:
         hooks_failed      — status: any hook in "failed"      → reinstall
         healthy           — status present, no block, all hooks installed
     """
+    try:
+        import dev
+        _ov = dev.get("lumalinux_health")
+    except Exception:
+        _ov = None
+    if _ov:
+        return dev.health("lumalinux", _ov)
     if not check_lumalinux_installed():
         return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
 
@@ -539,6 +546,13 @@ def read_cloudredirect_health() -> dict:
         not_authed      — healthy hooks + no provider tokens (configure in desktop)
         healthy         — mapped + clean log + tokens present
     """
+    try:
+        import dev
+        _ov = dev.get("cloudredirect_health")
+    except Exception:
+        _ov = None
+    if _ov:
+        return dev.health("cloudredirect", _ov)
     if not check_cloudredirect_installed():
         return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
 
@@ -723,6 +737,13 @@ def read_slssteam_health() -> dict:
     Shape: {"state": str, "cause": str|None, "action": str|None}. The frontend
     maps state→display string (i18n) and action→button.
     """
+    try:
+        import dev
+        _ov = dev.get("slssteam_health")
+    except Exception:
+        _ov = None
+    if _ov:
+        return dev.health("slssteam", _ov)
     if not check_slssteam_installed():
         return {"state": "not_installed", "cause": None, "action": "install"}
 

@@ -12,6 +12,7 @@ import {
   getActiveDownloads,
 } from "../api";
 import { useT } from "../i18n";
+import { ACHIEVEMENTS_ENABLED } from "../features";
 import { ROUTE_GAME_DETAIL } from "../routes";
 
 // Full-screen "My Games" library. Lives on its own route so the QAM panel
@@ -45,7 +46,7 @@ export function Library() {
       }
 
       const appids = gameList.map((g) => g.appid);
-      if (appids.length > 0) {
+      if (ACHIEVEMENTS_ENABLED && appids.length > 0) {
         try {
           const achResult = await checkAllAchievementsStatus(appids);
           if (achResult.success && achResult.map) {

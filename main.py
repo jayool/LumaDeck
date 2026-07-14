@@ -243,6 +243,20 @@ class Plugin:
         from api_manifest import get_credential_status
         return _j(await get_credential_status())
 
+    # ---- Dev-only state overrides (preview harness; see backend/dev.py) ----
+    async def dev_get_state(self) -> str:
+        import dev
+        return _j({"success": True, "overrides": dev.all_()})
+
+    async def dev_set_state(self, key: str, value: str) -> str:
+        import dev
+        return _j({"success": True, "overrides": dev.set_(key, value)})
+
+    async def dev_clear_state(self) -> str:
+        import dev
+        dev.clear()
+        return _j({"success": True, "overrides": {}})
+
     async def pin_game(self, appid: int) -> str:
         from downloads import pin_game
         return _j(await pin_game(appid))
@@ -419,14 +433,6 @@ class Plugin:
     async def check_game_dlcs_status(self, appid: int) -> str:
         from slssteam_ops import check_game_dlcs_status
         return _j(check_game_dlcs_status(appid))
-
-    async def get_sls_play_status(self) -> str:
-        from slssteam_ops import get_sls_play_status
-        return _j(get_sls_play_status())
-
-    async def set_sls_play_status(self, enabled: bool) -> str:
-        from slssteam_ops import set_sls_play_status
-        return _j(set_sls_play_status(enabled))
 
     async def uninstall_game_full(self, appid: int, remove_compatdata: bool = False) -> str:
         from slssteam_ops import uninstall_game_full

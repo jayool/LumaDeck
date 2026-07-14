@@ -470,6 +470,13 @@ async def get_credential_status() -> dict:
       state: none | unknown | ok | soon | expired
     Hubcap expiry comes from the free, no-quota /user/stats endpoint; Ryuu
     expiry from the sidecar captured at cookie-import time."""
+    try:
+        import dev
+        _dov = dev.all_()
+        if "hubcap_cred" in _dov or "ryuu_cred" in _dov:
+            return dev.cred(dev.get("hubcap_cred"), dev.get("ryuu_cred"))
+    except Exception:
+        pass
     # ---- Hubcap ----
     hubcap = {"state": "none", "days_left": None, "expires_at": None,
               "daily_usage": None, "daily_limit": None}

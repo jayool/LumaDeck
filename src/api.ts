@@ -102,6 +102,14 @@ export const searchHubcap = async (query: string) =>
 export const getCredentialStatus = async () =>
   parseResult(await call<[], string>("get_credential_status"));
 
+// Dev-only state overrides (preview harness — see backend/dev.py).
+export const getDevState = async () =>
+  parseResult(await call<[], string>("dev_get_state"));
+export const setDevState = async (key: string, value: string) =>
+  parseResult(await call<[string, string], string>("dev_set_state", key, value));
+export const clearDevState = async () =>
+  parseResult(await call<[], string>("dev_clear_state"));
+
 // In-plugin self-update (#23). checkPluginUpdate → { has_update, installed,
 // latest, download_url }; updatePlugin downloads + applies the latest release.
 export const checkPluginUpdate = async () =>
@@ -209,12 +217,6 @@ export const removeGameDlcs = async (appid: number) =>
 
 export const checkGameDlcsStatus = async (appid: number) =>
   parseResult(await call<[number], string>("check_game_dlcs_status", appid));
-
-export const getSlsPlayStatus = async () =>
-  parseResult(await call<[], string>("get_sls_play_status"));
-
-export const setSlsPlayStatus = async (enabled: boolean) =>
-  parseResult(await call<[boolean], string>("set_sls_play_status", enabled));
 
 export const uninstallGameFull = async (
   appid: number,

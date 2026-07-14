@@ -1,5 +1,6 @@
 import { ButtonItem } from "@decky/ui";
 import { useT } from "../i18n";
+import { ACHIEVEMENTS_ENABLED } from "../features";
 
 export interface GameInfo {
   appid: number;
@@ -31,7 +32,7 @@ export function GameCard({ game, onClick }: GameCardProps) {
     ? game.isDisabled
       ? t("disabled")
       : game.hasGameFiles
-        ? game.hasAchievements
+        ? ACHIEVEMENTS_ENABLED && game.hasAchievements
           ? `${t("installed")} · ★`
           : t("installed")
         : t("manifestOnly")
@@ -42,9 +43,6 @@ export function GameCard({ game, onClick }: GameCardProps) {
     "checking",
     "processing",
     "configuring",
-    // depot_download is dead code (DDL backend no longer runs) — kept so
-    // a future rollback still surfaces correctly in the card badge.
-    "depot_download",
     "queued",
     "installing",
     "restarting_steam",
@@ -57,8 +55,6 @@ export function GameCard({ game, onClick }: GameCardProps) {
       case "checking": return t("statusChecking");
       case "processing": return t("statusProcessing");
       case "configuring": return t("statusConfiguring");
-      // depot_download dead — see activePhases comment above.
-      case "depot_download": return t("statusDownloadingGame");
       case "queued": return t("statusQueued");
       case "installing": return t("statusInstalling");
       case "restarting_steam": return t("statusRestartingSteam");
@@ -72,7 +68,7 @@ export function GameCard({ game, onClick }: GameCardProps) {
       onClick={() => onClick(game.appid)}
       description={
         <span style={{ color: isDownloading ? "#1a9fff" : statusColor, fontSize: "12px" }}>
-          {isDownloading ? downloadLabel : statusText} — {game.appid}
+          {isDownloading ? downloadLabel : statusText} · {game.appid}
         </span>
       }
     >

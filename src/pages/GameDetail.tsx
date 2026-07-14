@@ -23,6 +23,7 @@ import {
 import { toaster } from "@decky/api";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
+import { ACHIEVEMENTS_ENABLED } from "../features";
 import {
   startDownload,
   getDownloadStatus,
@@ -693,7 +694,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             <Field label={t("gameStatus")} description={installPath || undefined}>
               <span style={{ color: installPath ? "#00cc00" : "#ffaa00" }}>
                 {installPath ? t("installed") : t("manifestOnly")}
-                {gameSize > 0 && ` — ${formatSize(gameSize)}`}
+                {gameSize > 0 && ` · ${formatSize(gameSize)}`}
               </span>
             </Field>
           </PanelSectionRow>
@@ -840,7 +841,7 @@ export function GameDetail({ appid }: GameDetailProps) {
         </>
       ),
     },
-    {
+    ...(ACHIEVEMENTS_ENABLED ? [{
       title: t("achievements"),
       icon: <FaTrophy />,
       hideTitle: true,
@@ -898,7 +899,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       </PanelSection>
         </>
       ),
-    },
+    }] : []),
     {
       title: t("fixes"),
       icon: <FaTools />,
@@ -1022,7 +1023,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           {installedFixes.map((fix, idx) => (
             <PanelSectionRow key={idx}>
               <Field
-                label={`${fix.fixType} — ${t("fixFiles", fix.filesCount)}`}
+                label={`${fix.fixType} · ${t("fixFiles", fix.filesCount)}`}
                 description={t("fixApplied", fix.date)}
               />
             </PanelSectionRow>
@@ -1042,7 +1043,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                   label={
                     busy === "unfix"
                       ? t("toastFixRemoving")
-                      : `${t("removeFix")} — ${fix.fixType}`
+                      : `${t("removeFix")} · ${fix.fixType}`
                   }
                   onClick={() => handleRemoveFix(fix.date)}
                   variant="danger"

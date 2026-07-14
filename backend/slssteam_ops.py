@@ -570,55 +570,6 @@ def check_game_dlcs_status(appid: int) -> dict:
 
 
 # ==========================================
-#  PlayNotOwnedGames
-# ==========================================
-
-def get_sls_play_status() -> dict:
-    try:
-        config_path = _config_path()
-        if not os.path.exists(config_path):
-            return {"success": True, "enabled": False}
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read().lower()
-        return {"success": True, "enabled": "playnotownedgames: yes" in content}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-def set_sls_play_status(enabled: bool) -> dict:
-    try:
-        config_path = _config_path()
-        if not os.path.exists(config_path):
-            return {"success": False, "error": "Config not found"}
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        new_val = "yes" if enabled else "no"
-        new_lines = []
-        found = False
-        for line in lines:
-            if line.strip().lower().startswith("playnotownedgames:"):
-                new_lines.append(f"PlayNotOwnedGames: {new_val}\n")
-                found = True
-            elif line.strip().lower().startswith("notifications:"):
-                new_lines.append("Notifications: no\n")
-            else:
-                new_lines.append(line)
-
-        if not found:
-            new_lines.append(f"PlayNotOwnedGames: {new_val}\n")
-
-        tmp = config_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-        os.replace(tmp, config_path)
-        return {"success": True}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-# ==========================================
 #  FULL UNINSTALL
 # ==========================================
 

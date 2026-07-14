@@ -96,14 +96,6 @@ def set_value(key: str, value: Any) -> None:
 # Convenience accessors
 # ---------------------------------------------------------------------------
 
-def is_play_not_owned_enabled() -> bool:
-    return bool(get_value("PlayNotOwnedGames", False))
-
-
-def set_play_not_owned(enabled: bool) -> None:
-    set_value("PlayNotOwnedGames", enabled)
-
-
 def config_exists() -> bool:
     return os.path.isfile(get_slssteam_config_path())
 

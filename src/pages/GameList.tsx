@@ -38,6 +38,7 @@ import {
 } from "../components/SystemStatus";
 import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { setRefreshHandler } from "../refresh";
+import { ACHIEVEMENTS_ENABLED } from "../features";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
 
@@ -130,8 +131,6 @@ export function GameList() {
         return t("statusProcessing");
       } else if (phase === "configuring") {
         return t("statusConfiguring");
-      } else if (phase === "depot_download") {
-        return `${t("statusDownloadingGame")}: ${st.depotProgress || t("statusDownloadingGameFiles")}`;
       } else if (phase === "installing") {
         return t("statusInstalling");
       } else if (phase === "queued") {
@@ -245,6 +244,7 @@ export function GameList() {
 
   useEffect(() => {
     // Achievements are ready to generate once the Steam Web API key is set.
+    if (!ACHIEVEMENTS_ENABLED) return;
     (async () => {
       try {
         const result = await getApiKeyStatus();
@@ -576,17 +576,6 @@ export function GameList() {
               layout="below"
               onClick={handleQuickInstall}
               disabled={quickInstalling}
-              description={
-                confirmQuickInstall ? (
-                  <div style={{ textAlign: "center" }}>
-                    {quickInstallOffPin
-                      ? t("quickInstallConfirmDesktopDesc")
-                      : t("quickInstallConfirmDesc")}
-                  </div>
-                ) : (
-                  t("quickInstallDesc")
-                )
-              }
             >
               {quickInstalling
                 ? t("quickInstalling")
@@ -677,7 +666,7 @@ export function GameList() {
                   bottomSeparator="standard"
                 />
               </PanelSectionRow>
-              {pendingGameInfo.achievements > 0 && !achievementsReady && (
+              {ACHIEVEMENTS_ENABLED && pendingGameInfo.achievements > 0 && !achievementsReady && (
                 <PanelSectionRow>
                   <div style={{ fontSize: "11px", color: "#c8a84b", display: "flex", gap: "6px", alignItems: "flex-start" }}>
                     <span style={{ flexShrink: 0 }}>⚡</span>
@@ -831,6 +820,7 @@ export function GameList() {
           </ButtonItem>
         </PanelSectionRow>
 
+        {ACHIEVEMENTS_ENABLED && (
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -842,6 +832,7 @@ export function GameList() {
             {t("achievements")}
           </ButtonItem>
         </PanelSectionRow>
+        )}
 
         <PanelSectionRow>
           <ButtonItem

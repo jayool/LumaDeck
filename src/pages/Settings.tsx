@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { ACHIEVEMENTS_ENABLED } from "../features";
 import {
   PanelSection,
   PanelSectionRow,
@@ -9,6 +10,7 @@ import {
   ProgressBarWithInfo,
   Navigation,
   SidebarNavigation,
+  DropdownItem,
 } from "@decky/ui";
 import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle, FaCheckCircle, FaExclamationTriangle, FaTrophy } from "react-icons/fa";
 import { toaster } from "@decky/api";
@@ -23,8 +25,6 @@ import {
   fetchFreeApisNow,
   checkDependencies,
   getPlatformSummary,
-  getSlsPlayStatus,
-  setSlsPlayStatus,
   getSteamLibraries,
   restartSteam,
   getSlssteamHealth,
@@ -44,6 +44,8 @@ import {
   removeFakeAppId,
 } from "../api";
 import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall } from "../api";
+import { getDevState, setDevState, clearDevState } from "../api";
+import { requestRefresh } from "../refresh";
 import {
   getInstalledLuaScripts,
   getApiKeyStatus,
@@ -64,7 +66,7 @@ export function Settings() {
   const [componentsStatus, setComponentsStatus] = useState<ComponentsStatus | null>(null);
   const [applyingFix, setApplyingFix] = useState(false);
   const [platform, setPlatform] = useState<any>(null);
-  const [playNotOwned, setPlayNotOwned] = useState(false);
+  const [devState, setDevStateLocal] = useState<Record<string, string>>({});
   // SLSsteam advanced config editors (AdditionalApps list + FakeAppIds map).
   const [addlApps, setAddlApps] = useState<string[]>([]);
   const [newAddlApp, setNewAddlApp] = useState("");
@@ -212,8 +214,8 @@ export function Settings() {
       const platformResult = await getPlatformSummary();
       if (!cancelled) setPlatform(platformResult);
 
-      const playResult = await getSlsPlayStatus();
-      if (!cancelled && playResult.success) setPlayNotOwned(playResult.enabled);
+      const devResult = await getDevState();
+      if (!cancelled && devResult?.success) setDevStateLocal(devResult.overrides || {});
 
       const [addl, fake] = await Promise.all([listAdditionalApps(), listFakeAppIds()]);
       if (!cancelled && addl?.success) setAddlApps(addl.appids ?? []);
@@ -480,11 +482,6 @@ export function Settings() {
     }
   };
 
-  const handleTogglePlayNotOwned = async (value: boolean) => {
-    setPlayNotOwned(value);
-    await setSlsPlayStatus(value);
-  };
-
   // SLSsteam advanced editors — re-read the config after every change so the UI
   // always shows the real on-disk values. Changes apply after a Steam restart.
   const refreshSlsAdvanced = async () => {
@@ -647,6 +644,38 @@ export function Settings() {
     }
   };
 
+  // ── Dev preview: force UI states (backend/dev.py). Only forges what the UI
+  //    reads (health + credentials); nothing real is touched. ────────────────
+  const devControls = [
+    { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_active", "injection_missing", "broken"] },
+    { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_active", "injection_missing", "hash_blocked", "hooks_failed"] },
+    { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_active", "broken", "not_authed", "kill_switched"] },
+    { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
+    { key: "ryuu_cred", label: "Ryuu cookie", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
+  ];
+  const reloadAfterDev = async () => {
+    const [sls, ll, cr] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth(), getCloudredirectHealth()]);
+    if (sls.state) setSlssteamHealth(sls);
+    if (ll.state) setLumalinuxHealth(ll);
+    if (cr.state) setCrHealth(cr);
+    const cs = await getComponentsStatus(true);
+    if (cs?.success) setComponentsStatus(cs);
+    const c = await getCredentialStatus();
+    if (c.success) setCred(c);
+    requestRefresh();
+  };
+  const handleSetDev = async (key: string, value: string) => {
+    setDevStateLocal((s) => ({ ...s, [key]: value }));
+    const r = await setDevState(key, value);
+    if (r?.success) setDevStateLocal(r.overrides || {});
+    await reloadAfterDev();
+  };
+  const handleClearDev = async () => {
+    await clearDevState();
+    setDevStateLocal({});
+    await reloadAfterDev();
+  };
+
   const pages = [
     {
       title: t("apiCredentials"),
@@ -720,7 +749,7 @@ export function Settings() {
         </>
       ),
     },
-    {
+    ...(ACHIEVEMENTS_ENABLED ? [{
       title: t("achievements"),
       icon: <FaTrophy />,
       hideTitle: true,
@@ -826,20 +855,13 @@ export function Settings() {
       )}
         </>
       ),
-    },
+    }] : []),
     {
       title: t("slssteam"),
       icon: <FaShieldAlt />,
       hideTitle: true,
       content: (
       <PanelSection title={t("slssteam")}>
-        <PanelSectionRow>
-          <ToggleField
-            label={t("playNotOwnedGames")}
-            checked={playNotOwned}
-            onChange={handleTogglePlayNotOwned}
-          />
-        </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={() => restartSteam()}>
             {t("restartSteam")}
@@ -1036,7 +1058,7 @@ export function Settings() {
                     free/total + game count ride in sOperationText. */}
                 <ProgressBarWithInfo
                   nProgress={usedPercent}
-                  sOperationText={`${t("freeSpace", `${freeGB} / ${totalGB} GB`)} — ${t("libraryGames", lib.gameCount)}`}
+                  sOperationText={`${t("freeSpace", `${freeGB} / ${totalGB} GB`)} · ${t("libraryGames", lib.gameCount)}`}
                 />
               </PanelSectionRow>,
             ];
@@ -1056,7 +1078,7 @@ export function Settings() {
             <Field description={t("aboutBlurb")} />
           </PanelSectionRow>
           <PanelSectionRow>
-            <Field label={t("pluginInstalled", pluginUpdate?.installed || "—")}>
+            <Field label={t("pluginInstalled", pluginUpdate?.installed || "?")}>
               {pluginUpdate?.latest && (
                 <span style={{ color: pluginUpdate.has_update ? "#9cc4ff" : "#8b929a" }}>
                   {t("pluginLatest", pluginUpdate.latest)}
@@ -1099,6 +1121,37 @@ export function Settings() {
       icon: <FaQuestionCircle />,
       hideTitle: true,
       content: <HelpContent />,
+    },
+    {
+      title: "Dev",
+      icon: <FaCog />,
+      hideTitle: true,
+      content: (
+        <PanelSection title="Dev — force UI states">
+          <PanelSectionRow>
+            <div style={{ fontSize: "12px", color: "#8b929e", lineHeight: 1.4 }}>
+              Forge what the UI reads (health + credentials) to preview banners,
+              System Status and credential rows. Nothing real is touched. Reopen
+              the QAM after changing a value to see the main-page banners update.
+            </div>
+          </PanelSectionRow>
+          {devControls.map((c) => (
+            <PanelSectionRow key={c.key}>
+              <DropdownItem
+                label={c.label}
+                rgOptions={c.opts.map((o) => ({ data: o, label: o }))}
+                selectedOption={devState[c.key] || "real"}
+                onChange={(o: any) => handleSetDev(c.key, o.data)}
+              />
+            </PanelSectionRow>
+          ))}
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={handleClearDev}>
+              Reset all to real
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
+      ),
     },
   ];
 
