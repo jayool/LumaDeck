@@ -559,6 +559,19 @@ export function GameList() {
     else if (h?.state === "none") credWarnings.push({ key: "h-none", text: t("dlWarnHubcapNone"), color: "#ffaa00" });
   }
 
+  // Adding a game needs the whole pipeline: SLSsteam (unlocks the download —
+  // ownership spoof, without it Steam shows "Buy" and won't download) AND lumalinux
+  // (injects the manifests/keys — without it nothing downloads) both healthy, plus
+  // at least one manifest provider (Hubcap or Ryuu) usable. If any is missing the
+  // add actions are disabled; the QAM rows / credential warnings above say why.
+  // Only gate on data we actually have — while status/cred load, don't block.
+  const usableCred = (c: any) => c?.state === "ok" || c?.state === "soon" || c?.state === "unknown";
+  const hasProvider = usableCred(cred?.hubcap) || usableCred(cred?.ryuu);
+  const compHealth = (id: string) => compStatus?.components?.find((c: any) => c.id === id)?.health;
+  const compsBad = !!compStatus?.success && (compHealth("slssteam") !== "healthy" || compHealth("lumalinux") !== "healthy");
+  const credBad = !!cred && !hasProvider;
+  const canAddGames = !compsBad && !credBad;
+
   return (
     <>
       {/* Top toolbar — light nav/utility actions as icons, right-aligned,
@@ -625,6 +638,12 @@ export function GameList() {
             </DialogButton>
           </Focusable>
         </PanelSectionRow>
+
+        {!canAddGames && (
+          <PanelSectionRow>
+            <Field icon={<FaExclamationTriangle color="#ff8c00" />} label={t("addGameBlocked")} />
+          </PanelSectionRow>
+        )}
 
         {addMode === "appid" ? (
           <>
@@ -698,7 +717,7 @@ export function GameList() {
           </PanelSectionRow>
         )}
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleAddGame}>
+          <ButtonItem layout="below" onClick={handleAddGame} disabled={!canAddGames}>
             {t("addGameAction")}
           </ButtonItem>
         </PanelSectionRow>
@@ -721,7 +740,7 @@ export function GameList() {
           <ButtonItem
             layout="below"
             onClick={handleSearchHubcap}
-            disabled={searching}
+            disabled={searching || !canAddGames}
           >
             {searching ? t("searching") : t("searchHubcap")}
           </ButtonItem>
@@ -748,6 +767,7 @@ export function GameList() {
                   layout="below"
                   onClick={() => handleSelectSearchResult(r)}
                   description={`AppID: ${r.appid}`}
+                  disabled={!canAddGames}
                 >
                   {r.name}
                 </ButtonItem>

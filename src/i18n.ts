@@ -13,6 +13,7 @@ const strings: Record<Lang, Record<string, string>> = {
     // GameList
     addGame: "Add Game",
     addGameAction: "Add game",
+    addGameBlocked: "Fix the issues to add games.",
     headerSubtitle: "Game manager",
     addByAppId: "By AppID",
     addByName: "By name",
@@ -462,6 +463,7 @@ const strings: Record<Lang, Record<string, string>> = {
     // GameList
     addGame: "Adicionar Jogo",
     addGameAction: "Adicionar jogo",
+    addGameBlocked: "Resolva os problemas para adicionar jogos.",
     headerSubtitle: "Gerenciador",
     addByAppId: "Por AppID",
     addByName: "Por nome",
