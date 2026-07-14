@@ -301,7 +301,7 @@ const strings: Record<Lang, Record<string, string>> = {
     healthDisabled: "Disabled by user. Re-enable in Desktop.",
     statusDisabled: "Disabled",
     // SLSsteam update available (Dependencies sub-row, info blue)
-    slssUpdateAvailableSub: "Update available (Steam build {0} → {1})",
+    slssUpdateAvailableSub: "Steam update available ({0} → {1})",
     // System status (unified component model) — jargon-free, outcome-led
     sysSteamTooNew: "Steam is too new",
     sysLumalinuxNotReady: "Adding games unavailable",
