@@ -525,8 +525,8 @@ export function Settings() {
   // those. healthy / not_installed / not_authed / disabled are handled elsewhere.
   const healthLine = (state: string): string | null => {
     switch (state) {
-      case "not_loaded":
-      case "not_injected":  return t("healthNotLoaded");
+      case "not_loaded":    return t("healthNotLoaded");
+      case "not_injected":  return t("healthNotInjected");
       case "not_supported": return t("healthNeedsDesktop");
       default:              return null;
     }
@@ -980,9 +980,10 @@ export function Settings() {
             label = t("sysFinishSetup");
             onClick = () => runFix(() => applyComponent("core", "install"));
           } else if (primary === "reinject") {
-            // not_injected: steam.sh lost the line. Re-patch it, then restart.
-            // Same "Restart Steam" label the user sees in the QAM.
-            label = t("restartSteam");
+            // not_injected: steam.sh lost the line, so a plain restart won't help.
+            // Repair re-patches steam.sh (reinject) and restarts. "Repair", not
+            // "Restart Steam", because a manual restart genuinely doesn't fix this.
+            label = t("repair");
             onClick = () => runFix(() => reinjectInstalled());
           } else if (primary === "restart") {
             label = t("restartSteam");

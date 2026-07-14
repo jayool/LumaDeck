@@ -294,7 +294,9 @@ const strings: Record<Lang, Record<string, string>> = {
     // Component health (Dependencies sub-row). Shared across all three
     // components: from the user's side a broken component only ever needs a
     // Restart or a Fix in Desktop, so it only ever says one of those.
-    healthNotLoaded: "Not loaded. Restart Steam.",
+    repair: "Repair",
+    healthNotLoaded: "Not loaded. Press \"Restart Steam\" to reload.",
+    healthNotInjected: "Not injected. Press \"Repair\" to re-inject.",
     healthNeedsDesktop: "Needs a fix in Desktop.",
     healthDisabled: "Disabled.",
     // SLSsteam update available (Dependencies sub-row, info blue)
@@ -718,7 +720,9 @@ const strings: Record<Lang, Record<string, string>> = {
     headcrabRepairedBody: "Reinicie o Steam para ativar.",
     slssteamUnknownHash: "Hash do steamclient.so desconhecido — SLSsteam inativo",
     // Component health (Dependencies sub-row), compartilhado pelos três.
-    healthNotLoaded: "Não carregado. Reinicie a Steam.",
+    repair: "Reparar",
+    healthNotLoaded: "Não carregado. Toque em \"Reiniciar Steam\" para recarregar.",
+    healthNotInjected: "Não injetado. Toque em \"Reparar\" para reinjetar.",
     healthNeedsDesktop: "Precisa de uma correção no Desktop.",
     healthDisabled: "Desabilitado.",
     slssUpdateAvailableSub: "Atualização disponível (build da Steam {0} → {1})",
