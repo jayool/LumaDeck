@@ -293,17 +293,12 @@ async def install_dependencies(gamemode: bool = True) -> dict:
 
     tmp_dir = None
     try:
-        # Seed SLSsteam's default config if it doesn't exist yet and set
-        # DisableCloud: no, so the single headcrab run below installs CloudRedirect
-        # too (headcrab gates CR on that flag). require_slssteam=False because
-        # headcrab is about to install SLSsteam in this same run — on a fresh
-        # device the config must exist BEFORE headcrab reads DisableCloud, and
-        # the default gate (SLSsteam already installed) would skip it and leave
-        # CR uninstalled. SafeMode: yes is set afterwards.
-        _seed_slssteam_config_if_missing(require_slssteam=False)
-        dc_ok, dc_msg = _set_disablecloud_no(get_slssteam_config_path())
-        logger.info("LumaDeck: DisableCloud:no for CR: ok=%s (%s)", dc_ok, dc_msg)
-
+        # No config seeding here anymore. The force-cr-install patch makes
+        # headcrab install CloudRedirect unconditionally (it no longer needs
+        # DisableCloud: no present at crconfigcheck time), so there's nothing to
+        # seed before the run. SLSsteam writes its own config.yaml on its first
+        # injected run; we set the flags LumaDeck needs afterwards via
+        # ensure_slssteam_flags() (below + a startup task in main.py).
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_deps_")
         script_path = os.path.join(tmp_dir, "headcrab_patched.sh")
         INSTALL_STATE["progress"] = "Downloading + patching headcrab.sh..."
@@ -380,40 +375,25 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                     sls_check.get("error"),
                 )
             else:
-                # #13: force SafeMode: yes — SLSsteam's own recommendation for
-                # Steam Deck gamemode. It auto-disables SLSsteam on an unknown
-                # steamclient.so hash so a Steam update can't make it inject
-                # against changed offsets and break gamemode. Headcrab's
-                # editconfig() races SLSsteam creating config.yaml and leaves it
-                # at the default (no), so seed the config if it's not there yet
-                # and flip the flag — same approach as DisableCloud for CR.
-                _seed_slssteam_config_if_missing()
-                sm_ok, sm_msg = _set_safemode_yes(get_slssteam_config_path())
-                logger.info("LumaDeck: SafeMode repair: ok=%s (%s)", sm_ok, sm_msg)
+                # Set the flags LumaDeck depends on (DisableCloud: no,
+                # DisableUpdates: no, SafeMode: yes) on the config SLSsteam wrote
+                # itself. On a fresh Game Mode install the config usually isn't
+                # there yet (Steam hasn't restarted with SLSsteam), so this is a
+                # best-effort no-op and the startup task in main.py sets them once
+                # SLSsteam has created it. On a reinstall / Desktop run the config
+                # already exists, so this applies immediately (SLSsteam hot-reloads).
+                flags = ensure_slssteam_flags()
+                logger.info("LumaDeck: ensure_slssteam_flags: %s", flags)
 
-                # Headcrab forces PlayNotOwnedGames: yes (its whole purpose is
-                # playing non-owned games globally). LumaDeck's model is targeted:
-                # every added game gets an AdditionalApps entry (steamidra_lite),
-                # so the global "own everything" flag is redundant AND broader
-                # than intended — it would make ANY non-owned appid look owned,
-                # not just the ones the user added. Flip it back to no after
-                # headcrab, same post-headcrab pattern as SafeMode/DisableCloud,
-                # and verify it stuck. (SLSsteam 20260707+ removed the option
-                # entirely, so this is a no-op there; kept for older builds.)
-                pno_ok, pno_msg = _set_playnotowned_no(get_slssteam_config_path())
-                logger.info("LumaDeck: PlayNotOwnedGames->no: ok=%s (%s)", pno_ok, pno_msg)
-                if not pno_ok:
-                    logger.warning("LumaDeck: PlayNotOwnedGames not confirmed at no (%s)", pno_msg)
-
-                # CloudRedirect rides the same headcrab run (DisableCloud: no was
-                # set above). A transient wget/steam.sh drop can leave it missing,
+                # CloudRedirect rides the same headcrab run. A transient
+                # wget/steam.sh drop can leave it missing,
                 # so verify both post-conditions (cloud_redirect.so on disk AND
                 # INJECT_CR in steam.sh) — the #19 defense. Non-fatal: SLSsteam is
                 # the critical piece; a CR miss just gets surfaced so users retry.
                 cr_ok = check_cloudredirect_installed() and _cloudredirect_injected_in_steam_sh()
                 if not cr_ok:
                     logger.warning("LumaDeck: CloudRedirect not installed/injected after headcrab "
-                                   "(dc_ok=%s) — likely a transient drop", dc_ok)
+                                   "— likely a transient drop")
 
                 # headcrab installs SLSsteam but not .NET 9. Steamless needs it,
                 # so we install it here in the same "Install / Reinstall" click.
@@ -459,130 +439,11 @@ def get_install_status() -> dict:
     return INSTALL_STATE.copy()
 
 
-# SLSsteam's own default config, verbatim from AceSLS/SLSsteam res/config.yaml.
-# SLSsteam copies this to ~/.config/SLSsteam/config.yaml on its first injected
-# run. We seed the SAME bytes when it's missing so CloudRedirect can flip
-# DisableCloud without first waiting for a Steam restart (the gap that broke
-# Quick Install: CR ran before SLSsteam had ever run, so no config.yaml existed).
-# DisableCloud is left at the upstream default ("yes"); CR's _set_disablecloud_no
-# flips it to "no" right after. Identical to the normal first-run result.
-_SLSSTEAM_DEFAULT_CONFIG = """\
-#Disables Family Share license locking for self and others
-DisableFamilyShareLock: yes
-
-#Switches to whitelist instead of the default blacklist
-UseWhitelist: no
-
-#Automatically filter Apps in CheckAppOwnership. Filters everything but Games and Applications. Should not affect DLC checks
-#Overrides black-/whitelist. Gets overriden by AdditionalApps
-AutoFilterList: yes
-
-#List of AppIds to ex-/include
-AppIds:
-
-#Enables playing of not owned games. Respects black-/whitelist AppIds
-PlayNotOwnedGames: no
-
-#Additional AppIds to inject (Overrides your black-/whitelist & also overrides OwnerIds for apps you got shared!) Best to use this only on games NOT in your library.
-AdditionalApps:
-
-#Extra Data for Dlcs belonging to a specific AppId. Only needed
-#when the App you're playing is hit by Steams 64 DLC limit
-DlcData:
-
-#Used to retrieve ProductInfo from Steam servers for some games
-AppTokens:
-
-#Fake Steam being offline for specified AppIds. Same format as AppIds
-FakeOffline:
-
-#Change AppIds of games to enable networking features
-#Use 0 as a key to set for all unowned Apps
-#Keeps track of the proper AppIds via game launches, so please do not start multiple FakeAppId enabled games simultaneously
-FakeAppIds:
-
-#Custom ingame statuses. Set AppId to 0 to disable
-IdleStatus:
-  AppId: 0
-  Title: ""
-
-#Override game titles. Only works with owned appIds! For injected appIds use either UnownedStatus or combine them with FakeAppIds
-GameTitles:
-
-#Override purchase time stamps
-SubscriptionTimestamps:
-
-#Blocks games from unlocking on wrong accounts
-DenuvoGames:
-
-#Automatically disable SLSsteam when steamclient.so does not match a predefined file hash that is known to work
-#You should enable this if you're planing to use SLSsteam with Steam Deck's gamemode
-SafeMode: no
-
-#Toggles notifications via notify-send
-Notifications: yes
-
-#Warn user via notification when steamclient.so hash differs from known safe hash
-#Mostly useful for development so I don't accidentally miss an update
-WarnHashMissmatch: no
-
-#Notify when SLSsteam is done initializing
-NotifyInit: yes
-
-#Enable sending commands to SLSsteam via /tmp/SLSsteam.API
-API: no
-
-#Disable cloud saves for unlocked games. Set to "no" if using CloudRedirect or similar.
-DisableCloud: yes
-
-#Changes your account's E-Mail clientsided. Leave blank to disable
-FakeEmail: ""
-
-#Changes your wallet's balance clientsidedly. 0 to turn off
-FakeWalletBalance: 0
-
-#Log levels:
-#Once = 0
-#Debug = 1
-#Info = 2
-#NotifyShort = 3
-#NotifyLong = 4
-#Warn = 5
-#None = 6
-LogLevel: 2
-
-#Logs all calls to Steamworks (this makes the logfile huge! Only useful for debugging/analyzing
-ExtendedLogging: no
-"""
-
-
-def _seed_slssteam_config_if_missing(require_slssteam: bool = True) -> bool:
-    """Write SLSsteam's default config.yaml if it doesn't exist yet.
-
-    No-op (returns False) when the config already exists, or — with the default
-    require_slssteam=True — when SLSsteam isn't installed (we must not create an
-    orphan config for a missing SLSsteam, which would mask the real "install
-    dependencies first" error). Pass require_slssteam=False from a caller that is
-    itself about to install SLSsteam in the same run (install_dependencies), so
-    the config exists before headcrab reads DisableCloud. Returns True only when
-    it actually seeded the file.
-    """
-    try:
-        if require_slssteam and not check_slssteam_installed():
-            return False
-        config_path = get_slssteam_config_path()
-        if os.path.exists(config_path):
-            return False
-        os.makedirs(get_slssteam_config_dir(), exist_ok=True)
-        tmp = config_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(_SLSSTEAM_DEFAULT_CONFIG)
-        os.replace(tmp, config_path)
-        logger.info("LumaDeck: seeded default SLSsteam config.yaml at %s", config_path)
-        return True
-    except Exception as exc:
-        logger.warning("LumaDeck: failed to seed SLSsteam config.yaml: %s", exc)
-        return False
+# NOTE: LumaDeck no longer seeds a hardcoded config.yaml. The force-cr-install
+# headcrab patch removed the need to pre-create one (it dropped the DisableCloud
+# gate), and SLSsteam writes its own config on first run with its exact current
+# schema. We only enforce the flags we depend on afterwards — see
+# ensure_slssteam_flags().
 
 
 def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
@@ -672,6 +533,75 @@ def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
         return True, "SafeMode already set to yes"
 
     return False, "SafeMode line missing from SLSsteam config — reinstall dependencies"
+
+
+def _set_disableupdates_no(config_path: str) -> tuple[bool, str]:
+    """Set `DisableUpdates: no` in SLSsteam's config.yaml.
+
+    SLSsteam 20260714+ defaults DisableUpdates to `yes`, which stops any app
+    matched by `isAddedAppId(appId) || !isSubscribed(appId)` from auto-updating.
+    Every LumaDeck-added game is an AdditionalApps entry, so `yes` freezes exactly
+    our games ("Update required" that never downloads). Owned games are unaffected
+    either way. We want `no` so added games update like normal (the old lumalinux
+    runtime unblock did the same, and is obsolete now that this is a config toggle).
+
+    The key is new, so a config predating it has no line — append it rather than
+    fail. Idempotent. Returns (ok, message).
+    """
+    if not os.path.isfile(config_path):
+        return False, f"SLSsteam config not found at {config_path} — install dependencies first"
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as exc:
+        return False, f"Cannot read SLSsteam config: {exc}"
+
+    new_content, n = re.subn(
+        r"^(\s*DisableUpdates\s*:\s*)yes\s*$",
+        r"\1no",
+        content,
+        flags=re.MULTILINE,
+    )
+    appended = False
+    if n == 0:
+        if re.search(r"^\s*DisableUpdates\s*:\s*no\s*$", content, flags=re.MULTILINE):
+            return True, "DisableUpdates already set to no"
+        # Key absent (config predates it) — append it.
+        new_content = content + ("" if content.endswith("\n") else "\n") + "DisableUpdates: no\n"
+        appended = True
+
+    try:
+        tmp = config_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        os.replace(tmp, config_path)
+        return True, ("DisableUpdates set to no (appended)" if appended else "DisableUpdates flipped to no")
+    except Exception as exc:
+        return False, f"Cannot write SLSsteam config: {exc}"
+
+
+def ensure_slssteam_flags() -> dict:
+    """Ensure the three SLSsteam config flags LumaDeck depends on, on the config
+    SLSsteam writes itself (we no longer seed a hardcoded one). Idempotent, and
+    SLSsteam hot-reloads config.yaml so no restart is needed.
+
+        DisableCloud: no   — CloudRedirect owns cloud saves; SLSsteam must not disable them
+        DisableUpdates: no — added (unowned) games must be allowed to auto-update
+        SafeMode: yes      — auto-disable SLSsteam on an unknown steamclient.so hash (Deck gamemode)
+
+    Returns {"applied": bool, ...}. applied=False means the config isn't there yet
+    (SLSsteam writes it on its first injected run) — the caller should retry later.
+    """
+    path = get_slssteam_config_path()
+    if not os.path.isfile(path):
+        return {"applied": False, "reason": "SLSsteam config not created yet"}
+    results = {
+        "DisableCloud": _set_disablecloud_no(path),
+        "DisableUpdates": _set_disableupdates_no(path),
+        "SafeMode": _set_safemode_yes(path),
+    }
+    return {"applied": True, "results": {k: {"ok": v[0], "msg": v[1]} for k, v in results.items()}}
 
 
 def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:

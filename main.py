@@ -10,6 +10,7 @@ because the frontend api.ts parseResult() calls JSON.parse(raw).
 import sys
 import os
 import json
+import asyncio
 
 # Add backend/ to module search path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "backend"))
@@ -84,6 +85,29 @@ class Plugin:
                 logger.warning(f"LumaDeck: credential restore failed: {exc}")
             await init_applist()
             await init_games_db()
+
+            # Ensure SLSsteam's config flags (DisableCloud: no / DisableUpdates:
+            # no / SafeMode: yes) once SLSsteam has written its own config. It
+            # creates it on its first injected run, which can land a few seconds
+            # after we load, so poll briefly in the background. Idempotent, and
+            # SLSsteam hot-reloads config.yaml so the flags apply without a
+            # restart. Replaces the old hardcoded config seed.
+            async def _ensure_sls_flags():
+                try:
+                    from installer import ensure_slssteam_flags
+                    from paths import check_slssteam_installed
+                    if not check_slssteam_installed():
+                        return
+                    for _ in range(20):  # ~60s (20 x 3s)
+                        res = ensure_slssteam_flags()
+                        if res.get("applied"):
+                            logger.info("LumaDeck: SLSsteam flags ensured: %s", res.get("results"))
+                            return
+                        await asyncio.sleep(3)
+                    logger.info("LumaDeck: SLSsteam config never appeared this session; flags not set")
+                except Exception as exc:
+                    logger.warning(f"LumaDeck: ensure SLSsteam flags failed: {exc}")
+            asyncio.create_task(_ensure_sls_flags())
         except Exception as exc:
             logger.error(f"LumaDeck: _main init error: {exc}")
 
