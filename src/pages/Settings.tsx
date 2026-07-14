@@ -944,9 +944,14 @@ export function Settings() {
             </PanelSectionRow>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="CloudRedirect" description={crHealthDesc()}>
-                <span style={{ color: compColor(deps.cloudredirect, crHealth?.state === "healthy") }}>
-                  {compStatus(deps.cloudredirect, crHealth?.state === "healthy")}
-                </span>
+                {crHealth?.state === "disabled" ? (
+                  // Off by choice, not broken → grey "Disabled", no amber alarm.
+                  <span style={{ color: "#888" }}>{t("statusDisabled")}</span>
+                ) : (
+                  <span style={{ color: compColor(deps.cloudredirect, crHealth?.state === "healthy") }}>
+                    {compStatus(deps.cloudredirect, crHealth?.state === "healthy")}
+                  </span>
+                )}
               </Field>
             </PanelSectionRow>
           </>
