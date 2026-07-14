@@ -533,10 +533,16 @@ export function Settings() {
   };
 
   // Right-side status for a component. Hook components (SLSsteam / lumalinux /
-  // CloudRedirect) read "Installed & Loaded" when healthy; anything installed but
-  // not fully working just says "Installed" and a warning line explains below.
+  // CloudRedirect) read "Active" when healthy; anything installed but not fully
+  // working just says "Installed" and a warning line explains below.
   const compStatus = (present: boolean, healthy?: boolean) =>
-    !present ? t("notFound") : healthy ? t("installedLoaded") : t("installed");
+    !present ? t("notInstalled") : healthy ? t("installedLoaded") : t("installed");
+
+  // Three-state colour to match the three states: not installed = red, installed
+  // but not working = amber (there, but broken — mirrors the sub-line), healthy =
+  // green. Without the amber, a broken-but-installed component reads as green "OK".
+  const compColor = (present: boolean, healthy?: boolean) =>
+    !present ? "#ff4444" : healthy ? "#00cc00" : "#ff8c00";
 
   // A small colored line under the component (where the path used to be). Nothing
   // renders when healthy and up to date, so the normal screen is just the list.
@@ -913,28 +919,28 @@ export function Settings() {
           <>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="SLSsteam" description={slssHealthDesc()}>
-                <span style={{ color: deps.slssteam ? "#00cc00" : "#ff4444" }}>
+                <span style={{ color: compColor(deps.slssteam, slssteamHealth?.state === "healthy") }}>
                   {compStatus(deps.slssteam, slssteamHealth?.state === "healthy")}
                 </span>
               </Field>
             </PanelSectionRow>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label=".NET Runtime">
-                <span style={{ color: deps.dotnet ? "#00cc00" : "#ff4444" }}>
-                  {deps.dotnet ? t("installed") : t("notFound")}
+                <span style={{ color: compColor(deps.dotnet, deps.dotnet) }}>
+                  {deps.dotnet ? t("installed") : t("notInstalled")}
                 </span>
               </Field>
             </PanelSectionRow>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="lumalinux" description={llHealthDesc()}>
-                <span style={{ color: deps.lumalinux ? "#00cc00" : "#ff4444" }}>
+                <span style={{ color: compColor(deps.lumalinux, lumalinuxHealth?.state === "healthy") }}>
                   {compStatus(deps.lumalinux, lumalinuxHealth?.state === "healthy")}
                 </span>
               </Field>
             </PanelSectionRow>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="CloudRedirect" description={crHealthDesc()}>
-                <span style={{ color: deps.cloudredirect ? "#00cc00" : "#ff4444" }}>
+                <span style={{ color: compColor(deps.cloudredirect, crHealth?.state === "healthy") }}>
                   {compStatus(deps.cloudredirect, crHealth?.state === "healthy")}
                 </span>
               </Field>
