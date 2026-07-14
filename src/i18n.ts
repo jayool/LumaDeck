@@ -61,7 +61,7 @@ const strings: Record<Lang, Record<string, string>> = {
     helpTroubleshootingTips:
       "• Game won't appear or download? Restart Steam after Download Manifest; it won't show until you do, then press Install in Steam.\n" +
       "• Manifest fetch fails? Check Settings ▸ API Credentials (an expired key is the usual cause); try the other provider.\n" +
-      "• A component isn't loaded? Restart Steam. Steam too new or a build mismatch? Fix it in Desktop from Settings ▸ Dependencies.\n" +
+      "• A component isn't loaded? Restart Steam. Steam too new or a build mismatch? Fix it in Desktop from Settings ▸ Components.\n" +
       "• \"Fix blocked in Game Mode\"? Switch to Desktop, run the command shown, then return.\n" +
       "• A game crashes? Try Repair appmanifest, Reconfigure SLSsteam, Check for Fixes, or (emulator titles) Apply Goldberg.",
     results: "results",
@@ -167,7 +167,7 @@ const strings: Record<Lang, Record<string, string>> = {
     downloadSteamless: "Setup Steamless",
     downloadingSteamless: "Extracting Steamless...",
     steamlessDownloaded: "Steamless ready",
-    steamlessDotnetRequired: ".NET required. Install it in Dependencies.",
+    steamlessDotnetRequired: ".NET required. Install it in Components.",
     removeDrmSteamless: "Remove Steam DRM",
     removeDrmSteamlessDesc: "Use if the game's .exe is wrapped in Steam DRM and won't start. Keeps a .exe.bak backup.",
     removeDrmRunning: "Removing DRM... ({0}/{1})",
@@ -288,7 +288,7 @@ const strings: Record<Lang, Record<string, string>> = {
     headcrabRepaired: "SLSsteam repaired!",
     headcrabRepairedBody: "Restart Steam to activate.",
     slssteamUnknownHash: "Unknown steamclient.so hash — SLSsteam inactive",
-    slssteamUnknownHashBody: "Steam updated past Headcrab's pin. Open Settings → Dependencies to repair.",
+    slssteamUnknownHashBody: "Steam updated past Headcrab's pin. Open Settings → Components to repair.",
     // Component health (Dependencies sub-row). Shared across all three
     // components: from the user's side a broken component only ever needs a
     // Restart or a Fix in Desktop, so it only ever says one of those.
@@ -299,8 +299,8 @@ const strings: Record<Lang, Record<string, string>> = {
     slssUpdateAvailableSub: "Update available (Steam build {0} → {1})",
     // System status (unified component model) — jargon-free, outcome-led
     sysSteamTooNew: "Steam is too new",
-    sysLumalinuxNotReady: "Waiting for an update",
-    sysLumalinuxNotReadyDesc: "This Steam version isn't supported yet. Nothing to do: it fixes itself once support ships.",
+    sysLumalinuxNotReady: "Adding games unavailable",
+    sysLumalinuxNotReadyDesc: "This Steam build doesn't support adding games through LumaDeck. Wait for an update.",
     sysUnsupported: "Steam build unsupported",
     sysUnsupportedDesc: "A Steam update broke LumaDeck. Press Fix in Desktop to repair it.",
     sysNotComplete: "Setup incomplete",
@@ -346,8 +346,8 @@ const strings: Record<Lang, Record<string, string>> = {
     headcrabGameModeBlockTitle: "Cannot run from Game Mode",
     headcrabGameModeBlockBody: "Headcrab will try to downgrade Steam, which crashes gamescope. Switch to Desktop Mode and run:",
     headcrabGameModeBlockCommand: "curl -fsSL https://headcrab.pages.dev | bash",
-    dependencies: "Dependencies",
-    installReinstallDeps: "Install / Reinstall Dependencies",
+    dependencies: "Components",
+    installReinstallDeps: "Install / Reinstall Components",
     installDeps: "Install dependencies",
     reinstallDeps: "Reinstall dependencies",
     installing: "Installing...",
@@ -427,7 +427,7 @@ const strings: Record<Lang, Record<string, string>> = {
     toastApisUpdated: "{0} APIs loaded",
     toastInjectionOk: "SLSsteam injection: OK (active)",
     toastInjectionPatched: "SLSsteam: steam.sh patched — restart Steam",
-    toastDepsInstalled: "Dependencies installed",
+    toastDepsInstalled: "Components installed",
     toastDownloadStarted: "Download started",
     toastDownloadComplete: "Download complete!",
     toastDownloadFailed: "Download failed",
@@ -584,7 +584,7 @@ const strings: Record<Lang, Record<string, string>> = {
     downloadSteamless: "Configurar Steamless",
     downloadingSteamless: "Extraindo Steamless...",
     steamlessDownloaded: "Steamless pronto",
-    steamlessDotnetRequired: ".NET necessário — instale via Dependências",
+    steamlessDotnetRequired: ".NET necessário. Instale via Componentes.",
     removeDrmSteamless: "Remover DRM Steam",
     removeDrmSteamlessDesc: "Use se o .exe do jogo está empacotado com DRM da Steam e não inicia. Mantém um backup .exe.bak.",
     removeDrmRunning: "Removendo DRM... ({0}/{1})",
@@ -704,7 +704,7 @@ const strings: Record<Lang, Record<string, string>> = {
     repairSlssteamHeadcrab: "Reparar SLSsteam (Headcrab)",
     repairingHeadcrab: "Reparando SLSsteam...",
     repairingHeadcrabBody: "Resetando + reconfigurando Steam + reaplicando patch. ~20 s",
-    slssteamUnknownHashBody: "Steam atualizou além do pin do Headcrab. Abra Configurações → Dependências para reparar.",
+    slssteamUnknownHashBody: "Steam atualizou além do pin do Headcrab. Abra Configurações → Componentes para reparar.",
     steamBuildOk: "Build do Steam: {0}",
     steamBuildMismatch: "Build do Steam: {0} ⚠ (alvo do Headcrab: {1})",
     headcrabGameModeBlockTitle: "Não pode rodar no Game Mode",
@@ -720,8 +720,8 @@ const strings: Record<Lang, Record<string, string>> = {
     slssUpdateAvailableSub: "Atualização disponível (build da Steam {0} → {1})",
     // System status (modelo unificado de componentes)
     sysSteamTooNew: "A Steam atualizou demais",
-    sysLumalinuxNotReady: "Aguardando o lumalinux",
-    sysLumalinuxNotReadyDesc: "O lumalinux ainda não suporta esta versão da Steam, então mudar a Steam não resolveria. Nenhuma ação necessária: ele se corrige sozinho na próxima inicialização assim que o suporte for publicado.",
+    sysLumalinuxNotReady: "Adicionar jogos indisponível",
+    sysLumalinuxNotReadyDesc: "Esta build da Steam não suporta adicionar jogos pelo LumaDeck. Aguarde uma atualização.",
     sysUnsupported: "Build da Steam não suportado",
     sysUnsupportedDesc: "Uma atualização da Steam quebrou o LumaDeck. Toque em Corrigir no Desktop para reparar.",
     sysNotComplete: "Instalação incompleta",
@@ -758,8 +758,8 @@ const strings: Record<Lang, Record<string, string>> = {
     hubcapKeyExpiredTitle: "Hubcap API key expirada",
     hubcapKeyExpiredBody: "Não foi possível obter um manifesto novo — sua Hubcap API key expirou (as chaves duram 7 dias). Renove em Settings e toque em Corrigir Atualização novamente. Sua versão instalada continua funcionando.",
     hubcapKeyExpiredButton: "Abrir Settings",
-    dependencies: "Dependências",
-    installReinstallDeps: "Instalar / Reinstalar Dependências",
+    dependencies: "Componentes",
+    installReinstallDeps: "Instalar / Reinstalar Componentes",
     installDeps: "Instalar dependências",
     reinstallDeps: "Reinstalar dependências",
     installing: "Instalando...",
@@ -839,7 +839,7 @@ const strings: Record<Lang, Record<string, string>> = {
     toastApisUpdated: "{0} APIs carregadas",
     toastInjectionOk: "Injeção SLSsteam: OK (ativa)",
     toastInjectionPatched: "SLSsteam: steam.sh patcheado — reinicie o Steam",
-    toastDepsInstalled: "Dependências instaladas",
+    toastDepsInstalled: "Componentes instalados",
     toastDownloadStarted: "Download iniciado",
     toastDownloadComplete: "Download concluído!",
     toastDownloadFailed: "Download falhou",

@@ -134,8 +134,10 @@ function buildRows(
   // ---- one system problem, by priority ----
   //   Waiting > Steam-unsupported (Desktop) > incomplete install (in place) > Restart
   if (waitingForSupport) {
+    // Nothing is broken and nothing to do — only new downloads are paused until
+    // lumalinux catches up with Steam, and it self-heals. Info track, not a warning.
     rows.push({
-      key: "ll-not-ready", severity: "problem",
+      key: "ll-not-ready", severity: "info",
       label: t("sysLumalinuxNotReady"), description: t("sysLumalinuxNotReadyDesc"),
     });
   } else if (anyUnsupported) {
