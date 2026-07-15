@@ -40,10 +40,6 @@ except ImportError:
 DOWNLOAD_STATE: Dict[int, Dict[str, Any]] = {}
 DOWNLOAD_TASKS: Dict[int, asyncio.Task] = {}
 
-# Fire-and-forget background tasks (e.g. the delayed Steam restart). Keep a
-# strong reference so the event loop doesn't garbage-collect them mid-flight —
-# asyncio only holds a weak reference to tasks created via create_task().
-_BACKGROUND_TASKS: set = set()
 
 # Cache for app names
 APP_NAME_CACHE: Dict[int, str] = {}
@@ -1000,43 +996,6 @@ def _parse_lua_depots(lua_path: str) -> list[dict]:
     return depots
 
 
-async def _restart_steam_delayed(delay: int = 5) -> None:
-    """Ask Steam to shut down after a delay; on Steam Deck Game Mode the session
-    manager then auto-relaunches it, so SLSsteam/lumalinux read the fresh config
-    on the new start.
-
-    MUST run as the `deck` user. The Decky plugin runs as root, but Steam runs as
-    `deck`, and `steam -shutdown` talks to the running client over a per-user IPC
-    tied to that user's HOME / XDG_RUNTIME_DIR. Invoked as root it never reaches
-    the deck-user Steam, so the shutdown silently no-ops (this is why the restart
-    was never happening). We drop to `deck` via runuser, with a clean env (no
-    PyInstaller LD_LIBRARY_PATH), the deck user's runtime dir, and the full
-    /usr/bin/steam path."""
-    await asyncio.sleep(delay)
-    try:
-        import subprocess
-        from subprocess_env import clean_env
-        logger.info("LumaDeck: Restarting Steam (steam -shutdown as deck)...")
-        # As root, drop to deck via runuser (Steam's IPC is per-user). If Decky
-        # runs this backend unprivileged (as deck) instead, runuser fails
-        # ("may not be used by non-root users") — we're already deck, so call
-        # steam directly. Either way the process runs as deck with deck's runtime
-        # dir, which is what `steam -shutdown` needs to reach the live client.
-        if os.geteuid() == 0:
-            cmd = ["runuser", "-u", "deck", "--", "/usr/bin/steam", "-shutdown"]
-        else:
-            cmd = ["/usr/bin/steam", "-shutdown"]
-        subprocess.Popen(
-            cmd,
-            env=clean_env(HOME="/home/deck", XDG_RUNTIME_DIR="/run/user/1000"),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception as e:
-        logger.warning(f"LumaDeck: Failed to restart Steam: {e}")
-        return
-
-
 async def repair_appmanifest(appid: int) -> dict:
     """Repair the .acf for an installed game by deleting it so Steam
     recreates it on its next refresh.
@@ -1296,21 +1255,14 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                         except Exception as proton_exc:
                             logger.warning(f"LumaDeck: set_compat_tool error: {proton_exc}")
 
-                    # Trigger Steam restart so Game Mode reloads it with the
-                    # fresh config + hooks active. SteamOS auto-relaunches.
-                    # See _restart_steam_delayed: it sleeps `delay` seconds
-                    # so the frontend sees the "restarting" state before the
-                    # shutdown actually fires. The actual game download is
-                    # native Steam after the restart — progress shows in the
-                    # Steam library UI itself, not in this plugin.
-                    _set_download_state(appid, {
-                        "status": "restarting_steam",
-                        "message": "Restarting Steam to start the download…",
-                    })
-                    _t = asyncio.create_task(_restart_steam_delayed(delay=5))
-                    _BACKGROUND_TASKS.add(_t)
-                    _t.add_done_callback(_BACKGROUND_TASKS.discard)
-
+                    # We do NOT auto-restart Steam. Everything is written to
+                    # disk; Steam picks up the new game (and downloads it
+                    # natively) on its next restart, which the user triggers
+                    # themselves — restarting the Deck normally, or Steam. This
+                    # avoids yanking Steam out from under them mid-session and
+                    # lets them add several games before a single restart. The UI
+                    # shows doneRestartSteam ("Done! Restart Steam to see the
+                    # game.") on the "done" state.
                     _set_download_state(appid, {
                         "status": "done", "success": True, "api": name,
                     })

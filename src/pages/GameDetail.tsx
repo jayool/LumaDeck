@@ -770,7 +770,7 @@ export function GameDetail({ appid }: GameDetailProps) {
         {downloadState?.status === "done" && (
           <PanelSectionRow>
             <Field label={t("download")}>
-              <span style={{ color: "#00cc00" }}>{t("downloadComplete")}</span>
+              <span style={{ color: "#00cc00" }}>{t("doneRestartSteam")}</span>
             </Field>
           </PanelSectionRow>
         )}
