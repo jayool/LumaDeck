@@ -47,8 +47,11 @@ async def _run() -> dict:
         while not done.is_set():
             try:
                 st = get_quick_install_status()
+                # stepIndex is 0-based; show the 1-based current step (1/2, 2/2).
+                _tot = st.get("totalSteps") or 2
+                _cur = min((st.get("stepIndex") or 0) + 1, _tot)
                 line = (
-                    f"[{st.get('stepIndex', '?')}/{st.get('totalSteps', '?')}] "
+                    f"[{_cur}/{_tot}] "
                     f"{st.get('step', '')}: {st.get('progress', '')}"
                 )
                 if line != last:
