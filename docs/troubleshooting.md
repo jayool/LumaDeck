@@ -19,10 +19,10 @@ Healthy components stay silent — no banner means nothing to do.
 - **Did you restart Steam after *Download Manifest*?** The game **doesn't appear
   in your library at all** until you restart Steam. After the restart it shows
   up, ready to **Install**.
-- Check **Dependencies**: lumalinux and SLSsteam must be 🟢 and `healthy`.
-- If a component shows `not_active`, **restart Steam**.
-- If it shows `broken` or a **build mismatch**, Steam updated past the hooks —
-  **reapply** the component (see below).
+- Check **Components**: lumalinux and SLSsteam must be 🟢 **Active**.
+- If a component shows `not_loaded`, **restart Steam**.
+- If it shows `not_supported`, Steam updated past the hooks. Use **Fix in
+  Desktop** (see below).
 
 ### "Reapply blocked in Game Mode"
 Some installs/repairs need a real desktop session. The panel shows the exact
@@ -30,8 +30,8 @@ command — switch to **Desktop mode**, run it, then return to Game Mode.
 
 ### After a SteamOS / Steam client update
 Headcrab regenerates `steam.sh` and erases lumalinux's `LD_PRELOAD` block (the
-deployed `.so` and `keys.txt` survive). Fix: **Settings ▸ Dependencies ▸
-Install / Reapply lumalinux**.
+deployed `.so` and `keys.txt` survive). This shows as `not_injected`. Fix:
+**Settings ▸ Components ▸ Repair** (re-injects `steam.sh`, then restarts).
 
 ### Manifest fetch fails
 - Check your credentials in **Settings ▸ API Credentials** — an expired/invalid

@@ -24,15 +24,15 @@ manual action.
 The bundled components (SLSsteam, lumalinux, CloudRedirect) update
 independently of the plugin. When a newer component release is available and the
 component is otherwise healthy, LumaDeck surfaces an **info notice** (blue) on
-the main page and in Dependencies. The update button itself lives in **Settings
-▸ Dependencies** — tap the matching *Install / Reapply* action.
+the main page and in Components. The update button itself lives in **Settings
+▸ Components**: press the matching *Install / Reinstall Components* action.
 
-A **broken** component (red) is different from an **update available** (blue):
-the red banner means it needs repair now; the blue notice is routine. See
-[Components & health](components-and-health.md).
+A **broken** component (amber or red) is different from an **update available**
+(blue): the broken status means it needs repair now; the blue notice is routine.
+See [Components & health](components-and-health.md).
 
 ## After a Steam / SteamOS update
 
-A client update can break the hooks (build-ID or byte-pattern mismatch). Reapply
-the affected component from Dependencies; if Game Mode blocks it, run it from
-Desktop. Details in [Troubleshooting](troubleshooting.md).
+A client update can break the hooks (build-ID or byte-pattern mismatch), which
+shows as `not_supported`. Fix it with **Fix in Desktop**; if Game Mode blocks
+it, it runs from Desktop. Details in [Troubleshooting](troubleshooting.md).

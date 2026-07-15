@@ -7,14 +7,14 @@ Dropbox), so cloud saves keep working for games added through LumaDeck. It is
 
 ## How it's installed
 
-CloudRedirect ships with the **base dependencies** — there's no separate
-**Enable CloudRedirect** step anymore. **Install / Reinstall Dependencies** runs
+CloudRedirect ships with the **base install**. There's no separate
+**Enable CloudRedirect** step anymore. **Install / Reinstall Components** runs
 a single Headcrab pass that installs SLSsteam and CloudRedirect together, flips
-`DisableCloud: yes → no` in SLSsteam's config, and drops the CloudRedirect
+`DisableCloud: yes` to `no` in SLSsteam's config, and drops the CloudRedirect
 Flatpak plus its `cloud_redirect.so` hook. It ends with a Steam restart.
 
-After this the **library is in place but no provider is signed in** — the
-Dependencies panel shows CloudRedirect as `not_authed`.
+After this the **library is in place but no provider is signed in**, so the
+Components panel shows CloudRedirect as `not_authed`.
 
 ## Sign into a provider
 

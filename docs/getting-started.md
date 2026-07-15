@@ -27,14 +27,14 @@ appears while none of the components are installed; once any is present it's
 replaced by the individual controls in Settings.)
 
 To install them **individually** (or to reinstall later), open
-**Settings ▸ Dependencies** and run them **in this order**:
+**Settings ▸ Components** and run them **in this order**:
 
-1. **Install / Reinstall Dependencies** — runs [headcrab.sh](https://github.com/Deadboy666/h3adcr-b)
+1. **Install / Reinstall Components** runs [headcrab.sh](https://github.com/Deadboy666/h3adcr-b)
    in the background: installs **SLSsteam + CloudRedirect** in one pass, plus the
    **.NET 9 runtime** (via Microsoft's official installer script), and patches
    Steam. CloudRedirect ships with the base install but stays inert until you
-   sign into a provider — for cloud saves see [Cloud saves](cloud-saves.md).
-2. **Install / Reapply lumalinux** — **always do this last.** Runs
+   sign into a provider (for cloud saves see [Cloud saves](cloud-saves.md)).
+2. **Install / Reapply lumalinux**, **always do this last.** Runs
    [lumalinux's `install.sh`](https://github.com/jayool/lumalinux/blob/main/install.sh):
    deploys `liblumalinux.so` plus the `tools/` scripts and patches Steam's
    `steam.sh` with the `LD_PRELOAD` block. The earlier steps regenerate

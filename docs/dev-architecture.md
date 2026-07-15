@@ -62,7 +62,7 @@ Every backend call goes through one pattern:
 
 Pages fetch on mount via `api.ts` and render. Health/update signals
 (`get_*_health`, `check_*_update`) drive the banners on `GameList`; the
-Dependencies panel in `Settings` polls a few times after mount because an
+Components panel in `Settings` polls a few times after mount because an
 install can restart Steam mid-flight and tear the UI down (see the comment on
 the retry timers in `Settings.tsx`).
 
