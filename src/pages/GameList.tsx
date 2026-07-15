@@ -244,15 +244,20 @@ export function GameList() {
 
   useEffect(() => {
     // Achievements are ready to generate once the Steam Web API key is set.
-    if (!ACHIEVEMENTS_ENABLED) return;
-    (async () => {
-      try {
-        const result = await getApiKeyStatus();
-        if (result.success && result.keySet) {
-          setAchievementsReady(true);
-        }
-      } catch { }
-    })();
+    // Gate ONLY the achievements probe on the feature flag — the rest of this
+    // mount init (system status, credentials, appid detection) must always run.
+    // (Regression: a blanket `if (!ACHIEVEMENTS_ENABLED) return` here skipped
+    // the whole effect, so the QAM loaded nothing until a manual refresh.)
+    if (ACHIEVEMENTS_ENABLED) {
+      (async () => {
+        try {
+          const result = await getApiKeyStatus();
+          if (result.success && result.keySet) {
+            setAchievementsReady(true);
+          }
+        } catch { }
+      })();
+    }
 
     // Unified system status: one call for all component health + updates +
     // headcrab gate + plugin, plus the per-game stuck check.
