@@ -809,11 +809,14 @@ async def _process_and_install_lua(appid: int, zip_path: str) -> None:
          (handled outside this function, in _download_zip_for_app).
 
     Notes:
-      - setManifestid() lines are NOT commented out. The plugin upstream
-        does that to defeat manifest pinning; in LumaDeck we WANT the pinned
-        version (lumalinux's BuildDep hook patches Steam's pDepotInfo with
-        the manifest_gid from keys.txt) because Hubcap's pin is the
-        tested combination against the current SLSsteam.
+      - This runs steamidra_lite in its default NO-PIN mode (no --pin flag): it
+        writes manifest_gid=0 to keys.txt and comments out the setManifestid
+        lines, so Steam pulls the latest manifest and the game auto-updates. The
+        depot AES keys are version-independent, so the download still decrypts.
+        Version pinning is opt-in per game (pin_game -> --pin-installed) and is
+        currently a no-op at the lumalinux layer: SLSsteam 20260714 owns
+        BuildDepotDependency, so lumalinux's BuildDep hook is disabled. Re-homing
+        the pin onto SLSsteam's ManifestIds is tracked separately.
       - No ACCELA launcher integration. If the user wants ACCELA to handle
         the zip instead, they can run it manually from Desktop Mode.
     """

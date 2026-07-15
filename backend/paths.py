@@ -344,6 +344,16 @@ def _cloudredirect_injected_in_steam_sh() -> bool:
     return False
 
 
+# The load-bearing lumalinux hooks: if one of THESE reports "failed", downloads
+# are genuinely broken (a real Steam-build mismatch). DepotKey serves the AES
+# keys, GMRC serves the manifest request code, the package-0 finder surfaces the
+# content depots. Everything else (BuildDep, ShaderDepot, the Sls* patches) is
+# non-critical: BuildDep is pin-only AND disabled outright since SLSsteam 20260714
+# owns BuildDepotDependency, so a BuildDep "failed" must NOT trip "Steam build not
+# supported". See lumalinux docs/RESEARCH.md §11.6.
+_CRITICAL_LUMALINUX_HOOKS = {"DepotKey", "GMRC", "PackageZeroFinder"}
+
+
 def read_lumalinux_health() -> dict:
     """Resolve lumalinux into a single UI state. Symmetric to read_slssteam_health.
 
@@ -389,10 +399,15 @@ def read_lumalinux_health() -> dict:
         return {"state": "not_supported", "cause": "version", "version": version, "action": "downgrade"}
 
     hooks = status.get("hooks") or {}
-    failed = [name for name, outcome in hooks.items() if outcome == "failed"]
-    if failed:
-        # A hook didn't install — in practice the byte patterns moved under a
-        # Steam update → not_supported (cause "hooks"), fixed in Desktop.
+    critical_failed = [
+        name for name, outcome in hooks.items()
+        if outcome == "failed" and name in _CRITICAL_LUMALINUX_HOOKS
+    ]
+    if critical_failed:
+        # A load-bearing hook didn't install — in practice the byte patterns
+        # moved under a Steam update → not_supported (cause "hooks"), fixed in
+        # Desktop. Non-critical misses (BuildDep, ShaderDepot) are ignored: the
+        # download pipeline still works, so we stay healthy.
         return {"state": "not_supported", "cause": "hooks", "version": version, "action": "downgrade"}
 
     return {"state": "healthy", "cause": None, "version": version, "action": None}
