@@ -584,14 +584,16 @@ export function GameList() {
           buttons at the bottom. */}
       {showQuickInstall && (
         <PanelSection title={t("quickInstallSectionTitle")}>
-          <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#8b929a", lineHeight: "1.4" }}>
-              {t("quickInstallIntro")}
-            </div>
-          </PanelSectionRow>
+          {/* Intro text goes in the ButtonItem's own `description` (not a
+              separate row above): the native Field owns the padding between the
+              blurb and the button, so the focus band — the dark halo Steam
+              paints around a focused button up to its row delimiters — contains
+              text + button as ONE unit instead of bleeding onto a loose text
+              row that has no top delimiter above the button. */}
           <PanelSectionRow>
             <ButtonItem
               layout="below"
+              description={t("quickInstallIntro")}
               onClick={handleQuickInstall}
               disabled={quickInstalling}
             >
