@@ -596,7 +596,7 @@ export function GameList() {
           <PanelSectionRow>
             <ButtonItem
               layout="below"
-              label={t("quickInstallSectionTitle")}
+              label={<span style={{ fontWeight: "bold" }}>{t("quickInstallSectionTitle")}</span>}
               description={t("quickInstallIntro")}
               onClick={handleQuickInstall}
               disabled={quickInstalling}
