@@ -1,5 +1,5 @@
 import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { FaExclamationTriangle, FaArrowCircleUp } from "react-icons/fa";
 import { useT } from "../i18n";
 
@@ -258,6 +258,20 @@ export function SystemStatus({
   const t = useT();
   // Which row is mid-confirm (first tap done, waiting for the second).
   const [confirming, setConfirming] = useState<string | null>(null);
+  // Auto-revert the two-tap confirm, mirroring the Quick Install button: a first
+  // tap arms the row, and if the second tap doesn't come within 5s the label
+  // reverts to the action instead of staying "Press again to confirm" forever.
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armConfirm = (key: string) => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setConfirming(key);
+    confirmTimer.current = setTimeout(() => setConfirming(null), 5000);
+  };
+  const clearConfirm = () => {
+    if (confirmTimer.current) { clearTimeout(confirmTimer.current); confirmTimer.current = null; }
+    setConfirming(null);
+  };
+  useEffect(() => () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); }, []);
   if (!status?.success) return null;
 
   const rows = buildRows(t, status, stuck, busy, actions);
@@ -278,10 +292,10 @@ export function SystemStatus({
         const handleClick = () => {
           if (!r.onAction) return;
           if (r.confirmFirst && !isConfirming) {
-            setConfirming(r.key);
+            armConfirm(r.key);
             return;
           }
-          setConfirming(null);
+          clearConfirm();
           r.onAction();
         };
         const buttonLabel = r.confirmFirst && isConfirming
