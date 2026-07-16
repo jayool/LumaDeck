@@ -55,17 +55,18 @@ the normal case.
 ### Auto-update (default)
 
 By default a game is **unpinned**: `steamidra_lite` writes `gid=0` for its
-content depots in `keys.txt`, so the **BuildDep** hook passes through and Steam
-follows Valve's current manifest — the game **auto-updates like a legitimate
-owner**, decrypting each depot with the keys already in `keys.txt`.
+content depots in `keys.txt`, so nothing pins them and Steam follows Valve's
+current manifest. The game **auto-updates like a legitimate owner**, decrypting
+each depot with the keys already in `keys.txt`.
 
 The per-game **auto-update** toggle (on the [game page](managing-a-game.md#auto-update))
 controls this:
 
 - **On (unpinned, default)** — follows the latest version.
-- **Off (pinned)** — `steamidra_lite --pin` writes the installed GID and BuildDep
-  freezes that version; updates are held back. **LumaDeck won't tell you a newer
-  version exists for a pinned game** — unpin it to pick updates back up.
+- **Off (pinned)** — `steamidra_lite --pin-installed` writes the installed GID
+  into SLSsteam's `ManifestIds`, and **SLSsteam** freezes that version; updates
+  are held back. **LumaDeck won't tell you a newer version exists for a pinned
+  game** — unpin it to pick updates back up.
 
 ### When an update gets stuck
 
