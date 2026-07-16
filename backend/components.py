@@ -152,9 +152,6 @@ async def get_components_status(force: bool = False) -> dict:
         read_slssteam_health,
         read_lumalinux_health,
         read_cloudredirect_health,
-        check_slssteam_installed,
-        check_lumalinux_installed,
-        check_cloudredirect_installed,
     )
     from headcrab_compat import check_headcrab_compat
     from self_update import check_plugin_update
@@ -193,10 +190,19 @@ async def get_components_status(force: bool = False) -> dict:
     headcrab = await _safe(check_headcrab_compat(), {"compatible": None, "target": None, "current_build": None})
     plugin = await _safe(check_plugin_update(), {"installed": None, "latest": None, "has_update": False})
 
+    # `installed` is derived from the (dev-aware) health state, NOT a raw disk
+    # check. read_*_health() returns "not_installed" exactly when the .so is
+    # absent, so this equals check_*_installed() in production — but it also
+    # lets the Dev health overrides drive the installed flag, so forcing a
+    # state (not_supported, not_loaded, ...) surfaces the matching SystemStatus
+    # row instead of being filtered out by a disk check the override can't touch.
+    def _installed(h: dict) -> bool:
+        return h.get("state") not in (None, "not_installed")
+
     components = [
-        _component("slssteam", "SLSsteam", check_slssteam_installed(), sls_health, sls_update),
-        _component("cloudredirect", "CloudRedirect", check_cloudredirect_installed(), cr_health, cr_update),
-        _component("lumalinux", "lumalinux", check_lumalinux_installed(), ll_health, ll_update),
+        _component("slssteam", "SLSsteam", _installed(sls_health), sls_health, sls_update),
+        _component("cloudredirect", "CloudRedirect", _installed(cr_health), cr_health, cr_update),
+        _component("lumalinux", "lumalinux", _installed(ll_health), ll_health, ll_update),
     ]
 
     # Dev preview: force the Quick Install onboarding on/off without touching
