@@ -183,9 +183,19 @@ async def get_components_status(force: bool = False) -> dict:
     # so we don't surface them (choice B). Skip the check to avoid a wasted API
     # call. check_slssteam_update() stays defined for if we ever record the
     # version at install time.
+    # When a component's health is FORCED via the Dev tab, its version is
+    # synthetic ("9.9.9"), so a real update check would compare against a fake
+    # value and spuriously report "update available". Skip the check for any
+    # Dev-forced component (preview only; no effect on a normal install).
+    import dev
+    ll_forced = dev.get("lumalinux_health") is not None
+    cr_forced = dev.get("cloudredirect_health") is not None
+
     sls_update = dict(no_update)
-    ll_update = await _safe(has_update("jayool", "lumalinux", ll_health.get("version"), force=force), no_update)
-    cr_update = await _safe(check_cloudredirect_update(force=force), no_update)
+    ll_update = no_update if ll_forced else await _safe(
+        has_update("jayool", "lumalinux", ll_health.get("version"), force=force), no_update)
+    cr_update = no_update if cr_forced else await _safe(
+        check_cloudredirect_update(force=force), no_update)
 
     headcrab = await _safe(check_headcrab_compat(), {"compatible": None, "target": None, "current_build": None})
     plugin = await _safe(check_plugin_update(), {"installed": None, "latest": None, "has_update": False})
@@ -207,7 +217,6 @@ async def get_components_status(force: bool = False) -> dict:
 
     # Dev preview: force the Quick Install onboarding on/off without touching
     # real component files. "show"/"hide"/None — the frontend gate reads it.
-    import dev
     quick_install_override = dev.get("quick_install")
 
     return {

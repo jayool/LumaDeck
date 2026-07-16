@@ -559,9 +559,17 @@ export function Settings() {
     return <span style={{ color }}>{marker} {line}</span>;
   };
 
+  // "Installed" for the three hook components is derived from their (Dev-aware)
+  // health state, not deps.* (a raw disk check), so the Dependencies page agrees
+  // with the QAM and honours the Dev preview overrides. Identical to the disk
+  // check in production: health is not_installed exactly when the .so is absent.
+  const slssPresent = !!slssteamHealth?.state && slssteamHealth.state !== "not_installed";
+  const llPresent = !!lumalinuxHealth?.state && lumalinuxHealth.state !== "not_installed";
+  const crPresent = !!crHealth?.state && crHealth.state !== "not_installed";
+
   const slssHealthDesc = () => {
     const h = slssteamHealth;
-    if (!deps?.slssteam) return undefined;
+    if (!slssPresent) return undefined;
     if (h && h.state !== "healthy") return warnDesc(healthLine(h.state));
     // Healthy → surface the update (headcrab pin ahead of the local Steam build)
     // in the same subtext slot as the warnings.
@@ -574,7 +582,7 @@ export function Settings() {
 
   const llHealthDesc = () => {
     const h = lumalinuxHealth;
-    if (!deps?.lumalinux || !h || h.state === "not_installed") return undefined;
+    if (!llPresent || !h) return undefined;
     if (h.state !== "healthy") return warnDesc(healthLine(h.state));
     // Healthy → update available in the same subtext slot.
     if (llUpdate?.has_update)
@@ -585,7 +593,7 @@ export function Settings() {
   // CloudRedirect: a hook warning (if the hooks broke) and/or a sign-in warning
   // (provider not configured). Nothing when healthy + signed in.
   const crHealthDesc = () => {
-    if (!deps?.cloudredirect) return undefined;
+    if (!crPresent) return undefined;
     const lines: any[] = [];
     if (crHealth && crHealth.state !== "healthy" && crHealth.state !== "not_authed") {
       // disabled is a deliberate opt-out → muted grey line, no warning. Every
@@ -924,8 +932,8 @@ export function Settings() {
           <>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="SLSsteam" description={slssHealthDesc()}>
-                <span style={{ color: compColor(deps.slssteam, slssteamHealth?.state === "healthy") }}>
-                  {compStatus(deps.slssteam, slssteamHealth?.state === "healthy")}
+                <span style={{ color: compColor(slssPresent, slssteamHealth?.state === "healthy") }}>
+                  {compStatus(slssPresent, slssteamHealth?.state === "healthy")}
                 </span>
               </Field>
             </PanelSectionRow>
@@ -938,8 +946,8 @@ export function Settings() {
             </PanelSectionRow>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="lumalinux" description={llHealthDesc()}>
-                <span style={{ color: compColor(deps.lumalinux, lumalinuxHealth?.state === "healthy") }}>
-                  {compStatus(deps.lumalinux, lumalinuxHealth?.state === "healthy")}
+                <span style={{ color: compColor(llPresent, lumalinuxHealth?.state === "healthy") }}>
+                  {compStatus(llPresent, lumalinuxHealth?.state === "healthy")}
                 </span>
               </Field>
             </PanelSectionRow>
@@ -949,8 +957,8 @@ export function Settings() {
                   // Off by choice, not broken → grey "Disabled", no amber alarm.
                   <span style={{ color: "#888" }}>{t("statusDisabled")}</span>
                 ) : (
-                  <span style={{ color: compColor(deps.cloudredirect, crHealth?.state === "healthy") }}>
-                    {compStatus(deps.cloudredirect, crHealth?.state === "healthy")}
+                  <span style={{ color: compColor(crPresent, crHealth?.state === "healthy") }}>
+                    {compStatus(crPresent, crHealth?.state === "healthy")}
                   </span>
                 )}
               </Field>
@@ -975,7 +983,7 @@ export function Settings() {
             installers that could wipe the others. */}
         {(() => {
           const offPin = !!headcrabCompat && !headcrabCompat.compatible;
-          const coreInstalled = !!(deps?.slssteam && deps?.lumalinux);
+          const coreInstalled = !!(slssPresent && llPresent);
           const primary = offPin ? "downgrade" : primarySystemAction(componentsStatus);
           let label = t("installReinstallDeps");
           let desc: string | undefined;
