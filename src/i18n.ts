@@ -319,7 +319,7 @@ const strings: Record<Lang, Record<string, string>> = {
     sysStuckDesc: "This game's update is stuck. Open it to fix.",
     sysOpenGame: "Open game",
     sysUpdateAvailable: "Update available",
-    sysUpdateAvailableDesc: "A new version is ready.",
+    sysUpdateAvailableDesc: "A new version of a component is ready.",
     sysUpdate: "Update",
     sysSteamUpdateAvailable: "Steam update available",
     sysSteamUpdateAvailableDesc: "A newer Steam version is now supported. This switches to Desktop, updates Steam, and brings you back automatically.",
