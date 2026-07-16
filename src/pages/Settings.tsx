@@ -603,8 +603,12 @@ export function Settings() {
       const d = warnDesc(line, isDisabled ? "muted" : "warn");
       if (d) lines.push(d);
     }
-    if (!deps.cloudredirectAuthed) {
+    if (crHealth?.state === "not_authed") {
       // Sign-in is a pending step, not a failure → info blue, matches the QAM.
+      // Read it from the health state (not deps.cloudredirectAuthed, same token
+      // check underneath): not_authed only resolves once the hooks are healthy,
+      // so a broken CR shows just its restart/desktop line, not a pointless
+      // "sign in" nudge — and the Dev tab can preview it.
       const d = warnDesc(t("providerNotConfigured"), "info");
       if (d) lines.push(d);
     }
