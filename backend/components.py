@@ -199,9 +199,15 @@ async def get_components_status(force: bool = False) -> dict:
         _component("lumalinux", "lumalinux", check_lumalinux_installed(), ll_health, ll_update),
     ]
 
+    # Dev preview: force the Quick Install onboarding on/off without touching
+    # real component files. "show"/"hide"/None — the frontend gate reads it.
+    import dev
+    quick_install_override = dev.get("quick_install")
+
     return {
         "success": True,
         "components": components,
+        "quickInstall": quick_install_override,
         "headcrab": {
             "compatible": headcrab.get("compatible"),
             "target": headcrab.get("target"),

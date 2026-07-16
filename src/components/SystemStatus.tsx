@@ -33,6 +33,9 @@ export interface ComponentsStatus {
     lumalinux_ready?: boolean | null;
   };
   plugin: { installed: string | null; latest: string | null; available: boolean };
+  // Dev preview override for the Quick Install onboarding (backend/dev.py):
+  // "show" forces it on, "hide" forces it off, null/absent = real behaviour.
+  quickInstall?: string | null;
 }
 
 export interface SystemStatusActions {

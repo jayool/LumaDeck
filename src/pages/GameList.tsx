@@ -540,6 +540,10 @@ export function GameList() {
   const showQuickInstall = (() => {
     const cs = compStatus;
     if (!cs?.success) return false;
+    // Dev preview override (Settings ▸ Dev) wins over the real check, so the
+    // onboarding can be previewed without touching component files on disk.
+    if (cs.quickInstall === "show") return true;
+    if (cs.quickInstall === "hide") return false;
     return (cs.components || []).every((c) => !c.installed);
   })();
 

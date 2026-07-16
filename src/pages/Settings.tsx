@@ -648,6 +648,7 @@ export function Settings() {
     { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "not_authed", "disabled"] },
+    { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
     { key: "ryuu_cred", label: "Ryuu cookie", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
   ];
