@@ -583,16 +583,16 @@ export function GameList() {
           so they sit at the top of the panel instead of stacking full-width
           buttons at the bottom. */}
       {showQuickInstall && (
-        <PanelSection title={t("quickInstallSectionTitle")}>
-          {/* Intro text goes in the ButtonItem's own `description` (not a
-              separate row above): the native Field owns the padding between the
-              blurb and the button, so the focus band — the dark halo Steam
-              paints around a focused button up to its row delimiters — contains
-              text + button as ONE unit instead of bleeding onto a loose text
-              row that has no top delimiter above the button. */}
+        <PanelSection>
+          {/* Mirror the SystemStatus row model (the coherent one): section
+              title, blurb and action are ONE ButtonItem — title as `label`
+              (above), intro as `description` (below), action as children — so
+              the focus band wraps all three as a unit, like "Restart needed".
+              No PanelSection title: that would sit outside the focus. */}
           <PanelSectionRow>
             <ButtonItem
               layout="below"
+              label={t("quickInstallSectionTitle")}
               description={t("quickInstallIntro")}
               onClick={handleQuickInstall}
               disabled={quickInstalling}
