@@ -68,7 +68,6 @@ export function GameList() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Hubcap search state
   const [searchQuery, setSearchQuery] = useState("");
-  const [hubcapFocused, setHubcapFocused] = useState(false);
   // Which "add a game" mode the section shows: by AppID (default, autofilled
   // from the open store page) or by name (Hubcap search).
   const [addMode, setAddMode] = useState<"appid" | "name">("appid");
@@ -735,42 +734,36 @@ export function GameList() {
             </ButtonItem>
           </PanelSectionRow>
         )}
-        {/* Small top margin so the button's focus glow clears the text field
-            above instead of overlapping it (keeps the glow — needed for gamepad
-            focus — just off the field). */}
-        <div style={{ marginTop: "6px" }}>
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleAddGame} disabled={!canAddGames}>
+          <DialogButton
+            style={{ width: "100%" }}
+            onClick={handleAddGame}
+            disabled={!canAddGames}
+          >
             {t("addGameAction")}
-          </ButtonItem>
+          </DialogButton>
         </PanelSectionRow>
-        </div>
         {/* Download status + progress live BELOW, outside the appid/name toggle,
             so an in-flight download stays visible regardless of input mode. */}
           </>
         ) : (
-          /* By name (Hubcap search) — bottom padding only while the field is
-             focused so the on-screen keyboard doesn't hide it */
-          <div style={{ paddingBottom: hubcapFocused ? "280px" : "0px" }}>
+          /* By name (Hubcap search) */
+          <div>
         <PanelSectionRow>
           <TextField
             value={searchQuery}
             onChange={(e: any) => setSearchQuery(e?.target?.value ?? "")}
-            onFocus={() => setHubcapFocused(true)}
-            onBlur={() => setHubcapFocused(false)}
           />
         </PanelSectionRow>
-        <div style={{ marginTop: "6px" }}>
         <PanelSectionRow>
-          <ButtonItem
-            layout="below"
+          <DialogButton
+            style={{ width: "100%" }}
             onClick={handleSearchHubcap}
             disabled={searching || !canAddGames}
           >
             {searching ? t("searching") : t("searchHubcap")}
-          </ButtonItem>
+          </DialogButton>
         </PanelSectionRow>
-        </div>
         {searchError && (
           <PanelSectionRow>
             <div
