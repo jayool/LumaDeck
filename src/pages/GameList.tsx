@@ -374,14 +374,16 @@ export function GameList() {
   };
 
   const handleSearchHubcap = async () => {
+    // Clear stale results FIRST, so a too-short query doesn't leave the previous
+    // search's list on screen.
+    setSearchResults([]);
+    setShowMoreResults(false);
     if (searchQuery.trim().length < 2) {
       setSearchError(t("enterAtLeast2Chars"));
       return;
     }
     setSearching(true);
     setSearchError("");
-    setSearchResults([]);
-    setShowMoreResults(false);
     try {
       const result = await searchHubcap(searchQuery.trim());
       if (result.success) {
@@ -419,9 +421,16 @@ export function GameList() {
   // indicator; once focus is in the content, the content itself shows the mode.
   // onFocus/onGamepadFocus aren't in DialogButton's TS props (the element
   // supports them), so spread via an any-typed object.
+  // Switching Add-Game mode clears any leftover status / search error so a stale
+  // "Invalid AppID" or search error doesn't linger across modes.
+  const changeMode = (mode: "appid" | "name") => {
+    setAddMode(mode);
+    setAddStatus("");
+    setSearchError("");
+  };
   const modeFocus = (mode: "appid" | "name"): any => ({
-    onFocus: () => setAddMode(mode),
-    onGamepadFocus: () => setAddMode(mode),
+    onFocus: () => changeMode(mode),
+    onGamepadFocus: () => changeMode(mode),
   });
 
   // The 5 system actions (DESIGN_UI.md "Component model"). All cascade-safe:
@@ -552,20 +561,9 @@ export function GameList() {
   // restart).
   const quickInstallOffPin = compStatus?.headcrab?.compatible !== true;
 
-  // Credential warnings shown ONLY when a game is staged for download (the
-  // game-info section is filled). Expired/missing credentials would block the
-  // download, so they're worth a heads-up here — but nagging about them on
-  // every QAM open is noise, hence the pendingGameInfo gate. "Expiring soon"
-  // is deliberately excluded: the current download would still succeed, so it
-  // lives only in the Settings status line.
-  // Only the Hubcap API key matters for adding a game; Ryuu is intentionally
-  // not surfaced here.
-  const credWarnings: { key: string; text: string; color: string }[] = [];
-  if (pendingGameInfo && cred) {
-    const h = cred.hubcap;
-    if (h?.state === "expired") credWarnings.push({ key: "h-exp", text: t("dlWarnHubcapExpired"), color: "#ff4444" });
-    else if (h?.state === "none") credWarnings.push({ key: "h-none", text: t("dlWarnHubcapNone"), color: "#ffaa00" });
-  }
+  // A missing/expired provider key is surfaced ONLY through the top "blocked"
+  // row (addBlockedReason) + the disabled Add-game button — no separate
+  // per-game credential warning row (it was redundant with the blocked row).
 
   // Adding a game needs the whole pipeline: SLSsteam (unlocks the download —
   // ownership spoof, without it Steam shows "Buy" and won't download) AND lumalinux
@@ -642,14 +640,14 @@ export function GameList() {
                 QAM and "By name" runs off the right edge. */}
             <DialogButton
               style={{ flex: 1, minWidth: 0 }}
-              onClick={() => setAddMode("appid")}
+              onClick={() => changeMode("appid")}
               {...modeFocus("appid")}
             >
               {t("addByAppId")}
             </DialogButton>
             <DialogButton
               style={{ flex: 1, minWidth: 0 }}
-              onClick={() => setAddMode("name")}
+              onClick={() => changeMode("name")}
               {...modeFocus("name")}
             >
               {t("addByName")}
@@ -673,7 +671,7 @@ export function GameList() {
         <PanelSectionRow>
           <TextField
             value={addAppId}
-            onChange={(e: any) => setAddAppId(e?.target?.value ?? "")}
+            onChange={(e: any) => { setAddAppId(e?.target?.value ?? ""); setAddStatus(""); }}
           />
         </PanelSectionRow>
         {pendingGameInfo && (() => {
@@ -730,23 +728,9 @@ export function GameList() {
           );
         })()}
         {/* Notices (Denuvo / launcher) now live INSIDE the game card's
-            description above, so they read as part of the card. */}
-        {/* Credential warning → an actionable row: the fix lives in Settings ▸
-            Credentials, so navigate there (Health tier-2 pattern). Only Hubcap. */}
-        {credWarnings.length > 0 && (
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              highlightOnFocus={false}
-              bottomSeparator="none"
-              icon={<FaExclamationTriangle color="#ff8c00" />}
-              description={credWarnings[0].text}
-              onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
-            >
-              {t("fixCredentials")}
-            </ButtonItem>
-          </PanelSectionRow>
-        )}
+            description above, so they read as part of the card. A missing key
+            is handled by the top blocked row + disabled Add game — no separate
+            credential warning row here. */}
         {/* Native ButtonItem — same separator + spacing as My Games/Workshop —
             with highlightOnFocus off to drop the focus glow (the only thing we
             wanted gone). No hand-tuned margins or borders. */}
