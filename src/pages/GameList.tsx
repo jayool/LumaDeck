@@ -709,7 +709,7 @@ export function GameList() {
                       <span>{desc}</span>
                       {pendingNotices.map((notice, i) => (
                         <div key={`note-${i}`} style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
-                          <FaExclamationTriangle color="#c8a84b" style={{ flexShrink: 0 }} />
+                          <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
                           <span>{notice}</span>
                         </div>
                       ))}
@@ -737,7 +737,9 @@ export function GameList() {
           <PanelSectionRow>
             <ButtonItem
               layout="below"
-              icon={<FaExclamationTriangle color={credWarnings[0].color} />}
+              highlightOnFocus={false}
+              bottomSeparator="none"
+              icon={<FaExclamationTriangle color="#ff8c00" />}
               description={credWarnings[0].text}
               onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
             >
@@ -786,8 +788,8 @@ export function GameList() {
           <PanelSectionRow>
             <div
               style={{
-                textAlign: "center",
-                padding: "4px",
+                width: "100%",
+                textAlign: "left",
                 color: "#ff6b6b",
                 fontSize: "12px",
               }}
@@ -801,8 +803,8 @@ export function GameList() {
             {/* Un-nested: a plain count line (small) + normal rows, so the
                 results aren't indented/narrowed by a nested PanelSection. */}
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#8b929a", padding: "2px 0" }}>
-                {searchResults.length} {t("results")}
+              <div style={{ fontSize: "12px", color: "#8b929a" }}>
+                {searchResults.length} {searchResults.length === 1 ? t("result") : t("results")}
               </div>
             </PanelSectionRow>
             {searchResults.slice(0, showMoreResults ? 15 : 5).map((r: SearchResult) => (
@@ -820,7 +822,7 @@ export function GameList() {
             {searchResults.length > 5 && !showMoreResults && (
               <PanelSectionRow>
                 <ButtonItem layout="below" onClick={() => setShowMoreResults(true)}>
-                  {t("showMoreResults") || "Show More Results"} (+{searchResults.length - 5})
+                  {t("showMoreResults")} (+{searchResults.length - 5})
                 </ButtonItem>
               </PanelSectionRow>
             )}
@@ -836,13 +838,15 @@ export function GameList() {
           <PanelSectionRow>
             <div style={{
               width: "100%",
-              textAlign: "center",
+              textAlign: "left",
               color:
                 addStatus.startsWith(t("error")) ||
                   addStatus === t("invalidAppId") ||
                   addStatus === t("downloadFailed")
-                  ? "#ff6b6b"
-                  : "#00cc00",
+                  ? "#ff6b6b"                               // error → red
+                  : addStatus === t("doneRestartSteam")
+                    ? "#00cc00"                             // done → green
+                    : "#8b929a",                            // in-progress / neutral → grey
               fontSize: "12px",
             }}>
               {addStatus}

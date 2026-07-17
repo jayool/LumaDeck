@@ -67,6 +67,7 @@ const strings: Record<Lang, Record<string, string>> = {
       "• A component isn't loaded? Restart Steam. Steam too new or a build mismatch? Fix it in Desktop from Settings ▸ Components.\n" +
       "• \"Fix blocked in Game Mode\"? Switch to Desktop, run the command shown, then return.\n" +
       "• A game crashes? Try Repair appmanifest, Reconfigure SLSsteam, Check for Fixes, or (emulator titles) Apply Goldberg.",
+    result: "result",
     results: "results",
     selected: "Selected",
     invalidAppId: "Invalid AppID",
@@ -490,6 +491,7 @@ const strings: Record<Lang, Record<string, string>> = {
     settings: "Configurações",
     refresh: "Atualizar",
     help: "Ajuda",
+    result: "resultado",
     results: "resultados",
     selected: "Selecionado",
     invalidAppId: "AppID inválido",
