@@ -863,21 +863,30 @@ export function GameList() {
             flex div) — nesting it shifted the native bar off the right edge. */}
         {addStatus && (
           <PanelSectionRow>
-            <div style={{
-              width: "100%",
-              textAlign: "left",
-              color:
-                addStatus.startsWith(t("error")) ||
-                  addStatus === t("invalidAppId") ||
-                  addStatus === t("downloadFailed")
-                  ? "#ff6b6b"                               // error → red
-                  : addStatus === t("doneRestartSteam")
-                    ? "#00cc00"                             // done → green
-                    : "#8b929a",                            // in-progress / neutral → grey
-              fontSize: "12px",
-            }}>
-              {addStatus}
-            </div>
+            {/* Native Field (padding=compact) so the status gets its OWN small
+                breathing room from the closing divider below — the gap belongs
+                to the status, not baked into the divider (which would also space
+                the empty case). No separator here; the closing divider draws it. */}
+            <Field
+              bottomSeparator="none"
+              padding="compact"
+              label={
+                <span style={{
+                  textAlign: "left",
+                  color:
+                    addStatus.startsWith(t("error")) ||
+                      addStatus === t("invalidAppId") ||
+                      addStatus === t("downloadFailed")
+                      ? "#ff6b6b"                           // error → red
+                      : addStatus === t("doneRestartSteam")
+                        ? "#00cc00"                         // done → green
+                        : "#8b929a",                        // in-progress / neutral → grey
+                  fontSize: "12px",
+                }}>
+                  {addStatus}
+                </span>
+              }
+            />
           </PanelSectionRow>
         )}
         {(activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0 && (
@@ -897,16 +906,26 @@ export function GameList() {
             />
           </PanelSectionRow>
         )}
-        {/* Closing divider for the whole Add Game section: a native separator
-            AFTER the status, so the line before My Games is back and the
-            "Selected: ..." status stays inside the section instead of orphaned
-            below a per-button divider. padding="compact" insets the line the
-            same way the result ButtonItems inset theirs (padding=none ran it
-            edge-to-edge, so it read lighter/different), and gives the status a
-            bit of breathing room above the line. */}
-        <PanelSectionRow>
-          <Field bottomSeparator="standard" padding="compact" />
-        </PanelSectionRow>
+        {/* Closing divider for the whole Add Game section — ONE line before My
+            Games. Only draw it when the content above doesn't already end in a
+            separator: the search results list (results / Show more are
+            ButtonItems that each draw their own bottom line) already closes the
+            section, so a closing Field there would DOUBLE the line. In every
+            other state (empty, appid card, name card, Add game button — all
+            bottomSeparator=none; status/progress are separator-less) this is the
+            only closing line. padding=none keeps it a thin line with no extra
+            vertical gap above or below. */}
+        {(() => {
+          const progressShown =
+            (activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0;
+          const resultsListShown = addMode === "name" && !nameSelected && searchResults.length > 0;
+          if (resultsListShown && !addStatus && !progressShown) return null;
+          return (
+            <PanelSectionRow>
+              <Field bottomSeparator="standard" padding="none" />
+            </PanelSectionRow>
+          );
+        })()}
       </PanelSection>
 
       {/* Bottom navigation — My Games, the optional Sync-all shortcut, and
