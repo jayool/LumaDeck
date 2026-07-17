@@ -403,9 +403,9 @@ export function GameList() {
     setAddAppId(String(result.appid));
     setSearchResults([]);
     setSearchQuery("");
-    setAddStatus(`${t("selected")}: ${result.name} (${result.appid})`);
     // Jump back to AppID mode so the staged game's info card + Download
-    // Manifest button are right there — no scrolling between sections.
+    // Manifest button are right there — no scrolling between sections. The
+    // staged card already shows the picked game, so no "Selected: ..." status.
     setAddMode("appid");
   };
 
