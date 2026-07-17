@@ -659,7 +659,7 @@ export function GameList() {
 
         {!canAddGames && (
           <PanelSectionRow>
-            <Field icon={<FaExclamationTriangle color="#ff8c00" />} label={addBlockedReason} />
+            <Field icon={<FaExclamationTriangle color="#ff8c00" />} description={addBlockedReason} />
           </PanelSectionRow>
         )}
 
@@ -700,7 +700,7 @@ export function GameList() {
                 <Field
                   label={pendingGameInfo.name || `AppID ${addAppId}`}
                   description={<span>{desc}</span>}
-                  bottomSeparator="standard"
+                  bottomSeparator="none"
                 />
               </PanelSectionRow>
               {ACHIEVEMENTS_ENABLED && pendingGameInfo.achievements > 0 && !achievementsReady && (
@@ -714,10 +714,11 @@ export function GameList() {
             </>
           );
         })()}
-        {/* Game notices → display-only Field rows (one per note), ⚠ gold icon. */}
+        {/* Game notices → small (description) rows, no separator, so they read
+            as part of the game card above (⚠ gold icon keeps the warning cue). */}
         {pendingNotices.map((notice, i) => (
           <PanelSectionRow key={`note-${i}`}>
-            <Field icon={<FaExclamationTriangle color="#c8a84b" />} label={notice} />
+            <Field icon={<FaExclamationTriangle color="#c8a84b" />} description={notice} bottomSeparator="none" />
           </PanelSectionRow>
         ))}
         {/* Credential warning → an actionable row: the fix lives in Settings ▸
