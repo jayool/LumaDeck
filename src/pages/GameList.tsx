@@ -734,6 +734,10 @@ export function GameList() {
             </ButtonItem>
           </PanelSectionRow>
         )}
+        {/* DialogButton has no native row separators, so add a top gap (off the
+            text field) and a bottom hairline (delimiter before My Games), while
+            keeping the no-glow look of the By AppID/By name buttons. */}
+        <div style={{ marginTop: "8px", paddingBottom: "8px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
         <PanelSectionRow>
           <DialogButton
             style={{ width: "100%" }}
@@ -743,6 +747,7 @@ export function GameList() {
             {t("addGameAction")}
           </DialogButton>
         </PanelSectionRow>
+        </div>
         {/* Download status + progress live BELOW, outside the appid/name toggle,
             so an in-flight download stays visible regardless of input mode. */}
           </>
@@ -755,6 +760,7 @@ export function GameList() {
             onChange={(e: any) => setSearchQuery(e?.target?.value ?? "")}
           />
         </PanelSectionRow>
+        <div style={{ marginTop: "8px", paddingBottom: "8px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
         <PanelSectionRow>
           <DialogButton
             style={{ width: "100%" }}
@@ -764,6 +770,7 @@ export function GameList() {
             {searching ? t("searching") : t("searchHubcap")}
           </DialogButton>
         </PanelSectionRow>
+        </div>
         {searchError && (
           <PanelSectionRow>
             <div
