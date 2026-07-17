@@ -71,6 +71,9 @@ export function GameList() {
   // Which "add a game" mode the section shows: by AppID (default, autofilled
   // from the open store page) or by name (Hubcap search).
   const [addMode, setAddMode] = useState<"appid" | "name">("appid");
+  // By name: a game was picked from the results → show the card + "Add game"
+  // (staying in By name). Cleared when the user edits the search field again.
+  const [nameSelected, setNameSelected] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -402,13 +405,15 @@ export function GameList() {
   };
 
   const handleSelectSearchResult = (result: SearchResult) => {
+    // Stay in By name: show the game name in the field, stage its appid (drives
+    // the shared game card via getGameNotices), and flip the button to
+    // "Add game". Editing the field again deselects (search TextField onChange).
+    setSearchQuery(result.name);
     setAddAppId(String(result.appid));
+    setNameSelected(true);
     setSearchResults([]);
-    setSearchQuery("");
-    // Jump back to AppID mode so the staged game's info card + Download
-    // Manifest button are right there — no scrolling between sections. The
-    // staged card already shows the picked game, so no "Selected: ..." status.
-    setAddMode("appid");
+    setSearchError("");
+    setAddStatus("");
   };
 
   const toast = (title: string, body?: string, duration = 3000) =>
@@ -586,6 +591,59 @@ export function GameList() {
       ? t("addGameBlockedCred")
       : t("addGameBlocked");
 
+  // The game info card (name + facts + notices). Shared by both Add-Game modes:
+  // By AppID (staged via the field) and By name (staged by picking a result).
+  // Native Field: name as the label, "dev · size · Metacritic · ProtonDB" as
+  // the description (colours kept inline), notices merged in below.
+  const gameCard = pendingGameInfo ? (() => {
+    const mc: number | null = pendingGameInfo.metacritic;
+    const mcColor = mc == null ? "" : mc >= 75 ? "#7ed36f" : mc >= 50 ? "#c8a84b" : "#e06060";
+    const size = pendingGameInfo.sizeBytes > 0
+      ? (pendingGameInfo.sizeBytes >= 1073741824
+        ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
+        : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`)
+      : "";
+    const facts: any[] = [];
+    if (pendingGameInfo.developer) facts.push(pendingGameInfo.developer);
+    if (size) facts.push(size);
+    if (mc != null) facts.push(<span key="mc" style={{ color: mcColor }}>Metacritic {mc}</span>);
+    if (pendingGameInfo.protondb) facts.push(
+      <span key="proton" style={{ color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2" }}>
+        ProtonDB {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
+      </span>,
+    );
+    const desc = facts.flatMap((f, i) => (i === 0 ? [f] : [" · ", f]));
+    return (
+      <>
+        <PanelSectionRow>
+          <Field
+            label={pendingGameInfo.name || `AppID ${addAppId}`}
+            description={
+              <>
+                <span>{desc}</span>
+                {pendingNotices.map((notice, i) => (
+                  <div key={`note-${i}`} style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                    <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
+                    <span>{notice}</span>
+                  </div>
+                ))}
+              </>
+            }
+            bottomSeparator="none"
+          />
+        </PanelSectionRow>
+        {ACHIEVEMENTS_ENABLED && pendingGameInfo.achievements > 0 && !achievementsReady && (
+          <PanelSectionRow>
+            <div style={{ fontSize: "11px", color: "#c8a84b", display: "flex", gap: "6px", alignItems: "flex-start" }}>
+              <span style={{ flexShrink: 0 }}>⚡</span>
+              <span>{t("slscheevoHint")}</span>
+            </div>
+          </PanelSectionRow>
+        )}
+      </>
+    );
+  })() : null;
+
   return (
     <>
       {/* Top toolbar — light nav/utility actions as icons, right-aligned,
@@ -671,62 +729,10 @@ export function GameList() {
         <PanelSectionRow>
           <TextField
             value={addAppId}
-            onChange={(e: any) => { setAddAppId(e?.target?.value ?? ""); setAddStatus(""); }}
+            onChange={(e: any) => { setAddAppId(e?.target?.value ?? ""); setAddStatus(""); setNameSelected(false); }}
           />
         </PanelSectionRow>
-        {pendingGameInfo && (() => {
-          // Native Field instead of a custom card (DESIGN_UI.md §4b): name as the
-          // label, a trimmed "dev · size · Metacritic · ProtonDB" fact line as
-          // the description. The description is a ReactNode, so Metacritic and
-          // ProtonDB keep their colour as inline text. Platforms / achievement
-          // count / PT-BR move to GameDetail.
-          const mc: number | null = pendingGameInfo.metacritic;
-          const mcColor = mc == null ? "" : mc >= 75 ? "#7ed36f" : mc >= 50 ? "#c8a84b" : "#e06060";
-          const size = pendingGameInfo.sizeBytes > 0
-            ? (pendingGameInfo.sizeBytes >= 1073741824
-              ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
-              : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`)
-            : "";
-          const facts: any[] = [];
-          if (pendingGameInfo.developer) facts.push(pendingGameInfo.developer);
-          if (size) facts.push(size);
-          if (mc != null) facts.push(<span key="mc" style={{ color: mcColor }}>Metacritic {mc}</span>);
-          if (pendingGameInfo.protondb) facts.push(
-            <span key="proton" style={{ color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2" }}>
-              ProtonDB {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
-            </span>,
-          );
-          const desc = facts.flatMap((f, i) => (i === 0 ? [f] : [" · ", f]));
-          return (
-            <>
-              <PanelSectionRow>
-                <Field
-                  label={pendingGameInfo.name || `AppID ${addAppId}`}
-                  description={
-                    <>
-                      <span>{desc}</span>
-                      {pendingNotices.map((notice, i) => (
-                        <div key={`note-${i}`} style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
-                          <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                          <span>{notice}</span>
-                        </div>
-                      ))}
-                    </>
-                  }
-                  bottomSeparator="none"
-                />
-              </PanelSectionRow>
-              {ACHIEVEMENTS_ENABLED && pendingGameInfo.achievements > 0 && !achievementsReady && (
-                <PanelSectionRow>
-                  <div style={{ fontSize: "11px", color: "#c8a84b", display: "flex", gap: "6px", alignItems: "flex-start" }}>
-                    <span style={{ flexShrink: 0 }}>⚡</span>
-                    <span>{t("slscheevoHint")}</span>
-                  </div>
-                </PanelSectionRow>
-              )}
-            </>
-          );
-        })()}
+        {gameCard}
         {/* Notices (Denuvo / launcher) now live INSIDE the game card's
             description above, so they read as part of the card. A missing key
             is handled by the top blocked row + disabled Add game — no separate
@@ -754,9 +760,34 @@ export function GameList() {
         <PanelSectionRow>
           <TextField
             value={searchQuery}
-            onChange={(e: any) => setSearchQuery(e?.target?.value ?? "")}
+            onChange={(e: any) => {
+              setSearchQuery(e?.target?.value ?? "");
+              setSearchError("");
+              // Editing the name after picking a result un-stages the game:
+              // the card disappears and the button reverts to Search.
+              if (nameSelected) { setNameSelected(false); setAddAppId(""); }
+            }}
           />
         </PanelSectionRow>
+        {nameSelected ? (
+          <>
+            {/* A result was picked: mirror By AppID — show the game card and an
+                "Add game" button (not a Search button) right here. */}
+            {gameCard}
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                highlightOnFocus={false}
+                bottomSeparator="none"
+                onClick={handleAddGame}
+                disabled={!canAddGames}
+              >
+                {t("addGameAction")}
+              </ButtonItem>
+            </PanelSectionRow>
+          </>
+        ) : (
+          <>
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -810,6 +841,8 @@ export function GameList() {
                 </ButtonItem>
               </PanelSectionRow>
             )}
+          </>
+        )}
           </>
         )}
           </div>
