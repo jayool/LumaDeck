@@ -694,10 +694,14 @@ export function Settings() {
       hideTitle: true,
       content: (
         <>
-      <PanelSection title={t("apiCredentials")}>
+      {/* No redundant "API Credentials" section title (the sidebar tab already
+          names the page, hideTitle drops the page title). Instead each provider
+          is its OWN native PanelSection — the provider name is the section title
+          (uppercase, with native section spacing above it), NOT a TextField
+          label glued to the box. Matches the System tab's per-section titles. */}
+      <PanelSection title={t("hubcapApiKey")}>
         <PanelSectionRow>
           <TextField
-            label={t("hubcapApiKey")}
             value={hubcapKey}
             onChange={(e: any) => setHubcapKey(e?.target?.value ?? "")}
             bIsPassword
@@ -719,10 +723,11 @@ export function Settings() {
         </PanelSectionRow>
         {renderCredLine("hubcap")}
         {renderHubcapUsage()}
+      </PanelSection>
 
+      <PanelSection title={t("ryuCookie")}>
         <PanelSectionRow>
           <TextField
-            label={t("ryuCookie")}
             value={ryuCookie}
             onChange={(e: any) => setRyuCookie(e?.target?.value ?? "")}
             bIsPassword
