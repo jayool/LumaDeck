@@ -917,15 +917,14 @@ export function GameList() {
             </PanelSectionRow>
           );
         })()}
-      </PanelSection>
 
-      {/* Bottom navigation — My Games, the optional Sync-all shortcut, and
-          Downloads share ONE PanelSection. Each entry in its own section stacked
-          the sections' vertical padding into big empty gaps; one section with
-          rows gives the normal native row rhythm. My Games and Downloads each
-          live on their own full-screen route, so the QAM only carries compact
-          entries (no title, no count). */}
-      <PanelSection>
+        {/* Bottom navigation — My Games, the optional Achievements shortcut, and
+            Downloads live in the SAME PanelSection as Add Game (not a separate
+            one). A separate section stacked two sections' vertical padding into
+            a big empty gap after the closing divider; keeping them as rows here
+            means the closing divider is followed by My Games with the normal
+            single-row rhythm. My Games and Downloads each live on their own
+            full-screen route, so the QAM only carries compact entries. */}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -961,3 +960,4 @@ export function GameList() {
     </>
   );
 }
+
