@@ -580,6 +580,14 @@ export function GameList() {
   const compsBad = !!compStatus?.success && (compHealth("slssteam") !== "healthy" || compHealth("lumalinux") !== "healthy");
   const credBad = !!cred && !hasProvider;
   const canAddGames = !compsBad && !credBad;
+  // Say WHY adding is blocked, not a generic "fix the issues": a broken
+  // component is already spelled out by the System Status row above (point
+  // there); a missing provider key is fixed in Settings.
+  const addBlockedReason = compsBad
+    ? t("addGameBlockedComponents")
+    : credBad
+      ? t("addGameBlockedCred")
+      : t("addGameBlocked");
 
   return (
     <>
@@ -652,7 +660,7 @@ export function GameList() {
 
         {!canAddGames && (
           <PanelSectionRow>
-            <Field icon={<FaExclamationTriangle color="#ff8c00" />} label={t("addGameBlocked")} />
+            <Field icon={<FaExclamationTriangle color="#ff8c00" />} label={addBlockedReason} />
           </PanelSectionRow>
         )}
 
@@ -727,11 +735,16 @@ export function GameList() {
             </ButtonItem>
           </PanelSectionRow>
         )}
+        {/* Small top margin so the button's focus glow clears the text field
+            above instead of overlapping it (keeps the glow — needed for gamepad
+            focus — just off the field). */}
+        <div style={{ marginTop: "6px" }}>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleAddGame} disabled={!canAddGames}>
             {t("addGameAction")}
           </ButtonItem>
         </PanelSectionRow>
+        </div>
         {/* Download status + progress live BELOW, outside the appid/name toggle,
             so an in-flight download stays visible regardless of input mode. */}
           </>
@@ -747,6 +760,7 @@ export function GameList() {
             onBlur={() => setHubcapFocused(false)}
           />
         </PanelSectionRow>
+        <div style={{ marginTop: "6px" }}>
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -756,6 +770,7 @@ export function GameList() {
             {searching ? t("searching") : t("searchHubcap")}
           </ButtonItem>
         </PanelSectionRow>
+        </div>
         {searchError && (
           <PanelSectionRow>
             <div
