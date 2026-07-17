@@ -4,8 +4,11 @@ Single source of truth for the plugin's UI. **Rebuilt from scratch**, verified
 element by element against the live code. Nothing here is assumed — every entry
 is checked in the source before it is written down.
 
-> **Status: IN PROGRESS.** We are walking the QAM (`GameList`) top to bottom.
-> Each element is verified and its rule fixed before moving to the next.
+> **Status: QAM finalized.** The QAM (`GameList`) has been walked top to bottom —
+> every element verified against the live code and its rule fixed, including the
+> full Add Game state tree (§4–4e), the closing-divider / section-merge model,
+> and the bottom nav (§5–6). Other surfaces (Settings, GameDetail, full-screen
+> pages) are documented below and refined as they're revisited.
 
 ## Method
 
@@ -248,93 +251,122 @@ lagging component still supports it.
   "By name"), so the AppID and search `TextField`s carry **no `label`** — it
   would be redundant. The active tab is the field's context.
 
-### 4b. Add Game — game info preview — ✅ built
+### 4b. Add Game — game info card (shared) — ✅ built
 
-- **What:** the preview shown after a valid AppID — confirms which game you're
-  about to add.
+- **What:** the card shown once a game is staged — confirms which game you're
+  about to add. **Shared by both modes:** By AppID stages it via the field
+  (debounced `getGameNotices` on `addAppId`); By name stages it by picking a
+  search result. It lives as one `gameCard` const built just before `return`,
+  rendered in both branches — no duplicated card JSX.
 - **How shown:** a native **`Field`**: `label` = game name, `description` = a
   trimmed fact line *"dev · size · Metacritic NN · ProtonDB Tier"*. The
   description is a `ReactNode`, so Metacritic and ProtonDB keep their **colour as
-  inline text**. `bottomSeparator="standard"`. The slscheevo achievements hint
-  stays as a small gold line below.
+  inline text**. **`bottomSeparator="none"`** — the card is grouped with the
+  Add-game button below it (the closing divider §4d draws the one section line),
+  not fenced off by its own separator. The game **notices** (Denuvo / launcher)
+  render **inside** this same `description`, one `<div>` per note with an inline
+  ⚠ `#ff8c00` icon, so they read as part of the card. The slscheevo achievements
+  hint stays as a small gold line below.
 - **Native or custom:** 🟢 native `Field`. Replaces the custom `Notice` card +
-  hand-made badge pills. The only thing dropped is the card box and the grey
-  pills — info is preserved (colour included), and platforms / achievement count
-  / PT-BR move to GameDetail.
+  hand-made badge pills. Dropped: the card box and grey pills — info preserved
+  (colour included); platforms / achievement count / PT-BR move to GameDetail.
 - **Rule:** a colored badge/pill has no native equivalent, but most "rich card"
   content reduces to a native `Field` (name = label, facts = a `·`-joined
   `description` ReactNode that can colour the meaningful bits). Reach for a
-  custom box only when the colour-coded *badge shape* itself is essential.
+  custom box only when the colour-coded *badge shape* itself is essential. One
+  shared const, not per-mode copies.
 
-### 4c. Add Game — alerts (game notices / credentials) — ✅ built
+### 4c. Add Game — blocked state (why you can't add) — ✅ built
 
-- **What:** notices about the game being added, and a credential warning shown
-  at add-time.
-- **How shown (native rows, same as Health §3):**
-  - **Game notices** (info, no action) → one display-only **`Field`** per note,
-    ⚠ gold (`#c8a84b`) icon, the note as the label.
-  - **Credential warning** (fixable in Settings) → an actionable **`ButtonItem`**
-    "Configure API key" → `Navigation.Navigate(ROUTE_SETTINGS)`, the warning as
-    `description`, ⚠ icon in the warning colour. (Health tier-2 pattern.)
-- **Native or custom:** 🟢 native. Removes the last custom `Notice` cards from
-  Add Game — `components/Notice.tsx` is deleted (no remaining users).
-- **Scope decision:** only the **Hubcap API key** warning is surfaced here; Ryuu
-  is intentionally dropped (not relevant to adding a game).
-- **No double ⚠:** the warning text dropped its leading "⚠ " now that the row
-  carries an icon.
+- **What:** a single top-of-section row that says **why** adding is blocked, plus
+  a disabled Add-game button. Shown whenever `!canAddGames`
+  (`compsBad` = SLSsteam/lumalinux not healthy, or `credBad` = no Hubcap/Ryuu
+  key).
+- **How shown:** one display-only **`Field`** right under the mode toggle, with
+  an inline ⚠ `#ff8c00` icon + `addBlockedReason`. The reason is specific, not a
+  generic "fix the issues": `compsBad` → point at the System Status row above
+  (`addGameBlockedComponents`); `credBad` → fix in Settings
+  (`addGameBlockedCred`). The Add-game / Search buttons are `disabled` while
+  blocked, and each search result is `disabled` too.
+- **Removed:** the old **per-game credential warning** (an actionable
+  `ButtonItem` "Configure API key" that floated a ⚠ icon and duplicated the top
+  row). One blocked row at the top + a disabled button is the whole story now —
+  no second warning near the button.
+- **Native or custom:** 🟢 native `Field`. `components/Notice.tsx` stays deleted.
+- **Rule:** state *why* an action is blocked **once**, at the top of the section,
+  and point at where it's fixed. Don't repeat the warning next to the disabled
+  control; the disabled control + the top reason are enough.
 
-### 4d. Add Game — action button + download progress — ✅ built
+### 4d. Add Game — action button, status & closing divider — ✅ built
 
-- **Button:** renamed "Download Manifest" → **"Add game"** (`addGameAction`) —
-  plain language; the user is adding a game, not downloading a "manifest". The
-  `downloadManifest` key stays for the Downloads page's manual button.
-- **Progress:** the hand-drawn gradient bar + bytes/speed row → native
-  **`ProgressBarWithInfo`** (`nProgress` = percent, `sOperationText` =
-  "read / total GB · speed"). Note the `ProgressBar` in `components/ProgressBar.tsx`
-  used by the Downloads page is *also* custom — the real native bar is
-  `ProgressBarWithInfo` from `@decky/ui` (Downloads can migrate later).
-- **Native or custom:** 🟢 native progress. The `addStatus` line stays a small
-  status text (green/red) above the bar.
+- **Button:** renamed "Download Manifest" → **"Add game"** (`addGameAction`).
+  Native **`ButtonItem`** with **`highlightOnFocus={false}`** (drops the focus
+  *glow* — the dark halo that would wrap the whole row band — keeping only the
+  native white fill) and **`bottomSeparator="none"`** (the closing divider draws
+  the section line, so the button doesn't fence itself off from its status).
+  `disabled={!canAddGames}`.
+- **Status (`addStatus`):** a plain aligned `<div>` in a `PanelSectionRow`
+  (inherits the native content inset — do **not** wrap it in a `Field`, which
+  knocks it out of horizontal alignment). `textAlign:"left"`, three-way colour:
+  red on error (`error*` / `invalidAppId` / `downloadFailed`), green on
+  `doneRestartSteam`, grey otherwise.
+- **Progress:** hand-drawn gradient bar → native **`ProgressBarWithInfo`**
+  (`nProgress` = percent, `sOperationText` = "read / total GB · speed"), a direct
+  `PanelSectionRow` child (nesting it shifted the native bar off the edge).
+- **Closing divider:** one native line ends the section (`<Field
+  bottomSeparator="standard" padding="none" />`). It's **conditional** — skipped
+  when the results list is on screen, because each result / Show-more
+  `ButtonItem` already draws its own bottom line and a second divider would
+  **double** the line. `padding="none"` keeps it thin with no extra vertical gap.
+- **Native or custom:** 🟢 native button + progress; 🔴 the `addStatus` `<div>`
+  (Decky has no text primitive — the documented exception).
 
 ### 4e. Add Game — "By name" search & results — ✅ built
 
-- **What:** the name-search path: a search field, a search button, and the
-  results list (with a "Show More" affordance).
+- **What:** the name-search path: a search field, and then **either** a results
+  list (with "Show More") **or**, once a result is picked, the staged game.
+- **Pick-a-result stays in place (`nameSelected`):** selecting a search result
+  does **not** jump to By AppID. It stays in By name and mirrors it —
+  `handleSelectSearchResult` fills the field with the game **name**, stages the
+  appid (drives the shared `gameCard` §4b), clears the results, and flips the
+  button from **Search** to **Add game**. Editing/clearing the field
+  **deselects**: `nameSelected → false`, appid cleared, so the card disappears
+  and the button reverts to **Search**.
+- **Stale results clear on edit:** typing in the search field clears the
+  previously shown results (`setSearchResults([])` + `setShowMoreResults(false)`)
+  so a list from the last query doesn't linger until the next search.
 - **How shown:**
-  - Search field → native `TextField` (no label, per §4). Search button →
-    native `ButtonItem`.
-  - **Results header** → the count is now the **`title` of a nested
-    `PanelSection`** (`"12 results"`), i.e. the native Steam section header —
-    not a hand-made `<div>`. Each result is a native `ButtonItem` (`label` =
-    name, `description` = `AppID: …`).
-  - **Show More** → native `ButtonItem` (`+N`), capping the visible list at
-    5 → 15.
-- **Removed (were raw `<div>`s, never native):**
-  - The `"N results — tap to select"` caption `<div>` → folded into the
-    `PanelSection title` (just the count; "tap to select" was redundant with the
-    button list). `results` i18n trimmed to `"results"`.
-  - The `"+N more — refine your search"` footer `<div>` → **deleted** outright
-    (once expanded to 15 it was noise). `moreResults` key removed.
-- **Native or custom:** 🟢 the "By name" path is now `<div>`-free for counts:
-  native section header + native result/Show-More buttons.
-- **Honest note on tokens vs native:** a `<div>` on the right colour token is
-  *still custom* — "on-token" ≠ "native". The only fully-native home for a count
-  label is a control slot (`PanelSection title` here); free-floating status text
-  (`searchError`, `addStatus`) stays a raw `<div>` because Decky has no text
-  primitive — that's the documented, unavoidable exception, marked 🔴, not 🟢.
+  - Search field → native `TextField` (no label, per §4). Search / Add-game
+    button → native `ButtonItem` (`highlightOnFocus={false}`,
+    `bottomSeparator="none"`).
+  - **Results count** → a native **`Field`** (`bottomSeparator="standard"
+    padding="none"`) whose label is a small grey span — the only row without a
+    separator would otherwise sit flush against the first result, so it carries
+    the native line like the result rows. Singular/plural via `result`/`results`.
+  - **Results** → native `ButtonItem` each (`label` = name, `description` =
+    `AppID: …`). **Show More** → native `ButtonItem` (`+N`), capping 5 → 15.
+- **Native or custom:** 🟢 native field / buttons / count `Field`. `searchError`
+  stays a raw aligned `<div>` (the text-primitive exception, 🔴).
 
-**Add Game is now box-free:** native tab toggle, label-less fields, info as a
-`Field`, alerts as native rows, native progress bar, and a native
-`PanelSection`-titled results list (no count `<div>`s).
+**Add Game is box-free:** native tab toggle, label-less fields, one shared
+`Field` game card (notices inline), a single top blocked row, native progress,
+a native-`Field` results count, and one conditional closing divider — no boxes,
+no doubled lines.
 
 ### 5. My Games — QAM entry — ✅ built
 
 - **What:** the entry point to the full-screen library. My Games **lives on its
   own route** (`ROUTE_LIBRARY`, `Library.tsx`) — the QAM only shows a compact
   launcher entry, not the list.
-- **How shown:** a single plain native `ButtonItem` in a **title-less**
-  `PanelSection` → `Navigation.Navigate(ROUTE_LIBRARY)`. Same shape as the
-  Downloads entry (§1b).
+- **How shown:** a single plain native `ButtonItem` → `Navigation.Navigate(
+  ROUTE_LIBRARY)`. Same shape as the Downloads entry (§1b).
+- **Bottom nav lives in the Add Game `PanelSection`, not its own:** My Games /
+  Achievements / Workshop are rows in the **same** `PanelSection` as Add Game.
+  A separate section stacked two sections' vertical padding into a big empty gap
+  after the closing divider (§4d); as rows here, the divider is followed by My
+  Games with the normal single-row rhythm. **Rule:** consecutive QAM groups
+  separated by a divider go in **one** `PanelSection` — a new `PanelSection` adds
+  a second block of section padding and reads as a big gap.
 - **Removed:**
   - The `PanelSection title="My Games"` **and** the button label `"My Games"`
     were the *same word stacked twice* (section header + control). Dropped the
@@ -370,8 +402,9 @@ lagging component still supports it.
   reason + a button that navigates to the Achievements page — it no longer
   carries the global download/login buttons.
 - **What the QAM button does:** *only* navigate — one plain `ButtonItem`
-  (`t("achievements")`) in the bottom-nav `PanelSection`, next to My Games /
-  Workshop, routing to `ROUTE_ACHIEVEMENTS`. No achievement logic in the QAM
+  (`t("achievements")`) among the bottom-nav rows (in the Add Game
+  `PanelSection`, see §5), next to My Games / Workshop, routing to
+  `ROUTE_ACHIEVEMENTS`. No achievement logic in the QAM
   anymore (the inline Sync All + its `slscheevoReady`/`syncState` plumbing were
   removed).
 - **Why a page, not a sidebar:** the page is a single concern (setup + sync), so
@@ -1006,4 +1039,28 @@ for the advanced 1%.
 - Native **text lives in control slots**: `label` / `description` of
   `ButtonItem`/`Field`, `title` of `PanelSection`. Only *free-floating* text
   needs a raw `<div>`.
+- **Warning colour is one value:** ⚠ icons use orange **`#ff8c00`** across the
+  QAM (blocked row, game notices). Keep it inline on the icon and **inline
+  inside the description** (`display:inline-flex`) — a `Field` `icon` prop floats
+  the glyph onto its own line when the row has only a description.
+- **Focus glow off on grouped actions:** `highlightOnFocus={false}` drops the
+  dark focus *halo* that wraps a `ButtonItem`'s whole row band, leaving only the
+  native white fill. Use it where a button is grouped with the row above/below
+  (Add game, Search) so focus doesn't paint a box around the group. `DialogButton`
+  already shows only the white fill (no halo).
+- **One closing line per section, and never doubled:** end a section with a
+  single native separator. If the last real row already draws its own bottom
+  line (a results list of `ButtonItem`s), do **not** add a closing `Field` too —
+  that doubles the line; make the closing divider conditional. `padding="none"`
+  keeps it thin with no extra vertical gap.
+- **Divider-separated groups share one `PanelSection`.** A second `PanelSection`
+  adds another block of section padding that reads as a large empty gap. Put the
+  groups' rows in the same section; the divider gives the single-row break.
+- **Say *why* an action is blocked once**, at the top of the section, pointing at
+  where it's fixed — not repeated next to the disabled control. The disabled
+  control + the top reason are the whole message.
+- **Don't wrap free-floating status in a `Field` to "space" it:** a `Field`
+  changes the horizontal inset and the text jumps out of alignment. Keep status
+  a plain `<div>` in a `PanelSectionRow` (inherits the content inset); put any
+  needed breathing room on the neighbouring divider, not the text.
 
