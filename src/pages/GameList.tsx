@@ -628,6 +628,16 @@ export function GameList() {
       />
 
       <PanelSection title={t("addGame")}>
+        {/* One subtle container so the toggle + field + action button read as a
+            single component under the ADD GAME title, instead of separate
+            sections. Not lines (they fragment) nor gaps (they look sparse) — a
+            soft box that groups them; focus still moves per-control inside. */}
+        <div style={{
+          border: "1px solid rgba(255,255,255,0.09)",
+          borderRadius: "6px",
+          background: "rgba(255,255,255,0.02)",
+          paddingTop: "4px", paddingBottom: "4px", marginBottom: "4px",
+        }}>
         <PanelSectionRow>
           <Focusable style={{ display: "flex", gap: "8px", width: "100%", marginBottom: "8px" }}>
             {/* minWidth:0 lets the buttons shrink below their content min-width
@@ -833,6 +843,7 @@ export function GameList() {
             />
           </PanelSectionRow>
         )}
+        </div>
       </PanelSection>
 
       {/* Bottom navigation — My Games, the optional Sync-all shortcut, and
