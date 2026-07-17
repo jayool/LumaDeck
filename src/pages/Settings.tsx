@@ -370,18 +370,13 @@ export function Settings() {
   };
 
   // Humanise days-left: whole days normally, hours when under a day (matters
-  // for the short-lived Ryuu cookie). fmtDate → short "Jun 25" style label.
+  // for the short-lived Ryuu cookie).
   const fmtLeft = (d: number) =>
     d >= 1 ? t("credDays", Math.floor(d)) : t("credHours", Math.max(1, Math.round(d * 24)));
-  const fmtDate = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    } catch {
-      return iso;
-    }
-  };
 
   // One status line per credential, styled like the Dependencies health rows.
+  // For Hubcap the today-usage is appended onto the SAME line (e.g. "Hubcap key
+  // valid. 6 days left. Today: 1/25 requests"), not a separate row below.
   const renderCredLine = (kind: "hubcap" | "ryuu") => {
     const c = kind === "hubcap" ? cred?.hubcap : cred?.ryuu;
     if (!c) return null;
@@ -391,15 +386,15 @@ export function Settings() {
     let icon: JSX.Element | undefined;
     switch (c.state) {
       case "ok":
-        text = t(K("Ok"), fmtLeft(c.days_left), fmtDate(c.expires_at));
+        text = t(K("Ok"), fmtLeft(c.days_left));
         icon = <FaCheckCircle color="#00cc00" />;
         break;
       case "soon":
-        text = t(K("Soon"), fmtLeft(c.days_left), fmtDate(c.expires_at));
+        text = t(K("Soon"), fmtLeft(c.days_left));
         icon = <FaExclamationTriangle color="#ff8c00" />;
         break;
       case "expired":
-        text = t(K("Expired"), fmtDate(c.expires_at));
+        text = t(K("Expired"));
         icon = <FaExclamationTriangle color="#ff4444" />;
         break;
       case "none":
@@ -409,20 +404,13 @@ export function Settings() {
         text = t(K("Unknown"));
         break;
     }
+    // Hubcap today-usage on the same line, when the key is live and stats loaded.
+    if (kind === "hubcap" && (c.state === "ok" || c.state === "soon") && c.daily_limit != null) {
+      text += " " + t("credHubcapUsage", c.daily_usage ?? 0, c.daily_limit);
+    }
     return (
       <PanelSectionRow>
         <Field icon={icon} label={text} />
-      </PanelSectionRow>
-    );
-  };
-
-  // Hubcap-only sub-line: today's request usage, when stats were reachable.
-  const renderHubcapUsage = () => {
-    const c = cred?.hubcap;
-    if (!c || (c.state !== "ok" && c.state !== "soon") || c.daily_limit == null) return null;
-    return (
-      <PanelSectionRow>
-        <Field label={t("credHubcapUsage", c.daily_usage ?? 0, c.daily_limit)} />
       </PanelSectionRow>
     );
   };
@@ -722,7 +710,6 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
         {renderCredLine("hubcap")}
-        {renderHubcapUsage()}
       </PanelSection>
 
       <PanelSection title={t("ryuCookie")}>
