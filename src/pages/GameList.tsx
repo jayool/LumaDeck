@@ -866,6 +866,13 @@ export function GameList() {
             />
           </PanelSectionRow>
         )}
+        {/* Closing divider for the whole Add Game section: a native separator
+            AFTER the status, so the line before My Games is back and the
+            "Selected: ..." status stays inside the section instead of orphaned
+            below a per-button divider. padding=none keeps it a thin line. */}
+        <PanelSectionRow>
+          <Field bottomSeparator="standard" padding="none" />
+        </PanelSectionRow>
       </PanelSection>
 
       {/* Bottom navigation — My Games, the optional Sync-all shortcut, and
