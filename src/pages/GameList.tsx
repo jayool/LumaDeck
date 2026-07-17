@@ -863,30 +863,21 @@ export function GameList() {
             flex div) — nesting it shifted the native bar off the right edge. */}
         {addStatus && (
           <PanelSectionRow>
-            {/* Native Field (padding=compact) so the status gets its OWN small
-                breathing room from the closing divider below — the gap belongs
-                to the status, not baked into the divider (which would also space
-                the empty case). No separator here; the closing divider draws it. */}
-            <Field
-              bottomSeparator="none"
-              padding="compact"
-              label={
-                <span style={{
-                  textAlign: "left",
-                  color:
-                    addStatus.startsWith(t("error")) ||
-                      addStatus === t("invalidAppId") ||
-                      addStatus === t("downloadFailed")
-                      ? "#ff6b6b"                           // error → red
-                      : addStatus === t("doneRestartSteam")
-                        ? "#00cc00"                         // done → green
-                        : "#8b929a",                        // in-progress / neutral → grey
-                  fontSize: "12px",
-                }}>
-                  {addStatus}
-                </span>
-              }
-            />
+            <div style={{
+              width: "100%",
+              textAlign: "left",
+              color:
+                addStatus.startsWith(t("error")) ||
+                  addStatus === t("invalidAppId") ||
+                  addStatus === t("downloadFailed")
+                  ? "#ff6b6b"                               // error → red
+                  : addStatus === t("doneRestartSteam")
+                    ? "#00cc00"                             // done → green
+                    : "#8b929a",                            // in-progress / neutral → grey
+              fontSize: "12px",
+            }}>
+              {addStatus}
+            </div>
           </PanelSectionRow>
         )}
         {(activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0 && (
