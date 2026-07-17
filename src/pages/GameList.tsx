@@ -704,7 +704,17 @@ export function GameList() {
               <PanelSectionRow>
                 <Field
                   label={pendingGameInfo.name || `AppID ${addAppId}`}
-                  description={<span>{desc}</span>}
+                  description={
+                    <>
+                      <span>{desc}</span>
+                      {pendingNotices.map((notice, i) => (
+                        <div key={`note-${i}`} style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                          <FaExclamationTriangle color="#c8a84b" style={{ flexShrink: 0 }} />
+                          <span>{notice}</span>
+                        </div>
+                      ))}
+                    </>
+                  }
                   bottomSeparator="none"
                 />
               </PanelSectionRow>
@@ -719,18 +729,8 @@ export function GameList() {
             </>
           );
         })()}
-        {/* Game notices → small (description) rows, no separator, so they read
-            as part of the game card above (⚠ gold icon keeps the warning cue). */}
-        {pendingNotices.map((notice, i) => (
-          <PanelSectionRow key={`note-${i}`}>
-            <Field bottomSeparator="none" description={
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                <FaExclamationTriangle color="#c8a84b" style={{ flexShrink: 0 }} />
-                {notice}
-              </span>
-            } />
-          </PanelSectionRow>
-        ))}
+        {/* Notices (Denuvo / launcher) now live INSIDE the game card's
+            description above, so they read as part of the card. */}
         {/* Credential warning → an actionable row: the fix lives in Settings ▸
             Credentials, so navigate there (Health tier-2 pattern). Only Hubcap. */}
         {credWarnings.length > 0 && (
@@ -752,6 +752,7 @@ export function GameList() {
           <ButtonItem
             layout="below"
             highlightOnFocus={false}
+            bottomSeparator="none"
             onClick={handleAddGame}
             disabled={!canAddGames}
           >
@@ -774,6 +775,7 @@ export function GameList() {
           <ButtonItem
             layout="below"
             highlightOnFocus={false}
+            bottomSeparator="none"
             onClick={handleSearchHubcap}
             disabled={searching || !canAddGames}
           >
