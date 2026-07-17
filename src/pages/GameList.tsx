@@ -763,6 +763,10 @@ export function GameList() {
             onChange={(e: any) => {
               setSearchQuery(e?.target?.value ?? "");
               setSearchError("");
+              // Editing the query invalidates the shown results: clear them so a
+              // stale list from the previous search doesn't linger.
+              setSearchResults([]);
+              setShowMoreResults(false);
               // Editing the name after picking a result un-stages the game:
               // the card disappears and the button reverts to Search.
               if (nameSelected) { setNameSelected(false); setAddAppId(""); }
@@ -896,9 +900,12 @@ export function GameList() {
         {/* Closing divider for the whole Add Game section: a native separator
             AFTER the status, so the line before My Games is back and the
             "Selected: ..." status stays inside the section instead of orphaned
-            below a per-button divider. padding=none keeps it a thin line. */}
+            below a per-button divider. padding="compact" insets the line the
+            same way the result ButtonItems inset theirs (padding=none ran it
+            edge-to-edge, so it read lighter/different), and gives the status a
+            bit of breathing room above the line. */}
         <PanelSectionRow>
-          <Field bottomSeparator="standard" padding="none" />
+          <Field bottomSeparator="standard" padding="compact" />
         </PanelSectionRow>
       </PanelSection>
 
