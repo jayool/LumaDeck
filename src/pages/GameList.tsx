@@ -629,15 +629,7 @@ export function GameList() {
 
       <PanelSection title={t("addGame")}>
         <PanelSectionRow>
-          <Focusable style={{
-            display: "flex", gap: "8px", width: "100%",
-            // Native-style hairline below the toggle so it reads as a delimited
-            // row (like My Games / Workshop) rather than a floating pair that
-            // blends into the text field below. The section title bounds it
-            // above; this line bounds it below and contains focus without a gap.
-            paddingBottom: "8px", marginBottom: "8px",
-            borderBottom: "1px solid rgba(255,255,255,0.12)",
-          }}>
+          <Focusable style={{ display: "flex", gap: "8px", width: "100%", marginBottom: "8px" }}>
             {/* minWidth:0 lets the buttons shrink below their content min-width
                 — without it DialogButton's native min-width overflows the narrow
                 QAM and "By name" runs off the right edge. */}
