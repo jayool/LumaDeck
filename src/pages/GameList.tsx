@@ -659,7 +659,12 @@ export function GameList() {
 
         {!canAddGames && (
           <PanelSectionRow>
-            <Field icon={<FaExclamationTriangle color="#ff8c00" />} description={addBlockedReason} />
+            <Field description={
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
+                {addBlockedReason}
+              </span>
+            } />
           </PanelSectionRow>
         )}
 
@@ -718,7 +723,12 @@ export function GameList() {
             as part of the game card above (⚠ gold icon keeps the warning cue). */}
         {pendingNotices.map((notice, i) => (
           <PanelSectionRow key={`note-${i}`}>
-            <Field icon={<FaExclamationTriangle color="#c8a84b" />} description={notice} bottomSeparator="none" />
+            <Field bottomSeparator="none" description={
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <FaExclamationTriangle color="#c8a84b" style={{ flexShrink: 0 }} />
+                {notice}
+              </span>
+            } />
           </PanelSectionRow>
         ))}
         {/* Credential warning → an actionable row: the fix lives in Settings ▸
