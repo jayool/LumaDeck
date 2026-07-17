@@ -785,7 +785,14 @@ export function GameList() {
           </PanelSectionRow>
         )}
         {searchResults.length > 0 && (
-          <PanelSection title={`${searchResults.length} ${t("results")}`}>
+          <>
+            {/* Un-nested: a plain count line (small) + normal rows, so the
+                results aren't indented/narrowed by a nested PanelSection. */}
+            <PanelSectionRow>
+              <div style={{ fontSize: "12px", color: "#8b929a", padding: "2px 0" }}>
+                {searchResults.length} {t("results")}
+              </div>
+            </PanelSectionRow>
             {searchResults.slice(0, showMoreResults ? 15 : 5).map((r: SearchResult) => (
               <PanelSectionRow key={r.appid}>
                 <ButtonItem
@@ -805,7 +812,7 @@ export function GameList() {
                 </ButtonItem>
               </PanelSectionRow>
             )}
-          </PanelSection>
+          </>
         )}
           </div>
         )}
