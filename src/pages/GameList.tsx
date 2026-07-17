@@ -818,9 +818,15 @@ export function GameList() {
             {/* Un-nested: a plain count line (small) + normal rows, so the
                 results aren't indented/narrowed by a nested PanelSection. */}
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#8b929a" }}>
-                {searchResults.length} {searchResults.length === 1 ? t("result") : t("results")}
-              </div>
+              <Field
+                label={
+                  <span style={{ fontSize: "12px", color: "#8b929a" }}>
+                    {searchResults.length} {searchResults.length === 1 ? t("result") : t("results")}
+                  </span>
+                }
+                bottomSeparator="standard"
+                padding="none"
+              />
             </PanelSectionRow>
             {searchResults.slice(0, showMoreResults ? 15 : 5).map((r: SearchResult) => (
               <PanelSectionRow key={r.appid}>
