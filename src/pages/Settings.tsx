@@ -685,6 +685,12 @@ export function Settings() {
             bIsPassword
           />
         </PanelSectionRow>
+        {/* Label-less TextField has no field chrome, so its box butts right up
+            against the Save button below. A native compact-padding spacer row
+            gives it breathing room without re-adding a redundant field label. */}
+        <PanelSectionRow>
+          <Field bottomSeparator="none" padding="compact" />
+        </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSaveHubcapKey}>
             {t("saveHubcapKey")}
@@ -709,6 +715,11 @@ export function Settings() {
             onChange={(e: any) => setRyuCookie(e?.target?.value ?? "")}
             bIsPassword
           />
+        </PanelSectionRow>
+        {/* Same compact spacer as the Hubcap field — keep the input off the
+            Save button without re-adding a redundant field label. */}
+        <PanelSectionRow>
+          <Field bottomSeparator="none" padding="compact" />
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSaveCookie}>
