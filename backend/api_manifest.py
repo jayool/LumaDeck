@@ -103,49 +103,54 @@ def restore_credentials_from_settings() -> None:
 
 
 
+# Our own curated manifest-source list (option B): shipped in the plugin, NOT
+# fetched from any third-party repo, so we don't inherit an outside list's order,
+# selection, or fate. Order = reliability + freshness first:
+#   1. Morrenus / Hubcap   (key)   — maintained, most complete, day-one releases
+#   2. Forced Ryu (Cookie)         — day-one releases, credential fallback
+#   3. Sushi               (free)  — DISABLED: free GitHub mirror, lags new games
+#   4. Spinoza             (free)  — DISABLED: free GitHub mirror, lags new games
+# Sushi/Spinoza stay in the list but disabled, so re-enabling them later is a
+# one-line `"enabled": True` flip. The old Ryuu IP mirror (167.235.229.108) is
+# dropped: a hardcoded IP with no domain to relocate it, and it just repackaged
+# Sushi's content anyway. The name "Morrenus" is kept because the Hubcap-key
+# injector (`update_hubcap_key`) matches the entry by that name.
+DEFAULT_API_LIST = [
+    {"name": "Morrenus", "url": "https://hubcapmanifest.com/api/v1/manifest/<appid>?api_key=<moapikey>", "success_code": 200, "unavailable_code": 404, "enabled": True},
+    {"name": "Forced Ryu (Cookie)", "url": "https://generator.ryuu.lol/download?appid=<appid>&file_type=manifest", "success_code": 200, "unavailable_code": 404, "enabled": True},
+    {"name": "Sushi", "url": "https://raw.githubusercontent.com/sushi-dev55-alt/sushitools-games-repo-alt/refs/heads/main/<appid>.zip", "success_code": 200, "unavailable_code": 404, "enabled": False},
+    {"name": "Spinoza", "url": "https://github.com/SPIN0ZAi/SB_manifest_DB/archive/refs/heads/<appid>.zip", "success_code": 200, "unavailable_code": 404, "enabled": False},
+]
+
+
 async def init_apis() -> dict:
-    """Initialise the free API manifest if it has not been loaded yet."""
+    """Seed the manifest-source list from our own curated DEFAULT_API_LIST.
+
+    Option B: LumaDeck owns the list — no fetch from any third-party repo. We
+    re-seed on every launch so all installs converge on the curated order and
+    enabled-set, preserving the user's Hubcap key across the rewrite (the Ryuu
+    cookie lives in a separate file and is untouched)."""
     global _APIS_INIT_DONE, _INIT_APIS_LAST_MESSAGE
     logger.info("InitApis: invoked")
     if _APIS_INIT_DONE:
         return {"success": True, "message": _INIT_APIS_LAST_MESSAGE}
 
-    client = await ensure_http_client("InitApis")
     api_json_path = data_path(API_JSON_FILE)
-    message = ""
+    # Preserve an existing Hubcap key (embedded in api.json) across the reseed;
+    # main._main also runs restore_credentials_from_settings() right after, which
+    # re-applies the key from the settings-dir store for the wiped-data case.
+    saved_hubcap_key = _get_hubcap_key()
 
-    if os.path.exists(api_json_path):
-        logger.info(f"InitApis: Local file exists -> {api_json_path}; skipping remote fetch")
-    else:
-        logger.info(f"InitApis: Local file not found -> {api_json_path}")
-        manifest_text = ""
-        try:
-            try:
-                resp = await client.get(API_MANIFEST_URL)
-                resp.raise_for_status()
-                manifest_text = resp.text
-            except Exception as primary_err:
-                logger.warning(f"InitApis: Primary URL failed ({primary_err}), trying proxy...")
-                if API_MANIFEST_PROXY_URL:
-                    try:
-                        resp = await client.get(API_MANIFEST_PROXY_URL, timeout=HTTP_PROXY_TIMEOUT_SECONDS)
-                        resp.raise_for_status()
-                        manifest_text = resp.text
-                    except Exception as proxy_err:
-                        logger.warning(f"InitApis: Proxy also failed: {proxy_err}")
-                        raise primary_err
-                else:
-                    raise
-        except Exception as fetch_err:
-            logger.warning(f"InitApis: Failed to fetch free API manifest: {fetch_err}")
-
-        normalized = normalize_manifest_text(manifest_text) if manifest_text else ""
-        if normalized:
-            write_text(api_json_path, normalized)
-            count = count_apis(normalized)
-            message = f"Loaded {count} Free APIs"
-        else:
-            message = "Failed to load free APIs"
+    try:
+        root = {"api_list": [dict(a) for a in DEFAULT_API_LIST]}
+        write_text(api_json_path, json.dumps(root, indent=4))
+        if saved_hubcap_key:
+            update_hubcap_key(saved_hubcap_key)
+        enabled = sum(1 for a in DEFAULT_API_LIST if a.get("enabled"))
+        message = f"Loaded {enabled} manifest source(s)"
+    except Exception as exc:
+        logger.warning(f"InitApis: failed to seed curated list: {exc}")
+        message = "Failed to seed manifest sources"
 
     _APIS_INIT_DONE = True
     _INIT_APIS_LAST_MESSAGE = message
@@ -158,54 +163,6 @@ def get_init_apis_message() -> dict:
     msg = _INIT_APIS_LAST_MESSAGE or ""
     _INIT_APIS_LAST_MESSAGE = ""
     return {"success": True, "message": msg}
-
-
-async def fetch_free_apis_now() -> dict:
-    """Force refresh of the free API manifest."""
-    client = await ensure_http_client("FetchFreeApisNow")
-    try:
-        # The upstream list is written verbatim over api.json, but the user's
-        # Hubcap key also lives in api.json (it's the Hubcap entry's api_key).
-        # Capture it first so refreshing the free list doesn't wipe the key;
-        # we re-apply it after the overwrite. (The Ryuu cookie is stored in a
-        # separate file and is unaffected.)
-        saved_hubcap_key = _get_hubcap_key()
-
-        manifest_text = ""
-        try:
-            resp = await client.get(API_MANIFEST_URL, follow_redirects=True)
-            resp.raise_for_status()
-            manifest_text = resp.text
-        except Exception as primary_err:
-            if API_MANIFEST_PROXY_URL:
-                try:
-                    resp = await client.get(API_MANIFEST_PROXY_URL, follow_redirects=True, timeout=HTTP_PROXY_TIMEOUT_SECONDS)
-                    resp.raise_for_status()
-                    manifest_text = resp.text
-                except Exception as proxy_err:
-                    return {"success": False, "error": f"Both URLs failed: {primary_err}, {proxy_err}"}
-            else:
-                return {"success": False, "error": str(primary_err)}
-
-        normalized = normalize_manifest_text(manifest_text) if manifest_text else ""
-        if not normalized:
-            return {"success": False, "error": "Empty manifest"}
-
-        write_text(data_path(API_JSON_FILE), normalized)
-
-        # Restore the Hubcap key into the freshly written list.
-        if saved_hubcap_key:
-            update_hubcap_key(saved_hubcap_key)
-
-        try:
-            data = json.loads(normalized)
-            count = len(data.get("api_list", []))
-        except Exception:
-            count = normalized.count('"name"')
-
-        return {"success": True, "count": count}
-    except Exception as exc:
-        return {"success": False, "error": str(exc)}
 
 
 def load_api_manifest() -> List[Dict[str, Any]]:

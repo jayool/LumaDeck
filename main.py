@@ -230,10 +230,6 @@ class Plugin:
         from api_manifest import init_apis
         return _j(await init_apis())
 
-    async def fetch_free_apis_now(self) -> str:
-        from api_manifest import fetch_free_apis_now
-        return _j(await fetch_free_apis_now())
-
     async def get_init_apis_message(self) -> str:
         from api_manifest import get_init_apis_message
         return _j(get_init_apis_message())

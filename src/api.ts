@@ -72,10 +72,6 @@ export const repairSlssteamHeadcrab = async () =>
 export const restartSteam = async () =>
   parseResult(await call<[], string>("restart_steam"));
 
-// API Manifest
-export const fetchFreeApisNow = async () =>
-  parseResult(await call<[], string>("fetch_free_apis_now"));
-
 export const saveRyuCookie = async (cookie: string) =>
   parseResult(await call<[string], string>("save_ryu_cookie", cookie));
 

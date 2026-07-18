@@ -22,7 +22,6 @@ import {
   updateHubcapKey,
   loadHubcapKey,
   getCredentialStatus,
-  fetchFreeApisNow,
   checkDependencies,
   getPlatformSummary,
   getSteamLibraries,
@@ -464,15 +463,6 @@ export function Settings() {
     Navigation.NavigateToExternalWeb("https://hubcapmanifest.com/api-keys");
   };
 
-  const handleUpdateApis = async () => {
-    toast(t("updatingApis"), "", 2000);
-    const result = await fetchFreeApisNow();
-    if (result.success) {
-      toast(t("toastApisUpdated", result.count));
-    } else {
-      toast(t("toastError"), result.error || t("updateFailed"), 4000);
-    }
-  };
 
   // SLSsteam advanced editors — re-read the config after every change so the UI
   // always shows the real on-disk values. Changes apply after a Steam restart.
@@ -740,14 +730,6 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
         {renderCredLine("ryuu")}
-      </PanelSection>
-
-      <PanelSection title={t("apis")}>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleUpdateApis}>
-            {t("updateFreeApis")}
-          </ButtonItem>
-        </PanelSectionRow>
       </PanelSection>
         </>
       ),
