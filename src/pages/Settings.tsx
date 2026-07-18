@@ -846,17 +846,25 @@ export function Settings() {
       icon: <FaShieldAlt />,
       hideTitle: true,
       content: (
-      <PanelSection title={t("slssteam")}>
+      <>
+      {/* No redundant "SLSsteam" section title — the sidebar tab already names
+          the page (hideTitle drops the page title). Each advanced block is its
+          OWN native PanelSection titled by the block name (uppercase, native
+          section spacing above it) with the helper text as a description row
+          under it — not a Field label+desc glued on as a pseudo-header. Same
+          pattern as the API Credentials tab. */}
+      <PanelSection>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={() => restartSteam()}>
             {t("restartSteam")}
           </ButtonItem>
         </PanelSectionRow>
+      </PanelSection>
 
-        {/* ── Advanced: AdditionalApps — force specific AppIDs as owned ── */}
+      {/* ── Advanced: AdditionalApps — force specific AppIDs as owned ── */}
+      <PanelSection title={t("slssAddlAppsTitle")}>
         <PanelSectionRow>
-          <Field focusable highlightOnFocus={false}
-            label={t("slssAddlAppsTitle")} description={t("slssAddlAppsDesc")} />
+          <Field description={t("slssAddlAppsDesc")} />
         </PanelSectionRow>
         {addlApps.map((id) => (
           <PanelSectionRow key={`addl-${id}`}>
@@ -872,11 +880,12 @@ export function Settings() {
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleAddAddlApp}>{t("slssAddButton")}</ButtonItem>
         </PanelSectionRow>
+      </PanelSection>
 
-        {/* ── Advanced: FakeAppIds — remap AppIDs for networking ── */}
+      {/* ── Advanced: FakeAppIds — remap AppIDs for networking ── */}
+      <PanelSection title={t("slssFakeIdsTitle")}>
         <PanelSectionRow>
-          <Field focusable highlightOnFocus={false}
-            label={t("slssFakeIdsTitle")} description={t("slssFakeIdsDesc")} />
+          <Field description={t("slssFakeIdsDesc")} />
         </PanelSectionRow>
         {Object.entries(fakeAppIds).map(([real, fake]) => (
           <PanelSectionRow key={`fake-${real}`}>
@@ -896,8 +905,8 @@ export function Settings() {
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleAddFakeAppId}>{t("slssAddButton")}</ButtonItem>
         </PanelSectionRow>
-
       </PanelSection>
+      </>
       ),
     },
     {
