@@ -24,6 +24,26 @@ def _config_path() -> str:
     return get_slssteam_config_path()
 
 
+def _commit_config(src: str, dst: str) -> None:
+    """Atomically replace config.yaml, then poke SLSsteam's hot-reload.
+
+    SLSsteam's config watcher (filewatcher.cpp) watches the config's PARENT
+    directory for `IN_CLOSE_WRITE` and filters by filename. Our atomic write
+    commits via `os.replace` (a rename → `IN_MOVED_TO`), which that watcher does
+    NOT listen for — so the live `loadSettings()` reload never fires and the edit
+    would only take effect on the next Steam start. Re-open the just-committed
+    file for a zero-byte write and close it: that emits `IN_CLOSE_WRITE`, so
+    SLSsteam hot-reloads AdditionalApps / FakeAppIds immediately, no restart. The
+    rename already committed the content, so the crash-safety of the atomic write
+    is preserved."""
+    os.replace(src, dst)
+    try:
+        with open(dst, "a", encoding="utf-8"):
+            pass
+    except Exception:
+        pass
+
+
 # ==========================================
 #  FAKE APP ID MANAGEMENT
 # ==========================================
@@ -36,7 +56,7 @@ def add_fake_app_id(appid: int, fake_id: int = 480) -> dict:
             tmp = config_path + ".tmp"
             with open(tmp, "w") as f:
                 f.write("FakeAppIds:\n")
-            os.replace(tmp, config_path)
+            _commit_config(tmp, config_path)
 
         with open(config_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -77,7 +97,7 @@ def add_fake_app_id(appid: int, fake_id: int = 480) -> dict:
         tmp = config_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
-        os.replace(tmp, config_path)
+        _commit_config(tmp, config_path)
         return {"success": True, "message": f"FakeAppId ({appid} -> {fake_id}) added!"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -118,7 +138,7 @@ def remove_fake_app_id(appid: int) -> dict:
             tmp = config_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
-            os.replace(tmp, config_path)
+            _commit_config(tmp, config_path)
 
         return {"success": True, "message": "FakeAppId removed"}
     except Exception as e:
@@ -219,7 +239,7 @@ def add_to_additional_apps(appid: int) -> dict:
         tmp = config_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
-        os.replace(tmp, config_path)
+        _commit_config(tmp, config_path)
         return {"success": True, "message": f"AppID {appid} added to AdditionalApps"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -268,7 +288,7 @@ def remove_from_additional_apps(appid: int) -> dict:
             tmp = config_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
-            os.replace(tmp, config_path)
+            _commit_config(tmp, config_path)
         return {"success": True, "message": f"AppID {appid} removed from AdditionalApps"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -292,7 +312,7 @@ def add_game_token(appid: int) -> dict:
             tmp = config_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write("AppTokens:\n")
-            os.replace(tmp, config_path)
+            _commit_config(tmp, config_path)
 
         with open(json_path, "r", encoding="utf-8") as f:
             tokens_db = json.load(f)
@@ -333,7 +353,7 @@ def add_game_token(appid: int) -> dict:
         tmp = config_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
-        os.replace(tmp, config_path)
+        _commit_config(tmp, config_path)
         return {"success": True, "message": "Token added!"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -373,7 +393,7 @@ def remove_game_token(appid: int) -> dict:
             tmp = config_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
-            os.replace(tmp, config_path)
+            _commit_config(tmp, config_path)
 
         return {"success": True, "message": "Token removed"}
     except Exception as e:
@@ -491,7 +511,7 @@ async def add_game_dlcs(appid: int) -> dict:
         tmp = config_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
-        os.replace(tmp, config_path)
+        _commit_config(tmp, config_path)
 
         return {"success": True, "message": f"{len(dlcs)} DLCs added!", "count": len(dlcs)}
     except Exception as e:
@@ -528,7 +548,7 @@ def remove_game_dlcs(appid: int) -> dict:
         tmp = config_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
-        os.replace(tmp, config_path)
+        _commit_config(tmp, config_path)
         return {"success": True, "message": "DLCs removed"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -595,7 +615,7 @@ def _remove_from_additional_apps(appid: int) -> None:
             tmp = config_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.writelines(new_lines)
-            os.replace(tmp, config_path)
+            _commit_config(tmp, config_path)
     except Exception:
         pass
 

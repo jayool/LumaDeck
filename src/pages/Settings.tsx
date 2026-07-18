@@ -852,14 +852,11 @@ export function Settings() {
           OWN native PanelSection titled by the block name (uppercase, native
           section spacing above it) with the helper text as a description row
           under it — not a Field label+desc glued on as a pseudo-header. Same
-          pattern as the API Credentials tab. */}
-      <PanelSection>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => restartSteam()}>
-            {t("restartSteam")}
-          </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection>
+          pattern as the API Credentials tab.
+          No "Restart Steam" button: SLSsteam hot-reloads config.yaml
+          (filewatcher.cpp, IN_CLOSE_WRITE), and _commit_config() in
+          slssteam_ops.py pokes that watcher, so AdditionalApps/FakeAppIds edits
+          apply live — a restart button here was misleading. */}
 
       {/* ── Advanced: AdditionalApps — force specific AppIDs as owned ── */}
       <PanelSection title={t("slssAddlAppsTitle")}>
