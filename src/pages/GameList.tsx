@@ -36,7 +36,7 @@ import {
   ComponentsStatus,
   SystemStatusActions,
 } from "../components/SystemStatus";
-import { ROUTE_SETTINGS, ROUTE_DOWNLOADS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
+import { ROUTE_SETTINGS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { setRefreshHandler } from "../refresh";
 import { ACHIEVEMENTS_ENABLED } from "../features";
 import { useT } from "../i18n";
@@ -737,7 +737,7 @@ export function GameList() {
             description above, so they read as part of the card. A missing key
             is handled by the top blocked row + disabled Add game — no separate
             credential warning row here. */}
-        {/* Native ButtonItem — same separator + spacing as My Games/Workshop —
+        {/* Native ButtonItem — same separator + spacing as My Games —
             with highlightOnFocus off to drop the focus glow (the only thing we
             wanted gone). No hand-tuned margins or borders. */}
         <PanelSectionRow>
@@ -918,13 +918,13 @@ export function GameList() {
           );
         })()}
 
-        {/* Bottom navigation — My Games, the optional Achievements shortcut, and
-            Downloads live in the SAME PanelSection as Add Game (not a separate
-            one). A separate section stacked two sections' vertical padding into
-            a big empty gap after the closing divider; keeping them as rows here
-            means the closing divider is followed by My Games with the normal
-            single-row rhythm. My Games and Downloads each live on their own
-            full-screen route, so the QAM only carries compact entries. */}
+        {/* Bottom navigation — My Games and the optional Achievements shortcut
+            live in the SAME PanelSection as Add Game (not a separate one). A
+            separate section stacked two sections' vertical padding into a big
+            empty gap after the closing divider; keeping them as rows here means
+            the closing divider is followed by My Games with the normal
+            single-row rhythm. My Games lives on its own full-screen route, so
+            the QAM only carries compact entries. */}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -947,15 +947,6 @@ export function GameList() {
           </ButtonItem>
         </PanelSectionRow>
         )}
-
-        <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            onClick={() => Navigation.Navigate(ROUTE_DOWNLOADS)}
-          >
-            {t("workshop")}
-          </ButtonItem>
-        </PanelSectionRow>
       </PanelSection>
     </>
   );

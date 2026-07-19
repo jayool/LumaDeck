@@ -29,9 +29,6 @@ const strings: Record<Lang, Record<string, string>> = {
     noGamesYet: "No games yet",
     noGamesMatch: "No matches",
     loadingGames: "Loading games...",
-    activeDownloads: "Active Downloads",
-    downloads: "Downloads",
-    workshop: "Workshop",
     settings: "Settings",
     refresh: "Refresh",
     help: "Help",
@@ -215,12 +212,7 @@ const strings: Record<Lang, Record<string, string>> = {
 
     // Downloads
     manualDownload: "Manual Download",
-    workshopDownload: "Workshop Download",
-    workshopItemId: "Workshop Item ID",
-    downloadWorkshopItem: "Download Workshop Item",
-    cancelWorkshopDownload: "Cancel Workshop Download",
     enterValidAppId: "Enter a valid AppID",
-    enterValidIds: "Enter valid AppID and Workshop Item ID",
     cancel: "Cancel",
 
     // Download status
@@ -480,9 +472,6 @@ const strings: Record<Lang, Record<string, string>> = {
     noGamesYet: "Nenhum jogo ainda",
     noGamesMatch: "Nenhum jogo corresponde à busca",
     loadingGames: "Carregando jogos...",
-    activeDownloads: "Downloads Ativos",
-    downloads: "Downloads",
-    workshop: "Workshop",
     settings: "Configurações",
     refresh: "Atualizar",
     help: "Ajuda",
@@ -634,12 +623,7 @@ const strings: Record<Lang, Record<string, string>> = {
 
     // Downloads
     manualDownload: "Download Manual",
-    workshopDownload: "Download Workshop",
-    workshopItemId: "ID do Item Workshop",
-    downloadWorkshopItem: "Baixar Item Workshop",
-    cancelWorkshopDownload: "Cancelar Download Workshop",
     enterValidAppId: "Insira um AppID válido",
-    enterValidIds: "Insira AppID e ID do Item Workshop válidos",
     cancel: "Cancelar",
 
     // Download status

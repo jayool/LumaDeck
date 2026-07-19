@@ -13,14 +13,12 @@ import { FaDownload, FaSync, FaCog } from "react-icons/fa";
 import { GameList } from "./pages/GameList";
 import { GameDetail } from "./pages/GameDetail";
 import { Settings } from "./pages/Settings";
-import { Downloads } from "./pages/Downloads";
 import { Library } from "./pages/Library";
 import { AppPageButton } from "./components/AppPageButton";
 import { requestRefresh } from "./refresh";
 import {
   ROUTE_GAME_DETAIL,
   ROUTE_SETTINGS,
-  ROUTE_DOWNLOADS,
   ROUTE_LIBRARY,
 } from "./routes";
 
@@ -96,7 +94,6 @@ export default definePlugin(() => {
   });
 
   routerHook.addRoute(ROUTE_SETTINGS, () => <Settings />);
-  routerHook.addRoute(ROUTE_DOWNLOADS, () => <Downloads />);
   routerHook.addRoute(ROUTE_LIBRARY, () => <Library />);
 
   // Patch library app detail page to show "Added via LumaDeck" badge
@@ -138,7 +135,6 @@ export default definePlugin(() => {
     onDismount() {
       routerHook.removeRoute(ROUTE_GAME_DETAIL + "/:appid");
       routerHook.removeRoute(ROUTE_SETTINGS);
-      routerHook.removeRoute(ROUTE_DOWNLOADS);
       routerHook.removeRoute(ROUTE_LIBRARY);
       routerHook.removePatch("/library/app/:appid", libraryPatch);
     },

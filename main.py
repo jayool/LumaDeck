@@ -551,26 +551,6 @@ class Plugin:
         return _j(compute_fix_launch_options(appid, install_path))
 
     # ==========================================================================
-    # Workshop
-    # ==========================================================================
-
-    async def start_workshop_download(self, appid: int, pubfile_id: int, target_library_path: str = "") -> str:
-        from workshop import start_workshop_download
-        return _j(await start_workshop_download(appid, pubfile_id, target_library_path))
-
-    async def get_workshop_download_status(self) -> str:
-        from workshop import get_workshop_download_status
-        return _j(get_workshop_download_status())
-
-    async def cancel_workshop_download(self) -> str:
-        from workshop import cancel_workshop_download
-        return _j(await cancel_workshop_download())
-
-    async def save_workshop_tool_path(self, path: str) -> str:
-        from workshop import save_workshop_tool_path
-        return _j(save_workshop_tool_path(path))
-
-    # ==========================================================================
     # Repair / Maintenance
     # ==========================================================================
 

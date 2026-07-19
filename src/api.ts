@@ -331,23 +331,6 @@ export const computeFixLaunchOptions = async (appid: number, installPath: string
     await call<[number, string], string>("compute_fix_launch_options", appid, installPath),
   );
 
-// Workshop
-export const startWorkshopDownload = async (appid: number, pubfileId: number, targetLibraryPath: string = "") =>
-  parseResult(
-    await call<[number, number, string], string>(
-      "start_workshop_download",
-      appid,
-      pubfileId,
-      targetLibraryPath,
-    ),
-  );
-
-export const getWorkshopDownloadStatus = async () =>
-  parseResult(await call<[], string>("get_workshop_download_status"));
-
-export const cancelWorkshopDownload = async () =>
-  parseResult(await call<[], string>("cancel_workshop_download"));
-
 // Repair / Maintenance
 export const repairAppmanifest = async (appid: number) =>
   parseResult(await call<[number], string>("repair_appmanifest", appid));
