@@ -677,28 +677,25 @@ export function GameDetail({ appid }: GameDetailProps) {
       hideTitle: true,
       content: (
         <>
-      <PanelSection title={gameName}>
+      {/* No section title — the game name is already the page title
+          (SidebarNavigation title={gameName}), so a gameName section header
+          duplicated it. AppID + status now share one row: the AppID (a technical
+          literal, used as-is across the codebase) labels the row, the install
+          status is the row's coloured value, and the install path rides along as
+          the muted description sub-line. Status only shows while the game has a
+          lua config — the only time hasLua is false is the ~1.5s flash after
+          Uninstall before the page navigates back. */}
+      <PanelSection>
         <PanelSectionRow>
-          {/* AppID is a technical identifier, used as a literal across the
-              codebase (GameCard, search results) — not display prose. */}
-          <Field label="AppID">{appid}</Field>
-        </PanelSectionRow>
-        {/* Status only renders while the game still has a lua config. Every
-            game reachable here has one (you arrive from My Games); the only
-            time hasLua is false is the ~1.5s flash after Uninstall before the
-            page navigates back — so there's no "not installed" state to show. */}
-        {hasLua && (
-          <PanelSectionRow>
-            {/* Status value carries the state colour; the install path (when
-                present) rides along as the Field's muted description sub-line. */}
-            <Field label={t("gameStatus")} description={installPath || undefined}>
+          <Field label={`AppID ${appid}`} description={installPath || undefined}>
+            {hasLua && (
               <span style={{ color: installPath ? "#00cc00" : "#ffaa00" }}>
                 {installPath ? t("installed") : t("manifestOnly")}
                 {gameSize > 0 && ` · ${formatSize(gameSize)}`}
               </span>
-            </Field>
-          </PanelSectionRow>
-        )}
+            )}
+          </Field>
+        </PanelSectionRow>
       </PanelSection>
         </>
       ),
