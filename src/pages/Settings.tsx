@@ -1099,7 +1099,9 @@ export function Settings() {
       icon: <FaInfoCircle />,
       hideTitle: true,
       content: (
-        <PanelSection title={t("about")}>
+        // No redundant "About" section title — the sidebar tab already names the
+        // page (hideTitle drops the page title). Same pass as the other tabs.
+        <PanelSection>
           <PanelSectionRow>
             <Field description={t("aboutBlurb")} />
           </PanelSectionRow>
