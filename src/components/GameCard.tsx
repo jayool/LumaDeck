@@ -1,6 +1,6 @@
-import { ButtonItem } from "@decky/ui";
-import { useT } from "../i18n";
-import { ACHIEVEMENTS_ENABLED } from "../features";
+import { useState } from "react";
+import { Focusable } from "@decky/ui";
+import { FaCloudDownloadAlt } from "react-icons/fa";
 
 export interface GameInfo {
   appid: number;
@@ -9,7 +9,6 @@ export interface GameInfo {
   isDisabled?: boolean;
   hasGameFiles?: boolean;
   hasAchievements?: boolean;
-  downloadStatus?: string;
 }
 
 interface GameCardProps {
@@ -17,62 +16,115 @@ interface GameCardProps {
   onClick: (appid: number) => void;
 }
 
+// Steam publishes per-app art on its CDN and the Steam client loads it fine.
+// Portrait capsule (the native library-grid art) first; header.jpg as a
+// fallback for apps without a portrait; then a plain text tile if the app has
+// no art at all.
+const ART_BASE = "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps";
+
+// Grid tile for the My Games library — a Steam-style portrait cover.
 export function GameCard({ game, onClick }: GameCardProps) {
-  const t = useT();
+  const portrait = `${ART_BASE}/${game.appid}/library_600x900.jpg`;
+  const header = `${ART_BASE}/${game.appid}/header.jpg`;
+  const [src, setSrc] = useState(portrait);
+  const [noArt, setNoArt] = useState(false);
 
-  const statusColor = game.hasLua
-    ? game.isDisabled
-      ? "#ffaa00"
-      : game.hasGameFiles
-        ? "#00cc00"
-        : "#ffaa00"
-    : "#666";
+  // Two real states (see Library review): a game with its files present is
+  // Installed → full colour. One that's only staged (manifest written but Steam
+  // hasn't downloaded it yet) or externally disabled shows dimmed with a
+  // download-cloud hint — the native "not installed yet" look. The transient
+  // manifest-fetch "downloading" phase is intentionally not surfaced here (the
+  // real game download is Steam's, shown in Steam's own library).
+  const installed = !!game.hasLua && !!game.hasGameFiles && !game.isDisabled;
+  const dim = !installed;
 
-  const statusText = game.hasLua
-    ? game.isDisabled
-      ? t("disabled")
-      : game.hasGameFiles
-        ? ACHIEVEMENTS_ENABLED && game.hasAchievements
-          ? `${t("installed")} · ★`
-          : t("installed")
-        : t("manifestOnly")
-    : t("pending");
-
-  const activePhases = [
-    "downloading",
-    "checking",
-    "processing",
-    "configuring",
-    "queued",
-    "installing",
-    "restarting_steam",
-  ];
-  const isDownloading = !!game.downloadStatus && activePhases.includes(game.downloadStatus);
-
-  const downloadLabel = (() => {
-    switch (game.downloadStatus) {
-      case "downloading": return t("statusDownloading");
-      case "checking": return t("statusChecking");
-      case "processing": return t("statusProcessing");
-      case "configuring": return t("statusConfiguring");
-      case "queued": return t("statusQueued");
-      case "installing": return t("statusInstalling");
-      case "restarting_steam": return t("statusRestartingSteam");
-      default: return game.downloadStatus || "";
-    }
-  })();
+  const activate = () => onClick(game.appid);
 
   return (
-    <ButtonItem
-      layout="below"
-      onClick={() => onClick(game.appid)}
-      description={
-        <span style={{ color: isDownloading ? "#1a9fff" : statusColor, fontSize: "12px" }}>
-          {isDownloading ? downloadLabel : statusText} · {game.appid}
-        </span>
-      }
+    <Focusable
+      onActivate={activate}
+      onClick={activate}
+      style={{ borderRadius: "6px", overflow: "hidden" }}
     >
-      {game.name}
-    </ButtonItem>
+      {/* 600:900 portrait ratio via padding-top so it holds on any CEF build. */}
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          paddingTop: "150%",
+          background: "#1a2129",
+          borderRadius: "6px",
+          overflow: "hidden",
+        }}
+      >
+        {noArt ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "8px",
+              textAlign: "center",
+              fontSize: "12px",
+              color: "#dcdedf",
+              opacity: dim ? 0.55 : 1,
+            }}
+          >
+            {game.name}
+          </div>
+        ) : (
+          <img
+            src={src}
+            onError={() => {
+              if (src === portrait) setSrc(header);
+              else setNoArt(true);
+            }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              opacity: dim ? 0.4 : 1,
+              filter: dim ? "grayscale(0.35)" : "none",
+            }}
+          />
+        )}
+        {dim && (
+          <div
+            style={{
+              position: "absolute",
+              top: "6px",
+              right: "6px",
+              width: "22px",
+              height: "22px",
+              borderRadius: "50%",
+              background: "rgba(0,0,0,0.6)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <FaCloudDownloadAlt size={12} color="#dcdedf" />
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          marginTop: "4px",
+          fontSize: "11px",
+          color: "#dcdedf",
+          lineHeight: 1.2,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          opacity: dim ? 0.7 : 1,
+        }}
+      >
+        {game.name}
+      </div>
+    </Focusable>
   );
 }

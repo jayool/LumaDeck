@@ -4,12 +4,12 @@ import {
   PanelSectionRow,
   TextField,
   Navigation,
+  Focusable,
 } from "@decky/ui";
 import { GameCard, GameInfo } from "../components/GameCard";
 import {
   getInstalledLuaScripts,
   checkAllAchievementsStatus,
-  getActiveDownloads,
 } from "../api";
 import { useT } from "../i18n";
 import { ACHIEVEMENTS_ENABLED } from "../features";
@@ -25,8 +25,6 @@ export function Library() {
   const [games, setGames] = useState<GameInfo[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  // appid -> active download phase, so cards can show live status here too.
-  const [activePhases, setActivePhases] = useState<Record<number, string>>({});
 
   const loadGames = useCallback(async () => {
     try {
@@ -70,31 +68,6 @@ export function Library() {
     loadGames();
   }, [loadGames]);
 
-  // Poll active downloads so cards badge their live phase.
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const result = await getActiveDownloads();
-        if (cancelled) return;
-        const map: Record<number, string> = {};
-        if (result.success && result.downloads) {
-          for (const key of Object.keys(result.downloads)) {
-            const st = result.downloads[key];
-            if (st && st.status) map[parseInt(key, 10)] = st.status;
-          }
-        }
-        setActivePhases(map);
-      } catch { }
-    };
-    tick();
-    const interval = setInterval(tick, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
-
   const filtered = (
     search
       ? games.filter(
@@ -121,37 +94,33 @@ export function Library() {
             onChange={(e: any) => setSearch(e?.target?.value ?? "")}
           />
         </PanelSectionRow>
-
-        {loading ? (
-          <PanelSectionRow>
-            <div
-              style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
-            >
-              {t("loadingGames")}
-            </div>
-          </PanelSectionRow>
-        ) : filtered.length === 0 ? (
-          <PanelSectionRow>
-            <div
-              style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}
-            >
-              {search ? t("noGamesMatch") : t("noGamesYet")}
-            </div>
-          </PanelSectionRow>
-        ) : (
-          filtered.map((game: GameInfo) => (
-            <GameCard
-              key={game.appid}
-              game={
-                activePhases[game.appid]
-                  ? { ...game, downloadStatus: activePhases[game.appid] }
-                  : game
-              }
-              onClick={navigateToDetail}
-            />
-          ))
-        )}
       </PanelSection>
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}>
+          {t("loadingGames")}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}>
+          {search ? t("noGamesMatch") : t("noGamesYet")}
+        </div>
+      ) : (
+        // Steam-style portrait grid: responsive columns (~5-6 across on the Deck,
+        // adapts to width). One Focusable wrapper; Steam's spatial gamepad nav
+        // moves across the tiles by their on-screen position.
+        <Focusable
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+            gap: "16px",
+            padding: "4px 16px 24px",
+          }}
+        >
+          {filtered.map((game: GameInfo) => (
+            <GameCard key={game.appid} game={game} onClick={navigateToDetail} />
+          ))}
+        </Focusable>
+      )}
     </div>
   );
 }
