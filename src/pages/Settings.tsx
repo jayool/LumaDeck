@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { ACHIEVEMENTS_ENABLED } from "../features";
+import { ACHIEVEMENTS_ENABLED, SLSSTEAM_TAB_ENABLED } from "../features";
 import {
   PanelSection,
   PanelSectionRow,
@@ -852,7 +852,9 @@ export function Settings() {
         </>
       ),
     }] : []),
-    {
+    // SLSsteam tab hidden (SLSSTEAM_TAB_ENABLED in ../features). Kept intact so
+    // flipping the flag brings it back; see the flag comment for why.
+    ...(SLSSTEAM_TAB_ENABLED ? [{
       title: t("slssteam"),
       icon: <FaShieldAlt />,
       hideTitle: true,
@@ -916,7 +918,7 @@ export function Settings() {
       </PanelSection>
       </>
       ),
-    },
+    }] : []),
     {
       title: t("dependencies"),
       icon: <FaDownload />,

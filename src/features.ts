@@ -12,3 +12,15 @@
 // Typed as boolean (not the literal `false`) on purpose, so the guarded code
 // stays reachable to the type checker and no "unused" errors appear.
 export const ACHIEVEMENTS_ENABLED: boolean = false;
+
+// SLSSTEAM_TAB_ENABLED gates the Settings "SLSsteam" tab (the AdditionalApps +
+// FakeAppIds raw editors). Hidden because both duplicate better homes — the
+// AdditionalApps list mirrors My Games (and its "remove" only un-owns, leaving
+// files orphaned), and FakeAppIds is already a per-game toggle in GameDetail —
+// while every *core* SLSsteam capability (family-share license-lock bypass, DLC
+// unlock on owned games, base-game unlock) is default-on inside SLSsteam and
+// untouched by this UI. The advanced niche (force-own an AppId for low-violence
+// / Denuvo-DLC cases) is rare. Code kept intact; flip to true to bring it back.
+// Typed as boolean (not the literal `false`) so the guarded code stays
+// type-reachable and no "unused" errors appear.
+export const SLSSTEAM_TAB_ENABLED: boolean = false;
