@@ -924,7 +924,9 @@ export function Settings() {
       icon: <FaDownload />,
       hideTitle: true,
       content: (
-      <PanelSection title={t("dependencies")}>
+      // No redundant "Components" section title — the sidebar tab already names
+      // the page (hideTitle drops the page title). Same pass as the other tabs.
+      <PanelSection>
         {deps && (
           <>
             <PanelSectionRow>
