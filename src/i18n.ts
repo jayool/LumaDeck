@@ -43,7 +43,7 @@ const strings: Record<Lang, Record<string, string>> = {
     helpHowToAddSteps:
       "1. In Steam, open the game's store page, or search by name or paste its AppID in Add Game.\n" +
       "2. Open LumaDeck in the QAM; it auto-detects the AppID.\n" +
-      "3. Press Download Manifest.\n" +
+      "3. Press Add game.\n" +
       "4. Restart Steam so the game appears in your library.\n" +
       "5. In Steam, press Install. It downloads natively; progress shows in the Steam library, not in the plugin.\n\n" +
       "Set a manifest credential first in Settings ▸ API Credentials.",
@@ -62,7 +62,7 @@ const strings: Record<Lang, Record<string, string>> = {
       "A local fix for native-Linux installs (nothing is downloaded).",
     helpTroubleshooting: "Troubleshooting",
     helpTroubleshootingTips:
-      "• Game won't appear or download? Restart Steam after Download Manifest; it won't show until you do, then press Install in Steam.\n" +
+      "• Game won't appear or download? Restart Steam after Add game; it won't show until you do, then press Install in Steam.\n" +
       "• Manifest fetch fails? Check Settings ▸ API Credentials (an expired key is the usual cause); try the other provider.\n" +
       "• A component isn't loaded? Restart Steam. Steam too new or a build mismatch? Fix it in Desktop from Settings ▸ Components.\n" +
       "• \"Fix blocked in Game Mode\"? Switch to Desktop, run the command shown, then return.\n" +
