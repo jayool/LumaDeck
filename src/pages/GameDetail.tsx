@@ -1014,11 +1014,12 @@ export function GameDetail({ appid }: GameDetailProps) {
       content: (
         <>
       {/* Uninstall */}
-      <PanelSection title={t("dangerZone")}>
+      <PanelSection>
         {/* What will be removed — native Field (label + "·" list), ⚠ red icon
-            for the destructive signal. The hand-bordered red box is gone; the
-            danger button + two-tap confirm + "Danger Zone" title carry the rest
-            of the severity. (DESIGN_UI.md §8f.) */}
+            for the destructive signal. The hand-bordered red box is gone, and
+            the section title too (it just restated the sidebar tab); the danger
+            button + two-tap confirm + the ⚠ "Permanently removes:" field carry
+            the severity. (DESIGN_UI.md §8f.) */}
         <PanelSectionRow>
           <Field
             icon={<FaExclamationTriangle color="#e07070" />}
