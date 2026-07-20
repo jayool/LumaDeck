@@ -670,7 +670,6 @@ export function GameDetail({ appid }: GameDetailProps) {
             <ActionButton
               label={hasLua ? t("redownloadManifest") : t("downloadManifest")}
               onClick={handleDownload}
-              variant="primary"
             />
             {hasLua && installPath ? (
               <PanelSectionRow>
@@ -790,7 +789,6 @@ export function GameDetail({ appid }: GameDetailProps) {
                 setPendingSettingsTab(SETTINGS_TAB_ACHIEVEMENTS);
                 Navigation.Navigate(ROUTE_SETTINGS);
               }}
-              variant="primary"
             />
           </>
         ) : achievementStatus === "generating" ? (
@@ -832,7 +830,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       content: (
         <>
       {/* Fixes */}
-      <PanelSection title={t("gameFixes")}>
+      <PanelSection>
         <ActionButton
           label={busy === "fixes" ? t("checkingForFixes") : t("checkForFixes")}
           onClick={handleCheckFixes}
@@ -847,7 +845,6 @@ export function GameDetail({ appid }: GameDetailProps) {
                 onClick={() =>
                   handleApplyFix(fixes.genericFix.url, "Generic Fix")
                 }
-                variant="primary"
                 disabled={!!isFixInProgress}
               />
             )}
@@ -858,7 +855,6 @@ export function GameDetail({ appid }: GameDetailProps) {
                 onClick={() =>
                   handleApplyFix(fixes.onlineFix.url, "Online Fix (Unsteam)")
                 }
-                variant="primary"
                 disabled={!!isFixInProgress}
               />
             )}

@@ -6,7 +6,7 @@ interface ActionButtonProps {
   onClick: () => void;
   disabled?: boolean;
   description?: string;
-  variant?: "primary" | "danger" | "default";
+  variant?: "danger" | "default";
 }
 
 export function ActionButton({
@@ -19,8 +19,8 @@ export function ActionButton({
   const labelStyle: CSSProperties = {};
 
   // Only 'danger' tints the label (red), matching Steam's destructive-action
-  // cue. 'primary' keeps the native white label — Steam signals the main action
-  // with the focus fill, not blue text (blue label text reads as non-native).
+  // cue. Everything else keeps the native white label — Steam signals the main
+  // action with the focus fill, not coloured text (which reads as non-native).
   if (variant === "danger") {
     labelStyle.color = "#ff4444";
   }
