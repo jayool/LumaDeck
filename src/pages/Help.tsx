@@ -54,9 +54,6 @@ export function HelpContent() {
           <Field focusable highlightOnFocus={false} label="Token" description={t("helpToken")} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field focusable highlightOnFocus={false} label="DLCs" description={t("helpDlcs")} />
-        </PanelSectionRow>
-        <PanelSectionRow>
           <Field focusable highlightOnFocus={false} label="Goldberg" description={t("helpGoldberg")} />
         </PanelSectionRow>
         <PanelSectionRow>

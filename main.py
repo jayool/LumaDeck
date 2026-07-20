@@ -442,18 +442,6 @@ class Plugin:
         from slssteam_ops import check_game_token_status
         return _j(check_game_token_status(appid))
 
-    async def add_game_dlcs(self, appid: int) -> str:
-        from slssteam_ops import add_game_dlcs
-        return _j(await add_game_dlcs(appid))
-
-    async def remove_game_dlcs(self, appid: int) -> str:
-        from slssteam_ops import remove_game_dlcs
-        return _j(remove_game_dlcs(appid))
-
-    async def check_game_dlcs_status(self, appid: int) -> str:
-        from slssteam_ops import check_game_dlcs_status
-        return _j(check_game_dlcs_status(appid))
-
     async def uninstall_game_full(self, appid: int, remove_compatdata: bool = False) -> str:
         from slssteam_ops import uninstall_game_full
         return _j(uninstall_game_full(appid, remove_compatdata))

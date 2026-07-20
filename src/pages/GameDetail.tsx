@@ -36,9 +36,6 @@ import {
   addGameToken,
   removeGameToken,
   checkGameTokenStatus,
-  addGameDlcs,
-  removeGameDlcs,
-  checkGameDlcsStatus,
   checkForFixes,
   applyGameFix,
   getApplyFixStatus,
@@ -105,8 +102,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [fakeAppId, setFakeAppId] = useState(false);
   const [fakeIdValue, setFakeIdValue] = useState("480");
   const [hasToken, setHasToken] = useState(false);
-  const [hasDlcs, setHasDlcs] = useState(false);
-  const [dlcCount, setDlcCount] = useState(0);
   const [fixes, setFixes] = useState<any>(null);
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
@@ -195,12 +190,6 @@ export function GameDetail({ appid }: GameDetailProps) {
 
       const tokenResult = await checkGameTokenStatus(appid);
       if (tokenResult.success) setHasToken(tokenResult.exists);
-
-      const dlcResult = await checkGameDlcsStatus(appid);
-      if (dlcResult.success) {
-        setHasDlcs(dlcResult.exists);
-        if (dlcResult.count) setDlcCount(dlcResult.count);
-      }
 
       const dlStatus = await getDownloadStatus(appid);
       if (
@@ -383,32 +372,6 @@ export function GameDetail({ appid }: GameDetailProps) {
       if (result.success) {
         setHasToken(true);
         toast(t("toastTokenAdded"), gameName);
-      } else {
-        toast(t("toastError"), result.message || result.error || "", 4000);
-      }
-    }
-  };
-
-  const handleToggleDlcs = async () => {
-    if (hasDlcs) {
-      await removeGameDlcs(appid);
-      setHasDlcs(false);
-      setDlcCount(0);
-      toast(t("toastDlcsRemoved"), gameName);
-    } else {
-      setBusy("dlcs");
-      toast(t("fetchingDlcs"), gameName, 2000);
-      const result = await addGameDlcs(appid);
-      setBusy("");
-      if (result.success) {
-        if (result.skipped) {
-          setHasDlcs(false);
-          toast(t("toastDlcsNoneFound"), gameName, 4000);
-        } else {
-          setHasDlcs(true);
-          if (result.count) setDlcCount(result.count);
-          toast(t("toastDlcsAdded", result.count || 0), gameName);
-        }
       } else {
         toast(t("toastError"), result.message || result.error || "", 4000);
       }
@@ -602,7 +565,6 @@ export function GameDetail({ appid }: GameDetailProps) {
       setHasLua(false);
       setFakeAppId(false);
       setHasToken(false);
-      setHasDlcs(false);
       const removed = result.removed || [];
       const hasFiles = removed.includes("game_files");
       const errors = result.errors || [];
@@ -634,10 +596,6 @@ export function GameDetail({ appid }: GameDetailProps) {
     if (fixStatus.status === "queued") return t("statusQueued");
     return fixStatus.status;
   })();
-
-  const dlcLabel = hasDlcs
-    ? `${t("removeDlcs")}${dlcCount > 0 ? ` (${dlcCount})` : ""}`
-    : `${t("addDlcs")}${dlcCount > 0 ? ` (${dlcCount} ${t("found")})` : ""}`;
 
   // Download phase → human label. depot_download removed (dead DDL path).
   const dlStatusLabel = (() => {
@@ -831,11 +789,6 @@ export function GameDetail({ appid }: GameDetailProps) {
         <ActionButton
           label={hasToken ? t("removeToken") : t("addToken")}
           onClick={handleToggleToken}
-        />
-        <ActionButton
-          label={busy === "dlcs" ? t("fetchingDlcs") : dlcLabel}
-          onClick={handleToggleDlcs}
-          disabled={busy === "dlcs"}
         />
       </PanelSection>
         </>

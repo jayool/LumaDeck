@@ -207,15 +207,6 @@ export const removeGameToken = async (appid: number) =>
 export const checkGameTokenStatus = async (appid: number) =>
   parseResult(await call<[number], string>("check_game_token_status", appid));
 
-export const addGameDlcs = async (appid: number) =>
-  parseResult(await call<[number], string>("add_game_dlcs", appid));
-
-export const removeGameDlcs = async (appid: number) =>
-  parseResult(await call<[number], string>("remove_game_dlcs", appid));
-
-export const checkGameDlcsStatus = async (appid: number) =>
-  parseResult(await call<[number], string>("check_game_dlcs_status", appid));
-
 export const uninstallGameFull = async (
   appid: number,
   removeCompatdata: boolean = false,
