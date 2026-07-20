@@ -199,6 +199,12 @@ async def unpin_game(appid: int) -> dict:
 
 async def get_pin_status(appid: int) -> dict:
     """Return {"success", "pinned", "depots"} (steamidra_lite --pin-status)."""
+    try:
+        import dev
+        if dev.is_fake_appid(appid):
+            return {"success": True, "pinned": False, "depots": []}
+    except Exception:
+        pass
     ok, out = await _run_steamidra_mode(["--pin-status", str(int(appid))])
     if not ok:
         return {"success": False, "error": out or "status failed", "pinned": False}
@@ -1361,6 +1367,12 @@ def has_luatools_for_app(appid: int) -> dict:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
+    try:
+        import dev
+        if dev.is_fake_appid(appid):
+            return {"success": True, "exists": True}
+    except Exception:
+        pass
     return {"success": True, "exists": has_lua_for_app(appid)}
 
 

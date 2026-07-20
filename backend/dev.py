@@ -156,3 +156,16 @@ def fake_games(count) -> list:
             "hasGameFiles": (i % 2 == 0),
         })
     return out
+
+
+def is_fake_appid(appid) -> bool:
+    """True if appid is one of the active dev fake-games. Lets GameDetail's
+    per-app lookups return synthetic 'installed' data so its tabs fill in."""
+    fake = get("fake_games")
+    if not fake:
+        return False
+    try:
+        appid = int(appid)
+    except Exception:
+        return False
+    return any(int(e["appid"]) == appid for e in fake_games(fake))

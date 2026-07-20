@@ -145,6 +145,20 @@ def get_game_install_path_response(appid: int) -> Dict[str, any]:
     except Exception:
         return {"success": False, "error": "Invalid appid"}
 
+    # Dev fake-games (Settings ▸ Dev) report as installed with a synthetic size so
+    # GameDetail's Status/Updates tabs (install path + size + auto-update toggle)
+    # fill in without a real game behind them.
+    try:
+        import dev
+        if dev.is_fake_appid(appid):
+            return {
+                "success": True,
+                "installPath": f"/home/deck/.local/share/Steam/steamapps/common/Fake Game {appid}",
+                "sizeOnDisk": 12_884_901_888,
+            }
+    except Exception:
+        pass
+
     steam_path = detect_steam_install_path()
     if not steam_path:
         return {"success": False, "error": "Could not find Steam installation path"}
