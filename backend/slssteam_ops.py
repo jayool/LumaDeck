@@ -23,16 +23,15 @@ def _config_path() -> str:
 
 
 def _hot_reload_enabled() -> bool:
-    """EXPERIMENT toggle: whether config.yaml writes poke SLSsteam's live reload
-    (so a just-added game appears without a Steam restart). OFF by default — the
-    no-restart path leaves a "Fully Installed / files missing" trap because
-    Steam's depot list only refreshes on restart. Re-enabled only to test the
-    DepotIdVec experiment (needs the game to appear without restart). Enabled by
-    env LUMA_HOTRELOAD=1 or a marker file ~/.config/lumalinux/hotreload (same dir
-    as lumalinux's depot_idvec marker — toggle both together for the test)."""
-    if os.environ.get("LUMA_HOTRELOAD"):
+    """no-restart EXPERIMENT toggle: whether config.yaml writes poke SLSsteam's
+    live reload (so a just-added game appears without a Steam restart). OFF by
+    default — the no-restart path leaves a "Fully Installed / files missing" trap
+    unless lumalinux's license reconcile also refreshes the appinfo. Unified with
+    lumalinux: one flag enables both sides. Enabled by env LUMA_NO_RESTART=1 or
+    the marker file ~/.config/lumalinux/no_restart."""
+    if os.environ.get("LUMA_NO_RESTART"):
         return True
-    return os.path.exists(os.path.expanduser("~/.config/lumalinux/hotreload"))
+    return os.path.exists(os.path.expanduser("~/.config/lumalinux/no_restart"))
 
 
 def _poke_reload(path: str) -> None:
