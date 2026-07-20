@@ -747,12 +747,16 @@ export function GameDetail({ appid }: GameDetailProps) {
       <PanelSection>
         <PanelSectionRow>
           <TextField
-            label="FakeAppId"
             value={fakeIdValue}
             onChange={(e: any) => setFakeIdValue(e?.target?.value ?? "480")}
             disabled={fakeAppId}
           />
         </PanelSectionRow>
+        {/* Mirror the API Credentials rhythm exactly: a label-less TextField
+            (a labeled field's chrome made the gap to the button larger than
+            Settings') + a fixed 12px spacer. The button label names the
+            field. */}
+        <div style={{ height: "12px" }} />
         <ActionButton
           label={
             fakeAppId
@@ -824,13 +828,14 @@ export function GameDetail({ appid }: GameDetailProps) {
       ),
     }] : []),
     {
-      title: t("fixes"),
+      title: t("fixesAndRepairs"),
       icon: <FaTools />,
       hideTitle: true,
       content: (
         <>
-      {/* Fixes */}
-      <PanelSection>
+      {/* "Fixes" (cracks) vs "Repairs" (plumbing) are distinct subsections, so
+          each keeps its own title now that the tab is "Fixes & Repairs". */}
+      <PanelSection title={t("fixes")}>
         <ActionButton
           label={busy === "fixes" ? t("checkingForFixes") : t("checkForFixes")}
           onClick={handleCheckFixes}

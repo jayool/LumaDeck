@@ -1,4 +1,4 @@
-import { PanelSection, PanelSectionRow, Field, Focusable } from "@decky/ui";
+import { PanelSection, PanelSectionRow, Focusable } from "@decky/ui";
 import { useT } from "../i18n";
 
 // Plugin help. Surfaced as a page in the Settings sidebar (not its own route),
@@ -44,21 +44,27 @@ export function HelpContent() {
         </PanelSectionRow>
       </PanelSection>
 
-      {/* Feature list → native Field per feature (name as label, the
-          explanation as description). Names are technical literals. */}
+      {/* Feature list. Same plain-text treatment as the prose sections above
+          (bold name + description) rather than native Fields, so the whole
+          page reads as one consistent text block instead of mixing boxed
+          Field rows with unboxed paragraphs. Each stays its own Focusable so
+          the gamepad can still scroll to it. */}
       <PanelSection title={t("helpFeatures")}>
-        <PanelSectionRow>
-          <Field focusable highlightOnFocus={false} label="FakeAppId" description={t("helpFakeAppId")} />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <Field focusable highlightOnFocus={false} label="Goldberg" description={t("helpGoldberg")} />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <Field focusable highlightOnFocus={false} label={t("fixes")} description={t("helpFixes")} />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <Field focusable highlightOnFocus={false} label="Linux Native" description={t("helpLinuxNative")} />
-        </PanelSectionRow>
+        {[
+          { name: "FakeAppId", desc: t("helpFakeAppId") },
+          { name: "Goldberg", desc: t("helpGoldberg") },
+          { name: t("fixes"), desc: t("helpFixes") },
+          { name: "Linux Native", desc: t("helpLinuxNative") },
+        ].map((f) => (
+          <PanelSectionRow key={f.name}>
+            <Focusable noFocusRing>
+              <div style={{ fontSize: "13px", color: "#dcdedf", lineHeight: "1.5" }}>
+                <div style={{ fontWeight: 600, marginBottom: "2px" }}>{f.name}</div>
+                {f.desc}
+              </div>
+            </Focusable>
+          </PanelSectionRow>
+        ))}
       </PanelSection>
 
       <PanelSection title={t("helpTroubleshooting")}>
