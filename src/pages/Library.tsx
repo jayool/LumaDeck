@@ -105,13 +105,17 @@ export function Library() {
           {search ? t("noGamesMatch") : t("noGamesYet")}
         </div>
       ) : (
-        // Steam-style portrait grid: responsive columns (~5-6 across on the Deck,
-        // adapts to width). One Focusable wrapper; Steam's spatial gamepad nav
-        // moves across the tiles by their on-screen position.
+        // Steam-style portrait grid: responsive columns that adapt to width.
+        // The min column width is deliberately small (120px) so the Deck's
+        // narrower effective viewport still fits ~5-6 covers per row like the
+        // native library — a larger min left the 1fr tracks growing the covers
+        // oversized on-device (fine in a wide desktop/preview window, too big on
+        // the Deck). One Focusable wrapper; Steam's spatial gamepad nav moves
+        // across the tiles by their on-screen position.
         <Focusable
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
             gap: "16px",
             padding: "4px 16px 24px",
           }}
