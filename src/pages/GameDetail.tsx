@@ -701,12 +701,15 @@ export function GameDetail({ appid }: GameDetailProps) {
       ),
     },
     {
-      title: t("download"),
+      title: t("updates"),
       icon: <FaDownload />,
       hideTitle: true,
       content: (
         <>
-      <PanelSection title={t("download")}>
+      {/* No section title — the sidebar tab ("Updates") already names it. This
+          tab is version/manifest management (pin, re-fetch, stuck-update fix);
+          the actual game files download natively in Steam. */}
+      <PanelSection>
         {isDownloading ? (
           <>
             {/* Native progress bar: phase/API/bytes/speed in sOperationText.

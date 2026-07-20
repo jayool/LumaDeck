@@ -77,6 +77,7 @@ const strings: Record<Lang, Record<string, string>> = {
 
     // GameDetail
     download: "Download",
+    updates: "Updates",
     redownloadManifest: "Re-download Manifest",
     checkForUpdates: "Check for Updates",
     checking: "Checking...",
@@ -488,6 +489,7 @@ const strings: Record<Lang, Record<string, string>> = {
 
     // GameDetail
     download: "Download",
+    updates: "Atualizações",
     redownloadManifest: "Re-baixar Manifesto",
     checkForUpdates: "Verificar Atualizações",
     checking: "Verificando...",
