@@ -104,3 +104,55 @@ def cred(hubcap_state, ryuu_state) -> dict:
     hubcap["daily_limit"] = 120
     ryuu = _cred_one(ryuu_state or "ok")
     return {"success": True, "hubcap": hubcap, "ryuu": ryuu}
+
+
+# Real, well-known AppIDs so the dev fake-games list shows real cover art in the
+# library grid. Cycled/sliced to the requested count.
+_FAKE_APP_POOL = [
+    (2379780, "Balatro"),
+    (1091500, "Cyberpunk 2077"),
+    (1245620, "ELDEN RING"),
+    (413150, "Stardew Valley"),
+    (620, "Portal 2"),
+    (1174180, "Red Dead Redemption 2"),
+    (271590, "Grand Theft Auto V"),
+    (292030, "The Witcher 3: Wild Hunt"),
+    (1086940, "Baldur's Gate 3"),
+    (1145360, "Hades"),
+    (367520, "Hollow Knight"),
+    (275850, "No Man's Sky"),
+    (1593500, "God of War"),
+    (990080, "Hogwarts Legacy"),
+    (1817070, "Marvel's Spider-Man Remastered"),
+    (546560, "Half-Life: Alyx"),
+    (322330, "Don't Starve Together"),
+    (1237970, "Titanfall 2"),
+    (582010, "Monster Hunter: World"),
+    (1811260, "EA SPORTS FC 24"),
+]
+
+
+def fake_games(count) -> list:
+    """Synthesize N library entries for Settings ▸ Dev ▸ Fake games. Uses real
+    AppIDs so cover art loads in the grid, and alternates hasGameFiles so both
+    states show up (installed = full colour, manifest-only = dimmed). Dev-only;
+    appended to get_installed_lua_scripts()."""
+    try:
+        n = int(count)
+    except Exception:
+        return []
+    out = []
+    pool = _FAKE_APP_POOL
+    for i in range(max(0, n)):
+        appid, name = pool[i % len(pool)]
+        if i >= len(pool):
+            # Past the pool: bump the id so keys stay unique (art falls back).
+            appid = appid + i
+            name = f"{name} #{i // len(pool) + 1}"
+        out.append({
+            "appid": appid,
+            "gameName": name,
+            "isDisabled": False,
+            "hasGameFiles": (i % 2 == 0),
+        })
+    return out

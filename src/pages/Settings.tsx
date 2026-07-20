@@ -641,6 +641,7 @@ export function Settings() {
     { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
     { key: "ryuu_cred", label: "Ryuu cookie", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
+    { key: "fake_games", label: "Fake games (library)", opts: ["real", "5", "10", "25", "50"] },
   ];
   const reloadAfterDev = async () => {
     const [sls, ll, cr] = await Promise.all([getSlssteamHealth(), getLumalinuxHealth(), getCloudredirectHealth()]);
@@ -686,11 +687,10 @@ export function Settings() {
           />
         </PanelSectionRow>
         {/* Label-less TextField has no field chrome, so its box butts right up
-            against the Save button below. A native compact-padding spacer row
-            gives it breathing room without re-adding a redundant field label. */}
-        <PanelSectionRow>
-          <Field bottomSeparator="none" padding="compact" />
-        </PanelSectionRow>
+            against the Save button below. A fixed-height spacer gives it
+            breathing room (an empty Field collapses to ~0 on the Deck) without
+            re-adding a redundant field label. */}
+        <div style={{ height: "12px" }} />
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSaveHubcapKey}>
             {t("saveHubcapKey")}
@@ -716,11 +716,9 @@ export function Settings() {
             bIsPassword
           />
         </PanelSectionRow>
-        {/* Same compact spacer as the Hubcap field — keep the input off the
+        {/* Same fixed-height spacer as the Hubcap field — keep the input off the
             Save button without re-adding a redundant field label. */}
-        <PanelSectionRow>
-          <Field bottomSeparator="none" padding="compact" />
-        </PanelSectionRow>
+        <div style={{ height: "12px" }} />
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSaveCookie}>
             {t("saveCookie")}

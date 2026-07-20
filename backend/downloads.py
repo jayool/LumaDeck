@@ -1518,6 +1518,17 @@ def get_installed_lua_scripts() -> dict:
             if s.get("hasGameFiles"):
                 _ensure_accela_mark(int(s["appid"]), base_path)
 
+        # Dev-only: append synthetic library entries (Settings ▸ Dev ▸ Fake
+        # games) so the grid + GameDetail can be exercised without real games.
+        # Added AFTER the ACCELA loop so fakes never spawn steamidra_lite.
+        try:
+            import dev
+            _fake = dev.get("fake_games")
+            if _fake:
+                installed_scripts.extend(dev.fake_games(_fake))
+        except Exception:
+            pass
+
         installed_scripts.sort(key=lambda x: x["appid"])
         return {"success": True, "scripts": installed_scripts}
     except Exception as exc:
