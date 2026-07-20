@@ -33,9 +33,6 @@ import {
   addFakeAppId,
   removeFakeAppId,
   checkFakeAppIdStatus,
-  addGameToken,
-  removeGameToken,
-  checkGameTokenStatus,
   checkForFixes,
   applyGameFix,
   getApplyFixStatus,
@@ -101,7 +98,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [downloadState, setDownloadState] = useState<any>(null);
   const [fakeAppId, setFakeAppId] = useState(false);
   const [fakeIdValue, setFakeIdValue] = useState("480");
-  const [hasToken, setHasToken] = useState(false);
   const [fixes, setFixes] = useState<any>(null);
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
@@ -187,9 +183,6 @@ export function GameDetail({ appid }: GameDetailProps) {
 
       const fakeResult = await checkFakeAppIdStatus(appid);
       if (fakeResult.success) setFakeAppId(fakeResult.exists);
-
-      const tokenResult = await checkGameTokenStatus(appid);
-      if (tokenResult.success) setHasToken(tokenResult.exists);
 
       const dlStatus = await getDownloadStatus(appid);
       if (
@@ -356,22 +349,6 @@ export function GameDetail({ appid }: GameDetailProps) {
       if (result.success) {
         setFakeAppId(true);
         toast(t("toastFakeAppIdAdded", id), gameName);
-      } else {
-        toast(t("toastError"), result.message || result.error || "", 4000);
-      }
-    }
-  };
-
-  const handleToggleToken = async () => {
-    if (hasToken) {
-      await removeGameToken(appid);
-      setHasToken(false);
-      toast(t("toastTokenRemoved"), gameName);
-    } else {
-      const result = await addGameToken(appid);
-      if (result.success) {
-        setHasToken(true);
-        toast(t("toastTokenAdded"), gameName);
       } else {
         toast(t("toastError"), result.message || result.error || "", 4000);
       }
@@ -564,7 +541,6 @@ export function GameDetail({ appid }: GameDetailProps) {
     if (result.success) {
       setHasLua(false);
       setFakeAppId(false);
-      setHasToken(false);
       const removed = result.removed || [];
       const hasFiles = removed.includes("game_files");
       const errors = result.errors || [];
@@ -785,10 +761,6 @@ export function GameDetail({ appid }: GameDetailProps) {
               : `${t("addFakeAppId")} (${fakeIdValue})`
           }
           onClick={handleToggleFakeAppId}
-        />
-        <ActionButton
-          label={hasToken ? t("removeToken") : t("addToken")}
-          onClick={handleToggleToken}
         />
       </PanelSection>
         </>

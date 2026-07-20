@@ -1222,21 +1222,26 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     except Exception:
                         fetched_name = f"Unknown ({appid})"
 
-                    # Best-effort SLSsteam DLC enrichment. steamidra_lite has
-                    # already written AdditionalApps + DecryptionKeys, so the
-                    # only thing left from the upstream "configure SLSsteam"
-                    # block that wasn't covered is the DLC list (we'd query
-                    # Steam Web API to discover DLC ids and add them to
-                    # DlcData). Token and AdditionalApps are intentionally
-                    # NOT called again here — they're idempotent inside the
-                    # script anyway.
+                    # Best-effort SLSsteam enrichment. steamidra_lite has
+                    # already written AdditionalApps + DecryptionKeys, so what's
+                    # left from the upstream "configure SLSsteam" block is:
+                    #   - the DLC list (query Steam Web API → DlcData), and
+                    #   - the app access token, which the .lua carries on its
+                    #     `addtoken(appid, "hex")` line. steamidra_lite is only
+                    #     invoked with --token when a hex is passed (we don't),
+                    #     so it never lands the token; the subset of games Valve
+                    #     gates behind one would otherwise throw "invalid
+                    #     configuration". add_game_token reads it from the .lua
+                    #     and no-ops for games without an addtoken line.
                     _set_download_state(appid, {"status": "configuring"})
                     try:
-                        from slssteam_ops import add_game_dlcs
+                        from slssteam_ops import add_game_dlcs, add_game_token
                         dlc_result = await add_game_dlcs(appid)
                         logger.info(f"LumaDeck: SLSsteam add_game_dlcs({appid}): {dlc_result}")
+                        token_result = add_game_token(appid)
+                        logger.info(f"LumaDeck: SLSsteam add_game_token({appid}): {token_result}")
                     except Exception as dlc_exc:
-                        logger.warning(f"LumaDeck: SLSsteam DLC enrichment failed: {dlc_exc}")
+                        logger.warning(f"LumaDeck: SLSsteam enrichment failed: {dlc_exc}")
 
                     # TEMP (native-achievement test): the Steam Web API schema
                     # auto-gen is disabled so a fresh install writes NOTHING of

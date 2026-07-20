@@ -47,8 +47,6 @@ const strings: Record<Lang, Record<string, string>> = {
     helpFeatures: "Features",
     helpFakeAppId:
       "Makes the game present itself as Spacewar (AppID 480) so its Steam networking (lobbies, matchmaking, P2P) works, for playing online on titles that use Steam's servers. It does NOT grant ownership (that's AdditionalApps). Don't launch two FakeAppId games at once.",
-    helpToken:
-      "Writes the game's app access token into SLSsteam so it can query the app's product info; mainly fixes the \"invalid configuration\" error on some games. Not a Denuvo unlock.",
     helpGoldberg:
       "Swaps the game's steam_api libraries for the Goldberg emulator (and back), for titles that expect an emulator instead of SLSsteam's ownership layer.",
     helpFixes:
@@ -107,8 +105,6 @@ const strings: Record<Lang, Record<string, string>> = {
     gameStatus: "Status",
     removeFakeAppId: "Remove FakeAppId",
     addFakeAppId: "Add FakeAppId",
-    removeToken: "Remove Token",
-    addToken: "Add Token",
     applyGoldberg: "Apply Goldberg",
     removeGoldberg: "Remove Goldberg",
     restoreOriginalDlls: "Restore the game's original steam_api DLLs.",
@@ -391,8 +387,6 @@ const strings: Record<Lang, Record<string, string>> = {
     toastError: "Error",
     toastFakeAppIdAdded: "FakeAppId added ({0})",
     toastFakeAppIdRemoved: "FakeAppId removed",
-    toastTokenAdded: "Token added",
-    toastTokenRemoved: "Token removed",
     toastGoldbergApplied: "Goldberg applied",
     toastGoldbergRemoved: "Goldberg removed",
     toastAchievementsGenerated: "Achievements generated! Restart Steam.",
@@ -512,8 +506,6 @@ const strings: Record<Lang, Record<string, string>> = {
     gameStatus: "Status",
     removeFakeAppId: "Remover FakeAppId",
     addFakeAppId: "Adicionar FakeAppId",
-    removeToken: "Remover Token",
-    addToken: "Adicionar Token",
     applyGoldberg: "Aplicar Goldberg",
     removeGoldberg: "Remover Goldberg",
     restoreOriginalDlls: "Restaura as DLLs steam_api originais do jogo.",
@@ -791,8 +783,6 @@ const strings: Record<Lang, Record<string, string>> = {
     toastError: "Erro",
     toastFakeAppIdAdded: "FakeAppId adicionado ({0})",
     toastFakeAppIdRemoved: "FakeAppId removido",
-    toastTokenAdded: "Token adicionado",
-    toastTokenRemoved: "Token removido",
     toastGoldbergApplied: "Goldberg aplicado",
     toastGoldbergRemoved: "Goldberg removido",
     toastAchievementsGenerated: "Conquistas geradas! Reinicie o Steam.",

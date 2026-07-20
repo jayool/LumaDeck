@@ -5,12 +5,10 @@ from __future__ import annotations
 import os
 import shutil
 
-import json
-
 from downloads import delete_luatools_for_app
 from http_client import ensure_http_client
 from steam_utils import get_game_install_path_response
-from paths import get_slssteam_config_path, backend_path
+from paths import get_slssteam_config_path
 
 try:
     import decky  # type: ignore
@@ -300,12 +298,33 @@ def remove_from_additional_apps(appid: int) -> dict:
 
 def add_game_token(appid: int) -> dict:
     try:
-        # Find appaccesstokens.json in backend dir
-        json_path = backend_path("appaccesstokens.json")
         config_path = _config_path()
 
-        if not os.path.exists(json_path):
-            return {"success": False, "error": "appaccesstokens.json not found"}
+        # The app access token lives in the installed .lua as an
+        # `addtoken(appid, "hex")` line — distinct from the `addappid(depot,
+        # type, "64hex")` depot *decryption* keys, which are a different value
+        # for a different job. SLSsteam needs this token to de-strip the app's
+        # PICS appinfo for the subset of games Valve gates behind one; without
+        # it those games throw "invalid configuration". We read it straight from
+        # the .lua we already installed into stplug-in — there is no separate
+        # token file. Games with no `addtoken` line aren't token-gated, so we
+        # skip cleanly (a no-op, not an error).
+        from steam_utils import detect_steam_install_path
+        steam_path = detect_steam_install_path() or "/home/deck/.local/share/Steam"
+        lua_path = os.path.join(steam_path, "config", "stplug-in", f"{appid}.lua")
+        if not os.path.exists(lua_path):
+            lua_path += ".disabled"  # tolerate a disabled game
+        if not os.path.exists(lua_path):
+            return {"success": True, "skipped": True, "message": "No lua installed"}
+
+        with open(lua_path, "r", encoding="utf-8") as f:
+            lua_text = f.read()
+        import re as _re
+        m = _re.search(
+            rf'addtoken\s*\(\s*{appid}\s*,\s*["\']([^"\']+)["\']\s*\)', lua_text)
+        if not m:
+            return {"success": True, "skipped": True, "message": "No token in lua"}
+        token = m.group(1)
 
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
         if not os.path.exists(config_path):
@@ -313,20 +332,6 @@ def add_game_token(appid: int) -> dict:
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write("AppTokens:\n")
             _commit_config(tmp, config_path)
-
-        with open(json_path, "r", encoding="utf-8") as f:
-            tokens_db = json.load(f)
-
-        token = tokens_db.get(str(appid))
-        if not token:
-            # No local fallback. The app access token is a uint64 that SLSsteam
-            # feeds to PICS to fetch ProductInfo; it only lives in
-            # appaccesstokens.json. The installed .lua only carries 64-hex depot
-            # *decryption* keys (see downloads.py — those go into config.vdf
-            # DecryptionKeys / keys.txt), a different value for a different job.
-            # Reading the lua here wrote a depot key into AppTokens: and reported
-            # a bogus success, so we fail honestly instead.
-            return {"success": False, "error": f"Token not found for AppID {appid}"}
 
         with open(config_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -398,33 +403,6 @@ def remove_game_token(appid: int) -> dict:
         return {"success": True, "message": "Token removed"}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-def check_game_token_status(appid: int) -> dict:
-    try:
-        config_path = _config_path()
-        if not os.path.exists(config_path):
-            return {"success": True, "exists": False}
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        in_tokens = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("AppTokens:"):
-                in_tokens = True
-                continue
-            if in_tokens:
-                indent = len(line) - len(line.lstrip())
-                if indent <= 2 and stripped and not stripped.startswith("#"):
-                    in_tokens = False
-                elif stripped.startswith(f"{appid}:"):
-                    return {"success": True, "exists": True}
-
-        return {"success": True, "exists": False}
-    except Exception:
-        return {"success": True, "exists": False}
 
 
 # ==========================================

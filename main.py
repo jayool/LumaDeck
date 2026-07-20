@@ -430,18 +430,6 @@ class Plugin:
         from slssteam_ops import remove_from_additional_apps
         return _j(remove_from_additional_apps(appid))
 
-    async def add_game_token(self, appid: int) -> str:
-        from slssteam_ops import add_game_token
-        return _j(add_game_token(appid))
-
-    async def remove_game_token(self, appid: int) -> str:
-        from slssteam_ops import remove_game_token
-        return _j(remove_game_token(appid))
-
-    async def check_game_token_status(self, appid: int) -> str:
-        from slssteam_ops import check_game_token_status
-        return _j(check_game_token_status(appid))
-
     async def uninstall_game_full(self, appid: int, remove_compatdata: bool = False) -> str:
         from slssteam_ops import uninstall_game_full
         return _j(uninstall_game_full(appid, remove_compatdata))
