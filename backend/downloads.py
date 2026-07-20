@@ -1463,15 +1463,29 @@ def _ensure_accela_mark(appid: int, base_path: str) -> None:
 
 def get_installed_lua_scripts() -> dict:
     """Get list of all installed Lua scripts from stplug-in directory."""
+    # Dev-only: synthetic library entries (Settings ▸ Dev ▸ Fake games) so the
+    # grid + GameDetail can be exercised without real games. Appended at EVERY
+    # success return — including the empty-library path — so it works on a device
+    # with no games added yet.
+    def _with_fakes(scripts: list) -> list:
+        try:
+            import dev
+            _fake = dev.get("fake_games")
+            if _fake:
+                return scripts + dev.fake_games(_fake)
+        except Exception:
+            pass
+        return scripts
+
     try:
         _preload_app_names_cache()
         base_path = detect_steam_install_path()
         if not base_path:
-            return {"success": False, "error": "Could not find Steam installation path"}
+            return {"success": True, "scripts": _with_fakes([])}
 
         target_dir = os.path.join(base_path, "config", "stplug-in")
         if not os.path.exists(target_dir):
-            return {"success": True, "scripts": []}
+            return {"success": True, "scripts": _with_fakes([])}
 
         installed_scripts = []
         for filename in os.listdir(target_dir):
@@ -1518,19 +1532,10 @@ def get_installed_lua_scripts() -> dict:
             if s.get("hasGameFiles"):
                 _ensure_accela_mark(int(s["appid"]), base_path)
 
-        # Dev-only: append synthetic library entries (Settings ▸ Dev ▸ Fake
-        # games) so the grid + GameDetail can be exercised without real games.
-        # Added AFTER the ACCELA loop so fakes never spawn steamidra_lite.
-        try:
-            import dev
-            _fake = dev.get("fake_games")
-            if _fake:
-                installed_scripts.extend(dev.fake_games(_fake))
-        except Exception:
-            pass
-
         installed_scripts.sort(key=lambda x: x["appid"])
-        return {"success": True, "scripts": installed_scripts}
+        # Fakes appended AFTER the ACCELA loop + sort so they never spawn
+        # steamidra_lite and stay grouped at the end.
+        return {"success": True, "scripts": _with_fakes(installed_scripts)}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
