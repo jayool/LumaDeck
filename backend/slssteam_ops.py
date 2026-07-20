@@ -23,23 +23,18 @@ def _config_path() -> str:
 
 
 def _commit_config(src: str, dst: str) -> None:
-    """Atomically replace config.yaml, then poke SLSsteam's hot-reload.
+    """Atomically replace config.yaml. Changes apply on the next Steam start.
 
-    SLSsteam's config watcher (filewatcher.cpp) watches the config's PARENT
-    directory for `IN_CLOSE_WRITE` and filters by filename. Our atomic write
-    commits via `os.replace` (a rename → `IN_MOVED_TO`), which that watcher does
-    NOT listen for — so the live `loadSettings()` reload never fires and the edit
-    would only take effect on the next Steam start. Re-open the just-committed
-    file for a zero-byte write and close it: that emits `IN_CLOSE_WRITE`, so
-    SLSsteam hot-reloads AdditionalApps / FakeAppIds immediately, no restart. The
-    rename already committed the content, so the crash-safety of the atomic write
-    is preserved."""
+    Deliberately does NOT poke SLSsteam's live reload. `os.replace` commits via a
+    rename (`IN_MOVED_TO`), which SLSsteam's config watcher (filewatcher.cpp,
+    `IN_CLOSE_WRITE`) does not listen for — so `loadSettings()` doesn't hot-reload
+    and the edit takes effect on the next Steam start. This is intentional: the
+    no-restart path made a game appear in the library right after Add Game while
+    Steam couldn't yet download it (its depot list only refreshes on restart),
+    leaving a "Fully Installed / files missing" trap. Keeping config changes
+    restart-scoped keeps the game's library appearance and its installability in
+    sync — the game shows up when it's actually ready to download."""
     os.replace(src, dst)
-    try:
-        with open(dst, "a", encoding="utf-8"):
-            pass
-    except Exception:
-        pass
 
 
 # ==========================================
