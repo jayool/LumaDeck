@@ -810,8 +810,8 @@ export function GameDetail({ appid }: GameDetailProps) {
       hideTitle: true,
       content: (
         <>
-      {/* Game Management */}
-      <PanelSection title={t("gameManagement")}>
+      {/* No section title — the sidebar tab ("Game Management") already names it. */}
+      <PanelSection>
         <PanelSectionRow>
           <TextField
             label="FakeAppId"

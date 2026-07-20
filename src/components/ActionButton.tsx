@@ -1,4 +1,4 @@
-import { ButtonItem } from "@decky/ui";
+import { ButtonItem, PanelSectionRow } from "@decky/ui";
 import { CSSProperties } from "react";
 
 interface ActionButtonProps {
@@ -25,14 +25,20 @@ export function ActionButton({
     labelStyle.color = "#ff4444";
   }
 
+  // Wrap in PanelSectionRow so ActionButtons get the same tight native row
+  // rhythm as plain <PanelSectionRow><ButtonItem> rows (used in Settings). Used
+  // bare (as a direct PanelSection child) they picked up an extra gap between
+  // consecutive buttons.
   return (
-    <ButtonItem
-      layout="below"
-      onClick={onClick}
-      disabled={disabled}
-      description={description}
-    >
-      <span style={labelStyle}>{label}</span>
-    </ButtonItem>
+    <PanelSectionRow>
+      <ButtonItem
+        layout="below"
+        onClick={onClick}
+        disabled={disabled}
+        description={description}
+      >
+        <span style={labelStyle}>{label}</span>
+      </ButtonItem>
+    </PanelSectionRow>
   );
 }
