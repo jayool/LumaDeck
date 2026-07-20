@@ -113,14 +113,15 @@ export function GameCard({ game, onClick }: GameCardProps) {
       </div>
       <div
         style={{
-          marginTop: "4px",
-          fontSize: "11px",
+          marginTop: "6px",
+          fontSize: "14px",
+          fontWeight: 500,
           color: "#dcdedf",
-          lineHeight: 1.2,
+          lineHeight: 1.25,
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          opacity: dim ? 0.7 : 1,
+          opacity: dim ? 0.75 : 1,
         }}
       >
         {game.name}
