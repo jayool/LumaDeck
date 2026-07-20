@@ -22,19 +22,57 @@ def _config_path() -> str:
     return get_slssteam_config_path()
 
 
-def _commit_config(src: str, dst: str) -> None:
-    """Atomically replace config.yaml. Changes apply on the next Steam start.
+def _hot_reload_enabled() -> bool:
+    """EXPERIMENT toggle: whether config.yaml writes poke SLSsteam's live reload
+    (so a just-added game appears without a Steam restart). OFF by default — the
+    no-restart path leaves a "Fully Installed / files missing" trap because
+    Steam's depot list only refreshes on restart. Re-enabled only to test the
+    DepotIdVec experiment (needs the game to appear without restart). Enabled by
+    env LUMA_HOTRELOAD=1 or a marker file ~/.config/lumalinux/hotreload (same dir
+    as lumalinux's depot_idvec marker — toggle both together for the test)."""
+    if os.environ.get("LUMA_HOTRELOAD"):
+        return True
+    return os.path.exists(os.path.expanduser("~/.config/lumalinux/hotreload"))
 
-    Deliberately does NOT poke SLSsteam's live reload. `os.replace` commits via a
-    rename (`IN_MOVED_TO`), which SLSsteam's config watcher (filewatcher.cpp,
-    `IN_CLOSE_WRITE`) does not listen for — so `loadSettings()` doesn't hot-reload
-    and the edit takes effect on the next Steam start. This is intentional: the
-    no-restart path made a game appear in the library right after Add Game while
-    Steam couldn't yet download it (its depot list only refreshes on restart),
-    leaving a "Fully Installed / files missing" trap. Keeping config changes
-    restart-scoped keeps the game's library appearance and its installability in
-    sync — the game shows up when it's actually ready to download."""
+
+def _poke_reload(path: str) -> None:
+    """Re-open `path` for a zero-byte append and close it: emits IN_CLOSE_WRITE,
+    which SLSsteam's config watcher (filewatcher.cpp) listens for, so it
+    hot-reloads AdditionalApps / FakeAppIds without a restart."""
+    try:
+        with open(path, "a", encoding="utf-8"):
+            pass
+    except Exception:
+        pass
+
+
+def poke_slssteam_reload() -> dict:
+    """Explicitly poke SLSsteam's config.yaml so it hot-reloads AdditionalApps
+    and a just-added game appears without a Steam restart. No-op unless the
+    hot-reload experiment flag is set (_hot_reload_enabled). Called at the end of
+    the Add Game flow so the appearance fires even for games that wrote no config
+    of their own (no token / ≤64 DLC)."""
+    if not _hot_reload_enabled():
+        return {"success": True, "skipped": True}
+    cfg = _config_path()
+    if os.path.exists(cfg):
+        _poke_reload(cfg)
+    return {"success": True}
+
+
+def _commit_config(src: str, dst: str) -> None:
+    """Atomically replace config.yaml. Changes apply on the next Steam start,
+    UNLESS the hot-reload experiment flag is set (_hot_reload_enabled), in which
+    case we also poke SLSsteam's live reload.
+
+    By default `os.replace` commits via a rename (`IN_MOVED_TO`), which SLSsteam's
+    watcher (`IN_CLOSE_WRITE`) does not listen for — so the edit takes effect on
+    the next Steam start. That keeps a game's library appearance and its
+    installability in sync (no "installed / files missing" trap). The flag
+    re-adds the IN_CLOSE_WRITE poke only for testing the no-restart path."""
     os.replace(src, dst)
+    if _hot_reload_enabled():
+        _poke_reload(dst)
 
 
 # ==========================================

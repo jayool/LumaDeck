@@ -1243,6 +1243,16 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     except Exception as dlc_exc:
                         logger.warning(f"LumaDeck: SLSsteam enrichment failed: {dlc_exc}")
 
+                    # EXPERIMENT: if the hot-reload flag is set, poke SLSsteam so
+                    # the game appears without a Steam restart (needed to test the
+                    # DepotIdVec no-restart path). No-op by default. Explicit here
+                    # so it fires even when the game wrote no config of its own.
+                    try:
+                        from slssteam_ops import poke_slssteam_reload
+                        poke_slssteam_reload()
+                    except Exception:
+                        pass
+
                     # TEMP (native-achievement test): the Steam Web API schema
                     # auto-gen is disabled so a fresh install writes NOTHING of
                     # ours and SLSsteam's native achievement support can be tested
