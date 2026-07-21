@@ -1243,10 +1243,11 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     except Exception as dlc_exc:
                         logger.warning(f"LumaDeck: SLSsteam enrichment failed: {dlc_exc}")
 
-                    # EXPERIMENT: if the hot-reload flag is set, poke SLSsteam so
-                    # the game appears without a Steam restart (needed to test the
-                    # DepotIdVec no-restart path). No-op by default. Explicit here
-                    # so it fires even when the game wrote no config of its own.
+                    # Poke SLSsteam so the just-added game appears without a Steam
+                    # restart. Pairs with lumalinux's license reconcile (default ON;
+                    # kill-switch LUMA_NO_RECONCILE / ~/.config/lumalinux/no_reconcile,
+                    # which _hot_reload_enabled() also honours). Explicit here so it
+                    # fires even when the game wrote no config of its own.
                     try:
                         from slssteam_ops import poke_slssteam_reload
                         poke_slssteam_reload()

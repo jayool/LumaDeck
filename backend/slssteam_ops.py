@@ -23,18 +23,23 @@ def _config_path() -> str:
 
 
 def _hot_reload_enabled() -> bool:
-    """Whether config.yaml writes poke SLSsteam's live reload so a just-added game
-    appears without a Steam restart. DEFAULT OFF and normally unnecessary: since
-    lumalinux v0.16.16 the license reconcile (LicensesUpdated_t) makes the game
-    appear AND downloadable on its own, and it's the heavier, more complete event.
-    Keeping this poke on is redundant and RISKY — if the reconcile ever no-ops
-    (broken pattern), the poke alone would recreate the "appears but 0 files"
-    trap. So it's an opt-in backup only: env LUMA_SLS_HOTRELOAD=1 or the marker
-    ~/.config/lumalinux/sls_hotreload (use only if the reconcile isn't surfacing
-    the game on your build)."""
-    if os.environ.get("LUMA_SLS_HOTRELOAD"):
-        return True
-    return os.path.exists(os.path.expanduser("~/.config/lumalinux/sls_hotreload"))
+    """Whether config.yaml writes poke SLSsteam's live reload (re-open + close to
+    emit IN_CLOSE_WRITE), so SLSsteam applies the change without a Steam restart.
+
+    DEFAULT ON, tied to the SAME kill-switch as lumalinux's license reconcile
+    (LUMA_NO_RECONCILE / ~/.config/lumalinux/no_reconcile) so the whole no-restart
+    machinery turns on and off as one unit. Two things need this poke:
+      1. A just-added game appearing after Add Game — mostly redundant now (the
+         reconcile's LicensesUpdated_t surfaces it), but it's the tested-together
+         path.
+      2. Live config TOGGLES — FakeAppId / Token / DLC in GameDetail — which the
+         reconcile does NOT cover; without the poke those need a restart.
+    The kill-switch disables both this poke and the reconcile together, so a
+    reconcile break (which the caller mitigates with LUMA_NO_RECONCILE) never
+    leaves the poke on alone (which would recreate the 'appears but 0 files' trap)."""
+    if os.environ.get("LUMA_NO_RECONCILE"):
+        return False
+    return not os.path.exists(os.path.expanduser("~/.config/lumalinux/no_reconcile"))
 
 
 def _poke_reload(path: str) -> None:
@@ -50,8 +55,8 @@ def _poke_reload(path: str) -> None:
 
 def poke_slssteam_reload() -> dict:
     """Explicitly poke SLSsteam's config.yaml so it hot-reloads AdditionalApps
-    and a just-added game appears without a Steam restart. No-op unless the
-    hot-reload experiment flag is set (_hot_reload_enabled). Called at the end of
+    and a just-added game appears without a Steam restart. No-op when hot-reload
+    is disabled by the kill-switch (_hot_reload_enabled). Called at the end of
     the Add Game flow so the appearance fires even for games that wrote no config
     of their own (no token / ≤64 DLC)."""
     if not _hot_reload_enabled():
@@ -63,15 +68,16 @@ def poke_slssteam_reload() -> dict:
 
 
 def _commit_config(src: str, dst: str) -> None:
-    """Atomically replace config.yaml. Changes apply on the next Steam start,
-    UNLESS the hot-reload experiment flag is set (_hot_reload_enabled), in which
-    case we also poke SLSsteam's live reload.
+    """Atomically replace config.yaml, then (unless the kill-switch disabled
+    hot-reload, _hot_reload_enabled) poke SLSsteam's live reload so the change
+    applies without a Steam restart.
 
-    By default `os.replace` commits via a rename (`IN_MOVED_TO`), which SLSsteam's
-    watcher (`IN_CLOSE_WRITE`) does not listen for — so the edit takes effect on
-    the next Steam start. That keeps a game's library appearance and its
-    installability in sync (no "installed / files missing" trap). The flag
-    re-adds the IN_CLOSE_WRITE poke only for testing the no-restart path."""
+    `os.replace` commits via a rename (`IN_MOVED_TO`), which SLSsteam's watcher
+    (`IN_CLOSE_WRITE`) does not listen for — so on its own the edit would take
+    effect only on the next Steam start. The poke re-opens/closes the file to
+    emit IN_CLOSE_WRITE, applying live config toggles (FakeAppId / Token / DLC).
+    It pairs with lumalinux's reconcile under one kill-switch, so a reconcile
+    break never leaves the poke on alone (the 'installed / files missing' trap)."""
     os.replace(src, dst)
     if _hot_reload_enabled():
         _poke_reload(dst)
