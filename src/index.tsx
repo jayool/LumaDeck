@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { definePlugin, routerHook } from "@decky/api";
 import {
   staticClasses,
@@ -37,25 +37,38 @@ const headerIconStyle = {
   fontSize: "15px",
 };
 
-// react-icons SVGs have no built-in spin, so inject the keyframes once.
-if (typeof document !== "undefined" && !document.getElementById("luma-spin-style")) {
-  const el = document.createElement("style");
-  el.id = "luma-spin-style";
-  el.textContent = "@keyframes luma-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}";
-  document.head.appendChild(el);
-}
-
 // Title-bar Refresh: re-checks component health + stuck updates (GameList's
 // refreshStatus). Its FaSync spins while that runs — both on the manual press
 // and on the initial load when the QAM opens — so the panel isn't just blank.
+//
+// The spin is driven by the Web Animations API (element.animate) on a wrapper
+// span, NOT a CSS @keyframes. An injected <style> keyframe didn't apply in the
+// QAM's document context (the icon never turned), so we animate the element
+// directly — no global stylesheet, no transform-origin gotcha (the span is an
+// HTML element, so it rotates about its own centre).
 function RefreshButton() {
   const [spinning, setSpinning] = useState(getRefreshing());
+  const spinRef = useRef<HTMLSpanElement | null>(null);
+  const animRef = useRef<Animation | null>(null);
   useEffect(() => subscribeRefreshing(setSpinning), []);
+  useEffect(() => {
+    const el = spinRef.current;
+    if (!el) return;
+    if (spinning && !animRef.current) {
+      animRef.current = el.animate(
+        [{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }],
+        { duration: 1000, iterations: Infinity, easing: "linear" },
+      );
+    } else if (!spinning && animRef.current) {
+      animRef.current.cancel();
+      animRef.current = null;
+    }
+  }, [spinning]);
   return (
     <DialogButton style={headerIconStyle} onClick={() => requestRefresh()}>
-      <FaSync
-        style={spinning ? { animation: "luma-spin 1s linear infinite" } : undefined}
-      />
+      <span ref={spinRef} style={{ display: "inline-flex" }}>
+        <FaSync />
+      </span>
     </DialogButton>
   );
 }
