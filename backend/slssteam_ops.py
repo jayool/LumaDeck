@@ -23,15 +23,18 @@ def _config_path() -> str:
 
 
 def _hot_reload_enabled() -> bool:
-    """no-restart EXPERIMENT toggle: whether config.yaml writes poke SLSsteam's
-    live reload (so a just-added game appears without a Steam restart). OFF by
-    default — the no-restart path leaves a "Fully Installed / files missing" trap
-    unless lumalinux's license reconcile also refreshes the appinfo. Unified with
-    lumalinux: one flag enables both sides. Enabled by env LUMA_NO_RESTART=1 or
-    the marker file ~/.config/lumalinux/no_restart."""
-    if os.environ.get("LUMA_NO_RESTART"):
+    """Whether config.yaml writes poke SLSsteam's live reload so a just-added game
+    appears without a Steam restart. DEFAULT OFF and normally unnecessary: since
+    lumalinux v0.16.16 the license reconcile (LicensesUpdated_t) makes the game
+    appear AND downloadable on its own, and it's the heavier, more complete event.
+    Keeping this poke on is redundant and RISKY — if the reconcile ever no-ops
+    (broken pattern), the poke alone would recreate the "appears but 0 files"
+    trap. So it's an opt-in backup only: env LUMA_SLS_HOTRELOAD=1 or the marker
+    ~/.config/lumalinux/sls_hotreload (use only if the reconcile isn't surfacing
+    the game on your build)."""
+    if os.environ.get("LUMA_SLS_HOTRELOAD"):
         return True
-    return os.path.exists(os.path.expanduser("~/.config/lumalinux/no_restart"))
+    return os.path.exists(os.path.expanduser("~/.config/lumalinux/sls_hotreload"))
 
 
 def _poke_reload(path: str) -> None:
