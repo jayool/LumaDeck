@@ -9,6 +9,7 @@ import {
   DialogButton,
   Field,
   ProgressBarWithInfo,
+  gamepadDialogClasses,
 } from "@decky/ui";
 import {
   getDownloadStatus,
@@ -421,9 +422,12 @@ export function GameList() {
 
   // Add-Game mode toggle, tab-style: two native DialogButtons. Focusing one
   // selects its mode, so moving L/R swaps the content below — like native
-  // tabs, but it fits the narrow QAM where the native Tabs row wouldn't. No
-  // background/glow override, so the native focus (white fill) is the only
-  // indicator; once focus is in the content, the content itself shows the mode.
+  // tabs, but it fits the narrow QAM where the native Tabs row wouldn't.
+  // The selected mode keeps Steam's native ActiveAndUnfocused fill even after
+  // you move focus down to the text box (gamepadDialogClasses.ActiveAndUnfocused
+  // — the class Steam itself uses for "selected but focus is elsewhere"), so you
+  // can always tell whether you're searching by AppID or by name. Without it the
+  // only cue was the native focus fill, which vanished once focus left the row.
   // onFocus/onGamepadFocus aren't in DialogButton's TS props (the element
   // supports them), so spread via an any-typed object.
   // Switching Add-Game mode clears any leftover status / search error so a stale
@@ -698,6 +702,7 @@ export function GameList() {
                 QAM and "By name" runs off the right edge. */}
             <DialogButton
               style={{ flex: 1, minWidth: 0 }}
+              className={addMode === "appid" ? gamepadDialogClasses.ActiveAndUnfocused : undefined}
               onClick={() => changeMode("appid")}
               {...modeFocus("appid")}
             >
@@ -705,6 +710,7 @@ export function GameList() {
             </DialogButton>
             <DialogButton
               style={{ flex: 1, minWidth: 0 }}
+              className={addMode === "name" ? gamepadDialogClasses.ActiveAndUnfocused : undefined}
               onClick={() => changeMode("name")}
               {...modeFocus("name")}
             >
