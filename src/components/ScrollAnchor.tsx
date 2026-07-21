@@ -12,7 +12,11 @@ import { Focusable } from "@decky/ui";
 // no-op onActivate keeps it a real, reachable focus target.
 export function ScrollAnchor() {
   return (
-    <Focusable onActivate={() => {}} style={{ height: "48px", width: "100%" }}>
+    <Focusable
+      onActivate={() => {}}
+      noFocusRing
+      style={{ height: "48px", width: "100%" }}
+    >
       <div />
     </Focusable>
   );
