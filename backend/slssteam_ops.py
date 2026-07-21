@@ -8,7 +8,7 @@ import shutil
 from downloads import delete_luatools_for_app
 from http_client import ensure_http_client
 from steam_utils import get_game_install_path_response
-from paths import get_slssteam_config_path
+from paths import get_slssteam_config_path, read_lumalinux_hook
 
 try:
     import decky  # type: ignore
@@ -23,23 +23,41 @@ def _config_path() -> str:
 
 
 def _hot_reload_enabled() -> bool:
-    """Whether config.yaml writes poke SLSsteam's live reload (re-open + close to
-    emit IN_CLOSE_WRITE), so SLSsteam applies the change without a Steam restart.
+    """The MANUAL kill-switch for the whole no-restart machinery: env
+    LUMA_NO_RECONCILE or the marker ~/.config/lumalinux/no_reconcile. DEFAULT ON.
 
-    DEFAULT ON, tied to the SAME kill-switch as lumalinux's license reconcile
-    (LUMA_NO_RECONCILE / ~/.config/lumalinux/no_reconcile) so the whole no-restart
-    machinery turns on and off as one unit. Two things need this poke:
-      1. A just-added game appearing after Add Game — mostly redundant now (the
-         reconcile's LicensesUpdated_t surfaces it), but it's the tested-together
-         path.
-      2. Live config TOGGLES — FakeAppId / Token / DLC in GameDetail — which the
-         reconcile does NOT cover; without the poke those need a restart.
-    The kill-switch disables both this poke and the reconcile together, so a
-    reconcile break (which the caller mitigates with LUMA_NO_RECONCILE) never
-    leaves the poke on alone (which would recreate the 'appears but 0 files' trap)."""
+    This is the same switch lumalinux reads for its license reconcile, so the two
+    turn on/off as one unit. It does NOT know whether the reconcile actually
+    resolved on this Steam build — that's _hot_reload_active(), which adds the
+    automatic guard. Callers should use _hot_reload_active(), not this directly."""
     if os.environ.get("LUMA_NO_RECONCILE"):
         return False
     return not os.path.exists(os.path.expanduser("~/.config/lumalinux/no_reconcile"))
+
+
+def _hot_reload_active() -> bool:
+    """Whether an SLSsteam config poke may fire right now. Two gates:
+
+      1. _hot_reload_enabled() — the manual kill-switch isn't set.
+      2. lumalinux's license reconcile is not KNOWN-broken on this Steam build.
+
+    (2) is the automatic guard (brick 4). The manual kill-switch couples the poke
+    and the reconcile only if the USER sets it; it can't catch a reconcile that
+    SILENTLY broke because a Steam update moved the NotifyLicensesUpdated pattern.
+    In that state lumalinux writes status.json hook "Reconcile" = "failed" and the
+    reconcile no-ops — so poking a just-added game into SLSsteam's live view would
+    surface a game whose appinfo has no depot list -> it installs 0 files
+    ("installed but broken" trap). We suppress ALL pokes then: a just-added game
+    won't appear until a Steam restart (which refreshes appinfo the slow way), and
+    live config toggles (FakeAppId / Token / DLC) likewise fall back to applying on
+    restart — consistent with a build that already needs restarts.
+
+    Unknown (Reconcile absent: Steam not running this session, or an older .so that
+    predates the field) -> allowed; we never suppress on a guess (read_lumalinux_hook
+    returns None, and None != "failed")."""
+    if not _hot_reload_enabled():
+        return False
+    return read_lumalinux_hook("Reconcile") != "failed"
 
 
 def _poke_reload(path: str) -> None:
@@ -56,10 +74,12 @@ def _poke_reload(path: str) -> None:
 def poke_slssteam_reload() -> dict:
     """Explicitly poke SLSsteam's config.yaml so it hot-reloads AdditionalApps
     and a just-added game appears without a Steam restart. No-op when hot-reload
-    is disabled by the kill-switch (_hot_reload_enabled). Called at the end of
-    the Add Game flow so the appearance fires even for games that wrote no config
-    of their own (no token / ≤64 DLC)."""
-    if not _hot_reload_enabled():
+    is off — either the manual kill-switch, or the reconcile is broken on this
+    build (_hot_reload_active); in the latter case surfacing the game would drop
+    it into the "0 files" trap, so we hold it back until a restart. Called at the
+    end of the Add Game flow so the appearance fires even for games that wrote no
+    config of their own (no token / ≤64 DLC)."""
+    if not _hot_reload_active():
         return {"success": True, "skipped": True}
     cfg = _config_path()
     if os.path.exists(cfg):
@@ -76,10 +96,11 @@ def _commit_config(src: str, dst: str) -> None:
     (`IN_CLOSE_WRITE`) does not listen for — so on its own the edit would take
     effect only on the next Steam start. The poke re-opens/closes the file to
     emit IN_CLOSE_WRITE, applying live config toggles (FakeAppId / Token / DLC).
-    It pairs with lumalinux's reconcile under one kill-switch, so a reconcile
-    break never leaves the poke on alone (the 'installed / files missing' trap)."""
+    Gated on _hot_reload_active(): the manual kill-switch OR a reconcile that
+    broke on this build suppresses the poke, so a reconcile break never leaves
+    the poke on alone (the 'installed / files missing' trap)."""
     os.replace(src, dst)
-    if _hot_reload_enabled():
+    if _hot_reload_active():
         _poke_reload(dst)
 
 
