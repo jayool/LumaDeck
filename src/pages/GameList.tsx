@@ -38,7 +38,7 @@ import {
   SystemStatusActions,
 } from "../components/SystemStatus";
 import { ROUTE_SETTINGS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
-import { setRefreshHandler } from "../refresh";
+import { setRefreshHandler, setRefreshing } from "../refresh";
 import { ACHIEVEMENTS_ENABLED } from "../features";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
@@ -99,11 +99,14 @@ export function GameList() {
   // by the manual Refresh icon so a just-cut release shows up immediately. Auto
   // calls (mount, post-action) stay cached to respect GitHub's anon rate limit.
   const refreshStatus = useCallback(async (force = false) => {
+    setRefreshing(true);
     try {
       const [cs, stuck] = await Promise.all([getComponentsStatus(force), checkStuckUpdates()]);
       if (cs?.success) setCompStatus(cs);
       if (stuck?.success && Array.isArray(stuck.stuck)) setStuckUpdates(stuck.stuck);
-    } catch { }
+    } catch { } finally {
+      setRefreshing(false);
+    }
   }, []);
 
   // Run a system action (restart/repair/update/...), keeping a single busy flag

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { definePlugin, routerHook } from "@decky/api";
 import {
   staticClasses,
@@ -15,7 +16,7 @@ import { GameDetail } from "./pages/GameDetail";
 import { Settings } from "./pages/Settings";
 import { Library } from "./pages/Library";
 import { AppPageButton } from "./components/AppPageButton";
-import { requestRefresh } from "./refresh";
+import { requestRefresh, subscribeRefreshing, getRefreshing } from "./refresh";
 import {
   ROUTE_GAME_DETAIL,
   ROUTE_SETTINGS,
@@ -35,6 +36,29 @@ const headerIconStyle = {
   justifyContent: "center",
   fontSize: "15px",
 };
+
+// react-icons SVGs have no built-in spin, so inject the keyframes once.
+if (typeof document !== "undefined" && !document.getElementById("luma-spin-style")) {
+  const el = document.createElement("style");
+  el.id = "luma-spin-style";
+  el.textContent = "@keyframes luma-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}";
+  document.head.appendChild(el);
+}
+
+// Title-bar Refresh: re-checks component health + stuck updates (GameList's
+// refreshStatus). Its FaSync spins while that runs — both on the manual press
+// and on the initial load when the QAM opens — so the panel isn't just blank.
+function RefreshButton() {
+  const [spinning, setSpinning] = useState(getRefreshing());
+  useEffect(() => subscribeRefreshing(setSpinning), []);
+  return (
+    <DialogButton style={headerIconStyle} onClick={() => requestRefresh()}>
+      <FaSync
+        style={spinning ? { animation: "luma-spin 1s linear infinite" } : undefined}
+      />
+    </DialogButton>
+  );
+}
 
 function patchLibraryApp() {
   return routerHook.addPatch("/library/app/:appid", (tree: any) => {
@@ -119,9 +143,7 @@ export default definePlugin(() => {
         >
           LumaDeck
         </div>
-        <DialogButton style={headerIconStyle} onClick={() => requestRefresh()}>
-          <FaSync />
-        </DialogButton>
+        <RefreshButton />
         <DialogButton
           style={headerIconStyle}
           onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
