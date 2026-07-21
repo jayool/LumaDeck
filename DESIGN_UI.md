@@ -848,15 +848,17 @@ the people who need it**. Fixed:
 
 ---
 
-## Component model — system status (errors + updates) — 🚧 BUILDING (steps 1–5 done)
+## Component model — system status (errors + updates) — ✅ DONE (steps 1–6)
 
 > Progress: **1** `get_components_status()` ✅ · **2** `apply_component()` ✅ ·
 > **3** one fetch + `SystemStatus` renderer (5-action collapse + update track),
 > old builders/banners deleted ✅ · **4** Stuck into the renderer ✅ (folded into
 > step 3) · **5** Desktop autostart for the downgrade ✅ (v0.3.50 — the "Fix in
 > Desktop" row arms a one-shot autostart that runs headcrab + lumalinux
-> re-inject in Desktop and auto-returns to Game Mode) · **6** i18n cleanup (drop
-> the now-unused per-component update strings) — pending.
+> re-inject in Desktop and auto-returns to Game Mode) · **6** i18n cleanup ✅
+> (v0.4.8 — swept 87 unreferenced keys, incl. the now-dead per-component update
+> strings, from both `en` and `pt-BR`; verified none appear anywhere in `src/`
+> outside `i18n.ts`, so the `|| key` fallback can never surface).
 
 > Supersedes the split **Health banner (§3)** + **Updates banner**. Both collapse
 > into one data model and one renderer. This is the authoritative spec; §3/§3b/§3c

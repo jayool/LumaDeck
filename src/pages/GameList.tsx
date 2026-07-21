@@ -184,21 +184,7 @@ export function GameList() {
             setAddStatus(formatStatus(st));
             setActiveDownloadPhase(phase);
 
-            if (phase === "depot_download") {
-              // depotPercent is per-depot (0-100). Compute overall % from "Depot X/Y" in depotProgress.
-              const depotPct = st.depotPercent || 0;
-              const m = (st.depotProgress || "").match(/Depot\s+(\d+)\/(\d+)/);
-              let overallPct = depotPct;
-              if (m) {
-                const cur = parseInt(m[1]);
-                const tot = parseInt(m[2]);
-                if (tot > 0) overallPct = ((cur - 1) + depotPct / 100) / tot * 100;
-              }
-              setDownloadPct(Math.min(100, Math.max(0, Math.round(overallPct))));
-              // No reliable byte data during depot phase — clear to avoid showing stale values
-              setDownloadBytes({ read: 0, total: 0 });
-              setDownloadSpeed(0);
-            } else if (phase === "downloading") {
+            if (phase === "downloading") {
               // Backend provides totalBytes, bytesRead and speed directly
               const total = st.totalBytes || 0;
               const read = st.bytesRead || 0;
@@ -887,7 +873,7 @@ export function GameList() {
             </div>
           </PanelSectionRow>
         )}
-        {(activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0 && (
+        {activeDownloadPhase === "downloading" && downloadPct > 0 && (
           <PanelSectionRow>
             <ProgressBarWithInfo
               nProgress={downloadPct}
@@ -915,7 +901,7 @@ export function GameList() {
             vertical gap above or below. */}
         {(() => {
           const progressShown =
-            (activeDownloadPhase === "depot_download" || activeDownloadPhase === "downloading") && downloadPct > 0;
+            activeDownloadPhase === "downloading" && downloadPct > 0;
           const resultsListShown = addMode === "name" && !nameSelected && searchResults.length > 0;
           if (resultsListShown && !addStatus && !progressShown) return null;
           return (
