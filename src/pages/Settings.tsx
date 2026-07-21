@@ -409,7 +409,12 @@ export function Settings() {
     }
     return (
       <PanelSectionRow>
-        <Field icon={icon} label={text} />
+        {/* focusable so the gamepad can scroll down to it: this line is the last
+            thing in the API-credentials page (esp. the Ryuu one), and the
+            content pane only scrolls to reach a focusable element — a plain
+            Field would be unreachable. highlightOnFocus off so read-only status
+            text doesn't look selectable. */}
+        <Field focusable highlightOnFocus={false} icon={icon} label={text} />
       </PanelSectionRow>
     );
   };
