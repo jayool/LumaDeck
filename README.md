@@ -37,8 +37,8 @@ To install a game:
 
 1. From Steam, open the **Store page** of the game you want.
 2. Open LumaDeck in the QAM. The plugin detects the AppID of the page you have open and **auto-fills it** in the "Add game" input.
-3. Tap **Download Manifest**. The plugin fetches the manifest and processes it. Then **restart Steam manually**.
-4. Steam comes back up and the game appears in your library, ready to install. Press **Install** on it in Steam and it downloads natively. **Progress shows in the Steam library**, not in the plugin.
+3. Tap **Download Manifest**. The plugin fetches the manifest and processes it. The game appears in your library **without a Steam restart** (if it doesn't show up, your Steam build may not support the live refresh — restart Steam once and it appears).
+4. The game is ready to install. Press **Install** on it in Steam and it downloads natively. **Progress shows in the Steam library**, not in the plugin.
 
 For the full step-by-step of what the plugin does under the hood, see [How a game install works](#how-a-game-install-works) below.
 
@@ -48,8 +48,8 @@ This is what the plugin does end-to-end when you tap **Download Manifest** in th
 
 1. **Manifest fetch.** The backend queries the enabled APIs (Hubcap, Ryuu, etc.) listed in `api.json`, picks the first one that responds with a valid zip, and downloads it to a temp directory. Progress for *this* phase (a few MB) is shown in the plugin UI.
 2. **Process the zip.** The plugin extracts it, optionally enriches the `.lua` with a Linux depot from PICS (only if the corresponding `.manifest` is already in the extracted tree), and hands the result to `steamidra_lite.py` via subprocess. The script does the heavy lifting: extracts `.manifest` files into `depotcache/`, writes `keys.txt` for lumalinux, injects depot keys into `config.vdf`, adds the AppID to SLSsteam's `AdditionalApps`, drops a clean `.acf` stub, copies the `.lua` to `stplug-in/` for ecosystem interop, and writes the ACCELA `.depot` tracker plus a best-effort in-game `.DepotDownloader` marker.
-3. **Steam restart.** You **restart Steam manually**. On the next launch it reads the fresh config and loads the lumalinux hooks.
-4. **Native download.** Steam reads the fresh config and the game appears in its library, ready to install. You press **Install** in Steam and it downloads like a normal owned title — the lumalinux hooks intercept depot-key and manifest-request calls so Steam can decrypt and fetch what it needs. **Progress for this phase (the GBs) is shown in the Steam library itself**, not in the plugin.
+3. **Live refresh (no restart).** LumaDeck hot-reloads SLSsteam's config and lumalinux broadcasts a licence-reconcile so Steam re-reads ownership and appinfo **without a restart** — the game appears in your library right away. (Fallback: if lumalinux's reconcile hook isn't available on your Steam build, LumaDeck holds the game back and you **restart Steam manually** instead, which refreshes the config the slow way.)
+4. **Native download.** The game is in the library, ready to install. You press **Install** in Steam and it downloads like a normal owned title — the lumalinux hooks intercept depot-key and manifest-request calls so Steam can decrypt and fetch what it needs. **Progress for this phase (the GBs) is shown in the Steam library itself**, not in the plugin.
 5. **ACCELA marker self-heal.** The in-game `.DepotDownloader` marker can't be placed authoritatively at step 2 (the game isn't downloaded yet). So on the next library refresh, for any installed game whose folder now has real content but no marker, the plugin re-runs `steamidra_lite --accela-mark <appid>` — this is what lets the standalone **ACCELA** desktop app recognise games you installed through LumaDeck. (Needs lumalinux **v0.13.0+** deployed: the `--accela-mark` mode landed in v0.11.0, but installs only actually complete with the package-0 finder that's default-on from v0.13.0.)
 
 ## Update flow

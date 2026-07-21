@@ -38,8 +38,9 @@ also surfaces:
 ### What happens when you tap Download Manifest
 
 The plugin fetches the manifest (a few MB — progress shows **in the plugin**)
-and processes it. When it finishes, **restart Steam** so the game appears in
-your library. Then press **Install** on it in Steam — it downloads natively,
+and processes it. When it finishes, the game appears in your library **without a
+Steam restart** (restart only if it doesn't show up — some Steam builds don't
+support the live refresh). Then press **Install** on it in Steam — it downloads natively,
 like any owned title, and **its download progress shows in the Steam library,
 not in the plugin.**
 

@@ -10,7 +10,8 @@ The **Status** line reflects what's on disk:
 
 - **Installed** — the `.lua`/config *and* the game files are present.
 - **Manifest only** — the config is in place but the game files aren't
-  downloaded yet (restart Steam and **Install** the game to pull them).
+  downloaded yet (**Install** the game in Steam to pull them; no restart needed
+  in the normal case — restart only if the game isn't showing in your library).
 - **Not installed** — no `.lua` yet.
 
 **Download Manifest** (shown as **Re-download Manifest** once the game has a

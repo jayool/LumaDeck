@@ -16,9 +16,10 @@ Healthy components stay silent — no banner means nothing to do.
 ## Common problems
 
 ### A game won't download / Steam doesn't start it
-- **Did you restart Steam after *Download Manifest*?** The game **doesn't appear
-  in your library at all** until you restart Steam. After the restart it shows
-  up, ready to **Install**.
+- **Did the game appear in your library?** Normally it appears **without a Steam
+  restart** (LumaDeck hot-reloads SLSsteam and lumalinux refreshes ownership live).
+  If it doesn't show up, your Steam build may not support the live refresh — in
+  that case **restart Steam** and it appears, ready to **Install**.
 - Check **Components**: lumalinux and SLSsteam must be 🟢 **Active**.
 - If a component shows `not_loaded`, **restart Steam**.
 - If it shows `not_supported`, Steam updated past the hooks. Use **Fix in
