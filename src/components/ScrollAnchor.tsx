@@ -1,23 +1,19 @@
-import { PanelSectionRow, Field } from "@decky/ui";
+import { Focusable } from "@decky/ui";
 
-// Invisible, focusable tail element for pages whose last real content is
-// read-only text (API Credentials, Help).
+// Invisible, focusable tail spacer for pages whose last real content is
+// read-only text (API Credentials, Help). Game Mode's system navbar overdraws
+// the bottom of the full-screen Settings pane, hiding the last (focusable) line
+// behind it; moving focus onto this spacer scrolls the real content up, clear
+// of the bar.
 //
-// SteamOS Game Mode draws its system navbar over the bottom of the full-screen
-// Settings pane, so the last line stays hidden behind it even once it's
-// focusable — the focus reaches it but the bar covers it. This anchor sits
-// BELOW that line: moving focus onto it scrolls the real content up, clear of
-// the navbar. highlightOnFocus off + an empty spacer body = nothing visible,
-// just a reachable scroll target with enough height to lift the text clear.
+// It's a BARE <Focusable>, NOT a Field: a Field draws its own row chrome (a
+// background box), which is very much visible — that was the bug. A Focusable is
+// just a transparent focus node: no background, no border, nothing drawn. The
+// no-op onActivate keeps it a real, reachable focus target.
 export function ScrollAnchor() {
   return (
-    <PanelSectionRow>
-      <Field
-        focusable
-        highlightOnFocus={false}
-        bottomSeparator="none"
-        label={<div style={{ height: "48px" }} />}
-      />
-    </PanelSectionRow>
+    <Focusable onActivate={() => {}} style={{ height: "48px", width: "100%" }}>
+      <div />
+    </Focusable>
   );
 }
