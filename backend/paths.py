@@ -299,6 +299,31 @@ def read_lumalinux_status() -> Optional[dict]:
         return None
 
 
+def read_lumalinux_hook(name: str) -> Optional[str]:
+    """Outcome of a single lumalinux hook from the live status.json — one of
+    "installed" / "failed" / "disabled", or None when we can't tell.
+
+    This is the SHARED primitive behind Capa 2 (the graceful degradations for a
+    build whose non-critical patterns moved): brick 3 reads "ShaderDepot", brick 4
+    reads "Reconcile".
+
+    None means UNKNOWN and callers MUST treat it as such — never as "failed":
+      * Steam isn't running with lumalinux this session (no live snapshot, or the
+        pid is stale), or
+      * the running .so predates the hook being reported (an older build has no
+        "Reconcile" field yet).
+    Both Capa 2 actions therefore fire ONLY on a positive "failed" and never on
+    unknown, so a degradation (global shader-cache disable / suppressing a game's
+    library appearance) is never applied on a guess. The exact unknown-handling
+    policy lives with each caller since it differs (see bricks 3 and 4)."""
+    status = read_lumalinux_status()
+    if not status:
+        return None
+    hooks = status.get("hooks") or {}
+    outcome = hooks.get(name)
+    return outcome if isinstance(outcome, str) else None
+
+
 _LUMALINUX_STEAM_SH_MARKER = "# >>> lumalinux launcher patch >>>"
 
 
