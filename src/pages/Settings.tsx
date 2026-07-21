@@ -15,6 +15,7 @@ import {
 import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle, FaCheckCircle, FaExclamationTriangle, FaTrophy } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { HelpContent } from "./Help";
+import { ScrollAnchor } from "../components/ScrollAnchor";
 import {
   saveRyuCookie,
   loadRyuCookie,
@@ -744,6 +745,9 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
         {renderCredLine("ryuu")}
+        {/* Tail anchor: without it, Game Mode's navbar covers this last status
+            line (Ryuu is the bottom of the API-credentials page). */}
+        <ScrollAnchor />
       </PanelSection>
         </>
       ),

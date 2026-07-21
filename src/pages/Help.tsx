@@ -1,5 +1,6 @@
 import { PanelSection, PanelSectionRow, Field } from "@decky/ui";
 import { useT } from "../i18n";
+import { ScrollAnchor } from "../components/ScrollAnchor";
 
 // Plugin help. Surfaced as a page in the Settings sidebar (not its own route),
 // so there's no back button here — the sidebar owns navigation.
@@ -82,6 +83,8 @@ export function HelpContent() {
             }
           />
         </PanelSectionRow>
+        {/* Tail anchor: without it, Game Mode's navbar covers this last block. */}
+        <ScrollAnchor />
       </PanelSection>
     </>
   );
