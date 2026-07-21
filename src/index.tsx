@@ -134,12 +134,12 @@ export default definePlugin(() => {
       // wrapper div, which was abutting the native back button and drawing a
       // dark seam on its right edge.
       <Focusable style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%" }}>
-        {/* maskImage:none kills the native title's left/right fade mask, which
-            was darkening the title's edges and reading as a dark seam on the
-            adjacent back/refresh buttons. */}
+        {/* maskImage:none kills the native title's left/right fade mask;
+            textShadow:none kills its drop shadow. Both bled outward and dimmed
+            the near edges of the adjacent back/refresh buttons (a dark seam). */}
         <div
           className={staticClasses.Title}
-          style={{ flex: 1, maskImage: "none", WebkitMaskImage: "none" }}
+          style={{ flex: 1, maskImage: "none", WebkitMaskImage: "none", textShadow: "none" }}
         >
           LumaDeck
         </div>
