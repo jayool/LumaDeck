@@ -63,7 +63,7 @@ const strings: Record<Lang, Record<string, string>> = {
     invalidAppId: "Invalid AppID",
     startingDownload: "Starting download...",
     error: "Error",
-    doneRestartSteam: "Done! Restart Steam to see the game.",
+    doneRestartSteam: "Done!",
     downloadFailed: "Download failed",
     downloadCancelled: "Download cancelled",
 
@@ -377,7 +377,7 @@ const strings: Record<Lang, Record<string, string>> = {
     invalidAppId: "AppID inválido",
     startingDownload: "Iniciando download...",
     error: "Erro",
-    doneRestartSteam: "Pronto! Reinicie o Steam para ver o jogo.",
+    doneRestartSteam: "Pronto!",
     downloadFailed: "Download falhou",
     downloadCancelled: "Download cancelado",
 
