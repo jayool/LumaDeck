@@ -30,31 +30,33 @@ const strings: Record<Lang, Record<string, string>> = {
     // Help page content (Settings ▸ Help). en only; pt-BR falls back to en.
     helpWhatIs: "What is LumaDeck?",
     helpWhatIsDesc:
-      "LumaDeck adds and manages Steam games from the Quick Access Menu. It fetches a game's manifest; Steam then downloads the files natively, like any owned game. It also configures SLSsteam and handles fixes and cloud saves.",
+      "LumaDeck adds and manages Steam games from the Quick Access Menu. It fetches a game's manifest; Steam then downloads the files natively. It also configures SLSsteam and handles fixes and cloud saves.",
     helpHowToAdd: "Adding a game",
     helpHowToAddSteps:
-      "1. In Steam, open the game's store page, or search by name or paste its AppID in Add Game.\n" +
-      "2. Open LumaDeck in the QAM; it auto-detects the AppID.\n" +
-      "3. Press Add game.\n" +
-      "4. Restart Steam so the game appears in your library.\n" +
-      "5. In Steam, press Install. It downloads natively; progress shows in the Steam library, not in the plugin.\n\n" +
-      "Set a manifest credential first in Settings ▸ API Credentials.",
+      "Set up a manifest credential first in Settings ▸ API Credentials (Hubcap or Ryuu).\n" +
+      "Pick the game one of two ways:\n" +
+      "• By store page: in Steam, open the game's store page, then open LumaDeck. It auto-detects the AppID.\n" +
+      "• By name or AppID: open LumaDeck and, under Add Game, search by name or paste the AppID.\n\n" +
+      "Then:\n\n" +
+      "Press Add game. The game appears in your Steam library without restarting Steam.\n" +
+      "In Steam, press Install. It downloads natively.",
     helpFeatures: "Features",
     helpFakeAppId:
-      "Makes the game present itself as Spacewar (AppID 480) so its Steam networking (lobbies, matchmaking, P2P) works, for playing online on titles that use Steam's servers. It does NOT grant ownership (that's AdditionalApps). Don't launch two FakeAppId games at once.",
+      "Makes the game present itself as AppID 480 so its Steam networking works, for playing online on titles that use Steam's servers.",
     helpGoldberg:
-      "Swaps the game's steam_api libraries for the Goldberg emulator (and back), for titles that expect an emulator instead of SLSsteam's ownership layer.",
+      "Swaps the game's steam_api libraries for the Goldberg emulator for titles that expect an emulator instead of SLSsteam's ownership layer.",
     helpFixes:
-      "Community bypass/patch zips for titles that don't launch cleanly: Generic Fix and Online Fix, extracted over the install.",
+      "Community bypass/patch zips for titles that don't launch cleanly: Crack / Bypass and Online Fix, extracted over the install.",
     helpLinuxNative:
-      "A local fix for native-Linux installs (nothing is downloaded).",
+      "Fixes file permissions on a native-Linux game that won't start",
     helpTroubleshooting: "Troubleshooting",
     helpTroubleshootingTips:
-      "• Game won't appear or download? Restart Steam after Add game; it won't show until you do, then press Install in Steam.\n" +
-      "• Manifest fetch fails? Check Settings ▸ API Credentials (an expired key is the usual cause); try the other provider.\n" +
-      "• A component isn't loaded? Restart Steam. Steam too new or a build mismatch? Fix it in Desktop from Settings ▸ Components.\n" +
-      "• \"Fix blocked in Game Mode\"? Switch to Desktop, run the command shown, then return.\n" +
-      "• A game crashes? Try Repair appmanifest, Reconfigure SLSsteam, Check for Fixes, or (emulator titles) Apply Goldberg.",
+      "• Game won't appear? It should show up on its own after Add game; if it doesn't, restart Steam.\n" +
+      "• Manifest fetch fails? Check Settings ▸ API Credentials. An expired key is the usual cause; try the other provider.\n" +
+      "• Update stuck? A new depot needs a decryption key. Press Fix Update on the game's page (needs a valid Hubcap key).\n" +
+      "• A component isn't loaded? Restart Steam. Steam too new or a build mismatch? Fix it from Settings ▸ Components.\n" +
+      "• A game crashes? Try Repair appmanifest, Reconfigure SLSsteam, Check for Fixes, or Apply Goldberg.\n" +
+      "• Cloud saves not syncing? Sign in to the CloudRedirect app in Desktop Mode.",
     result: "result",
     results: "results",
     selected: "Selected",
