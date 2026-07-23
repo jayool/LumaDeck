@@ -46,6 +46,16 @@ _FETCH_TIMEOUT = 5.0
 _LUMALINUX_UPDATES_URL = "https://raw.githubusercontent.com/jayool/lumalinux/main/res/updates.yaml"
 _LL_CACHE_FILE = os.path.join(_CACHE_DIR, "lumalinux_updates.yaml")
 
+# The SafeMode group-id (res/version.txt) compiled into the LATEST published .so,
+# shipped as a release asset by lumalinux's build.yml. The deployed .so keys on
+# its compile-time group (src/update.cpp: clientHashMap[VERSION]) and only trusts
+# THAT group's hashes — so "will installing latest hook build X?" is answered by
+# "is X whitelisted under the RELEASE's group", not "under the newest group main
+# may carry ahead of a release". Reading main's newest group would offer a build
+# the downloadable binary can't hook yet (the release/updates.yaml fleco).
+_LUMALINUX_RELEASE_VERSION_URL = "https://github.com/jayool/lumalinux/releases/latest/download/version.txt"
+_REL_GROUP_CACHE_FILE = os.path.join(_CACHE_DIR, "lumalinux_release_group")
+
 
 def _manifest_path() -> str | None:
     """Find Steam's installed-client manifest.
@@ -141,20 +151,11 @@ async def headcrab_target() -> int | None:
     return _load_cache()
 
 
-async def lumalinux_supports_build(target: int | None) -> bool | None:
-    """Whether lumalinux's published pattern set supports Steam build `target`.
-
-    Text-scans lumalinux's res/updates.yaml for a `steam_version: <target>`
-    annotation (a `# steam_version:` comment next to a whitelisted hash in
-    SafeModeHashes) — its presence means that build's steamclient.so is
-    whitelisted, so an installed lumalinux will hook it. Dependency-free text scan
-    — Decky's bundled Python has no YAML lib. Cached to disk. Returns None when
-    unknown (unreachable + no cache, or a file with no steam_version at all) so
-    callers do NOT hard-block on ambiguity.
-    """
-    if target is None:
-        return None
-
+async def _lumalinux_updates_text() -> str | None:
+    """Fetch lumalinux's res/updates.yaml (main), cached to disk. None if
+    unreachable and no cache. main is the right source for the per-group BUILD
+    LISTS (hashes append live, no release needed); the group POINTER comes from
+    the release instead — see latest_release_group()."""
     text = None
     try:
         client = await ensure_http_client(context="headcrab_compat")
@@ -178,19 +179,105 @@ async def lumalinux_supports_build(target: int | None) -> bool | None:
                 text = f.read()
         except Exception:
             return None
+    return text
 
-    # A pre-v0.16 file has no steam_version anywhere -> unknown, don't false-block.
+
+async def latest_release_group() -> str | None:
+    """The SafeMode group-id (res/version.txt value) compiled into the LATEST
+    published lumalinux release .so, read from its release asset.
+
+    This is the authority for "which SafeModeHashes group does the downloadable
+    binary actually hook?" — the .so trusts only its compile-time group. Cached to
+    disk. Returns None when unreachable + no cache, OR when the release predates
+    the version.txt asset (older releases); callers then fall back to a whole-file
+    scan (safe while a single group exists)."""
+    group = None
+    try:
+        client = await ensure_http_client(context="headcrab_compat")
+        resp = await client.get(_LUMALINUX_RELEASE_VERSION_URL, timeout=_FETCH_TIMEOUT)
+        if resp.status_code == 200:
+            cand = resp.text.strip()
+            if re.fullmatch(r"\d+", cand):
+                group = cand
+                try:
+                    os.makedirs(_CACHE_DIR, exist_ok=True)
+                    with open(_REL_GROUP_CACHE_FILE, "w", encoding="utf-8") as f:
+                        f.write(group)
+                except Exception as exc:
+                    logger.warning(f"headcrab_compat: failed to cache release group: {exc}")
+        else:
+            logger.info(f"headcrab_compat: HTTP {resp.status_code} for release version.txt, trying cache")
+    except Exception as exc:
+        logger.info(f"headcrab_compat: release version.txt fetch failed ({exc}), trying cache")
+
+    if group is None:
+        try:
+            with open(_REL_GROUP_CACHE_FILE, "r", encoding="utf-8") as f:
+                cand = f.read().strip()
+                group = cand if re.fullmatch(r"\d+", cand) else None
+        except Exception:
+            return None
+    return group
+
+
+def _build_in_group(text: str, group: str, build: int) -> bool:
+    """True iff `steam_version: <build>` appears inside SafeModeHashes[<group>].
+
+    Scans from the `  <group>:` header (2-space indent) to the next 2-space
+    `  <digits>:` group header, a dedent to a top-level key, or EOF. Dependency-
+    free — Decky's bundled Python has no YAML lib."""
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(rf"^  {re.escape(group)}:\s*$", line):
+            start = i + 1
+            break
+    if start is None:
+        return False
+    for line in lines[start:]:
+        if re.match(r"^  \d+:\s*$", line):     # next group header ends the block
+            break
+        if line and not line[0].isspace():     # dedent to a top-level key ends it
+            break
+        if re.search(rf"steam_version:\s*{build}\b", line):
+            return True
+    return False
+
+
+def _supports_build(text: str | None, group: str | None, build: int | None) -> bool | None:
+    """Would the LATEST release hook Steam build `build`? None when unknown.
+
+    Checks `build` against the RELEASE's group (`group`) in `text`. Falls back to
+    a whole-file scan when the release exposes no version.txt (`group` is None) —
+    equivalent while a single group exists."""
+    if build is None or text is None:
+        return None
+    # A pre-schema file has no steam_version anywhere -> unknown, don't false-block.
     if "steam_version" not in text:
         return None
-    return re.search(rf"steam_version:\s*{target}\b", text) is not None
+    if group is None:
+        return re.search(rf"steam_version:\s*{build}\b", text) is not None
+    return _build_in_group(text, group, build)
+
+
+async def lumalinux_supports_build(build: int | None) -> bool | None:
+    """Whether the LATEST lumalinux release would hook Steam build `build`.
+
+    "Latest release" — NOT main: reads the release's compiled SafeMode group
+    (latest_release_group()) and checks `build` under THAT group in res/updates.yaml,
+    ignoring any newer group main may carry ahead of a release. None on ambiguity."""
+    return _supports_build(await _lumalinux_updates_text(), await latest_release_group(), build)
 
 
 async def check_headcrab_compat() -> dict:
     """Return whether the current Steam build matches Headcrab's pinned target,
-    and whether lumalinux is ALSO ready for that target (v0.16 gate)."""
+    and whether the LATEST lumalinux release is ready for both the pinned target
+    (Steam-update gate) and the build the user is on now (lumalinux-update gate)."""
     build = current_steam_build()
     target = await headcrab_target()
-    ll_ready = await lumalinux_supports_build(target)
+    # Fetch the two inputs once, then answer both questions against them.
+    text = await _lumalinux_updates_text()
+    group = await latest_release_group()
     return {
         "success": True,
         "current_build": build,
@@ -200,10 +287,12 @@ async def check_headcrab_compat() -> dict:
             and target is not None
             and build == target
         ),
-        # v0.16: is lumalinux's pattern set published for the pinned target?
-        # Callers should gate the Steam-update offer on this being True so a user
-        # never aligns Steam to a build lumalinux can't hook yet. None = unknown
-        # (unreachable / pre-schema file) — treat as "don't hard-block", i.e. fall
-        # back to the prior behaviour rather than refusing the update.
-        "lumalinux_ready": ll_ready,
+        # Steam-update gate: is the LATEST release ready for the pinned target?
+        # Callers require True (not merely "not False") before offering to move
+        # Steam up to the pin. None = unknown -> don't hard-block (prior behaviour).
+        "lumalinux_ready": _supports_build(text, group, target),
+        # lumalinux-update gate: would the latest release still hook the build the
+        # user is on now? Callers suppress the lumalinux update offer only on a
+        # positive False (latest dropped this build's pattern-set), never on None.
+        "current_build_supported_by_latest": _supports_build(text, group, build),
     }

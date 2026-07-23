@@ -232,6 +232,12 @@ async def get_components_status(force: bool = False) -> dict:
             # so a user never aligns Steam ahead of lumalinux. None = unknown
             # (don't hard-block; fall back to prior behaviour).
             "lumalinux_ready": headcrab.get("lumalinux_ready"),
+            # Would the LATEST lumalinux release still hook the build the user is
+            # on now? The frontend suppresses the lumalinux update offer only on a
+            # positive False (a new release re-derived patterns and dropped this
+            # build) so updating never breaks a working install. None = unknown
+            # (don't suppress).
+            "current_build_supported_by_latest": headcrab.get("current_build_supported_by_latest"),
         },
         "plugin": {
             "installed": plugin.get("installed"),

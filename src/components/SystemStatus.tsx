@@ -31,6 +31,11 @@ export interface ComponentsStatus {
     // null = unknown (don't hard-block). Gates the align-Steam-to-pin action so
     // we never push the user onto a build lumalinux can't hook yet.
     lumalinux_ready?: boolean | null;
+    // Would the LATEST lumalinux release still hook the build the user is on now?
+    // false = a newer release re-derived patterns and dropped this build, so
+    // updating would break the working install → suppress the lumalinux update
+    // offer. null = unknown (don't suppress). See gate on the update row below.
+    current_build_supported_by_latest?: boolean | null;
   };
   plugin: { installed: string | null; latest: string | null; available: boolean };
   // Dev preview override for the Quick Install onboarding (backend/dev.py):
@@ -219,7 +224,15 @@ function buildRows(
       });
     }
 
-    const llUpdate = !!ll?.installed && !!ll.update?.available;
+    // Suppress the lumalinux update offer only when the latest release POSITIVELY
+    // dropped support for the build the user is on (a re-derived pattern-set that
+    // no longer hooks it) — updating would break a working install. `false` only,
+    // never `null`: on unknown we still offer (fail-open, matching the backend's
+    // "don't hard-block on ambiguity"). This is the symmetric partner of the
+    // Steam-update gate: never cross to a lumalinux generation that can't hook the
+    // current Steam build.
+    const llSupportsCurrent = status.headcrab?.current_build_supported_by_latest;
+    const llUpdate = !!ll?.installed && !!ll.update?.available && llSupportsCurrent !== false;
     // SLSsteam updates are NOT surfaced (choice B): it exposes no readable
     // installed version, and it rides headcrab + is gated anyway. Of the
     // headcrab bundle, only CloudRedirect has a checkable update here.
