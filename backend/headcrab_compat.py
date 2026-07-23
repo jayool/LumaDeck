@@ -247,16 +247,25 @@ def _build_in_group(text: str, group: str, build: int) -> bool:
 def _supports_build(text: str | None, group: str | None, build: int | None) -> bool | None:
     """Would the LATEST release hook Steam build `build`? None when unknown.
 
-    Checks `build` against the RELEASE's group (`group`) in `text`. Falls back to
-    a whole-file scan when the release exposes no version.txt (`group` is None) —
-    equivalent while a single group exists."""
+    Checks `build` against the RELEASE's group (`group`) in `text`. Falls back to a
+    whole-file scan when the release exposes no version.txt (`group` is None).
+
+    A `# steam_version:` annotation is OPTIONAL metadata (a whitelisted hash may
+    carry none), so an un-annotated build is UNKNOWN (None) — NOT unsupported. Only
+    a build that IS annotated somewhere but NOT in the release's group is a positive
+    False (a re-derived pattern-set dropped it). Without this, users on a
+    whitelisted-but-un-annotated build (e.g. an older pin) would have their update
+    offer wrongly suppressed."""
     if build is None or text is None:
         return None
     # A pre-schema file has no steam_version anywhere -> unknown, don't false-block.
     if "steam_version" not in text:
         return None
+    # Un-annotated build -> unknown (fail-open), never a false "unsupported".
+    if re.search(rf"steam_version:\s*{build}\b", text) is None:
+        return None
     if group is None:
-        return re.search(rf"steam_version:\s*{build}\b", text) is not None
+        return True   # annotated + no release group to scope by -> supported (fallback)
     return _build_in_group(text, group, build)
 
 
