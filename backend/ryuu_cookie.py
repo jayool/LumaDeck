@@ -6,7 +6,11 @@ value is in `encrypted_value`, prefixed by a scheme tag:
   - v10 -> AES-128-CBC, key = PBKDF2-HMAC-SHA1(b"peanuts", b"saltysalt", 1, 16),
            IV = 16 * 0x20. Decryptable with no secrets — this is what Chromium
            uses when no OS keyring is available (Game Mode / gamescope).
-  - v11 -> key in the OS keyring (GNOME Keyring / KWallet). Not handled here.
+  - v11 -> AES-128-CBC, same KDF/IV, but the password is a random secret stored
+           in the OS keyring (GNOME Keyring / KWallet) instead of b"peanuts".
+           We read it from the *deck user's* session (Decky runs as root, the
+           keyring lives on the deck user's D-Bus) via `secret-tool` and, on
+           KDE, `kwallet-query`. See `_keyring_passwords`.
 Newer Chromium (M104+) prepends a 32-byte SHA256(host) to the plaintext; we
 detect and strip it. AES is done via the `openssl` CLI (always present on
 SteamOS) so we need no Python crypto dependency.
@@ -16,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import pwd
 import shutil
 import sqlite3
 import subprocess
@@ -31,15 +36,31 @@ except ImportError:
 _RYUU_HOST_MATCH = "ryuu.lol"
 _RYUU_COOKIE_NAME = "session"
 
+# Product names CEF/Chromium may have registered its keyring key under. Steam's
+# CEF build is the unknown here, so we try the common ones and accept whichever
+# password actually decrypts the cookie to printable text.
+_KEYRING_APP_NAMES = ("chrome", "chromium", "Chromium", "steam", "Steam", "cef")
+# (wallet folder, entry) pairs KWallet may hold the Chromium key under.
+_KWALLET_ENTRIES = (
+    ("Chromium Keys", "Chromium Safe Storage"),
+    ("Chrome Keys", "Chrome Safe Storage"),
+)
+
 
 def _find_cookie_dbs() -> list:
     """Candidate CEF `Cookies` SQLite DBs. The exact subdir under config/htmlcache
     varies by Chromium build — observed `Default/Cookies` (modern), and older
     `Cookies` / `Network/Cookies`. Search ONLY under config/ (a small tree); never
     walk the whole Steam install, which holds the game library and would make a
-    recursive scan crawl (that hang bit the earlier glob-based version)."""
+    recursive scan crawl (that hang bit the earlier glob-based version).
+
+    Decky runs as root (~ = /root), so list the deck user's Steam paths first —
+    the same convention paths.py uses — before falling back to $HOME."""
     home = os.path.expanduser("~")
     roots = [
+        "/home/deck/.local/share/Steam",
+        "/home/deck/.steam/steam",
+        "/home/deck/.steam/root",
         os.path.join(home, ".local", "share", "Steam"),
         os.path.join(home, ".steam", "steam"),
         os.path.join(home, ".steam", "root"),
@@ -127,19 +148,65 @@ def _extract_value(plain: bytes):
     return None
 
 
-def _decrypt_v10(encrypted: bytes):
-    """Decrypt a Chromium `v10` (peanuts) cookie value. None on anything else."""
-    if not encrypted or encrypted[:3] != b"v10":
-        if encrypted and encrypted[:3] == b"v11":
-            logger.warning(
-                "Ryuu cookie: value is v11 (OS keyring) — cannot decrypt without the keyring"
-            )
-        return None
-    key = hashlib.pbkdf2_hmac("sha1", b"peanuts", b"saltysalt", 1, 16)
-    iv = b"\x20" * 16
-    ciphertext = encrypted[3:]
+def _deck_session_env() -> dict:
+    """Env for running a keyring query AS the deck user, in the deck user's login
+    session (Decky's backend is root and not in that session by default). Mirrors
+    desktop_handoff.py's `sudo -u deck env DBUS_SESSION_BUS_ADDRESS=...` pattern."""
+    try:
+        uid = pwd.getpwnam("deck").pw_uid
+    except KeyError:
+        uid = 1000
+    runtime = f"/run/user/{uid}"
+    return {
+        "XDG_RUNTIME_DIR": runtime,
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
+        "HOME": "/home/deck",
+    }
+
+
+def _run_as_deck(argv: list) -> bytes:
+    """Run `argv` as the deck user with its session bus; return stdout bytes (b''
+    on any failure — this is best-effort keyring probing, never fatal)."""
+    env = _deck_session_env()
+    cmd = ["sudo", "-u", "deck", "env"] + [f"{k}={v}" for k, v in env.items()] + argv
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=10)
+        return proc.stdout or b""
+    except FileNotFoundError:
+        return b""            # sudo / the queried tool isn't installed
+    except Exception as exc:
+        logger.warning(f"Ryuu cookie: keyring probe failed ({argv[:1]}): {exc}")
+        return b""
+
+
+def _keyring_passwords() -> list:
+    """Best-effort list of candidate 'Safe Storage' passwords from the deck user's
+    keyring — via secret-tool (Secret Service / GNOME Keyring) and kwallet-query
+    (KDE). We don't know which product name Steam's CEF used, so we collect every
+    candidate and let the caller try each against the ciphertext."""
+    out = []
+    for app in _KEYRING_APP_NAMES:
+        pw = _run_as_deck(["secret-tool", "lookup", "application", app]).strip()
+        if pw and pw not in out:
+            out.append(pw)
+    for folder, entry in _KWALLET_ENTRIES:
+        pw = _run_as_deck(
+            ["kwallet-query", "-f", folder, "-r", entry, "kdewallet"]
+        ).strip()
+        # kwallet-query prints an error line to stdout on a miss; keep only
+        # plausible base64-ish secrets (no spaces, reasonable length).
+        if pw and b" " not in pw and 8 <= len(pw) <= 64 and pw not in out:
+            out.append(pw)
+    return out
+
+
+def _aes_decrypt_value(ciphertext: bytes, password: bytes):
+    """Chromium cookie decrypt: key = PBKDF2-HMAC-SHA1(password,'saltysalt',1,16),
+    IV = 16*0x20, AES-128-CBC. Returns the printable cookie value or None."""
     if not ciphertext or len(ciphertext) % 16 != 0:
         return None
+    key = hashlib.pbkdf2_hmac("sha1", password, b"saltysalt", 1, 16)
+    iv = b"\x20" * 16
     try:
         proc = subprocess.run(
             ["openssl", "enc", "-d", "-aes-128-cbc",
@@ -159,6 +226,46 @@ def _decrypt_v10(encrypted: bytes):
     return _extract_value(plain)
 
 
+def _decrypt_cookie(encrypted: bytes):
+    """Decrypt a Chromium cookie value. Returns (value, reason):
+      value  = the cookie string, or None if it couldn't be decrypted.
+      reason = short tag for the caller's error message when value is None
+               ('v11-no-keyring' | 'v11-decrypt-failed' | 'decrypt-failed').
+    v10 = fixed 'peanuts' password. v11 = a random password in the OS keyring;
+    we read every candidate the keyring exposes and accept the one that decrypts."""
+    if not encrypted or len(encrypted) < 3:
+        return None, "decrypt-failed"
+    tag = encrypted[:3]
+    ciphertext = encrypted[3:]
+
+    if tag == b"v10":
+        return _aes_decrypt_value(ciphertext, b"peanuts"), "decrypt-failed"
+
+    if tag == b"v11":
+        passwords = _keyring_passwords()
+        if not passwords:
+            logger.warning(
+                "Ryuu cookie: value is v11 (OS keyring) but no keyring secret "
+                "was readable from the deck session (secret-tool/kwallet-query "
+                "missing, keyring locked, or unknown app name)."
+            )
+            return None, "v11-no-keyring"
+        for pw in passwords:
+            val = _aes_decrypt_value(ciphertext, pw)
+            if val:
+                logger.info("Ryuu cookie: decrypted v11 via keyring secret.")
+                return val, ""
+        logger.warning(
+            f"Ryuu cookie: value is v11; tried {len(passwords)} keyring "
+            "secret(s), none decrypted it."
+        )
+        return None, "v11-decrypt-failed"
+
+    # Unknown scheme — try peanuts anyway (older/edge builds sometimes store
+    # unversioned AES with the peanuts key).
+    return _aes_decrypt_value(encrypted, b"peanuts"), "decrypt-failed"
+
+
 def import_ryuu_cookie_from_browser() -> dict:
     """Locate Steam's CEF cookie DB, extract + decrypt the ryuu.lol `session`
     cookie, and persist it via save_ryu_cookie. Returns {success, message/error}.
@@ -171,15 +278,15 @@ def import_ryuu_cookie_from_browser() -> dict:
                      "Steam browser and log in first.",
         }
 
-    found_but_undecryptable = False
+    last_reason = ""
     for db in dbs:
         res = _read_encrypted_session(db)
         if res is None:
             continue
         enc, expires_utc = res
-        value = _decrypt_v10(enc)
+        value, reason = _decrypt_cookie(enc)
         if not value:
-            found_but_undecryptable = True
+            last_reason = reason or last_reason
             continue
         from api_manifest import save_ryu_cookie, save_ryu_cookie_expiry
         # save_ryu_cookie prepends "session=" itself.
@@ -191,12 +298,19 @@ def import_ryuu_cookie_from_browser() -> dict:
         return {"success": True,
                 "message": "Ryuu cookie imported from the Steam browser."}
 
-    if found_but_undecryptable:
+    if last_reason == "v11-no-keyring":
         return {
             "success": False,
-            "error": "Found a Ryuu cookie but couldn't decrypt it (it may be "
-                     "keyring-encrypted on this setup). Paste it manually from "
-                     "the browser's DevTools instead.",
+            "error": "Found a Ryuu cookie encrypted by the system keyring, but "
+                     "the keyring secret couldn't be read (keyring locked, or "
+                     "secret-tool/kwallet-query not installed). Unlock the "
+                     "keyring and try again.",
+        }
+    if last_reason in ("v11-decrypt-failed", "decrypt-failed"):
+        return {
+            "success": False,
+            "error": "Found a Ryuu cookie but couldn't decrypt it on this setup. "
+                     "Paste it manually from the browser's DevTools instead.",
         }
     return {
         "success": False,
