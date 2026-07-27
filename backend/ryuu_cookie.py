@@ -218,28 +218,41 @@ def _openssl_path() -> str:
 
 def _aes_decrypt_value(ciphertext: bytes, password: bytes):
     """Chromium cookie decrypt: key = PBKDF2-HMAC-SHA1(password,'saltysalt',1,16),
-    IV = 16*0x20, AES-128-CBC. Returns the printable cookie value or None."""
+    IV = 16*0x20, AES-128-CBC. Returns the printable cookie value or None.
+
+    Every None-return logs WHY: the same code decrypts fine in a shell but was
+    silently failing when invoked from Decky's plugin-backend process, and the
+    old silent returns hid the cause. Now the LumaDeck log names it."""
     if not ciphertext or len(ciphertext) % 16 != 0:
+        logger.warning("Ryuu cookie: bad ciphertext (len=%d, not 16-aligned)"
+                       % len(ciphertext or b""))
         return None
     key = hashlib.pbkdf2_hmac("sha1", password, b"saltysalt", 1, 16)
     iv = b"\x20" * 16
+    ossl = _openssl_path()
     try:
         proc = subprocess.run(
-            [_openssl_path(), "enc", "-d", "-aes-128-cbc",
+            [ossl, "enc", "-d", "-aes-128-cbc",
              "-K", key.hex(), "-iv", iv.hex(), "-nopad"],
             input=ciphertext, capture_output=True, timeout=10,
         )
     except Exception as exc:
-        logger.warning(f"Ryuu cookie: openssl failed: {exc}")
+        logger.warning("Ryuu cookie: openssl (%s) raised: %r" % (ossl, exc))
         return None
     plain = proc.stdout
     if not plain:
+        logger.warning("Ryuu cookie: openssl (%s) no output (rc=%s stderr=%r)"
+                       % (ossl, proc.returncode, (proc.stderr or b"")[:200]))
         return None
     # Strip PKCS7 padding if present.
     pad = plain[-1]
     if 1 <= pad <= 16 and plain[-pad:] == bytes([pad]) * pad:
         plain = plain[:-pad]
-    return _extract_value(plain)
+    val = _extract_value(plain)
+    if val is None:
+        logger.warning("Ryuu cookie: decrypted %d bytes but not printable "
+                       "(head=%r)" % (len(plain), plain[:16]))
+    return val
 
 
 def _decrypt_cookie(encrypted: bytes):
