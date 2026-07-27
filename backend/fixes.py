@@ -13,6 +13,7 @@ from typing import Any, Dict
 from downloads import fetch_app_name
 from http_client import ensure_http_client
 from steam_utils import get_game_install_path_response, _parse_vdf_simple, detect_steam_install_path, get_app_launch_options
+from subprocess_env import clean_env
 from utils import ensure_temp_download_dir
 
 try:
@@ -660,7 +661,7 @@ def apply_linux_native_fix(install_path: str) -> dict:
         try:
             subprocess.run(
                 ["chown", "-R", "deck:deck", install_path],
-                timeout=120, capture_output=True,
+                timeout=120, capture_output=True, env=clean_env(),
             )
         except Exception as chown_exc:
             logger.warning(f"LumaDeck: chown failed for {install_path}: {chown_exc}")

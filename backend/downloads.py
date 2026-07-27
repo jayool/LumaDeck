@@ -435,9 +435,10 @@ def _get_installed_size_bytes(appid: int) -> int:
                 continue
             # Fast size via du
             import subprocess
+            from subprocess_env import clean_env
             result = subprocess.run(
                 ["du", "-sb", game_dir],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, text=True, timeout=15, env=clean_env()
             )
             if result.returncode == 0:
                 return int(result.stdout.split()[0])

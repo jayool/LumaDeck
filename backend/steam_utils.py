@@ -8,6 +8,7 @@ import subprocess
 from typing import Dict, Optional
 
 from paths import find_steam_root
+from subprocess_env import clean_env
 
 try:
     import decky  # type: ignore
@@ -377,7 +378,7 @@ def open_game_folder(path: str) -> bool:
     try:
         if not path or not os.path.exists(path):
             return False
-        subprocess.Popen(["xdg-open", path])
+        subprocess.Popen(["xdg-open", path], env=clean_env())
         return True
     except Exception:
         return False
