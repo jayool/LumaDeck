@@ -200,6 +200,22 @@ def _keyring_passwords() -> list:
     return out
 
 
+def _openssl_path() -> str:
+    """Absolute path to the openssl binary. Do NOT rely on the subprocess PATH:
+    the Decky backend runs with a minimal PATH that often lacks /usr/sbin, yet on
+    some distros (e.g. GitHub Codespaces) openssl lives in /usr/sbin — a bare
+    "openssl" then raises FileNotFoundError and every cookie fails to "decrypt".
+    Resolve it explicitly, checking sbin locations shutil.which would miss."""
+    p = shutil.which("openssl")
+    if p:
+        return p
+    for cand in ("/usr/bin/openssl", "/usr/sbin/openssl",
+                 "/bin/openssl", "/sbin/openssl", "/usr/local/bin/openssl"):
+        if os.path.exists(cand):
+            return cand
+    return "openssl"  # last resort; will fail loudly in the log below
+
+
 def _aes_decrypt_value(ciphertext: bytes, password: bytes):
     """Chromium cookie decrypt: key = PBKDF2-HMAC-SHA1(password,'saltysalt',1,16),
     IV = 16*0x20, AES-128-CBC. Returns the printable cookie value or None."""
@@ -209,7 +225,7 @@ def _aes_decrypt_value(ciphertext: bytes, password: bytes):
     iv = b"\x20" * 16
     try:
         proc = subprocess.run(
-            ["openssl", "enc", "-d", "-aes-128-cbc",
+            [_openssl_path(), "enc", "-d", "-aes-128-cbc",
              "-K", key.hex(), "-iv", iv.hex(), "-nopad"],
             input=ciphertext, capture_output=True, timeout=10,
         )
