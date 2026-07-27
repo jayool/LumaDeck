@@ -26,6 +26,8 @@ import sqlite3
 import subprocess
 import tempfile
 
+from subprocess_env import clean_env
+
 try:
     import decky  # type: ignore
     logger = decky.logger
@@ -216,26 +218,6 @@ def _openssl_path() -> str:
     return "openssl"  # last resort; will fail loudly in the log below
 
 
-def _system_lib_env() -> dict:
-    """Env for launching a SYSTEM binary from Decky's backend.
-
-    Decky's PluginLoader is a PyInstaller onefile bundle: it prepends its
-    extracted `/tmp/_MEIxxxx` dir (which ships an OLDER libssl.so.3) to
-    LD_LIBRARY_PATH. A subprocess inherits it, so the system `openssl` loads
-    Decky's stale libssl and dies with `version OPENSSL_3.x.0 not found` — rc=1,
-    no output, decryption silently fails. PyInstaller saves the pre-bundle value
-    as LD_LIBRARY_PATH_ORIG; restore it (or drop LD_LIBRARY_PATH entirely) so the
-    binary links against the system libraries it was built for."""
-    env = dict(os.environ)
-    orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
-    if orig:
-        env["LD_LIBRARY_PATH"] = orig
-    else:
-        env.pop("LD_LIBRARY_PATH", None)
-    env.pop("LD_PRELOAD", None)
-    return env
-
-
 def _aes_decrypt_value(ciphertext: bytes, password: bytes):
     """Chromium cookie decrypt: key = PBKDF2-HMAC-SHA1(password,'saltysalt',1,16),
     IV = 16*0x20, AES-128-CBC. Returns the printable cookie value or None.
@@ -255,7 +237,7 @@ def _aes_decrypt_value(ciphertext: bytes, password: bytes):
             [ossl, "enc", "-d", "-aes-128-cbc",
              "-K", key.hex(), "-iv", iv.hex(), "-nopad"],
             input=ciphertext, capture_output=True, timeout=10,
-            env=_system_lib_env(),
+            env=clean_env(),
         )
     except Exception as exc:
         logger.warning("Ryuu cookie: openssl (%s) raised: %r" % (ossl, exc))
