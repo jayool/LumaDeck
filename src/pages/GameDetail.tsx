@@ -34,8 +34,6 @@ import {
   addFakeAppId,
   removeFakeAppId,
   checkFakeAppIdStatus,
-  checkForFixes,
-  applyGameFix,
   getApplyFixStatus,
   cancelApplyFix,
   getInstalledFixes,
@@ -99,7 +97,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [downloadState, setDownloadState] = useState<any>(null);
   const [fakeAppId, setFakeAppId] = useState(false);
   const [fakeIdValue, setFakeIdValue] = useState("480");
-  const [fixes, setFixes] = useState<any>(null);
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
   // LuaTools catalogue fixes for this game (null = not loaded). The listing is
@@ -362,47 +359,20 @@ export function GameDetail({ appid }: GameDetailProps) {
 
   const handleCheckFixes = async () => {
     setBusy("fixes");
-    const result = await checkForFixes(appid);
+    setLuatoolsError("");
+    // The LuaTools catalogue is the only fix source now. Its listing is public
+    // (no login needed) — the same data the lua.tools/fixes/<appid> web page shows;
+    // a connected account is only needed to actually apply/download a fix.
+    const r: any = await listLuatoolsFixes(appid);
     setBusy("");
-    if (result.success) {
-      setFixes(result);
-      // Also load the LuaTools catalogue. The listing is public (no login needed) —
-      // the same data the lua.tools/fixes/<appid> web page shows — so we always try,
-      // regardless of whether the account is connected. Connection is only needed to
-      // actually apply/download a catalogue fix.
-      setLuatoolsError("");
-      listLuatoolsFixes(appid).then((r: any) => {
-        if (r?.success) {
-          setLuatoolsFixes(r.fixes || []);
-        } else {
-          setLuatoolsFixes([]);
-          setLuatoolsError(r?.error || "unknown_error");
-        }
-      });
-      const hasAny = result.genericFix?.available || result.onlineFix?.available;
-      toast(
-        hasAny ? t("toastFixesFound") : t("toastNoFixes"),
-        gameName,
-      );
+    if (r?.success) {
+      const list = r.fixes || [];
+      setLuatoolsFixes(list);
+      toast(list.length ? t("toastFixesFound") : t("toastNoFixes"), gameName);
     } else {
-      toast(t("toastError"), result.error || t("failedToCheck"), 4000);
-    }
-  };
-
-  const handleApplyFix = async (url: string, fixType: string) => {
-    if (!installPath) {
-      toast(t("toastError"), t("installPathNotFound"), 4000);
-      return;
-    }
-    const result = await applyGameFix(
-      appid,
-      url,
-      installPath,
-      fixType,
-      gameName,
-    );
-    if (result.success) {
-      setFixStatus({ status: "queued" });
+      setLuatoolsFixes([]);
+      setLuatoolsError(r?.error || "unknown_error");
+      toast(t("toastError"), r?.error || t("failedToCheck"), 4000);
     }
   };
 
@@ -875,35 +845,6 @@ export function GameDetail({ appid }: GameDetailProps) {
           onClick={handleCheckFixes}
           disabled={busy === "fixes"}
         />
-        {fixes && (
-          <>
-            {fixes.genericFix?.available && (
-              <ActionButton
-                label={t("applyGenericFix")}
-                description={t("applyGenericFixDesc")}
-                onClick={() =>
-                  handleApplyFix(fixes.genericFix.url, "Generic Fix")
-                }
-                disabled={!!isFixInProgress}
-              />
-            )}
-            {fixes.onlineFix?.available && (
-              <ActionButton
-                label={t("applyOnlineFix")}
-                description={t("applyOnlineFixDesc")}
-                onClick={() =>
-                  handleApplyFix(fixes.onlineFix.url, "Online Fix (Unsteam)")
-                }
-                disabled={!!isFixInProgress}
-              />
-            )}
-            {!fixes.genericFix?.available && !fixes.onlineFix?.available && (
-              <PanelSectionRow>
-                <Field icon={<FaExclamationTriangle color="#ffaa00" />} label={t("noFixesAvailable")} />
-              </PanelSectionRow>
-            )}
-          </>
-        )}
         {/* LuaTools catalogue — public listing (crack / online / Denuvo fixes).
             Loaded after "Check for Fixes". Applying a fix needs a connected account. */}
         {luatoolsFixes && (
