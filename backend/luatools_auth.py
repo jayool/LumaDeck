@@ -244,6 +244,11 @@ async def list_luatools_fixes(appid: int) -> dict:
         # description,tags,hasManifest,hasFix,...} ] }. Pass fixes straight through.
         fixes = data.get("fixes", [])
         logger.info(f"LuaTools: fixes list for {appid} -> {len(fixes)} fix(es)")
+        # Diagnostic: the exact fix-object shape isn't confirmed on-device yet, and
+        # the frontend has to guess which field is the display name. Log the KEYS of
+        # the first fix (not values) once so we can pin the label/tags mapping.
+        if fixes and isinstance(fixes[0], dict):
+            logger.info(f"LuaTools: fix object keys = {sorted(fixes[0].keys())}")
         return {"success": True, "fixes": fixes, "raw": data}
     except Exception as exc:
         logger.warning(f"LuaTools: fixes list error for {appid}: {exc}")

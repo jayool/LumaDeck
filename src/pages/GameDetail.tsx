@@ -89,6 +89,38 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+// LuaTools fix objects come from lua.tools/api/denuvo/fixes. The exact shape isn't
+// pinned in-repo (lua.tools is unreachable from dev), and the earlier naive mapping
+// (label={f.title}, tags.join()) produced a weird label and a literal "[object
+// Object]" when a field was itself an object. Derive display text defensively:
+// coerce ANY value — including {name/label/title/...} objects and arrays — to a
+// string, and never render "[object Object]".
+function luaText(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.map(luaText).filter(Boolean).join(", ");
+  if (typeof v === "object")
+    return luaText(v.name ?? v.label ?? v.title ?? v.text ?? v.value ?? v.tag ?? "");
+  return "";
+}
+
+// Best-effort human label: first non-empty string among the likely name fields.
+function luaFixLabel(f: any): string {
+  for (const k of ["title", "name", "displayName", "fixName", "label"]) {
+    const s = luaText(f?.[k]).trim();
+    if (s) return s;
+  }
+  const id = luaText(f?.id).trim();
+  return id ? `Fix ${id}` : "Fix";
+}
+
+// Description line: tags (strings OR objects) joined, else a description field.
+function luaFixDesc(f: any): string {
+  const tags = luaText(f?.tags);
+  return tags || luaText(f?.description);
+}
+
 export function GameDetail({ appid }: GameDetailProps) {
   const t = useT();
   const [gameName, setGameName] = useState(`Game ${appid}`);
@@ -897,16 +929,12 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </>
             )}
-            {luatoolsFixes.map((f: any) => (
+            {luatoolsFixes.map((f: any, i: number) => (
               <ActionButton
-                key={String(f.id)}
-                label={f.title || `Fix ${f.id}`}
-                description={
-                  Array.isArray(f.tags) && f.tags.length
-                    ? f.tags.join(", ")
-                    : f.description || ""
-                }
-                onClick={() => handleApplyLuatoolsFix(String(f.id))}
+                key={luaText(f?.id) || String(i)}
+                label={luaFixLabel(f)}
+                description={luaFixDesc(f)}
+                onClick={() => handleApplyLuatoolsFix(luaText(f?.id))}
                 disabled={!!isFixInProgress || !luatoolsConnected}
               />
             ))}
