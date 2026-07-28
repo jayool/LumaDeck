@@ -506,6 +506,31 @@ class Plugin:
         from fixes import cancel_apply_fix
         return _j(cancel_apply_fix(appid))
 
+    # --- LuaTools account (authenticated fix catalogue) ---
+    async def connect_luatools(self) -> str:
+        from luatools_auth import connect_luatools
+        return _j(await connect_luatools())
+
+    async def get_luatools_status(self) -> str:
+        from luatools_auth import get_luatools_status
+        return _j(get_luatools_status())
+
+    async def cancel_connect_luatools(self) -> str:
+        from luatools_auth import cancel_connect_luatools
+        return _j(cancel_connect_luatools())
+
+    async def disconnect_luatools(self) -> str:
+        from luatools_auth import disconnect_luatools
+        return _j(disconnect_luatools())
+
+    async def list_luatools_fixes(self, appid: int) -> str:
+        from luatools_auth import list_luatools_fixes
+        return _j(await list_luatools_fixes(appid))
+
+    async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "") -> str:
+        from luatools_auth import download_luatools_fix
+        return _j(await download_luatools_fix(appid, fix_id, install_path, slot))
+
     async def unfix_game(self, appid: int, install_path: str = "", fix_date: str = "") -> str:
         from fixes import unfix_game
         return _j(await unfix_game(appid, install_path, fix_date))

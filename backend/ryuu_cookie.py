@@ -298,6 +298,45 @@ def _decrypt_cookie(encrypted: bytes):
     return _aes_decrypt_value(encrypted, b"peanuts"), "decrypt-failed"
 
 
+def _read_all_cookies_for_host(host_match: str) -> dict:
+    """Read + decrypt ALL v10 cookies whose host_key contains `host_match` from
+    Steam's CEF cookie store, returning {name: value}. Reuses the copy-WAL read
+    and v10 decrypt of the Ryuu import, so it works while Steam's browser is open.
+    Cookies that aren't v10-decryptable (e.g. keyring-encrypted) are skipped.
+
+    Used by the LuaTools account harvest (backend/luatools_auth.py) to grab the
+    chunked Supabase session cookie (sb-...-auth-token.0 / .1 / ...)."""
+    out: dict = {}
+    for db_path in _find_cookie_dbs():
+        tmpdir = tempfile.mkdtemp(prefix="lumadeck_cookies_")
+        try:
+            local = os.path.join(tmpdir, "Cookies")
+            shutil.copy2(db_path, local)
+            # Copy WAL/SHM sidecars too so recent (un-checkpointed) writes are seen.
+            for ext in ("-wal", "-shm"):
+                if os.path.exists(db_path + ext):
+                    shutil.copy2(db_path + ext, local + ext)
+            con = sqlite3.connect(local)
+            try:
+                rows = con.execute(
+                    "SELECT name, encrypted_value FROM cookies WHERE host_key LIKE ?",
+                    (f"%{host_match}%",),
+                ).fetchall()
+            finally:
+                con.close()
+            for name, enc in rows:
+                if name in out:
+                    continue  # first DB / first match wins
+                value = _decrypt_v10(enc)
+                if value is not None:
+                    out[name] = value
+        except Exception as exc:
+            logger.warning(f"Cookie harvest: read failed for {db_path}: {exc}")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    return out
+
+
 def import_ryuu_cookie_from_browser() -> dict:
     """Locate Steam's CEF cookie DB, extract + decrypt the ryuu.lol `session`
     cookie, and persist it via save_ryu_cookie. Returns {success, message/error}.

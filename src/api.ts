@@ -279,6 +279,38 @@ export const getApplyFixStatus = async (appid: number) =>
 export const cancelApplyFix = async (appid: number) =>
   parseResult(await call<[number], string>("cancel_apply_fix", appid));
 
+// --- LuaTools account (authenticated fix catalogue) ---
+export const connectLuatools = async () =>
+  parseResult(await call<[], string>("connect_luatools"));
+
+export const getLuatoolsStatus = async () =>
+  parseResult(await call<[], string>("get_luatools_status"));
+
+export const cancelConnectLuatools = async () =>
+  parseResult(await call<[], string>("cancel_connect_luatools"));
+
+export const disconnectLuatools = async () =>
+  parseResult(await call<[], string>("disconnect_luatools"));
+
+export const listLuatoolsFixes = async (appid: number) =>
+  parseResult(await call<[number], string>("list_luatools_fixes", appid));
+
+export const downloadLuatoolsFix = async (
+  appid: number,
+  fixId: string,
+  installPath: string,
+  slot: string = "",
+) =>
+  parseResult(
+    await call<[number, string, string, string], string>(
+      "download_luatools_fix",
+      appid,
+      fixId,
+      installPath,
+      slot,
+    ),
+  );
+
 export const getInstalledFixes = async () =>
   parseResult(await call<[], string>("get_installed_fixes"));
 
