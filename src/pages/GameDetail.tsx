@@ -89,6 +89,26 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+// LuaTools DenuvoFix shape (confirmed from the LuaTools .NET client's models):
+//   { id, title, description, tags: [{ id, name, slug, color }],
+//     hasFix, hasManifest, manifestFilename, fixFilename, createdAt }
+// `tags` is a list of OBJECTS, so join their `name` — joining the array directly
+// renders "[object Object]".
+function luaFixTagNames(f: any): string {
+  const tags = Array.isArray(f?.tags) ? f.tags : [];
+  return tags
+    .map((t: any) => (t && typeof t === "object" ? t.name : t))
+    .filter((s: any) => typeof s === "string" && s.trim())
+    .join(" · ");
+}
+
+// The line under the button: tag names, then the free-text description if any.
+function luaFixSubtitle(f: any): string {
+  const tags = luaFixTagNames(f);
+  const desc = typeof f?.description === "string" ? f.description.trim() : "";
+  return [tags, desc].filter(Boolean).join(" — ");
+}
+
 export function GameDetail({ appid }: GameDetailProps) {
   const t = useT();
   const [gameName, setGameName] = useState(`Game ${appid}`);
@@ -393,10 +413,10 @@ export function GameDetail({ appid }: GameDetailProps) {
       toast(t("toastError"), t("installPathNotFound"), 4000);
       return;
     }
-    // download_luatools_fix resolves the signed URL server-side and hands it to
-    // the same apply pipeline as applyGameFix, so the existing fixStatus polling
-    // and progress UI cover it.
-    const result = await downloadLuatoolsFix(appid, fixId, installPath);
+    // slot="fix" downloads the crack zip (vs "manifest"); download_luatools_fix
+    // resolves the signed URL server-side and hands it to the same apply pipeline
+    // as applyGameFix, so the existing fixStatus polling and progress UI cover it.
+    const result = await downloadLuatoolsFix(appid, fixId, installPath, "fix");
     if (result.success) {
       setFixStatus({ status: "queued" });
     } else {
@@ -876,11 +896,23 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </PanelSectionRow>
             )}
-            {/* Account gate: the listing is public but applying needs a session.
-                Mirror the QAM Add-Game pattern — a reason row + a contextual
-                connect button, with the fix buttons greyed out until connected.
-                Canonical connect/disconnect still lives in Settings. */}
-            {luatoolsFixes.length > 0 && !luatoolsConnected && (
+            {/* Gate 1 — the fix is applied INTO the installed game dir, so the
+                game must already be installed (via the normal flow). Without a
+                path there's nowhere to drop the fix. */}
+            {luatoolsFixes.length > 0 && !installPath && (
+              <PanelSectionRow>
+                <Field description={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
+                    Install the game first to apply a fix.
+                  </span>
+                } />
+              </PanelSectionRow>
+            )}
+            {/* Gate 2 — the listing is public but downloading a fix needs a
+                session. Mirror the QAM Add-Game pattern (reason row + contextual
+                connect button); canonical connect/disconnect stays in Settings. */}
+            {luatoolsFixes.length > 0 && installPath && !luatoolsConnected && (
               <>
                 <PanelSectionRow>
                   <Field description={
@@ -900,14 +932,10 @@ export function GameDetail({ appid }: GameDetailProps) {
             {luatoolsFixes.map((f: any) => (
               <ActionButton
                 key={String(f.id)}
-                label={f.title || `Fix ${f.id}`}
-                description={
-                  Array.isArray(f.tags) && f.tags.length
-                    ? f.tags.join(", ")
-                    : f.description || ""
-                }
+                label={f.title || ""}
+                description={luaFixSubtitle(f)}
                 onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                disabled={!!isFixInProgress || !luatoolsConnected}
+                disabled={!installPath || !luatoolsConnected || !!isFixInProgress}
               />
             ))}
           </>
