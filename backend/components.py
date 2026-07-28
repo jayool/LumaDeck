@@ -109,8 +109,8 @@ async def check_cloudredirect_update(force: bool = False) -> dict:
     differs from the current linux-test asset. Returns the has_update shape with
     short hashes in installed/latest for display/debug. force=True bypasses the
     remote-hash cache."""
-    from paths import cloudredirect_so_path
-    local_path = cloudredirect_so_path()
+    from paths import get_cloudredirect_so_path
+    local_path = get_cloudredirect_so_path()
     local = _sha256_file(local_path) if local_path else None
     if not local:
         return {"installed": None, "latest": None, "has_update": False, "url": None}
