@@ -22,6 +22,7 @@ import {
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { listLuatoolsFixes, downloadLuatoolsFix } from "../api";
+import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { ACHIEVEMENTS_ENABLED } from "../features";
@@ -118,6 +119,16 @@ export function GameDetail({ appid }: GameDetailProps) {
 
   const toast = (title: string, body?: string, duration = 3000) =>
     toaster.toast({ title, body: body || gameName, duration });
+
+  // Contextual LuaTools connect (shared with Settings). The catalogue listing is
+  // public, but applying a fix needs a session — so we surface a connect prompt
+  // here and grey out the fix buttons until connected.
+  const {
+    connected: luatoolsConnected,
+    connecting: luatoolsConnecting,
+    connect: handleConnectLuatools,
+    refresh: refreshLuatoolsStatus,
+  } = useLuatoolsConnect(toast, t);
 
   const loadInstalledFixes = async () => {
     const result = await getInstalledFixes();
@@ -360,6 +371,7 @@ export function GameDetail({ appid }: GameDetailProps) {
   const handleCheckFixes = async () => {
     setBusy("fixes");
     setLuatoolsError("");
+    refreshLuatoolsStatus(); // in case the account was connected from Settings meanwhile
     // The LuaTools catalogue is the only fix source now. Its listing is public
     // (no login needed) — the same data the lua.tools/fixes/<appid> web page shows;
     // a connected account is only needed to actually apply/download a fix.
@@ -864,6 +876,27 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </PanelSectionRow>
             )}
+            {/* Account gate: the listing is public but applying needs a session.
+                Mirror the QAM Add-Game pattern — a reason row + a contextual
+                connect button, with the fix buttons greyed out until connected.
+                Canonical connect/disconnect still lives in Settings. */}
+            {luatoolsFixes.length > 0 && !luatoolsConnected && (
+              <>
+                <PanelSectionRow>
+                  <Field description={
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                      <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
+                      Connect your LuaTools account to apply these fixes.
+                    </span>
+                  } />
+                </PanelSectionRow>
+                <ActionButton
+                  label={luatoolsConnecting ? "Connecting…" : "Connect LuaTools (log in with Discord)"}
+                  onClick={handleConnectLuatools}
+                  disabled={luatoolsConnecting}
+                />
+              </>
+            )}
             {luatoolsFixes.map((f: any) => (
               <ActionButton
                 key={String(f.id)}
@@ -874,7 +907,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                     : f.description || ""
                 }
                 onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                disabled={!!isFixInProgress}
+                disabled={!!isFixInProgress || !luatoolsConnected}
               />
             ))}
           </>

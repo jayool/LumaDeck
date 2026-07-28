@@ -45,7 +45,7 @@ import {
 } from "../api";
 import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall } from "../api";
 import { getDevState, setDevState, clearDevState } from "../api";
-import { connectLuatools, getLuatoolsStatus, disconnectLuatools } from "../api";
+import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { requestRefresh } from "../refresh";
 import {
   getInstalledLuaScripts,
@@ -471,45 +471,14 @@ export function Settings() {
   };
 
   // --- LuaTools account (authenticated fix catalogue) ---
-  const [luatoolsConnected, setLuatoolsConnected] = useState(false);
-  const [luatoolsConnecting, setLuatoolsConnecting] = useState(false);
-
-  useEffect(() => {
-    getLuatoolsStatus().then((r) => {
-      if (r?.success) setLuatoolsConnected(!!r.connected);
-    });
-  }, []);
-
-  const handleConnectLuatools = async () => {
-    // Open the lua.tools login in Game Mode's built-in browser; the user logs in
-    // with Discord (same pattern as Ryuu/Hubcap). The backend polls the CEF
-    // cookie store and captures the Supabase session as soon as it appears; we
-    // then close the browser and return here. If this component unmounts during
-    // the browser nav, the backend still saves the session and the status check
-    // on next mount reflects it. TODO(on-device): confirm the exact login URL.
-    setLuatoolsConnecting(true);
-    Navigation.NavigateToExternalWeb("https://lua.tools/");
-    try {
-      const res = await connectLuatools(); // resolves when captured (or timeout)
-      if (res?.success) {
-        Navigation.NavigateBack(); // close the browser, back to Settings
-        setLuatoolsConnected(true);
-        toast("LuaTools connected ✓"); // TODO i18n
-      } else if (!res?.cancelled) {
-        toast(t("toastError"), "LuaTools login timed out — try again", 5000);
-      }
-    } catch {
-      /* component unmounted during nav; backend saved the session anyway */
-    } finally {
-      setLuatoolsConnecting(false);
-    }
-  };
-
-  const handleDisconnectLuatools = async () => {
-    await disconnectLuatools();
-    setLuatoolsConnected(false);
-    toast("LuaTools disconnected"); // TODO i18n
-  };
+  // Connection flow lives in a shared hook so the GameDetail Fixes tab can offer
+  // the same "connect" without duplicating the browser-login dance.
+  const {
+    connected: luatoolsConnected,
+    connecting: luatoolsConnecting,
+    connect: handleConnectLuatools,
+    disconnect: handleDisconnectLuatools,
+  } = useLuatoolsConnect(toast, t);
 
 
   // SLSsteam advanced editors — re-read the config after every change so the UI
