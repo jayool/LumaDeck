@@ -117,7 +117,10 @@ def _harvest_once() -> dict | None:
     """Read the CEF cookie store and return the lua.tools Supabase session, or
     None if the user hasn't logged in yet. Blocking (copies the SQLite DB)."""
     from ryuu_cookie import _read_all_cookies_for_host
-    cookies = _read_all_cookies_for_host(_HOST)
+    # Only decrypt the session cookie(s) — narrowing the query avoids spawning an
+    # openssl decrypt per unrelated lua.tools cookie (cf_clearance, analytics, …)
+    # on every poll of the connect loop.
+    cookies = _read_all_cookies_for_host(_HOST, name_prefix=_TOKEN_COOKIE_PREFIX)
     chunks = {n: v for n, v in cookies.items() if n.startswith(_TOKEN_COOKIE_PREFIX)}
     session = _reassemble(chunks)
     if session and session.get("access_token"):
@@ -149,7 +152,9 @@ async def connect_luatools(timeout_s: int = 180) -> dict:
             _connect_state = {"status": "connected"}
             logger.info("LuaTools: session captured from the Steam browser.")
             return {"success": True}
-        await asyncio.sleep(2)
+        # Poll fast (1s) so the browser closes promptly once the login lands; the
+        # per-poll cost is now just the session cookie's decrypt (see above).
+        await asyncio.sleep(1)
     _connect_state = {"status": "timeout"}
     return {"success": False, "error": "timeout"}
 

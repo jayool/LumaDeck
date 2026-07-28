@@ -298,12 +298,18 @@ def _decrypt_cookie(encrypted: bytes):
     return _aes_decrypt_value(encrypted, b"peanuts"), "decrypt-failed"
 
 
-def _read_all_cookies_for_host(host_match: str) -> dict:
-    """Read + decrypt ALL cookies whose host_key contains `host_match` from
-    Steam's CEF cookie store, returning {name: value}. Reuses the copy-WAL read
-    and `_decrypt_cookie` of the Ryuu import (v10 'peanuts' AND v11 keyring), so
-    it works while Steam's browser is open. Cookies that can't be decrypted on
-    this setup are skipped.
+def _read_all_cookies_for_host(host_match: str, name_prefix: str = "") -> dict:
+    """Read + decrypt cookies whose host_key contains `host_match` from Steam's
+    CEF cookie store, returning {name: value}. Reuses the copy-WAL read and
+    `_decrypt_cookie` of the Ryuu import (v10 'peanuts' AND v11 keyring), so it
+    works while Steam's browser is open. Cookies that can't be decrypted on this
+    setup are skipped.
+
+    `name_prefix` (optional) restricts the query to cookies whose name starts
+    with it — decrypt is one `openssl` subprocess per cookie, so narrowing to
+    just the cookie(s) the caller wants avoids decrypting every unrelated
+    (Cloudflare/analytics/...) cookie on the host each call. Passing "" reads
+    all of them (the original behaviour).
 
     Used by the LuaTools account harvest (backend/luatools_auth.py) to grab the
     chunked Supabase session cookie (sb-...-auth-token.0 / .1 / ...)."""
@@ -319,10 +325,18 @@ def _read_all_cookies_for_host(host_match: str) -> dict:
                     shutil.copy2(db_path + ext, local + ext)
             con = sqlite3.connect(local)
             try:
-                rows = con.execute(
-                    "SELECT name, encrypted_value FROM cookies WHERE host_key LIKE ?",
-                    (f"%{host_match}%",),
-                ).fetchall()
+                if name_prefix:
+                    rows = con.execute(
+                        "SELECT name, encrypted_value FROM cookies "
+                        "WHERE host_key LIKE ? AND name LIKE ?",
+                        (f"%{host_match}%", f"{name_prefix}%"),
+                    ).fetchall()
+                else:
+                    rows = con.execute(
+                        "SELECT name, encrypted_value FROM cookies "
+                        "WHERE host_key LIKE ?",
+                        (f"%{host_match}%",),
+                    ).fetchall()
             finally:
                 con.close()
             for name, enc in rows:
