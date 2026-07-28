@@ -43,7 +43,7 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
         toast("LuaTools connected ✓"); // TODO i18n
         return true;
       } else if (!res?.cancelled) {
-        toast(t("toastError"), "LuaTools login timed out — try again", 5000);
+        toast(t("toastError"), "LuaTools login timed out", 5000);
       }
     } catch {
       /* component unmounted during nav; backend saved the session anyway */

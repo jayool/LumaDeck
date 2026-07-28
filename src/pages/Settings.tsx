@@ -768,15 +768,15 @@ export function Settings() {
             }
             description={
               luatoolsConnected
-                ? "Connected. LuaTools catalogue fixes appear on each game's page."
-                : "Log in with Discord to enable the LuaTools fix catalogue."
+                ? "Connected. Fixes appear on each game details page"
+                : "Log in with Discord to apply fixes on each game details page"
             }
           >
             {luatoolsConnecting
-              ? "Waiting for login…"
+              ? "Logging in…"
               : luatoolsConnected
-              ? "Disconnect LuaTools"
-              : "Connect LuaTools (log in with Discord)"}
+              ? "Log out"
+              : "Log in with Discord"}
           </ButtonItem>
         </PanelSectionRow>
         {/* Tail anchor: without it, Game Mode's navbar covers this last status

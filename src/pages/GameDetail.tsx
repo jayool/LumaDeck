@@ -881,18 +881,11 @@ export function GameDetail({ appid }: GameDetailProps) {
             Loaded after "Check for Fixes". Applying a fix needs a connected account. */}
         {luatoolsFixes && (
           <>
-            <PanelSectionRow>
-              <Field label="LuaTools catalogue" />
-            </PanelSectionRow>
             {luatoolsFixes.length === 0 && (
               <PanelSectionRow>
                 <Field
                   icon={<FaExclamationTriangle color="#ffaa00" />}
-                  label={
-                    luatoolsError
-                      ? `Couldn't load catalogue (${luatoolsError})`
-                      : "No LuaTools catalogue fixes for this game"
-                  }
+                  label={luatoolsError ? "Couldn't load fixes" : "No fixes for this game"}
                 />
               </PanelSectionRow>
             )}
@@ -904,7 +897,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 <Field description={
                   <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                     <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                    Install the game first to apply a fix.
+                    Install the game first to apply a fix
                   </span>
                 } />
               </PanelSectionRow>
@@ -918,26 +911,45 @@ export function GameDetail({ appid }: GameDetailProps) {
                   <Field description={
                     <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                       <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                      Connect your LuaTools account to apply these fixes.
+                      Log in with Discord to apply these fixes
                     </span>
                   } />
                 </PanelSectionRow>
                 <ActionButton
-                  label={luatoolsConnecting ? "Connecting…" : "Connect LuaTools (log in with Discord)"}
+                  label={luatoolsConnecting ? "Logging in…" : "Log in with Discord"}
                   onClick={handleConnectLuatools}
                   disabled={luatoolsConnecting}
                 />
               </>
             )}
-            {luatoolsFixes.map((f: any) => (
-              <ActionButton
-                key={String(f.id)}
-                label={f.title || ""}
-                description={luaFixSubtitle(f)}
-                onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                disabled={!installPath || !luatoolsConnected || !!isFixInProgress}
-              />
-            ))}
+            {luatoolsFixes.map((f: any) =>
+              // hasFix === false → manifest-only entry (no crack to download).
+              // Mirror LuaTools: hide the fix button. Keep the entry visible as an
+              // info row (not a dead/erroring button) until Phase 2 adds manifest
+              // support. Unknown/missing hasFix stays actionable (fail-open).
+              f?.hasFix === false ? (
+                <PanelSectionRow key={String(f.id)}>
+                  <Field
+                    label={f.title || undefined}
+                    description={
+                      <span style={{ opacity: 0.7 }}>
+                        {[luaFixSubtitle(f), "Manifest only"]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    }
+                  />
+                </PanelSectionRow>
+              ) : (
+                <ActionButton
+                  key={String(f.id)}
+                  label={f.title || ""}
+                  description={luaFixSubtitle(f)}
+                  onClick={() => handleApplyLuatoolsFix(String(f.id))}
+                  disabled={!installPath || !luatoolsConnected || !!isFixInProgress}
+                />
+              )
+            )}
           </>
         )}
         {isFixInProgress && (
