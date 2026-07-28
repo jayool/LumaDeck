@@ -21,7 +21,7 @@ import {
   FaCheckCircle,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
-import { listLuatoolsFixes, downloadLuatoolsFix, getLuatoolsStatus } from "../api";
+import { listLuatoolsFixes, downloadLuatoolsFix } from "../api";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { ACHIEVEMENTS_ENABLED } from "../features";
@@ -102,8 +102,10 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [fixes, setFixes] = useState<any>(null);
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
-  // Authenticated LuaTools catalogue fixes for this game (null = not loaded / not connected).
+  // LuaTools catalogue fixes for this game (null = not loaded). The listing is
+  // public; only applying a fix needs a connected account.
   const [luatoolsFixes, setLuatoolsFixes] = useState<any[] | null>(null);
+  const [luatoolsError, setLuatoolsError] = useState<string>("");
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
@@ -364,14 +366,17 @@ export function GameDetail({ appid }: GameDetailProps) {
     setBusy("");
     if (result.success) {
       setFixes(result);
-      // Also load the authenticated LuaTools catalogue, if the account is connected.
-      getLuatoolsStatus().then((st: any) => {
-        if (st?.success && st.connected) {
-          listLuatoolsFixes(appid).then((r: any) =>
-            setLuatoolsFixes(r?.success ? r.fixes || [] : []),
-          );
+      // Also load the LuaTools catalogue. The listing is public (no login needed) —
+      // the same data the lua.tools/fixes/<appid> web page shows — so we always try,
+      // regardless of whether the account is connected. Connection is only needed to
+      // actually apply/download a catalogue fix.
+      setLuatoolsError("");
+      listLuatoolsFixes(appid).then((r: any) => {
+        if (r?.success) {
+          setLuatoolsFixes(r.fixes || []);
         } else {
-          setLuatoolsFixes(null);
+          setLuatoolsFixes([]);
+          setLuatoolsError(r?.error || "unknown_error");
         }
       });
       const hasAny = result.genericFix?.available || result.onlineFix?.available;
@@ -899,13 +904,25 @@ export function GameDetail({ appid }: GameDetailProps) {
             )}
           </>
         )}
-        {/* LuaTools catalogue — authenticated fixes (crack / online / Denuvo).
-            Shown after "Check for Fixes" when the LuaTools account is connected. */}
-        {luatoolsFixes && luatoolsFixes.length > 0 && (
+        {/* LuaTools catalogue — public listing (crack / online / Denuvo fixes).
+            Loaded after "Check for Fixes". Applying a fix needs a connected account. */}
+        {luatoolsFixes && (
           <>
             <PanelSectionRow>
               <Field label="LuaTools catalogue" />
             </PanelSectionRow>
+            {luatoolsFixes.length === 0 && (
+              <PanelSectionRow>
+                <Field
+                  icon={<FaExclamationTriangle color="#ffaa00" />}
+                  label={
+                    luatoolsError
+                      ? `Couldn't load catalogue (${luatoolsError})`
+                      : "No LuaTools catalogue fixes for this game"
+                  }
+                />
+              </PanelSectionRow>
+            )}
             {luatoolsFixes.map((f: any) => (
               <ActionButton
                 key={String(f.id)}

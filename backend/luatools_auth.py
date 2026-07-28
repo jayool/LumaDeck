@@ -213,25 +213,35 @@ def _auth_headers(token: str) -> dict:
 # Fix catalogue (authenticated)
 # ---------------------------------------------------------------------------
 async def list_luatools_fixes(appid: int) -> dict:
-    """Fixes available for `appid` in the lua.tools catalogue. Requires a session."""
-    token = await _access_token()
-    if not token:
-        return {"success": False, "error": "not_connected"}
+    """Fixes available for `appid` in the lua.tools catalogue.
+
+    This endpoint is PUBLIC — the LuaTools client hits `/api/denuvo/fixes?appid=`
+    with a plain HttpClient (no Authorization header), which is why the web page
+    `lua.tools/fixes/<appid>` is browsable without logging in. So we do NOT require
+    a session here; we only attach a Bearer if we happen to already have one (it is
+    harmless and lets the server personalise the response if it wants to). Login is
+    only needed for the *download* step (signed URL)."""
+    headers = dict(_BROWSERISH)
+    token = await _access_token()  # None when not connected — that's fine
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         client = await ensure_http_client("LuaToolsFixes")
         resp = await client.get(
             f"https://lua.tools/api/denuvo/fixes?appid={appid}",
-            headers=_auth_headers(token), timeout=15,
+            headers=headers, timeout=15,
         )
-        if resp.status_code == 401:
-            return {"success": False, "error": "session_expired"}
         if resp.status_code != 200:
+            logger.warning(f"LuaTools: fixes list for {appid} -> HTTP {resp.status_code}")
             return {"success": False, "error": f"api_error_{resp.status_code}"}
         data = resp.json() or {}
         # Response shape (from the .NET client): { appId, name, fixes: [ {id,title,
         # description,tags,hasManifest,hasFix,...} ] }. Pass fixes straight through.
-        return {"success": True, "fixes": data.get("fixes", []), "raw": data}
+        fixes = data.get("fixes", [])
+        logger.info(f"LuaTools: fixes list for {appid} -> {len(fixes)} fix(es)")
+        return {"success": True, "fixes": fixes, "raw": data}
     except Exception as exc:
+        logger.warning(f"LuaTools: fixes list error for {appid}: {exc}")
         return {"success": False, "error": str(exc)}
 
 
@@ -241,7 +251,8 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
     existing fix pipeline (download → extract → Proton launch-option wiring)."""
     token = await _access_token()
     if not token:
-        return {"success": False, "error": "not_connected"}
+        return {"success": False,
+                "error": "Connect your LuaTools account first (Settings → Connect LuaTools)."}
     try:
         client = await ensure_http_client("LuaToolsFixDL")
         resp = await client.get(
