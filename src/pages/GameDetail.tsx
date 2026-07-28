@@ -21,6 +21,7 @@ import {
   FaCheckCircle,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
+import { listLuatoolsFixes, downloadLuatoolsFix, getLuatoolsStatus } from "../api";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { ACHIEVEMENTS_ENABLED } from "../features";
@@ -101,6 +102,8 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [fixes, setFixes] = useState<any>(null);
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
+  // Authenticated LuaTools catalogue fixes for this game (null = not loaded / not connected).
+  const [luatoolsFixes, setLuatoolsFixes] = useState<any[] | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
@@ -361,6 +364,16 @@ export function GameDetail({ appid }: GameDetailProps) {
     setBusy("");
     if (result.success) {
       setFixes(result);
+      // Also load the authenticated LuaTools catalogue, if the account is connected.
+      getLuatoolsStatus().then((st: any) => {
+        if (st?.success && st.connected) {
+          listLuatoolsFixes(appid).then((r: any) =>
+            setLuatoolsFixes(r?.success ? r.fixes || [] : []),
+          );
+        } else {
+          setLuatoolsFixes(null);
+        }
+      });
       const hasAny = result.genericFix?.available || result.onlineFix?.available;
       toast(
         hasAny ? t("toastFixesFound") : t("toastNoFixes"),
@@ -385,6 +398,22 @@ export function GameDetail({ appid }: GameDetailProps) {
     );
     if (result.success) {
       setFixStatus({ status: "queued" });
+    }
+  };
+
+  const handleApplyLuatoolsFix = async (fixId: string) => {
+    if (!installPath) {
+      toast(t("toastError"), t("installPathNotFound"), 4000);
+      return;
+    }
+    // download_luatools_fix resolves the signed URL server-side and hands it to
+    // the same apply pipeline as applyGameFix, so the existing fixStatus polling
+    // and progress UI cover it.
+    const result = await downloadLuatoolsFix(appid, fixId, installPath);
+    if (result.success) {
+      setFixStatus({ status: "queued" });
+    } else {
+      toast(t("toastError"), result.error || "", 5000);
     }
   };
 
@@ -868,6 +897,28 @@ export function GameDetail({ appid }: GameDetailProps) {
                 <Field icon={<FaExclamationTriangle color="#ffaa00" />} label={t("noFixesAvailable")} />
               </PanelSectionRow>
             )}
+          </>
+        )}
+        {/* LuaTools catalogue — authenticated fixes (crack / online / Denuvo).
+            Shown after "Check for Fixes" when the LuaTools account is connected. */}
+        {luatoolsFixes && luatoolsFixes.length > 0 && (
+          <>
+            <PanelSectionRow>
+              <Field label="LuaTools catalogue" />
+            </PanelSectionRow>
+            {luatoolsFixes.map((f: any) => (
+              <ActionButton
+                key={String(f.id)}
+                label={f.title || `Fix ${f.id}`}
+                description={
+                  Array.isArray(f.tags) && f.tags.length
+                    ? f.tags.join(", ")
+                    : f.description || ""
+                }
+                onClick={() => handleApplyLuatoolsFix(String(f.id))}
+                disabled={!!isFixInProgress}
+              />
+            ))}
           </>
         )}
         {isFixInProgress && (
