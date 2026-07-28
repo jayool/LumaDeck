@@ -299,10 +299,11 @@ def _decrypt_cookie(encrypted: bytes):
 
 
 def _read_all_cookies_for_host(host_match: str) -> dict:
-    """Read + decrypt ALL v10 cookies whose host_key contains `host_match` from
+    """Read + decrypt ALL cookies whose host_key contains `host_match` from
     Steam's CEF cookie store, returning {name: value}. Reuses the copy-WAL read
-    and v10 decrypt of the Ryuu import, so it works while Steam's browser is open.
-    Cookies that aren't v10-decryptable (e.g. keyring-encrypted) are skipped.
+    and `_decrypt_cookie` of the Ryuu import (v10 'peanuts' AND v11 keyring), so
+    it works while Steam's browser is open. Cookies that can't be decrypted on
+    this setup are skipped.
 
     Used by the LuaTools account harvest (backend/luatools_auth.py) to grab the
     chunked Supabase session cookie (sb-...-auth-token.0 / .1 / ...)."""
@@ -327,7 +328,7 @@ def _read_all_cookies_for_host(host_match: str) -> dict:
             for name, enc in rows:
                 if name in out:
                     continue  # first DB / first match wins
-                value = _decrypt_v10(enc)
+                value, _reason = _decrypt_cookie(enc)
                 if value is not None:
                     out[name] = value
         except Exception as exc:
