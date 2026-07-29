@@ -839,17 +839,35 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
     if not base_path:
         raise RuntimeError("Steam install path not found")
 
+    from pathlib import Path
     tmp_dir = tempfile.mkdtemp(prefix=f"lumadeck_{appid}_")
     try:
-        with zipfile.ZipFile(zip_path, "r") as archive:
-            archive.extractall(tmp_dir)
+        # The payload is normally a zip (Hubcap game package / LuaTools fix zip),
+        # but LuaTools serves a version *manifest* as a BARE .lua — no zip. Detect
+        # by content, not extension: extract a real zip; drop a bare .lua straight
+        # into the work dir as <appid>.lua. Anything else (e.g. an HTML soft-404
+        # the CDN returned) is neither → fail with a clear message.
+        if zipfile.is_zipfile(zip_path):
+            with zipfile.ZipFile(zip_path, "r") as archive:
+                archive.extractall(tmp_dir)
+        else:
+            try:
+                raw = Path(zip_path).read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                raw = ""
+            if re.search(r"\b(?:addappid|setManifestid)\s*\(", raw):
+                Path(tmp_dir, f"{appid}.lua").write_text(raw, encoding="utf-8")
+            else:
+                raise RuntimeError(
+                    "Downloaded file is neither a zip nor a Lua manifest "
+                    "(the link likely returned an error page)."
+                )
 
         if _is_download_cancelled(appid):
             raise RuntimeError("cancelled")
 
         # Locate the .lua. Prefer <appid>.lua, fall back to any numeric .lua
         # file found anywhere in the extracted tree.
-        from pathlib import Path
         lua_candidates = [
             p for p in Path(tmp_dir).rglob("*.lua")
             if re.fullmatch(r"\d+", p.stem)

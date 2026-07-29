@@ -181,6 +181,11 @@ def _backup_original_file(install_path: str, appid: int, rel_path: str) -> None:
 
 def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: str, game_name: str, download_url: str) -> None:
     """Synchronous extraction of fix zip (runs in executor)."""
+    if not zipfile.is_zipfile(dest_zip):
+        # A LuaTools fix is always a real .zip. A non-zip here means the link
+        # returned something else (an HTML error page / soft-404) — fail cleanly
+        # before touching the game dir instead of crashing mid-extract.
+        raise RuntimeError("The download wasn't a zip (the link likely returned an error page).")
     extracted_files = []
     with zipfile.ZipFile(dest_zip, "r") as archive:
         all_names = archive.namelist()
