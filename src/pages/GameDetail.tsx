@@ -101,12 +101,17 @@ function luaFixTagList(f: any): string[] {
     .filter((s: any) => typeof s === "string" && s.trim());
 }
 
-// A LuaTools fix carries its target Steam build as a bare-number tag (e.g.
-// "23314029"). Split it out so we can compare it against the installed build
-// (appmanifest buildid); the remaining tags ("SteamTools Achievements Fix", …)
-// are the fix's label.
+// A LuaTools fix carries its target Steam build as a 6+ digit number, which
+// LuaTools puts in the fix's TITLE (e.g. "23314029"), and sometimes in a tag.
+// Pull the first such run out of the title or tags so we can compare it against
+// the installed build (appmanifest buildid).
 function luaFixBuildTag(f: any): string {
-  return luaFixTagList(f).find((s) => /^\d{6,}$/.test(s.trim())) || "";
+  const candidates = [f?.title, ...luaFixTagList(f)];
+  for (const c of candidates) {
+    const m = String(c ?? "").match(/\b(\d{6,})\b/);
+    if (m) return m[1];
+  }
+  return "";
 }
 
 export function GameDetail({ appid }: GameDetailProps) {
@@ -959,7 +964,9 @@ export function GameDetail({ appid }: GameDetailProps) {
                 <Field description={
                   <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                     <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                    Apply fix needs the game downloaded — install the build it needs with the version button below first
+                    {luatoolsFixes.some((f: any) => f?.hasManifest)
+                      ? "Install the correct build first to apply a fix"
+                      : "Install the game first to apply a fix"}
                   </span>
                 } />
               </PanelSectionRow>
@@ -982,14 +989,18 @@ export function GameDetail({ appid }: GameDetailProps) {
               // — but don't block — when the installed build differs; the version
               // button is the way to land on it. Non-numeric tags are the label.
               const buildTag = luaFixBuildTag(f);
+              // Tags that carry the build number are shown via buildNote, not as
+              // labels; and the title, when it's just the build number, is not a
+              // useful header (buildNote says it better).
               const labelTags = luaFixTagList(f)
-                .filter((s) => s !== buildTag)
+                .filter((s) => !buildTag || !s.includes(buildTag))
                 .join(" · ");
+              const titleIsBuild = !!buildTag && String(f?.title ?? "").includes(buildTag);
               const buildNote = buildTag
                 ? (installedBuild
                     ? (String(installedBuild) === buildTag
                         ? `On the build this fix needs (${buildTag})`
-                        : `⚠ Needs build ${buildTag} · you have ${installedBuild} — install the compatible version first`)
+                        : `⚠ This fix needs build ${buildTag}, you have ${installedBuild}. Install the compatible version first.`)
                     : `Needs build ${buildTag}`)
                 : "";
               const manifestDesc = [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
@@ -1002,7 +1013,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 .join(" · ") || undefined;
               return (
                 <Fragment key={String(f.id)}>
-                  {f?.title && (
+                  {f?.title && !titleIsBuild && (
                     <PanelSectionRow>
                       <Field label={f.title} />
                     </PanelSectionRow>

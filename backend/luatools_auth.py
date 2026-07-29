@@ -186,28 +186,41 @@ async def _access_token() -> str | None:
     session = _load_session()
     if not session:
         return None
-    # `expires_at` is unix seconds; refresh a minute early.
-    if session.get("expires_at", 0) > time.time() + 60 and session.get("access_token"):
-        return session["access_token"]
-    refresh = session.get("refresh_token")
-    if not refresh:
-        return session.get("access_token")  # last resort; may be expired
+    access = session.get("access_token")
+    # `expires_at` is unix seconds; refresh a minute early. Parse defensively —
+    # a missing/odd value must not throw (it would surface as a bogus error).
     try:
-        client = await ensure_http_client("LuaToolsAuth")
-        resp = await client.post(
-            _REFRESH_URL,
-            headers={"apikey": _SUPABASE_ANON, "Content-Type": "application/json"},
-            json={"refresh_token": refresh},
-            timeout=15,
-        )
-        if resp.status_code == 200:
-            new_session = resp.json()
-            _save_session(new_session)
-            return new_session.get("access_token")
-        logger.warning(f"LuaTools: refresh failed ({resp.status_code})")
-    except Exception as exc:
-        logger.warning(f"LuaTools: refresh error: {exc}")
-    return None
+        not_expired = float(session.get("expires_at", 0) or 0) > time.time() + 60
+    except (TypeError, ValueError):
+        not_expired = False
+    if access and not_expired:
+        return access
+    # Token is (or looks) stale → try to refresh. Crucially, if the refresh can't
+    # run or fails, DON'T drop the token we already hold: a freshly harvested
+    # session often has no usable `expires_at`, so returning None here made the
+    # UI say "connect first" while Settings showed connected. Fall back to the
+    # existing token instead and let the server reject it (401 → "session
+    # expired") if it really is dead.
+    refresh = session.get("refresh_token")
+    if refresh:
+        try:
+            client = await ensure_http_client("LuaToolsAuth")
+            resp = await client.post(
+                _REFRESH_URL,
+                headers={"apikey": _SUPABASE_ANON, "Content-Type": "application/json"},
+                json={"refresh_token": refresh},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                new_session = resp.json()
+                _save_session(new_session)
+                return new_session.get("access_token")
+            logger.warning(f"LuaTools: token refresh failed ({resp.status_code}); using existing token")
+        except Exception as exc:
+            logger.warning(f"LuaTools: token refresh error: {exc}; using existing token")
+    else:
+        logger.info("LuaTools: session has no refresh_token; using existing access token")
+    return access
 
 
 def _auth_headers(token: str) -> dict:
