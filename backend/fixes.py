@@ -676,30 +676,57 @@ def get_installed_fixes() -> dict:
                             log_content = lf.read()
 
                         if "[FIX]" in log_content:
+                            surviving_blocks = []
+                            dropped_any = False
                             for block in log_content.split("[FIX]"):
                                 if not block.strip():
                                     continue
                                 fix_data = {"appid": appid, "gameName": game_name, "installPath": full_path, "date": "", "fixType": "", "downloadUrl": "", "filesCount": 0, "files": []}
                                 in_files = False
                                 files = []
+                                block_lines = []
                                 for line in block.split("\n"):
-                                    line = line.strip()
-                                    if line == "[/FIX]":
+                                    stripped = line.strip()
+                                    if stripped == "[/FIX]" or stripped == "---":
                                         break
-                                    if line.startswith("Date:"):
-                                        fix_data["date"] = line.replace("Date:", "").strip()
-                                    elif line.startswith("Fix Type:"):
-                                        fix_data["fixType"] = line.replace("Fix Type:", "").strip()
-                                    elif line.startswith("Download URL:"):
-                                        fix_data["downloadUrl"] = line.replace("Download URL:", "").strip()
-                                    elif line == "Files:":
+                                    block_lines.append(line)
+                                    if stripped.startswith("Date:"):
+                                        fix_data["date"] = stripped.replace("Date:", "").strip()
+                                    elif stripped.startswith("Fix Type:"):
+                                        fix_data["fixType"] = stripped.replace("Fix Type:", "").strip()
+                                    elif stripped.startswith("Download URL:"):
+                                        fix_data["downloadUrl"] = stripped.replace("Download URL:", "").strip()
+                                    elif stripped == "Files:":
                                         in_files = True
-                                    elif in_files and line:
-                                        files.append(line)
+                                    elif in_files and stripped:
+                                        files.append(stripped)
+                                # Self-heal: a fix whose files are ALL gone (Steam
+                                # reinstall / manual delete reverted it) is stale —
+                                # drop the block instead of listing a fix that isn't
+                                # there. A block that lists no files is kept as-is.
+                                present = [f for f in files
+                                           if os.path.exists(os.path.join(full_path, f.replace("/", os.sep)))]
+                                if files and not present:
+                                    dropped_any = True
+                                    continue
+                                surviving_blocks.append("[FIX]\n" + "\n".join(block_lines).strip("\n") + "\n[/FIX]")
                                 fix_data["filesCount"] = len(files)
                                 fix_data["files"] = files
                                 if fix_data["date"]:
                                     installed_fixes.append(fix_data)
+                            # Persist the reconciliation if anything was dropped: keep
+                            # the survivors, or clear the log + backups outright when
+                            # nothing survives.
+                            if dropped_any:
+                                try:
+                                    if surviving_blocks:
+                                        with open(log_path, "w", encoding="utf-8") as wf:
+                                            wf.write("\n\n---\n\n".join(surviving_blocks) + "\n")
+                                    else:
+                                        os.remove(log_path)
+                                        shutil.rmtree(_fix_backup_root(full_path, appid), ignore_errors=True)
+                                except Exception:
+                                    pass
                     except Exception:
                         continue
             except Exception:
