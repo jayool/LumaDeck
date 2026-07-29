@@ -139,6 +139,14 @@ def has_lua_for_app(appid: int) -> bool:
     return False
 
 
+def _safe_int(value: any) -> int:
+    """int(value) that never raises — 0 on empty/None/garbage."""
+    try:
+        return int(str(value).strip() or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def get_game_install_path_response(appid: int) -> Dict[str, any]:
     """Find the game installation path. Returns dict with success/error."""
     try:
@@ -228,6 +236,10 @@ def get_game_install_path_response(appid: int) -> Dict[str, any]:
         "libraryPath": library_path,
         "path": full_install_path,
         "sizeOnDisk": int(app_state.get("SizeOnDisk", 0)),
+        # Steam's build id for what's actually installed. Used to compare against
+        # a LuaTools fix's required build (a bare-number tag) so the UI can warn
+        # when a Denuvo fix needs a different build than the one on disk.
+        "buildid": _safe_int(app_state.get("buildid", 0)),
     }
 
 

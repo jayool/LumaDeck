@@ -92,14 +92,21 @@ function formatSize(bytes: number): string {
 // LuaTools DenuvoFix shape (confirmed from the LuaTools .NET client's models):
 //   { id, title, description, tags: [{ id, name, slug, color }],
 //     hasFix, hasManifest, manifestFilename, fixFilename, createdAt }
-// `tags` is a list of OBJECTS, so join their `name` — joining the array directly
+// `tags` is a list of OBJECTS, so read their `name` — using the array directly
 // renders "[object Object]".
-function luaFixTagNames(f: any): string {
+function luaFixTagList(f: any): string[] {
   const tags = Array.isArray(f?.tags) ? f.tags : [];
   return tags
     .map((t: any) => (t && typeof t === "object" ? t.name : t))
-    .filter((s: any) => typeof s === "string" && s.trim())
-    .join(" · ");
+    .filter((s: any) => typeof s === "string" && s.trim());
+}
+
+// A LuaTools fix carries its target Steam build as a bare-number tag (e.g.
+// "23314029"). Split it out so we can compare it against the installed build
+// (appmanifest buildid); the remaining tags ("SteamTools Achievements Fix", …)
+// are the fix's label.
+function luaFixBuildTag(f: any): string {
+  return luaFixTagList(f).find((s) => /^\d{6,}$/.test(s.trim())) || "";
 }
 
 export function GameDetail({ appid }: GameDetailProps) {
@@ -108,6 +115,9 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [hasLua, setHasLua] = useState(false);
   const [installPath, setInstallPath] = useState("");
   const [gameSize, setGameSize] = useState(0);
+  // Steam build id of what's on disk (0 = unknown). Compared against a fix's
+  // required build tag to warn about a Denuvo build mismatch.
+  const [installedBuild, setInstalledBuild] = useState(0);
   const [downloadState, setDownloadState] = useState<any>(null);
   const [fakeAppId, setFakeAppId] = useState(false);
   const [fakeIdValue, setFakeIdValue] = useState("480");
@@ -206,6 +216,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       if (pathResult.success) {
         setInstallPath(pathResult.installPath || "");
         if (pathResult.sizeOnDisk) setGameSize(pathResult.sizeOnDisk);
+        if (pathResult.buildid) setInstalledBuild(pathResult.buildid);
 
         if (pathResult.installPath) {
           const gbResult = await checkGoldbergStatus(pathResult.installPath);
@@ -955,16 +966,37 @@ export function GameDetail({ appid }: GameDetailProps) {
             )}
             {luatoolsFixes.map((f: any) => {
               // Per fix: the manifest (version) button FIRST, then the Apply-fix
-              // button, then the tag(s) as a caption BELOW. This mirrors the real
-              // workflow order — set the compatible game version, then apply the
-              // fix — and keeps the tags reading as a label for the entry above.
+              // button. Order mirrors the real workflow — set the compatible game
+              // version, then apply the fix. The fix's label tags ride as the
+              // Apply-fix button's own `description` (snug under it, like every
+              // other button's sub-line) instead of a detached Field row.
               // Both actions need the game installed + a connected account.
               // hasFix===false → no crack, so no Apply-fix button (fail-open on
-              // unknown hasFix). A title, if the catalogue ever sends one, heads
-              // the entry (empty for current fixes, where the tag is the label).
+              // unknown hasFix).
               const canAct = gameInstalled && luatoolsConnected;
               const busyManifest = busy === "manifest";
-              const tags = luaFixTagNames(f);
+              // A Denuvo fix is built for one Steam build (a bare-number tag). Warn
+              // — but don't block — when the installed build differs; the manifest
+              // button is the way to land on it. Non-numeric tags are the label.
+              const buildTag = luaFixBuildTag(f);
+              const labelTags = luaFixTagList(f)
+                .filter((s) => s !== buildTag)
+                .join(" · ");
+              const buildNote = buildTag
+                ? (installedBuild
+                    ? (String(installedBuild) === buildTag
+                        ? `On the build this fix needs (${buildTag})`
+                        : `⚠ Needs build ${buildTag} · you have ${installedBuild} — install the compatible version first`)
+                    : `Needs build ${buildTag}`)
+                : "";
+              const manifestDesc = [buildNote, "Downgrades the game to this fix's version. Restart Steam, re-download the game, then apply the fix."]
+                .filter(Boolean)
+                .join(". ");
+              // If there's no manifest button, surface the build note on Apply fix
+              // (with the label tags) so the warning isn't lost.
+              const applyDesc = [(!f?.hasManifest ? buildNote : ""), labelTags]
+                .filter(Boolean)
+                .join(" · ") || undefined;
               return (
                 <Fragment key={String(f.id)}>
                   {f?.title && (
@@ -975,7 +1007,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                   {f?.hasManifest && (
                     <ActionButton
                       label={busyManifest ? "Installing version…" : "Install the game version this fix needs"}
-                      description="Downgrades the game to this fix's version. Restart Steam, re-download the game, then apply the fix."
+                      description={manifestDesc}
                       onClick={() => handleInstallManifest(String(f.id))}
                       disabled={!canAct || busyManifest || !!isFixInProgress}
                     />
@@ -983,14 +1015,10 @@ export function GameDetail({ appid }: GameDetailProps) {
                   {f?.hasFix !== false && (
                     <ActionButton
                       label="Apply fix"
+                      description={applyDesc}
                       onClick={() => handleApplyLuatoolsFix(String(f.id))}
                       disabled={!canAct || !!isFixInProgress || busyManifest}
                     />
-                  )}
-                  {tags && (
-                    <PanelSectionRow>
-                      <Field description={tags} />
-                    </PanelSectionRow>
                   )}
                 </Fragment>
               );
