@@ -102,14 +102,6 @@ function luaFixTagNames(f: any): string {
     .join(" · ");
 }
 
-// The line under the button: tag names, then the free-text description if any.
-function luaFixSubtitle(f: any): string {
-  // Tag names only. The LuaTools `description` is a long how-to (markdown with
-  // warnings/steps/links meant for the web page), not a one-line subtitle —
-  // dumping it inline is an unreadable wall of text.
-  return luaFixTagNames(f);
-}
-
 export function GameDetail({ appid }: GameDetailProps) {
   const t = useT();
   const [gameName, setGameName] = useState(`Game ${appid}`);
@@ -907,9 +899,10 @@ export function GameDetail({ appid }: GameDetailProps) {
       hideTitle: true,
       content: (
         <>
-      {/* "Fixes" (cracks) vs "Repairs" (plumbing) are distinct subsections, so
-          each keeps its own title now that the tab is "Fixes & Repairs". */}
-      <PanelSection title={t("fixes")}>
+      {/* Three subsections under the "Fixes & Repairs" tab: LuaTools Fixes (the
+          public catalogue), Fixes (Steamless / Goldberg cracks), and Repairs
+          (install/account plumbing). Each keeps its own title. */}
+      <PanelSection title="LuaTools Fixes">
         <ActionButton
           label={busy === "fixes" ? t("checkingForFixes") : t("checkForFixes")}
           onClick={handleCheckFixes}
@@ -961,23 +954,23 @@ export function GameDetail({ appid }: GameDetailProps) {
               </>
             )}
             {luatoolsFixes.map((f: any) => {
-              // Layout B: a header row (title + tags/description) then up to two
-              // action buttons gated by hasFix/hasManifest (mirrors LuaTools' two
-              // buttons). Both need the game installed + an account. hasFix===false
-              // → no crack, so no Apply-fix button (fail-open on unknown hasFix).
+              // Per fix: the manifest (version) button FIRST, then the Apply-fix
+              // button, then the tag(s) as a caption BELOW. This mirrors the real
+              // workflow order — set the compatible game version, then apply the
+              // fix — and keeps the tags reading as a label for the entry above.
+              // Both actions need the game installed + a connected account.
+              // hasFix===false → no crack, so no Apply-fix button (fail-open on
+              // unknown hasFix). A title, if the catalogue ever sends one, heads
+              // the entry (empty for current fixes, where the tag is the label).
               const canAct = gameInstalled && luatoolsConnected;
               const busyManifest = busy === "manifest";
+              const tags = luaFixTagNames(f);
               return (
                 <Fragment key={String(f.id)}>
-                  <PanelSectionRow>
-                    <Field label={f.title || undefined} description={luaFixSubtitle(f)} />
-                  </PanelSectionRow>
-                  {f?.hasFix !== false && (
-                    <ActionButton
-                      label="Apply fix"
-                      onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                      disabled={!canAct || !!isFixInProgress || busyManifest}
-                    />
+                  {f?.title && (
+                    <PanelSectionRow>
+                      <Field label={f.title} />
+                    </PanelSectionRow>
                   )}
                   {f?.hasManifest && (
                     <ActionButton
@@ -986,6 +979,18 @@ export function GameDetail({ appid }: GameDetailProps) {
                       onClick={() => handleInstallManifest(String(f.id))}
                       disabled={!canAct || busyManifest || !!isFixInProgress}
                     />
+                  )}
+                  {f?.hasFix !== false && (
+                    <ActionButton
+                      label="Apply fix"
+                      onClick={() => handleApplyLuatoolsFix(String(f.id))}
+                      disabled={!canAct || !!isFixInProgress || busyManifest}
+                    />
+                  )}
+                  {tags && (
+                    <PanelSectionRow>
+                      <Field description={tags} />
+                    </PanelSectionRow>
                   )}
                 </Fragment>
               );
@@ -1012,6 +1017,12 @@ export function GameDetail({ appid }: GameDetailProps) {
             />
           </>
         )}
+      </PanelSection>
+
+      {/* Fixes — Steamless (DRM strip) and Goldberg (Steam-API emulator). These
+          are cracks applied to the installed game, distinct from the LuaTools
+          catalogue above and the install/account Repairs below. */}
+      <PanelSection title={t("fixes")}>
         {!steamlessInstalled ? (
           <ActionButton
             label={
