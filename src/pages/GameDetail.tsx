@@ -104,9 +104,10 @@ function luaFixTagNames(f: any): string {
 
 // The line under the button: tag names, then the free-text description if any.
 function luaFixSubtitle(f: any): string {
-  const tags = luaFixTagNames(f);
-  const desc = typeof f?.description === "string" ? f.description.trim() : "";
-  return [tags, desc].filter(Boolean).join(" — ");
+  // Tag names only. The LuaTools `description` is a long how-to (markdown with
+  // warnings/steps/links meant for the web page), not a one-line subtitle —
+  // dumping it inline is an unreadable wall of text.
+  return luaFixTagNames(f);
 }
 
 export function GameDetail({ appid }: GameDetailProps) {
@@ -149,6 +150,12 @@ export function GameDetail({ appid }: GameDetailProps) {
     connect: handleConnectLuatools,
     refresh: refreshLuatoolsStatus,
   } = useLuatoolsConnect(toast, t);
+
+  // "Actually downloaded" — a game can be ADDED (path reserved in the .acf)
+  // without content on disk; the fix extracts INTO the game folder, so gate on
+  // real bytes present, not just a resolved path. gameSize is the same
+  // sizeOnDisk we already show in the header, so it's a reliable signal.
+  const gameInstalled = !!installPath && gameSize > 0;
 
   const loadInstalledFixes = async () => {
     const result = await getInstalledFixes();
@@ -923,7 +930,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             {/* Gate 1 — the fix is applied INTO the installed game dir, so the
                 game must already be installed (via the normal flow). Without a
                 path there's nowhere to drop the fix. */}
-            {luatoolsFixes.length > 0 && !installPath && (
+            {luatoolsFixes.length > 0 && !gameInstalled && (
               <PanelSectionRow>
                 <Field description={
                   <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -936,7 +943,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             {/* Gate 2 — the listing is public but downloading a fix needs a
                 session. Mirror the QAM Add-Game pattern (reason row + contextual
                 connect button); canonical connect/disconnect stays in Settings. */}
-            {luatoolsFixes.length > 0 && installPath && !luatoolsConnected && (
+            {luatoolsFixes.length > 0 && gameInstalled && !luatoolsConnected && (
               <>
                 <PanelSectionRow>
                   <Field description={
@@ -958,7 +965,7 @@ export function GameDetail({ appid }: GameDetailProps) {
               // action buttons gated by hasFix/hasManifest (mirrors LuaTools' two
               // buttons). Both need the game installed + an account. hasFix===false
               // → no crack, so no Apply-fix button (fail-open on unknown hasFix).
-              const canAct = !!installPath && luatoolsConnected;
+              const canAct = gameInstalled && luatoolsConnected;
               const busyManifest = busy === "manifest";
               return (
                 <Fragment key={String(f.id)}>
