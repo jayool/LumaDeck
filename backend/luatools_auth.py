@@ -297,9 +297,7 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
             from downloads import _process_and_install_lua
             await _process_and_install_lua(appid, zip_path, pin=True)
             logger.info(f"LuaTools: version manifest installed + pinned for {appid}")
-            return {"success": True, "needsRestart": True,
-                    "message": "Version manifest installed. Restart Steam to download "
-                               "this build, then apply the fix."}
+            return {"success": True, "needsRestart": True}
         except Exception as exc:
             logger.warning(f"LuaTools: manifest install failed for {appid}: {exc}")
             return {"success": False, "error": str(exc)}

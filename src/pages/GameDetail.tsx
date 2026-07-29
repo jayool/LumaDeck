@@ -436,7 +436,7 @@ export function GameDetail({ appid }: GameDetailProps) {
     const r: any = await downloadLuatoolsFix(appid, fixId, installPath, "manifest");
     setBusy("");
     if (r?.success) {
-      toast("Version manifest installed", "Restart Steam manually, then apply the fix.", 6000);
+      toast("Compatible version set", "Restart Steam, re-download the game, then apply the fix.", 6000);
     } else {
       toast(t("toastError"), r?.error || "", 5000);
     }
@@ -941,34 +941,30 @@ export function GameDetail({ appid }: GameDetailProps) {
               </>
             )}
             {luatoolsFixes.map((f: any) => {
-              // Each entry can offer up to two actions, gated by hasFix/hasManifest
-              // (mirrors LuaTools' two buttons). Both need the game installed + an
-              // account. hasFix===false → no crack to download: show the entry as an
-              // info row instead of a dead fix button (fail-open on unknown hasFix).
+              // Layout B: a header row (title + tags/description) then up to two
+              // action buttons gated by hasFix/hasManifest (mirrors LuaTools' two
+              // buttons). Both need the game installed + an account. hasFix===false
+              // → no crack, so no Apply-fix button (fail-open on unknown hasFix).
               const canAct = !!installPath && luatoolsConnected;
+              const busyManifest = busy === "manifest";
               return (
                 <Fragment key={String(f.id)}>
-                  {f?.hasFix === false ? (
-                    <PanelSectionRow>
-                      <Field
-                        label={f.title || undefined}
-                        description={<span style={{ opacity: 0.7 }}>{luaFixSubtitle(f)}</span>}
-                      />
-                    </PanelSectionRow>
-                  ) : (
+                  <PanelSectionRow>
+                    <Field label={f.title || undefined} description={luaFixSubtitle(f)} />
+                  </PanelSectionRow>
+                  {f?.hasFix !== false && (
                     <ActionButton
-                      label={f.title || ""}
-                      description={luaFixSubtitle(f)}
+                      label="Apply fix"
                       onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                      disabled={!canAct || !!isFixInProgress || busy === "manifest"}
+                      disabled={!canAct || !!isFixInProgress || busyManifest}
                     />
                   )}
                   {f?.hasManifest && (
                     <ActionButton
-                      label={busy === "manifest" ? "Installing manifest…" : "Install version manifest"}
-                      description="Pins the game to this fix's build (Steam re-downloads it). Restart Steam manually after, then apply the fix."
+                      label={busyManifest ? "Installing version…" : "Install the game version this fix needs"}
+                      description="Downgrades the game to this fix's version. Restart Steam, re-download the game, then apply the fix."
                       onClick={() => handleInstallManifest(String(f.id))}
-                      disabled={!canAct || busy === "manifest" || !!isFixInProgress}
+                      disabled={!canAct || busyManifest || !!isFixInProgress}
                     />
                   )}
                 </Fragment>
