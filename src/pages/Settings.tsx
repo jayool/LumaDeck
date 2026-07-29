@@ -756,8 +756,11 @@ export function Settings() {
           </ButtonItem>
         </PanelSectionRow>
         {renderCredLine("ryuu")}
-        {/* LuaTools account — authenticated fix catalogue (Discord login) */}
-        <div style={{ height: "12px" }} />
+      </PanelSection>
+
+      {/* LuaTools account — authenticated fix catalogue (Discord login). Own
+          section header, consistent with Hubcap/Ryuu above. */}
+      <PanelSection title="LuaTools fixes">
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -779,8 +782,7 @@ export function Settings() {
               : "Log in with Discord"}
           </ButtonItem>
         </PanelSectionRow>
-        {/* Tail anchor: without it, Game Mode's navbar covers this last status
-            line (Ryuu is the bottom of the API-credentials page). */}
+        {/* Tail anchor: without it, Game Mode's navbar covers this last status line. */}
         <ScrollAnchor />
       </PanelSection>
         </>

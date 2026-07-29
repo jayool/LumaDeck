@@ -395,16 +395,29 @@ export function GameDetail({ appid }: GameDetailProps) {
     // The LuaTools catalogue is the only fix source now. Its listing is public
     // (no login needed) — the same data the lua.tools/fixes/<appid> web page shows;
     // a connected account is only needed to actually apply/download a fix.
-    const r: any = await listLuatoolsFixes(appid);
-    setBusy("");
-    if (r?.success) {
-      const list = r.fixes || [];
-      setLuatoolsFixes(list);
-      toast(list.length ? t("toastFixesFound") : t("toastNoFixes"), gameName);
-    } else {
+    try {
+      // Guard against the backend HTTP call hanging (or the bridge rejecting):
+      // race a hard 20s timeout so the button never stays stuck on "checking".
+      const r: any = await Promise.race([
+        listLuatoolsFixes(appid),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 20000)),
+      ]);
+      if (r?.success) {
+        const list = r.fixes || [];
+        setLuatoolsFixes(list);
+        toast(list.length ? t("toastFixesFound") : t("toastNoFixes"), gameName);
+      } else {
+        setLuatoolsFixes([]);
+        setLuatoolsError(r?.error || "unknown_error");
+        toast(t("toastError"), r?.error || t("failedToCheck"), 4000);
+      }
+    } catch {
       setLuatoolsFixes([]);
-      setLuatoolsError(r?.error || "unknown_error");
-      toast(t("toastError"), r?.error || t("failedToCheck"), 4000);
+      setLuatoolsError("request_failed");
+      toast(t("toastError"), t("failedToCheck"), 4000);
+    } finally {
+      setBusy("");
     }
   };
 
