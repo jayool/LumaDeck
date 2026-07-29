@@ -236,6 +236,12 @@ async def list_luatools_fixes(appid: int) -> dict:
             f"https://lua.tools/api/denuvo/fixes?appid={appid}",
             headers=headers, timeout=15,
         )
+        if resp.status_code == 404:
+            # lua.tools returns 404 for a game with no catalogue entry (same as the
+            # web page lua.tools/fixes/<appid>). That's "no fixes", not an error —
+            # surface it as an empty result so the UI shows "No fixes for this game".
+            logger.info(f"LuaTools: fixes list for {appid} -> 404 (no catalogue entry)")
+            return {"success": True, "fixes": []}
         if resp.status_code != 200:
             logger.warning(f"LuaTools: fixes list for {appid} -> HTTP {resp.status_code}")
             return {"success": False, "error": f"api_error_{resp.status_code}"}
