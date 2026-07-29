@@ -6,6 +6,7 @@ import asyncio
 import os
 import posixpath
 import re
+import shutil
 import zipfile
 from datetime import datetime
 from typing import Any, Dict
@@ -144,6 +145,40 @@ def _is_path_safe(base_dir: str, member_name: str) -> bool:
     return resolved.startswith(base_resolved + os.sep) or resolved == base_resolved
 
 
+# ---------------------------------------------------------------------------
+# Original-file backups (so "unfix" can RESTORE, not just delete)
+# ---------------------------------------------------------------------------
+#
+# A crack routinely OVERWRITES original game files (steam_api64.dll, the exe,
+# …). The old flow extracted over them with no copy, and unfix only deleted the
+# logged files — so removing a fix left the game missing whatever the crack had
+# replaced. We now stash each about-to-be-overwritten original under a per-appid
+# backup dir before writing, first-write-wins (keeps the pristine original even
+# across layered fixes). unfix then restores from there instead of deleting.
+# Files the fix purely ADDED have no backup → unfix deletes them, as before.
+
+def _fix_backup_root(install_path: str, appid: int) -> str:
+    return os.path.join(install_path, f"luatools-backup-{appid}")
+
+
+def _backup_original_file(install_path: str, appid: int, rel_path: str) -> None:
+    """Copy an original into the backup dir before a fix overwrites it. No-op if
+    the target doesn't exist (a new file) or is already backed up (keep the
+    pristine original from before the first fix)."""
+    rel = rel_path.replace("\\", "/")
+    target = os.path.join(install_path, rel.replace("/", os.sep))
+    if not os.path.isfile(target):
+        return
+    backup_path = os.path.join(_fix_backup_root(install_path, appid), rel.replace("/", os.sep))
+    if os.path.exists(backup_path):
+        return
+    try:
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        shutil.copy2(target, backup_path)
+    except Exception:
+        logger.warning(f"LumaDeck: could not back up original '{rel}' for {appid}")
+
+
 def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: str, game_name: str, download_url: str) -> None:
     """Synchronous extraction of fix zip (runs in executor)."""
     extracted_files = []
@@ -170,6 +205,7 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
                     target = os.path.join(install_path, target_path)
                     os.makedirs(os.path.dirname(target), exist_ok=True)
                     if not member.endswith("/"):
+                        _backup_original_file(install_path, appid, target_path)
                         with open(target, "wb") as output:
                             output.write(source.read())
                         extracted_files.append(target_path.replace("\\", "/"))
@@ -181,6 +217,7 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
                 if not _is_path_safe(install_path, member):
                     logger.warning(f"Zip Slip blocked: {member}")
                     continue
+                _backup_original_file(install_path, appid, member)
                 archive.extract(member, install_path)
                 extracted_files.append(member.replace("\\", "/"))
 
@@ -506,14 +543,30 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
 
         _set_unfix_state(appid, {"status": "removing", "progress": f"Removing {len(files_to_delete)} files..."})
         deleted_count = 0
+        restored_count = 0
+        backup_root = _fix_backup_root(install_path, appid)
         for file_path in files_to_delete:
             try:
-                full_path = os.path.join(install_path, file_path)
-                if os.path.exists(full_path):
+                rel = file_path.replace("\\", "/").replace("/", os.sep)
+                full_path = os.path.join(install_path, rel)
+                backup_path = os.path.join(backup_root, rel)
+                if os.path.isfile(backup_path):
+                    # The fix overwrote an original here → put the original back
+                    # (over the crack file). shutil.move consumes the backup.
+                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                    shutil.move(backup_path, full_path)
+                    restored_count += 1
+                elif os.path.exists(full_path):
+                    # Purely added by the fix → remove it.
                     os.remove(full_path)
                     deleted_count += 1
             except Exception:
                 pass
+
+        # Drop the backup tree only when no fixes remain; otherwise other fixes'
+        # originals still live there. Restored files were already moved out.
+        if not remaining_fixes:
+            shutil.rmtree(backup_root, ignore_errors=True)
 
         if remaining_fixes:
             try:
@@ -527,7 +580,11 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
             except Exception:
                 pass
 
-        _set_unfix_state(appid, {"status": "done", "success": True, "filesRemoved": deleted_count})
+        _set_unfix_state(appid, {
+            "status": "done", "success": True,
+            "filesRemoved": deleted_count + restored_count,
+            "filesRestored": restored_count,
+        })
     except Exception as exc:
         _set_unfix_state(appid, {"status": "failed", "error": str(exc)})
 
