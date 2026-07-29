@@ -920,19 +920,24 @@ export function GameDetail({ appid }: GameDetailProps) {
           label={busy === "fixes" ? t("checkingForFixes") : t("checkForFixes")}
           onClick={handleCheckFixes}
           disabled={busy === "fixes"}
+          description={
+            !luatoolsFixes ? undefined
+              : luatoolsFixes.length === 0
+                ? (luatoolsError ? "Couldn't load fixes" : "No fixes for this game")
+                : (luatoolsConnected && !gameInstalled)
+                  ? (luatoolsFixes.some((f: any) => f?.hasManifest)
+                      ? "Install the correct build first to apply a fix"
+                      : "Install the game first to apply a fix")
+                  : undefined
+          }
         />
         {/* LuaTools catalogue — public listing (crack / online / Denuvo fixes).
-            Loaded after "Check for Fixes". Applying a fix needs a connected account. */}
+            Loaded after "Check for Fixes". Applying a fix needs a connected account.
+            The empty-state / install-gate lines ride as the button's description
+            above (compact); the connect prompt needs its own button, so it stays a
+            row. */}
         {luatoolsFixes && (
           <>
-            {luatoolsFixes.length === 0 && (
-              <PanelSectionRow>
-                <Field
-                  icon={<FaExclamationTriangle color="#ffaa00" />}
-                  label={luatoolsError ? "Couldn't load fixes" : "No fixes for this game"}
-                />
-              </PanelSectionRow>
-            )}
             {/* Gate 1 — the listing is public but downloading anything (fix or
                 version) needs a session. Show first, regardless of install state,
                 since both buttons are gated on it. Mirror the QAM Add-Game pattern
@@ -955,67 +960,43 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </>
             )}
-            {/* Gate 2 — Apply fix patches files INTO the game dir, so it needs the
-                game on disk. The version button does NOT (it installs/pins the
-                build via Steam), so this only tempers Apply fix, not the whole
-                section. */}
-            {luatoolsFixes.length > 0 && luatoolsConnected && !gameInstalled && (
-              <PanelSectionRow>
-                <Field description={
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                    <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                    {luatoolsFixes.some((f: any) => f?.hasManifest)
-                      ? "Install the correct build first to apply a fix"
-                      : "Install the game first to apply a fix"}
-                  </span>
-                } />
-              </PanelSectionRow>
-            )}
             {luatoolsFixes.map((f: any) => {
-              // Per fix: the manifest (version) button FIRST, then the Apply-fix
-              // button. Order mirrors the real workflow — set the compatible game
-              // version, then apply the fix. The fix's label tags ride as the
-              // Apply-fix button's own `description` (snug under it, like every
-              // other button's sub-line) instead of a detached Field row.
-              // Apply fix patches files in the game dir → needs it installed +
-              // connected. The version button only needs a connected account (it
-              // installs/pins the build via Steam), so it's gated on connect only.
-              // hasFix===false → no crack, so no Apply-fix button (fail-open on
-              // unknown hasFix).
+              // Per fix: a header (name + tags) then the version button and the
+              // Apply-fix button (version first — set the build, then apply). The
+              // NAME is the fix's LuaTools title ("voices38 (crack)", "Fix"); when
+              // that title is just a build number, show it "Build 23314029" like
+              // LuaTools. Tags ("SteamTools", "Achievements Fix", "Generic") are the
+              // subtitle. Apply fix patches files in the game dir → needs it
+              // installed + connected; the version button only needs a connected
+              // account. hasFix===false → no crack, so no Apply-fix button.
               const canApply = gameInstalled && luatoolsConnected;
               const canInstallVersion = luatoolsConnected;
               const busyManifest = busy === "manifest";
-              // A Denuvo fix is built for one Steam build (a bare-number tag). Warn
-              // — but don't block — when the installed build differs; the version
-              // button is the way to land on it. Non-numeric tags are the label.
               const buildTag = luaFixBuildTag(f);
-              // Tags that carry the build number are shown via buildNote, not as
-              // labels; and the title, when it's just the build number, is not a
-              // useful header (buildNote says it better).
-              const labelTags = luaFixTagList(f)
-                .filter((s) => !buildTag || !s.includes(buildTag))
-                .join(" · ");
-              const titleIsBuild = !!buildTag && String(f?.title ?? "").includes(buildTag);
+              const rawTitle = String(f?.title ?? "").trim();
+              const fixName = /^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : rawTitle;
+              const tagsSub = luaFixTagList(f).join(" · ");
+              // A Denuvo fix targets one Steam build. Warn (don't block) when the
+              // build Steam reports differs; the version button is how you land on
+              // it. No trailing period — manifestDesc joins with ". ".
               const buildNote = buildTag
                 ? (installedBuild
                     ? (String(installedBuild) === buildTag
                         ? `On the build this fix needs (${buildTag})`
-                        : `⚠ This fix needs build ${buildTag}, you have ${installedBuild}. Install the compatible version first.`)
+                        : `⚠ This fix needs build ${buildTag}, you have ${installedBuild}. Install the compatible version first`)
                     : `Needs build ${buildTag}`)
                 : "";
               const manifestDesc = [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
                 .filter(Boolean)
                 .join(". ");
-              // If there's no manifest button, surface the build note on Apply fix
-              // (with the label tags) so the warning isn't lost.
-              const applyDesc = [(!f?.hasManifest ? buildNote : ""), labelTags]
-                .filter(Boolean)
-                .join(" · ") || undefined;
+              // With no version button, surface the build note on Apply fix so it
+              // isn't lost.
+              const applyDesc = (!f?.hasManifest ? buildNote : "") || undefined;
               return (
                 <Fragment key={String(f.id)}>
-                  {f?.title && !titleIsBuild && (
+                  {(fixName || tagsSub) && (
                     <PanelSectionRow>
-                      <Field label={f.title} />
+                      <Field label={fixName || undefined} description={tagsSub || undefined} />
                     </PanelSectionRow>
                   )}
                   {f?.hasManifest && (
