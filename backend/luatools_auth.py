@@ -275,9 +275,41 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
-    # Reuse the existing apply pipeline: it streams the (signed) URL, extracts into
-    # the game dir with zip-slip protection, logs the [FIX] block, and the frontend
-    # computes WINEDLLOVERRIDES from the dropped DLLs afterwards.
+    if slot == "manifest":
+        # A version manifest (not a crack): a .lua/zip whose setManifestid pins the
+        # game to the build this fix targets. Install it via steamidra_lite --pin,
+        # which re-homes those gids onto SLSsteam's ManifestIds → Steam re-plans the
+        # depots to that (usually older) build. This is a downgrade, so the caller
+        # must restart Steam for it to take effect; nothing is dropped into the game
+        # dir here (that's the fix slot's job).
+        import tempfile
+        tmp_dir = tempfile.mkdtemp(prefix=f"luatools_manifest_{appid}_")
+        zip_path = os.path.join(tmp_dir, f"{appid}_manifest.zip")
+        try:
+            client = await ensure_http_client("LuaToolsManifestDL")
+            async with client.stream("GET", signed_url, follow_redirects=True,
+                                      timeout=60) as r:
+                if r.status_code != 200:
+                    return {"success": False, "error": f"download_error_{r.status_code}"}
+                with open(zip_path, "wb") as fh:
+                    async for chunk in r.aiter_bytes():
+                        fh.write(chunk)
+            from downloads import _process_and_install_lua
+            await _process_and_install_lua(appid, zip_path, pin=True)
+            logger.info(f"LuaTools: version manifest installed + pinned for {appid}")
+            return {"success": True, "needsRestart": True,
+                    "message": "Version manifest installed. Restart Steam to download "
+                               "this build, then apply the fix."}
+        except Exception as exc:
+            logger.warning(f"LuaTools: manifest install failed for {appid}: {exc}")
+            return {"success": False, "error": str(exc)}
+        finally:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # slot="fix" (default): reuse the existing apply pipeline — it streams the
+    # (signed) URL, extracts into the game dir with zip-slip protection, logs the
+    # [FIX] block, and the frontend computes WINEDLLOVERRIDES from the dropped DLLs.
     from fixes import apply_game_fix
     return await apply_game_fix(appid, signed_url, install_path,
                                 fix_type="LuaTools Catalog")

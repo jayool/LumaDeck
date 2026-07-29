@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   PanelSection,
   PanelSectionRow,
@@ -421,6 +421,24 @@ export function GameDetail({ appid }: GameDetailProps) {
       setFixStatus({ status: "queued" });
     } else {
       toast(t("toastError"), result.error || "", 5000);
+    }
+  };
+
+  const handleInstallManifest = async (fixId: string) => {
+    if (!installPath) {
+      toast(t("toastError"), t("installPathNotFound"), 4000);
+      return;
+    }
+    // slot="manifest" pins the game to the fix's build via SLSsteam ManifestIds.
+    // It's a Steam-side downgrade: the user must restart Steam MANUALLY so Steam
+    // re-downloads that build, then apply the fix. We never auto-restart.
+    setBusy("manifest");
+    const r: any = await downloadLuatoolsFix(appid, fixId, installPath, "manifest");
+    setBusy("");
+    if (r?.success) {
+      toast("Version manifest installed", "Restart Steam manually, then apply the fix.", 6000);
+    } else {
+      toast(t("toastError"), r?.error || "", 5000);
     }
   };
 
@@ -922,34 +940,40 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </>
             )}
-            {luatoolsFixes.map((f: any) =>
-              // hasFix === false → manifest-only entry (no crack to download).
-              // Mirror LuaTools: hide the fix button. Keep the entry visible as an
-              // info row (not a dead/erroring button) until Phase 2 adds manifest
-              // support. Unknown/missing hasFix stays actionable (fail-open).
-              f?.hasFix === false ? (
-                <PanelSectionRow key={String(f.id)}>
-                  <Field
-                    label={f.title || undefined}
-                    description={
-                      <span style={{ opacity: 0.7 }}>
-                        {[luaFixSubtitle(f), "Manifest only"]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    }
-                  />
-                </PanelSectionRow>
-              ) : (
-                <ActionButton
-                  key={String(f.id)}
-                  label={f.title || ""}
-                  description={luaFixSubtitle(f)}
-                  onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                  disabled={!installPath || !luatoolsConnected || !!isFixInProgress}
-                />
-              )
-            )}
+            {luatoolsFixes.map((f: any) => {
+              // Each entry can offer up to two actions, gated by hasFix/hasManifest
+              // (mirrors LuaTools' two buttons). Both need the game installed + an
+              // account. hasFix===false → no crack to download: show the entry as an
+              // info row instead of a dead fix button (fail-open on unknown hasFix).
+              const canAct = !!installPath && luatoolsConnected;
+              return (
+                <Fragment key={String(f.id)}>
+                  {f?.hasFix === false ? (
+                    <PanelSectionRow>
+                      <Field
+                        label={f.title || undefined}
+                        description={<span style={{ opacity: 0.7 }}>{luaFixSubtitle(f)}</span>}
+                      />
+                    </PanelSectionRow>
+                  ) : (
+                    <ActionButton
+                      label={f.title || ""}
+                      description={luaFixSubtitle(f)}
+                      onClick={() => handleApplyLuatoolsFix(String(f.id))}
+                      disabled={!canAct || !!isFixInProgress || busy === "manifest"}
+                    />
+                  )}
+                  {f?.hasManifest && (
+                    <ActionButton
+                      label={busy === "manifest" ? "Installing manifest…" : "Install version manifest"}
+                      description="Pins the game to this fix's build (Steam re-downloads it). Restart Steam manually after, then apply the fix."
+                      onClick={() => handleInstallManifest(String(f.id))}
+                      disabled={!canAct || busy === "manifest" || !!isFixInProgress}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
           </>
         )}
         {isFixInProgress && (

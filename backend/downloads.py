@@ -96,7 +96,7 @@ async def _steamidra_supports_name(python: str, script: str) -> bool:
 
 async def _invoke_steamidra_lite(
     input_path: str, manifests_dir: str = "", appid_for_log: int = 0,
-    game_name: str = "",
+    game_name: str = "", pin: bool = False,
 ) -> tuple[bool, str]:
     """Run steamidra_lite.py on `input_path` (a Hubcap zip, or — when
     `manifests_dir` is supplied — a bare .lua file alongside an extracted
@@ -117,6 +117,11 @@ async def _invoke_steamidra_lite(
     cmd = [python, script, input_path]
     if manifests_dir:
         cmd.extend(["--manifests-dir", manifests_dir])
+    # --pin keeps the .lua's setManifestid pins and re-homes them onto SLSsteam's
+    # ManifestIds (freezes the game to the .lua's build). Used by the LuaTools
+    # version-manifest install; the normal game install stays no-pin (latest).
+    if pin:
+        cmd.append("--pin")
     # Pass the canonical name so steamidra writes it as the .acf installdir
     # instead of falling back to the appid (which makes Steam re-download the
     # whole game if the .acf is later regenerated — e.g. by Repair appmanifest).
@@ -789,7 +794,7 @@ def _count_app_depot_keys(appid: int) -> int:
     return count
 
 
-async def _process_and_install_lua(appid: int, zip_path: str) -> None:
+async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False) -> None:
     """Process the downloaded Hubcap zip via lumalinux's steamidra_lite.
 
     Approach (LumaDeck flow):
@@ -894,6 +899,7 @@ async def _process_and_install_lua(appid: int, zip_path: str) -> None:
             manifests_dir=str(manifests_dir),
             appid_for_log=appid,
             game_name=game_name or "",
+            pin=pin,
         )
         if not ok:
             raise RuntimeError(
