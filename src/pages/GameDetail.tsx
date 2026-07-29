@@ -448,13 +448,10 @@ export function GameDetail({ appid }: GameDetailProps) {
   };
 
   const handleInstallManifest = async (fixId: string) => {
-    if (!installPath) {
-      toast(t("toastError"), t("installPathNotFound"), 4000);
-      return;
-    }
-    // slot="manifest" pins the game to the fix's build via SLSsteam ManifestIds.
-    // It's a Steam-side downgrade: the user must restart Steam MANUALLY so Steam
-    // re-downloads that build, then apply the fix. We never auto-restart.
+    // slot="manifest" needs no install path — it pins the build via SLSsteam
+    // ManifestIds and Steam (re)downloads it, so it works whether the game is
+    // already installed (a downgrade) or not (a fresh install at that build).
+    // The user must restart Steam MANUALLY; we never auto-restart.
     setBusy("manifest");
     const r: any = await downloadLuatoolsFix(appid, fixId, installPath, "manifest");
     setBusy("");
@@ -931,29 +928,18 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </PanelSectionRow>
             )}
-            {/* Gate 1 — the fix is applied INTO the installed game dir, so the
-                game must already be installed (via the normal flow). Without a
-                path there's nowhere to drop the fix. */}
-            {luatoolsFixes.length > 0 && !gameInstalled && (
-              <PanelSectionRow>
-                <Field description={
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                    <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                    Install the game first to apply a fix
-                  </span>
-                } />
-              </PanelSectionRow>
-            )}
-            {/* Gate 2 — the listing is public but downloading a fix needs a
-                session. Mirror the QAM Add-Game pattern (reason row + contextual
-                connect button); canonical connect/disconnect stays in Settings. */}
-            {luatoolsFixes.length > 0 && gameInstalled && !luatoolsConnected && (
+            {/* Gate 1 — the listing is public but downloading anything (fix or
+                version) needs a session. Show first, regardless of install state,
+                since both buttons are gated on it. Mirror the QAM Add-Game pattern
+                (reason row + contextual connect button); canonical connect stays
+                in Settings. */}
+            {luatoolsFixes.length > 0 && !luatoolsConnected && (
               <>
                 <PanelSectionRow>
                   <Field description={
                     <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                       <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                      Log in with Discord to apply these fixes
+                      Log in with Discord to install versions and apply fixes
                     </span>
                   } />
                 </PanelSectionRow>
@@ -964,19 +950,36 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </>
             )}
+            {/* Gate 2 — Apply fix patches files INTO the game dir, so it needs the
+                game on disk. The version button does NOT (it installs/pins the
+                build via Steam), so this only tempers Apply fix, not the whole
+                section. */}
+            {luatoolsFixes.length > 0 && luatoolsConnected && !gameInstalled && (
+              <PanelSectionRow>
+                <Field description={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
+                    Apply fix needs the game downloaded — install the build it needs with the version button below first
+                  </span>
+                } />
+              </PanelSectionRow>
+            )}
             {luatoolsFixes.map((f: any) => {
               // Per fix: the manifest (version) button FIRST, then the Apply-fix
               // button. Order mirrors the real workflow — set the compatible game
               // version, then apply the fix. The fix's label tags ride as the
               // Apply-fix button's own `description` (snug under it, like every
               // other button's sub-line) instead of a detached Field row.
-              // Both actions need the game installed + a connected account.
+              // Apply fix patches files in the game dir → needs it installed +
+              // connected. The version button only needs a connected account (it
+              // installs/pins the build via Steam), so it's gated on connect only.
               // hasFix===false → no crack, so no Apply-fix button (fail-open on
               // unknown hasFix).
-              const canAct = gameInstalled && luatoolsConnected;
+              const canApply = gameInstalled && luatoolsConnected;
+              const canInstallVersion = luatoolsConnected;
               const busyManifest = busy === "manifest";
               // A Denuvo fix is built for one Steam build (a bare-number tag). Warn
-              // — but don't block — when the installed build differs; the manifest
+              // — but don't block — when the installed build differs; the version
               // button is the way to land on it. Non-numeric tags are the label.
               const buildTag = luaFixBuildTag(f);
               const labelTags = luaFixTagList(f)
@@ -989,7 +992,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                         : `⚠ Needs build ${buildTag} · you have ${installedBuild} — install the compatible version first`)
                     : `Needs build ${buildTag}`)
                 : "";
-              const manifestDesc = [buildNote, "Downgrades the game to this fix's version. Restart Steam, re-download the game, then apply the fix."]
+              const manifestDesc = [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
                 .filter(Boolean)
                 .join(". ");
               // If there's no manifest button, surface the build note on Apply fix
@@ -1009,7 +1012,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                       label={busyManifest ? "Installing version…" : "Install the game version this fix needs"}
                       description={manifestDesc}
                       onClick={() => handleInstallManifest(String(f.id))}
-                      disabled={!canAct || busyManifest || !!isFixInProgress}
+                      disabled={!canInstallVersion || busyManifest || !!isFixInProgress}
                     />
                   )}
                   {f?.hasFix !== false && (
@@ -1017,7 +1020,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                       label="Apply fix"
                       description={applyDesc}
                       onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                      disabled={!canAct || !!isFixInProgress || busyManifest}
+                      disabled={!canApply || !!isFixInProgress || busyManifest}
                     />
                   )}
                 </Fragment>
