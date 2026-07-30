@@ -53,9 +53,17 @@ _SUPABASE_ANON = (
 
 _SESSION_FILE = "luatools_session.json"
 
-# Make requests look like the in-client browser (same trick as Ryuu). ⚠️ swap the
-# UA for the real Steam CEF UA if the API turns out to gate on it.
+# Make requests look like the in-client browser (same trick as Ryuu). The
+# http_client stamps a default `lumadeck-v0-decky` UA on every request, which —
+# combined with the browser CORS headers below — is a contradictory shape (bot UA
+# + browser origin) that lua.tools' Cloudflare edge can choke on with a 502. The
+# caller's UA overrides the default (urllib add_header, last write wins), so pin a
+# real Steam-CEF-ish Chromium UA here.
 _BROWSERISH = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36 Valve Steam Client"
+    ),
     "Referer": "https://lua.tools/",
     "Origin": "https://lua.tools",
     "Sec-Fetch-Dest": "empty",
@@ -243,30 +251,48 @@ async def list_luatools_fixes(appid: int) -> dict:
     token = await _access_token()  # None when not connected — that's fine
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    try:
-        client = await ensure_http_client("LuaToolsFixes")
-        resp = await client.get(
-            f"https://lua.tools/api/denuvo/fixes?appid={appid}",
-            headers=headers, timeout=15,
-        )
-        if resp.status_code == 404:
-            # lua.tools returns 404 for a game with no catalogue entry (same as the
-            # web page lua.tools/fixes/<appid>). That's "no fixes", not an error —
-            # surface it as an empty result so the UI shows "No fixes for this game".
-            logger.info(f"LuaTools: fixes list for {appid} -> 404 (no catalogue entry)")
-            return {"success": True, "fixes": []}
-        if resp.status_code != 200:
-            logger.warning(f"LuaTools: fixes list for {appid} -> HTTP {resp.status_code}")
-            return {"success": False, "error": f"api_error_{resp.status_code}"}
-        data = resp.json() or {}
-        # Response shape (from the .NET client): { appId, name, fixes: [ {id,title,
-        # description,tags,hasManifest,hasFix,...} ] }. Pass fixes straight through.
-        fixes = data.get("fixes", [])
-        logger.info(f"LuaTools: fixes list for {appid} -> {len(fixes)} fix(es)")
-        return {"success": True, "fixes": fixes, "raw": data}
-    except Exception as exc:
-        logger.warning(f"LuaTools: fixes list error for {appid}: {exc}")
-        return {"success": False, "error": str(exc)}
+    url = f"https://lua.tools/api/denuvo/fixes?appid={appid}"
+    client = await ensure_http_client("LuaToolsFixes")
+
+    # lua.tools sits behind Cloudflare and returns INTERMITTENT 5xx (mostly 502)
+    # for this endpoint — "almost always 502, sometimes works" is a flaky gateway,
+    # not a hard block. Retry a few times with a short backoff so one bad-gateway
+    # response doesn't fail the whole "Check for Fixes". 404 (no catalogue entry)
+    # and any other 4xx are terminal — those won't fix themselves on retry.
+    last_status = 0
+    last_err = ""
+    for attempt in range(3):
+        try:
+            resp = await client.get(url, headers=headers, timeout=8)
+        except Exception as exc:
+            last_err = str(exc)
+            last_status = 0
+        else:
+            if resp.status_code == 200:
+                data = resp.json() or {}
+                # Response shape (from the .NET client): { appId, name, fixes: [
+                # {id,title,description,tags,hasManifest,hasFix,...} ] }. Passed through.
+                fixes = data.get("fixes", [])
+                logger.info(
+                    f"LuaTools: fixes list for {appid} -> {len(fixes)} fix(es)"
+                    + ("" if attempt == 0 else f" (attempt {attempt + 1})")
+                )
+                return {"success": True, "fixes": fixes, "raw": data}
+            if resp.status_code == 404:
+                # No catalogue entry (same as the web page lua.tools/fixes/<appid>).
+                logger.info(f"LuaTools: fixes list for {appid} -> 404 (no catalogue entry)")
+                return {"success": True, "fixes": []}
+            last_status = resp.status_code
+            if resp.status_code < 500:
+                break  # a non-5xx error is terminal
+        if attempt < 2:
+            await asyncio.sleep(0.5 * (attempt + 1))
+
+    if last_status:
+        logger.warning(f"LuaTools: fixes list for {appid} -> HTTP {last_status} after retries")
+        return {"success": False, "error": f"api_error_{last_status}"}
+    logger.warning(f"LuaTools: fixes list for {appid} failed after retries: {last_err}")
+    return {"success": False, "error": last_err or "request_failed"}
 
 
 async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
