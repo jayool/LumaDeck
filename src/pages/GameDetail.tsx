@@ -21,7 +21,7 @@ import {
   FaCheckCircle,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
-import { listLuatoolsFixes, downloadLuatoolsFix } from "../api";
+import { listLuatoolsFixes, downloadLuatoolsFix, selfHealAcfBuild } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
@@ -422,6 +422,27 @@ export function GameDetail({ appid }: GameDetailProps) {
       if (r?.success) {
         const list = r.fixes || [];
         setLuatoolsFixes(list);
+        // Self-heal: after a manifest-fix downgrade Steam re-stamps the .acf
+        // buildid to the LATEST build even though the content is the older fix
+        // build (the manifest is the true signal, the buildid lies). If the game
+        // is pinned to an UNAMBIGUOUS single manifest build, ask the backend to
+        // fix the buildid — it only writes when the installed depot manifest
+        // matches the pin, so it never labels the game a build it isn't on.
+        try {
+          const mBuilds = new Set(
+            list
+              .filter((f: any) => f?.hasManifest)
+              .map((f: any) => luaFixBuildTag(f))
+              .filter(Boolean),
+          );
+          if (mBuilds.size === 1) {
+            const y = Number([...mBuilds][0]);
+            const heal: any = await selfHealAcfBuild(appid, y);
+            if (heal?.success && heal?.healed) setInstalledBuild(y);
+          }
+        } catch {
+          /* best-effort; never block the fix listing */
+        }
         toast(list.length ? t("toastFixesFound") : t("toastNoFixes"), gameName);
       } else {
         setLuatoolsFixes([]);

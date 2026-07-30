@@ -225,6 +225,110 @@ async def get_pin_status(appid: int) -> dict:
         return {"success": False, "error": f"could not parse: {out}", "pinned": False}
 
 
+async def self_heal_acf_build(appid: int, target_build) -> dict:
+    """Correct the .acf buildid/TargetBuildID to a manifest-fix's build once the
+    pinned content has actually landed on disk.
+
+    Steam re-stamps the .acf `buildid` with the app's appinfo build (the LATEST
+    public build) after EVERY download, so a game pinned + downloaded to an older
+    fix build ends up LABELLED with the latest build even though its files are the
+    older one — the depot manifest is the true version signal, the buildid lies.
+    We can't fix this before/during the download (Steam clobbers our write, and
+    pinning the build into appinfo instead breaks the download planner:
+    active==target => zero delta => the real content never downloads). So we
+    correct it AFTER: once the installed depot manifest equals the pin, the
+    content IS the fix build, and no download is pending to clobber the write
+    (SLSsteam blocks updates for added apps), so buildid=target_build sticks —
+    exactly what a manual edit does, but automatic and only when it's true.
+
+    Gates (never lie): only a PINNED game, and only when EVERY pinned depot's
+    InstalledDepots manifest matches the pin (content provably on the fix build).
+    `target_build` is the fix's LuaTools-title build, supplied by the frontend.
+
+    Returns {success, healed, build?, previous?, reason?}.
+    """
+    try:
+        target_build = int(target_build)
+    except Exception:
+        return {"success": False, "error": "invalid_build"}
+    if target_build <= 0:
+        return {"success": False, "error": "invalid_build"}
+
+    # 1. The game must be pinned; the pin tells us which depot->gid to expect.
+    pin = await get_pin_status(appid)
+    if not pin.get("success") or not pin.get("pinned"):
+        return {"success": True, "healed": False, "reason": "not_pinned"}
+    pinned = {str(d): str(g) for d, g in (pin.get("depots") or {}).items()}
+    if not pinned:
+        return {"success": True, "healed": False, "reason": "no_pinned_depots"}
+
+    # 2. Locate the .acf across all libraries.
+    from steam_utils import get_steam_libraries, detect_steam_install_path, _parse_vdf_simple
+    libs = get_steam_libraries() or [{"path": detect_steam_install_path() or ""}]
+    acf_path = ""
+    for lib in libs:
+        lib_path = lib.get("path") if isinstance(lib, dict) else str(lib)
+        if not lib_path:
+            continue
+        cand = os.path.join(lib_path, "steamapps", f"appmanifest_{appid}.acf")
+        if os.path.exists(cand):
+            acf_path = cand
+            break
+    if not acf_path:
+        return {"success": True, "healed": False, "reason": "no_acf"}
+
+    try:
+        with open(acf_path, "r", encoding="utf-8", errors="ignore") as fh:
+            acf_text = fh.read()
+        app_state = _parse_vdf_simple(acf_text).get("AppState", {}) or {}
+    except Exception as exc:
+        return {"success": False, "error": f"acf_read_failed: {exc}"}
+
+    # 3. Manifest-match: EVERY pinned depot's installed manifest must equal the pin
+    #    (the content is provably on the fix build — not still mid/pre-download).
+    installed = app_state.get("InstalledDepots", {}) or {}
+    for depot, gid in pinned.items():
+        dep = installed.get(depot)
+        inst_gid = str(dep.get("manifest", "")) if isinstance(dep, dict) else ""
+        if inst_gid != gid:
+            return {"success": True, "healed": False, "reason": "manifest_mismatch",
+                    "depot": depot, "want": gid, "have": inst_gid}
+
+    # 4. Already correct? Avoid a redundant write.
+    cur_build = str(app_state.get("buildid", "")).strip()
+    if cur_build == str(target_build):
+        return {"success": True, "healed": False, "reason": "already_correct",
+                "build": target_build}
+
+    # 5. Rewrite buildid + TargetBuildID in the VDF text, leaving everything else
+    #    byte-for-byte. Key match is case-insensitive but keeps the original casing.
+    def _set_kv(text: str, key: str, value):
+        pat = re.compile(r'("' + re.escape(key) + r'"\s*")\d+(")', re.IGNORECASE)
+        return pat.subn(r"\g<1>" + str(value) + r"\g<2>", text, count=1)
+
+    new_text, n_build = _set_kv(acf_text, "buildid", target_build)
+    if n_build == 0:
+        return {"success": True, "healed": False, "reason": "no_buildid_field"}
+    new_text, n_target = _set_kv(new_text, "TargetBuildID", target_build)
+
+    try:
+        os.chmod(acf_path, 0o644)  # a legacy 0444 write would block the rewrite
+    except Exception:
+        pass
+    try:
+        with open(acf_path, "w", encoding="utf-8") as fh:
+            fh.write(new_text)
+    except Exception as exc:
+        return {"success": False, "error": f"acf_write_failed: {exc}"}
+
+    logger.info(
+        f"LumaDeck: self-heal .acf buildid {cur_build}->{target_build} for {appid} "
+        f"(TargetBuildID updated: {n_target > 0})"
+    )
+    return {"success": True, "healed": True, "build": target_build,
+            "previous": cur_build}
+
+
 # Rate limiting for Steam API calls
 _LAST_API_CALL_TIME = 0.0
 _API_CALL_MIN_INTERVAL = 0.3  # 300ms between calls

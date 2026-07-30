@@ -134,6 +134,11 @@ export const unpinGame = async (appid: number) =>
 export const getPinStatus = async (appid: number) =>
   parseResult(await call<[number], string>("get_pin_status", appid));
 
+// Correct the .acf buildid to a manifest-fix's build AFTER Steam re-stamped it to
+// the latest on the pinned download. Backend gates on manifest-match (never lies).
+export const selfHealAcfBuild = async (appid: number, targetBuild: number) =>
+  parseResult(await call<[number, number], string>("self_heal_acf_build", appid, targetBuild));
+
 // Downloads
 export const startDownload = async (appid: number, targetLibraryPath: string = "") =>
   parseResult(await call<[number, string], string>("start_download", appid, targetLibraryPath));
