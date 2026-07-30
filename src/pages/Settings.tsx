@@ -15,7 +15,6 @@ import {
 import { FaKey, FaShieldAlt, FaDownload, FaCog, FaInfoCircle, FaQuestionCircle, FaCheckCircle, FaExclamationTriangle, FaTrophy } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { HelpContent } from "./Help";
-import { ScrollAnchor } from "../components/ScrollAnchor";
 import {
   saveRyuCookie,
   loadRyuCookie,
@@ -782,8 +781,6 @@ export function Settings() {
               : "Log in with Discord"}
           </ButtonItem>
         </PanelSectionRow>
-        {/* Tail anchor: without it, Game Mode's navbar covers this last status line. */}
-        <ScrollAnchor />
       </PanelSection>
         </>
       ),
