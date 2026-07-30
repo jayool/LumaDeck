@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Optional
 
@@ -88,6 +89,17 @@ def _normalise(tag: str) -> str:
     return tag
 
 
+def _version_tuple(v: str) -> tuple:
+    """Parse a normalised version ('0.16.9') into a comparable (major, minor,
+    patch) int tuple, padded to 3. Used so 'is there an update' means installed
+    < latest (semver order), NOT installed != latest — otherwise a stale-cached
+    'latest' that is OLDER than the installed build nags 'update available'
+    forever (installed 0.17.0 vs a stale-cached 0.16.9)."""
+    nums = re.findall(r"\d+", v or "")
+    t = tuple(int(n) for n in nums[:3])
+    return t + (0,) * (3 - len(t))
+
+
 async def get_latest_release(owner: str, repo: str, force: bool = False) -> Optional[dict]:
     """Return {"tag": str, "tag_normalised": str, "url": str} for the latest
     release of owner/repo, or None if unreachable. Reads cache first (6 h TTL),
@@ -145,9 +157,13 @@ async def has_update(owner: str, repo: str, installed_version: Optional[str],
             "url": latest.get("url") if latest else None,
         }
     installed_norm = _normalise(installed_version.strip())
+    latest_norm = latest["tag_normalised"]
+    # Update only when the installed version is genuinely BEHIND latest (semver),
+    # not merely different — so a stale-cached 'latest' that is OLDER than the
+    # installed build (e.g. installed 0.17.0 vs a stale 0.16.9) never nags.
     return {
         "installed": installed_norm,
-        "latest": latest["tag_normalised"],
-        "has_update": installed_norm != latest["tag_normalised"],
+        "latest": latest_norm,
+        "has_update": _version_tuple(installed_norm) < _version_tuple(latest_norm),
         "url": latest.get("url"),
     }
