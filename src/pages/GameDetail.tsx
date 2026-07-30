@@ -973,6 +973,12 @@ export function GameDetail({ appid }: GameDetailProps) {
               const canInstallVersion = luatoolsConnected;
               const busyManifest = busy === "manifest";
               const buildTag = luaFixBuildTag(f);
+              // True when the game is already on the exact build this fix needs
+              // (installed appmanifest buildid == the fix's required build). In
+              // that state the version button is a no-op — re-pinning the same
+              // manifest re-downloads nothing — so we grey it out and drop the
+              // "Sets the game to…" call-to-action from its description.
+              const onRequiredBuild = !!buildTag && String(installedBuild) === buildTag;
               const rawTitle = String(f?.title ?? "").trim();
               const fixName = /^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : rawTitle;
               const tagsSub = luaFixTagList(f).join(" · ");
@@ -981,14 +987,18 @@ export function GameDetail({ appid }: GameDetailProps) {
               // it. No trailing period — manifestDesc joins with ". ".
               const buildNote = buildTag
                 ? (installedBuild
-                    ? (String(installedBuild) === buildTag
-                        ? `On the build this fix needs (${buildTag})`
+                    ? (onRequiredBuild
+                        ? `You're already on the build this fix needs (${buildTag})`
                         : `⚠ This fix needs build ${buildTag}, you have ${installedBuild}. Install the compatible version first`)
                     : `Needs build ${buildTag}`)
                 : "";
-              const manifestDesc = [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
-                .filter(Boolean)
-                .join(". ");
+              // Already on the build → the button does nothing, so its description
+              // is just the status line (no "Sets the game to…" action).
+              const manifestDesc = onRequiredBuild
+                ? buildNote
+                : [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
+                    .filter(Boolean)
+                    .join(". ");
               // With no version button, surface the build note on Apply fix so it
               // isn't lost.
               const applyDesc = (!f?.hasManifest ? buildNote : "") || undefined;
@@ -1004,7 +1014,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                       label={busyManifest ? "Installing version…" : "Install the game version this fix needs"}
                       description={manifestDesc}
                       onClick={() => handleInstallManifest(String(f.id))}
-                      disabled={!canInstallVersion || busyManifest || !!isFixInProgress}
+                      disabled={!canInstallVersion || busyManifest || !!isFixInProgress || onRequiredBuild}
                     />
                   )}
                   {f?.hasFix !== false && (
