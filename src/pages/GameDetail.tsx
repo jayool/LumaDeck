@@ -101,14 +101,15 @@ function luaFixTagList(f: any): string[] {
     .filter((s: any) => typeof s === "string" && s.trim());
 }
 
-// A LuaTools fix carries its target Steam build as a 6+ digit number, which
-// LuaTools puts in the fix's TITLE (e.g. "23314029"), and sometimes in a tag.
-// Pull the first such run out of the title or tags so we can compare it against
-// the installed build (appmanifest buildid).
+// A Denuvo fix's title is "Build <n>" — <n> being the target Steam build
+// (e.g. "Build 23314029"). Anchor the match on the "Build " label so we never
+// mistake another long number in the title/tags (a YYYYMMDD date, an appid —
+// both also ~8 digits) for the build. The digit count stays open (\d{6,}) so a
+// future 9-digit build still matches; the label, not the length, is the guard.
 function luaFixBuildTag(f: any): string {
   const candidates = [f?.title, ...luaFixTagList(f)];
   for (const c of candidates) {
-    const m = String(c ?? "").match(/\b(\d{6,})\b/);
+    const m = String(c ?? "").match(/\bBuild\s+(\d{6,})\b/i);
     if (m) return m[1];
   }
   return "";
