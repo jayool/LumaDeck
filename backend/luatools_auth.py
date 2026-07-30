@@ -247,18 +247,21 @@ async def list_luatools_fixes(appid: int) -> dict:
     a session here; we only attach a Bearer if we happen to already have one (it is
     harmless and lets the server personalise the response if it wants to). Login is
     only needed for the *download* step (signed URL)."""
-    headers = dict(_BROWSERISH)
-    token = await _access_token()  # None when not connected — that's fine
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    # The real LuaTools client hits this PUBLIC endpoint with a PLAIN request — no
+    # Authorization, and crucially NO Origin/Referer/Sec-Fetch. Our earlier
+    # browser-CORS header set made a server-side request look like a cross-origin
+    # browser fetch, which lua.tools' Cloudflare edge answered with a 502 almost
+    # every time. So mimic the plain client: just a normal UA + Accept, nothing
+    # else (no Bearer — the listing is public and a stale token only risks a 401).
+    headers = {
+        "User-Agent": _BROWSERISH.get("User-Agent", ""),
+        "Accept": "application/json, text/plain, */*",
+    }
     url = f"https://lua.tools/api/denuvo/fixes?appid={appid}"
     client = await ensure_http_client("LuaToolsFixes")
 
-    # lua.tools sits behind Cloudflare and returns INTERMITTENT 5xx (mostly 502)
-    # for this endpoint — "almost always 502, sometimes works" is a flaky gateway,
-    # not a hard block. Retry a few times with a short backoff so one bad-gateway
-    # response doesn't fail the whole "Check for Fixes". 404 (no catalogue entry)
-    # and any other 4xx are terminal — those won't fix themselves on retry.
+    # Retry transient 5xx a few times with a short backoff (harmless if the header
+    # shape above was the real cause). 404 (no entry) / other 4xx are terminal.
     last_status = 0
     last_err = ""
     for attempt in range(3):
@@ -283,13 +286,21 @@ async def list_luatools_fixes(appid: int) -> dict:
                 logger.info(f"LuaTools: fixes list for {appid} -> 404 (no catalogue entry)")
                 return {"success": True, "fixes": []}
             last_status = resp.status_code
+            # Log a snippet of the error body — a CF/Worker 5xx page usually names
+            # the real cause (ray id, worker exception), so it's diagnosable remotely.
+            try:
+                body = " ".join((resp.text or "")[:400].split())
+            except Exception:
+                body = "<unreadable>"
+            logger.warning(
+                f"LuaTools: fixes list for {appid} -> HTTP {resp.status_code} body={body!r}"
+            )
             if resp.status_code < 500:
                 break  # a non-5xx error is terminal
         if attempt < 2:
             await asyncio.sleep(0.5 * (attempt + 1))
 
     if last_status:
-        logger.warning(f"LuaTools: fixes list for {appid} -> HTTP {last_status} after retries")
         return {"success": False, "error": f"api_error_{last_status}"}
     logger.warning(f"LuaTools: fixes list for {appid} failed after retries: {last_err}")
     return {"success": False, "error": last_err or "request_failed"}
