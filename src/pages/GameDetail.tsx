@@ -1002,8 +1002,16 @@ export function GameDetail({ appid }: GameDetailProps) {
               // "Sets the game to…" call-to-action from its description.
               const onRequiredBuild = !!buildTag && String(installedBuild) === buildTag;
               const rawTitle = String(f?.title ?? "").trim();
-              const fixName = /^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : rawTitle;
-              const tagsSub = luaFixTagList(f).join(" · ");
+              const fTags = luaFixTagList(f);
+              // Name = the LuaTools title; a bare build number becomes "Build N".
+              // When the fix has no title (e.g. a "Generic" fix whose only label
+              // lives in a tag) fall back to the first tag so the name renders at
+              // label size instead of as tiny subtitle text.
+              const fixName = /^\d{6,}$/.test(rawTitle)
+                ? `Build ${rawTitle}`
+                : (rawTitle || fTags[0] || "Fix");
+              // Don't repeat the tag we promoted to the name in the subtitle.
+              const tagsSub = (rawTitle ? fTags : fTags.slice(1)).join(" · ");
               // A Denuvo fix targets one Steam build. Warn (don't block) when the
               // build Steam reports differs; the version button is how you land on
               // it. No trailing period — manifestDesc joins with ". ".
