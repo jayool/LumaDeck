@@ -232,6 +232,9 @@ const strings: Record<Lang, Record<string, string>> = {
     healthNeedsDesktop: "Steam build not supported. Press \"Fix in Desktop\" to repair.",
     healthDisabled: "Disabled by user. Re-enable in Desktop.",
     statusDisabled: "Disabled",
+    // Steam component row (Dependencies) — build-support status, right-aligned
+    statusSupported: "Supported",
+    statusNotSupported: "Not supported",
     // SLSsteam update available (Dependencies sub-row, info blue)
     slssUpdateAvailableSub: "Steam update available ({0} → {1})",
     // System status (unified component model) — jargon-free, outcome-led
@@ -547,6 +550,8 @@ const strings: Record<Lang, Record<string, string>> = {
     healthNeedsDesktop: "Build da Steam não suportada. Toque em \"Corrigir no Desktop\" para reparar.",
     healthDisabled: "Desabilitado pelo usuário. Reative no Desktop.",
     statusDisabled: "Desabilitado",
+    statusSupported: "Suportado",
+    statusNotSupported: "Não suportado",
     slssUpdateAvailableSub: "Atualização disponível (build da Steam {0} → {1})",
     // System status (modelo unificado de componentes)
     sysSteamTooNew: "A Steam atualizou demais",

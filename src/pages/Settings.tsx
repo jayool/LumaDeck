@@ -108,6 +108,8 @@ export function Settings() {
     current_build: number | null;
     target: number | null;
     compatible: boolean;
+    lumalinux_ready?: boolean | null;
+    current_build_supported_by_latest?: boolean | null;
   } | null>(null);
   const [lang, setLang] = useState(getLanguage());
   const [libraries, setLibraries] = useState<any[]>([]);
@@ -250,6 +252,8 @@ export function Settings() {
           current_build: compatResult.current_build,
           target: compatResult.target,
           compatible: compatResult.compatible,
+          lumalinux_ready: compatResult.lumalinux_ready,
+          current_build_supported_by_latest: compatResult.current_build_supported_by_latest,
         });
       }
 
@@ -565,12 +569,8 @@ export function Settings() {
     const h = slssteamHealth;
     if (!slssPresent) return undefined;
     if (h && h.state !== "healthy") return warnDesc(healthLine(h.state));
-    // Healthy → surface the update (headcrab pin ahead of the local Steam build)
-    // in the same subtext slot as the warnings.
-    if (h?.state === "healthy" && headcrabCompat && !headcrabCompat.compatible)
-      return warnDesc(
-        t("slssUpdateAvailableSub", headcrabCompat.current_build ?? "?", headcrabCompat.target ?? "?"),
-        "info");
+    // Steam's own build status now lives in the dedicated "Steam" component row
+    // below, not smuggled into SLSsteam's subtext.
     return undefined;
   };
 
@@ -1004,15 +1004,32 @@ export function Settings() {
             </PanelSectionRow>
           </>
         )}
-        {headcrabCompat && !headcrabCompat.compatible && (
-          <PanelSectionRow>
-            <Field
-              focusable highlightOnFocus={false}
-              icon={<FaExclamationTriangle color="#ff8c00" />}
-              label={t("steamBuildMismatch", headcrabCompat.current_build ?? "?", headcrabCompat.target ?? "?")}
-            />
-          </PanelSectionRow>
-        )}
+        {headcrabCompat && headcrabCompat.current_build != null && (() => {
+          // Steam as a first-class component row, aligned with the QAM: what
+          // matters is whether the CURRENT build is SUPPORTED, not whether it
+          // equals the pin. Behind the pin but supported = green "Supported" + an
+          // "update available" info line; only a genuinely unsupported build
+          // (current_build_supported_by_latest === false) is amber "Not supported".
+          const b = headcrabCompat.current_build;
+          const tgt = headcrabCompat.target;
+          const unsupported = headcrabCompat.current_build_supported_by_latest === false;
+          const behindPin = b != null && tgt != null && b < tgt;
+          const updateReady = behindPin && headcrabCompat.lumalinux_ready === true;
+          const desc = unsupported
+            ? warnDesc(t("steamBuildMismatch", b, tgt ?? "?"), "warn")
+            : updateReady
+              ? warnDesc(t("slssUpdateAvailableSub", b, tgt ?? "?"), "info")
+              : undefined;
+          return (
+            <PanelSectionRow>
+              <Field focusable highlightOnFocus={false} label="Steam" description={desc}>
+                <span style={{ color: unsupported ? "#ff8c00" : "#00cc00" }}>
+                  {unsupported ? t("statusNotSupported") : t("statusSupported")}
+                </span>
+              </Field>
+            </PanelSectionRow>
+          );
+        })()}
         {/* ONE morphing action button, same priority/dispatch as the QAM
             (SystemStatus). Off-pin or not_supported → Fix in Desktop; else the
             highest-priority in-place fix from primarySystemAction (Restart Steam,
@@ -1021,25 +1038,34 @@ export function Settings() {
             ordering (reinject / apply_component), so there are no per-component
             installers that could wipe the others. */}
         {(() => {
-          const offPin = !!headcrabCompat && !headcrabCompat.compatible;
           const coreInstalled = !!(slssPresent && llPresent);
-          const primary = offPin ? "downgrade" : primarySystemAction(componentsStatus);
+          const primary = primarySystemAction(componentsStatus);
+          // Steam BEHIND the pin but on a SUPPORTED build → a normal "move up to
+          // the pin" update, NOT a downgrade fix. Only a genuinely unsupported
+          // build reaches primary==="downgrade" (Fix in Desktop). Aligned with the
+          // QAM — we no longer treat !compatible as "off-pin".
+          const sBuild = headcrabCompat?.current_build;
+          const sTarget = headcrabCompat?.target;
+          const steamUpdate = sBuild != null && sTarget != null && sBuild < sTarget &&
+            headcrabCompat?.lumalinux_ready === true;
           let label = t("installReinstallDeps");
           let desc: string | undefined;
           let onClick: () => any;
-          if (offPin || primary === "downgrade") {
+          // Two-tap arm/fire for the Desktop hand-off (shared by Fix and Update).
+          const armDesktop = (fire: () => any) => () => {
+            if (!confirmDesktop) {
+              setConfirmDesktop(true);
+              setTimeout(() => setConfirmDesktop(false), 5000);
+              return;
+            }
+            setConfirmDesktop(false);
+            fire();
+          };
+          if (primary === "downgrade") {
+            // Genuinely unsupported build (Steam ahead of / off the pin) → repair.
             label = confirmDesktop ? t("sysConfirmTap") : t("sysFixInDesktop");
             desc = t("sysSteamTooNewFixDesc");
-            onClick = () => {
-              // First press arms, second press fires. Auto-disarms after 5s.
-              if (!confirmDesktop) {
-                setConfirmDesktop(true);
-                setTimeout(() => setConfirmDesktop(false), 5000);
-                return;
-              }
-              setConfirmDesktop(false);
-              fixInDesktop(runDesktopHandoffQuickInstall);
-            };
+            onClick = armDesktop(() => fixInDesktop(runDesktopHandoffQuickInstall));
           } else if (primary === "core") {
             // Partial install, Steam at the pin → install the missing core in
             // place (Game Mode safe), then restart.
@@ -1054,6 +1080,13 @@ export function Settings() {
           } else if (primary === "restart") {
             label = t("restartSteam");
             onClick = () => runFix(async () => ({ success: true })); // restart + refresh
+          } else if (steamUpdate) {
+            // Healthy, but Steam sits behind a newer SUPPORTED pin → offer the
+            // Desktop align-up as an UPDATE (same machinery as the downgrade
+            // hand-off, opposite direction), framed as an update, not a fix.
+            label = confirmDesktop ? t("sysConfirmTap") : t("sysSteamUpdateBtn");
+            desc = t("sysSteamUpdateAvailableDesc");
+            onClick = armDesktop(() => fixInDesktop(runDesktopHandoffQuickInstall));
           } else {
             // healthy on-pin: manual maintenance. Reflect the real state in the
             // label — "Reinstall" when the core is already there (nothing is
