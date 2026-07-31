@@ -596,12 +596,24 @@ def ensure_slssteam_flags() -> dict:
     path = get_slssteam_config_path()
     if not os.path.isfile(path):
         return {"applied": False, "reason": "SLSsteam config not created yet"}
+    # Complete any missing keys FIRST (append-only) so the on-disk config matches
+    # SLSsteam's current schema. This silences SLSsteam's "Missing key(s)" toast on
+    # legacy/partial configs AND guarantees the three flag lines below exist for the
+    # flip helpers to toggle (so SafeMode no longer fails to apply when its line is
+    # absent). No-op when already complete; never touches existing bytes.
+    try:
+        from slssteam_schema import complete_slssteam_config
+        completion = complete_slssteam_config(path)
+    except Exception as exc:
+        logger.warning(f"LumaDeck: SLSsteam config completion failed (non-fatal): {exc}")
+        completion = {"completed": False, "added": [], "reason": str(exc)}
     results = {
         "DisableCloud": _set_disablecloud_no(path),
         "DisableUpdates": _set_disableupdates_no(path),
         "SafeMode": _set_safemode_yes(path),
     }
-    return {"applied": True, "results": {k: {"ok": v[0], "msg": v[1]} for k, v in results.items()}}
+    return {"applied": True, "completion": completion,
+            "results": {k: {"ok": v[0], "msg": v[1]} for k, v in results.items()}}
 
 
 def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:

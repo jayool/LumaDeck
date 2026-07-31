@@ -98,6 +98,15 @@ class Plugin:
                     from paths import check_slssteam_installed
                     if not check_slssteam_installed():
                         return
+                    # Refresh SLSsteam's schema reference once (best-effort) so
+                    # config completion inside ensure_slssteam_flags tracks any
+                    # keys newer SLSsteam versions added. Falls back to the bundled
+                    # snapshot if the fetch fails.
+                    try:
+                        from slssteam_schema import refresh_reference_cache
+                        await refresh_reference_cache()
+                    except Exception as exc:
+                        logger.info("LumaDeck: SLSsteam schema refresh skipped: %s", exc)
                     for _ in range(20):  # ~60s (20 x 3s)
                         res = ensure_slssteam_flags()
                         if res.get("applied"):

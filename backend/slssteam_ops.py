@@ -111,12 +111,14 @@ def _commit_config(src: str, dst: str) -> None:
 def add_fake_app_id(appid: int, fake_id: int = 480) -> dict:
     try:
         config_path = _config_path()
+        # Do NOT create the config here. A FakeAppId is meaningless until SLSsteam
+        # has written its own config, and seeding a 1-line "FakeAppIds:" would
+        # preempt SLSsteam's full-default write (its createFile is create-if-absent)
+        # and strand a truncated config forever. Match the other config ops
+        # (add_to_additional_apps / add_dlc): require the config to exist. A missing
+        # config is completed by the boot-time reconcile, not seeded here.
         if not os.path.exists(config_path):
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
-            tmp = config_path + ".tmp"
-            with open(tmp, "w") as f:
-                f.write("FakeAppIds:\n")
-            _commit_config(tmp, config_path)
+            return {"success": False, "error": "SLSsteam config not found — install dependencies first"}
 
         with open(config_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -388,12 +390,12 @@ def add_game_token(appid: int) -> dict:
             return {"success": True, "skipped": True, "message": "No token in lua"}
         token = m.group(1)
 
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        # Do NOT create the config here (see add_fake_app_id): a 1-line "AppTokens:"
+        # seed would preempt SLSsteam's full-default write and strand a truncated
+        # config. Soft-skip when the config isn't there yet — the caller only logs
+        # this, and the token is re-applied once SLSsteam has written its config.
         if not os.path.exists(config_path):
-            tmp = config_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write("AppTokens:\n")
-            _commit_config(tmp, config_path)
+            return {"success": True, "skipped": True, "message": "SLSsteam config not found"}
 
         with open(config_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
