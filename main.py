@@ -564,6 +564,18 @@ class Plugin:
         from fixes import compute_fix_launch_options
         return _j(compute_fix_launch_options(appid, install_path))
 
+    async def enable_native_online(self, appid: int, install_path: str) -> str:
+        from fixes import enable_native_online
+        return _j(enable_native_online(appid, install_path))
+
+    async def disable_native_online(self, appid: int, install_path: str) -> str:
+        from fixes import disable_native_online
+        return _j(disable_native_online(appid, install_path))
+
+    async def get_native_online_status(self, appid: int, install_path: str = "") -> str:
+        from fixes import get_native_online_status
+        return _j(get_native_online_status(appid, install_path))
+
     # ==========================================================================
     # Repair / Maintenance
     # ==========================================================================

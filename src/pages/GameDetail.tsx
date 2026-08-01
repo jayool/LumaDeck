@@ -42,6 +42,9 @@ import {
   getUnfixStatus,
   applyLinuxNativeFix,
   computeFixLaunchOptions,
+  enableNativeOnline,
+  disableNativeOnline,
+  getNativeOnlineStatus,
   uninstallGameFull,
   fetchAppName,
   repairAppmanifest,
@@ -138,6 +141,8 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [isPinned, setIsPinned] = useState(false);
   const [isStuck, setIsStuck] = useState(false);
   const [goldbergApplied, setGoldbergApplied] = useState(false);
+  // Native online (netsock): {enabled, netsockInstalled, hasAntiCheat}. null = not loaded.
+  const [nativeOnline, setNativeOnline] = useState<any>(null);
   const [achievementStatus, setAchievementStatus] = useState("");
   const [achievementGenState, setAchievementGenState] = useState<any>(null);
   const [busy, setBusy] = useState("");
@@ -227,6 +232,9 @@ export function GameDetail({ appid }: GameDetailProps) {
         if (pathResult.installPath) {
           const gbResult = await checkGoldbergStatus(pathResult.installPath);
           if (gbResult.success) setGoldbergApplied(gbResult.applied);
+          getNativeOnlineStatus(appid, pathResult.installPath).then((r: any) => {
+            if (r?.success) setNativeOnline(r);
+          });
         }
       }
 
@@ -572,6 +580,27 @@ export function GameDetail({ appid }: GameDetailProps) {
       } else {
         toast(t("toastError"), result.message || result.error || "", 4000);
       }
+    }
+  };
+
+  const handleToggleNativeOnline = async () => {
+    if (!installPath) {
+      toast(t("toastError"), t("installPathNotFound"), 4000);
+      return;
+    }
+    const on = !!nativeOnline?.enabled;
+    setBusy("nativeonline");
+    const result = on
+      ? await disableNativeOnline(appid, installPath)
+      : await enableNativeOnline(appid, installPath);
+    setBusy("");
+    if (result.success) {
+      setNativeOnline((p: any) => ({ ...(p || {}), enabled: !on }));
+      // Recompute launch options so the LD_AUDIT is added/stripped, same path as fixes.
+      await syncFixLaunchOptions();
+      toast(on ? t("nativeOnlineOffToast") : t("nativeOnlineOnToast"), gameName);
+    } else {
+      toast(t("toastError"), result.error || "", 5000);
     }
   };
 
@@ -1124,6 +1153,35 @@ export function GameDetail({ appid }: GameDetailProps) {
               />
             </>
           )}
+        </PanelSection>
+      )}
+
+      {/* Native online (netsock) — the crack-free SteamNetworkingSockets route:
+          FakeAppId 480 + an LD_AUDIT launch option, no Windows DLLs. Disabled +
+          explained when the game ships anti-cheat (netsock would get you banned)
+          or when headcrab hasn't installed netsock.so yet. */}
+      {installPath && (
+        <PanelSection title={t("nativeOnline")}>
+          <ActionButton
+            label={
+              busy === "nativeonline"
+                ? (nativeOnline?.enabled ? t("nativeOnlineDisabling") : t("nativeOnlineEnabling"))
+                : (nativeOnline?.enabled ? t("nativeOnlineDisable") : t("nativeOnlineEnable"))
+            }
+            onClick={handleToggleNativeOnline}
+            disabled={
+              busy === "nativeonline"
+              || !!nativeOnline?.hasAntiCheat
+              || (nativeOnline && !nativeOnline.netsockInstalled)
+            }
+            description={
+              nativeOnline?.hasAntiCheat
+                ? t("nativeOnlineAntiCheat")
+                : (nativeOnline && !nativeOnline.netsockInstalled)
+                  ? t("nativeOnlineNoLib")
+                  : t("nativeOnlineDesc")
+            }
+          />
         </PanelSection>
       )}
 

@@ -415,6 +415,76 @@ def _build_winedll_value(stems: list) -> str:
     return ";".join(f"{s}=n,b" for s in stems)
 
 
+# ---------------------------------------------------------------------------
+# netsock (native SteamNetworkingSockets online) support
+# ---------------------------------------------------------------------------
+#
+# netsock (yesyes0649/steamnetsock-patch) is the NATIVE online route: no Windows
+# DLLs, no crack. It's a Linux .so that patches the game's coldloaded steamclient
+# so SteamNetworkingSockets stops rejecting the faked appid ("Cert is not
+# authorized for appid X, only 480"). headcrab already installs it at
+# ~/.config/SLSsteam/tools/netsock/netsock.so, so we only add its launch option.
+#
+# It's applied as a per-game LD_AUDIT launch option that COEXISTS with the
+# fix's WINEDLLOVERRIDES on the same line — the two are independent managed
+# components (see _merge_launch_options). The path is written literally with
+# $HOME (not expanded here): the option is evaluated at launch in the deck
+# user's context, and this backend runs as root where ~ would resolve wrong.
+# Per-game "on" is a marker file so the launch-option recompute re-emits it.
+
+_NETSOCK_LAUNCH_PATH = "$HOME/.config/SLSsteam/tools/netsock/netsock.so"
+
+# Anti-cheat markers: netsock scans & modifies game memory, which any anti-cheat
+# flags → ban. Presence of one of these is a hard stop (never enable netsock).
+_ANTICHEAT_MARKERS = ("easyanticheat", "beservice", "battleye", "eac_launcher", "eaclauncher")
+
+
+def _netsock_marker_path(install_path: str, appid: int) -> str:
+    return os.path.join(install_path, f"luatools-netsock-{appid}.on")
+
+
+def _netsock_enabled(install_path: str, appid: int) -> bool:
+    """True if native online (netsock) is marked on for this game."""
+    if not install_path:
+        return False
+    return os.path.isfile(_netsock_marker_path(install_path, appid))
+
+
+def _netsock_ld_audit_value(install_path: str, appid: int) -> str:
+    """The LD_AUDIT value to inject when netsock is on for this game, else ''."""
+    return _NETSOCK_LAUNCH_PATH if _netsock_enabled(install_path, appid) else ""
+
+
+def _netsock_so_installed() -> bool:
+    """True if headcrab's netsock.so is actually on disk (deck home, not root ~)."""
+    try:
+        from paths import get_slssteam_config_dir
+        so = os.path.join(get_slssteam_config_dir(), "tools", "netsock", "netsock.so")
+        return os.path.isfile(so) and os.path.getsize(so) > 0
+    except Exception:
+        return False
+
+
+def _has_anticheat(install_path: str) -> bool:
+    """True if the game ships a known anti-cheat (EAC / BattlEye). Bounded walk
+    (depth ≤ 3) — these live at or near the game root, so we don't crawl a whole
+    50 GB install."""
+    if not install_path or not os.path.isdir(install_path):
+        return False
+    base_depth = install_path.rstrip(os.sep).count(os.sep)
+    try:
+        for root, dirs, files in os.walk(install_path):
+            for name in list(dirs) + files:
+                low = name.lower()
+                if any(m in low for m in _ANTICHEAT_MARKERS):
+                    return True
+            if root.count(os.sep) - base_depth >= 3:
+                dirs[:] = []  # prune deeper descent
+    except Exception:
+        pass
+    return False
+
+
 def _installed_fix_launchers(appid: int, install_path: str) -> list:
     """Relpaths of launcher-style .exe files any installed fix dropped — basename
     contains 'launcher' (case-insensitive). From the fix log's [FIX] blocks.
@@ -458,19 +528,34 @@ def _pick_launcher(relpaths: list):
     return min(relpaths, key=lambda r: (r.count("/") + r.count("\\"), len(r)))
 
 
-def _merge_launch_options(current: str, winedll_value: str, launcher_abs: str = "", install_path: str = "") -> str:
-    """Merge our managed prefix into the game's existing launch options.
+def _merge_launch_options(current: str, winedll_value: str, launcher_abs: str = "", install_path: str = "", ld_audit_value: str = "") -> str:
+    """Merge our managed prefixes into the game's existing launch options.
 
-    The managed prefix is a launcher redirect ("<abs.exe>") when the fix ships a
-    launcher, else a WINEDLLOVERRIDES="..." when it dropped DLLs, else nothing.
-    Idempotent: strips any prior WINEDLLOVERRIDES, AND a leading quoted .exe path
-    that lives inside the game's install dir (our previous launcher redirect — the
-    install-dir check means we never clobber a user wrapper like mangohud). Then
-    re-adds the current prefix at the front, preserving a single %command% and any
-    other options. When nothing is managed and only the %command% we added remains,
-    the options are cleared.
+    Up to two independent managed pieces coexist on the one launch-options line:
+      • LD_AUDIT="…netsock.so"  — native online (netsock), when enabled
+      • a launcher redirect ("<abs.exe>") OR a WINEDLLOVERRIDES="…" — from the fix
+    Composed as `LD_AUDIT="…" WINEDLLOVERRIDES="…" %command%` (both when present).
+
+    Idempotent: strips any prior WINEDLLOVERRIDES, our prior netsock LD_AUDIT
+    (scoped to the netsock path so a user's unrelated LD_AUDIT survives), AND a
+    leading quoted .exe path inside the game's install dir (our previous launcher
+    redirect — the install-dir check means we never clobber a user wrapper like
+    mangohud). Then re-adds the current pieces at the front, preserving a single
+    %command% and any other options. When nothing is managed and only the
+    %command% we added remains, the options are cleared.
     """
     s = re.sub(r'WINEDLLOVERRIDES="[^"]*"\s*', "", current or "").strip()
+
+    # LD_AUDIT is a SINGLE colon-separated list (a second assignment would just
+    # override the first at runtime). Collect any existing entries, drop our
+    # netsock one, then strip every LD_AUDIT so we can re-emit exactly one below —
+    # netsock first, a user's unrelated entries kept after it.
+    existing_audit = []
+    for _m in re.finditer(r'LD_AUDIT="([^"]*)"', s):
+        for _part in _m.group(1).split(":"):
+            if _part and "netsock" not in _part.lower() and _part not in existing_audit:
+                existing_audit.append(_part)
+    s = re.sub(r'LD_AUDIT="[^"]*"\s*', "", s).strip()
 
     # Strip a leading quoted .exe path that points inside the game dir (ours).
     if install_path:
@@ -485,12 +570,15 @@ def _merge_launch_options(current: str, winedll_value: str, launcher_abs: str = 
             if inside:
                 s = s[m.end():].strip()
 
+    managed = []
+    audit_parts = ([ld_audit_value] if ld_audit_value else []) + existing_audit
+    if audit_parts:
+        managed.append(f'LD_AUDIT="{":".join(audit_parts)}"')
     if launcher_abs:
-        prefix = f'"{launcher_abs}"'
+        managed.append(f'"{launcher_abs}"')
     elif winedll_value:
-        prefix = f'WINEDLLOVERRIDES="{winedll_value}"'
-    else:
-        prefix = ""
+        managed.append(f'WINEDLLOVERRIDES="{winedll_value}"')
+    prefix = " ".join(managed)
 
     if prefix:
         if "%command%" in s:
@@ -528,16 +616,88 @@ def compute_fix_launch_options(appid: int, install_path: str) -> dict:
 
     stems = _installed_fix_dll_stems(appid, install_path)
     winedll = "" if launcher_abs else _build_winedll_value(stems)
+    # netsock's LD_AUDIT is re-derived from the per-game marker so it survives this
+    # recompute (which runs on every fix apply/remove) instead of being lost.
+    ld_audit = _netsock_ld_audit_value(install_path, appid)
     current = get_app_launch_options(appid)
-    merged = _merge_launch_options(current or "", winedll, launcher_abs, install_path)
+    merged = _merge_launch_options(current or "", winedll, launcher_abs, install_path, ld_audit)
     return {
         "success": True,
         "appid": appid,
         "dlls": stems,
         "winedlloverrides": winedll,
         "launcher": launcher_abs or None,
+        "ldAudit": ld_audit or None,
+        "netsock": bool(ld_audit),
         "launchOptions": merged,
         "changed": (current or "") != merged,
+    }
+
+
+def enable_native_online(appid: int, install_path: str) -> dict:
+    """Turn on the native online (netsock) route for a game: FakeAppId 480 +
+    a per-game netsock marker. The frontend then recomputes launch options
+    (which now include the LD_AUDIT) and writes them via SteamClient.
+
+    Hard-stops on anti-cheat (netsock scans memory → ban) and requires headcrab's
+    netsock.so to actually be on disk."""
+    try:
+        appid = int(appid)
+    except Exception:
+        return {"success": False, "error": "Invalid appid"}
+    if not install_path or not os.path.exists(install_path):
+        return {"success": False, "error": "Install path does not exist"}
+    if _has_anticheat(install_path):
+        return {"success": False, "error": "This game has anti-cheat — netsock would get you banned, so it was not enabled."}
+    if not _netsock_so_installed():
+        return {"success": False, "error": "netsock.so not found — run Install Dependencies first."}
+
+    # FakeAppId 480 is the shared primitive; idempotent, refuses to seed a missing config.
+    fake_result = {"success": True}
+    try:
+        from slssteam_ops import add_fake_app_id
+        fake_result = add_fake_app_id(appid, 480)
+    except Exception as exc:
+        logger.warning(f"LumaDeck: FakeAppId for native online failed ({appid}): {exc}")
+
+    try:
+        with open(_netsock_marker_path(install_path, appid), "w", encoding="utf-8") as f:
+            f.write("netsock enabled\n")
+    except Exception as exc:
+        return {"success": False, "error": f"Could not write netsock marker: {exc}"}
+
+    return {"success": True, "fakeAppId": fake_result.get("success", False)}
+
+
+def disable_native_online(appid: int, install_path: str) -> dict:
+    """Turn off native online (netsock) for a game: drop the marker so the next
+    launch-options recompute strips the LD_AUDIT. The FakeAppId 480 is left in
+    place — it is inert on its own and a crack fix may still need it."""
+    try:
+        appid = int(appid)
+    except Exception:
+        return {"success": False, "error": "Invalid appid"}
+    try:
+        marker = _netsock_marker_path(install_path, appid)
+        if os.path.isfile(marker):
+            os.remove(marker)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    return {"success": True}
+
+
+def get_native_online_status(appid: int, install_path: str = "") -> dict:
+    """Report whether native online (netsock) is on, plus the two gating facts the
+    UI needs: is netsock.so installed, and does the game have anti-cheat."""
+    try:
+        appid = int(appid)
+    except Exception:
+        return {"success": False, "error": "Invalid appid"}
+    return {
+        "success": True,
+        "enabled": _netsock_enabled(install_path, appid),
+        "netsockInstalled": _netsock_so_installed(),
+        "hasAntiCheat": _has_anticheat(install_path) if install_path else False,
     }
 
 
