@@ -179,6 +179,80 @@ def _backup_original_file(install_path: str, appid: int, rel_path: str) -> None:
         logger.warning(f"LumaDeck: could not back up original '{rel}' for {appid}")
 
 
+def _parse_onlinefix_ini(ini_path: str) -> dict:
+    """Read an OnlineFix.ini's [Main] section for the FakeAppId (and RealAppId).
+
+    On Windows the shipped OnlineFix64.dll reads this ini itself at runtime and
+    fakes ownership of FakeAppId (480 = Spacewar, the SDK sample everyone is
+    authorized for) so multiplayer works. Under Proton there is no such runtime,
+    so we mirror what the DLL would do by feeding FakeAppId into SLSsteam.
+
+    Only the [Main] section is scanned: the [DLC] section is also `n=n` pairs and
+    would false-positive a bare numeric scan. Returns {} if no FakeAppId is found
+    so callers only ever act on what the fix explicitly declares (never a
+    hardcoded 480)."""
+    result: dict = {}
+    try:
+        with open(ini_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+    except Exception:
+        return result
+
+    in_main = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_main = stripped.lower() == "[main]"
+            continue
+        if not in_main:
+            continue
+        m = re.match(r"\s*RealAppId\s*=\s*(\d+)", line, re.IGNORECASE)
+        if m:
+            result["realAppId"] = int(m.group(1))
+            continue
+        m = re.match(r"\s*FakeAppId\s*=\s*(\d+)", line, re.IGNORECASE)
+        if m:
+            result["fakeAppId"] = int(m.group(1))
+    return result
+
+
+def _apply_onlinefix_fakeappid(appid: int, install_path: str, extracted_files: list) -> int:
+    """If the fix dropped an OnlineFix.ini declaring a FakeAppId, register it in
+    SLSsteam so Proton has the ownership fake the OnlineFix DLL would set up on
+    Windows. Returns the FakeAppId written (0 if none). Best-effort: never raises.
+
+    add_fake_app_id is idempotent and refuses to seed a missing config, so this
+    is safe to call unconditionally after any fix extraction."""
+    ini_rel = next(
+        (r for r in extracted_files if os.path.basename(r).lower() == "onlinefix.ini"),
+        None,
+    )
+    if not ini_rel:
+        return 0
+    ini_path = os.path.join(install_path, ini_rel.replace("/", os.sep))
+    info = _parse_onlinefix_ini(ini_path)
+    fake_id = info.get("fakeAppId")
+    if not fake_id:
+        return 0
+    real_id = info.get("realAppId")
+    if real_id and real_id != appid:
+        logger.warning(
+            f"LumaDeck: OnlineFix.ini RealAppId {real_id} != launch appid {appid}; "
+            f"keying FakeAppId on {appid} (the id Steam launches)."
+        )
+    try:
+        from slssteam_ops import add_fake_app_id
+        res = add_fake_app_id(appid, fake_id)
+        if not res.get("success"):
+            logger.warning(f"LumaDeck: could not set FakeAppId {appid}->{fake_id}: {res.get('error')}")
+            return 0
+        logger.info(f"LumaDeck: OnlineFix FakeAppId {appid} -> {fake_id} registered in SLSsteam")
+        return fake_id
+    except Exception as exc:
+        logger.warning(f"LumaDeck: FakeAppId injection failed for {appid}: {exc}")
+        return 0
+
+
 def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: str, game_name: str, download_url: str) -> None:
     """Synchronous extraction of fix zip (runs in executor)."""
     if not zipfile.is_zipfile(dest_zip):
@@ -243,6 +317,11 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
                         pass
                 break
 
+    # OnlineFix crack: mirror the FakeAppId the shipped DLL would apply on Windows
+    # into SLSsteam so the online fix actually works under Proton. Logged below so
+    # the un-fix can undo it symmetrically. 0 when the fix declares none.
+    applied_fake_id = _apply_onlinefix_fakeappid(appid, install_path, extracted_files)
+
     # Write fix log
     log_file_path = os.path.join(install_path, f"luatools-fix-log-{appid}.log")
     try:
@@ -261,6 +340,8 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
             f.write(f'Game: {game_name or f"Unknown Game ({appid})"}\n')
             f.write(f"Fix Type: {fix_type}\n")
             f.write(f"Download URL: {download_url}\n")
+            if applied_fake_id:
+                f.write(f"FakeAppId: {applied_fake_id}\n")
             f.write("Files:\n")
             for fp in extracted_files:
                 f.write(f"{fp}\n")
@@ -513,6 +594,13 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
         with open(log_file_path, "r", encoding="utf-8") as handle:
             log_content = handle.read()
 
+        # Track OnlineFix FakeAppId ownership so we can undo it symmetrically: we
+        # only pull the SLSsteam FakeAppId if a removed fix registered one AND no
+        # surviving fix still needs it (and never if the user set it by hand — a
+        # manual entry leaves no "FakeAppId:" line in any [FIX] block).
+        removed_had_fakeid = False
+        surviving_has_fakeid = False
+
         if "[FIX]" in log_content:
             fix_blocks = log_content.split("[FIX]")
             for block in fix_blocks:
@@ -521,6 +609,7 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
                 lines = block.split("\n")
                 in_files_section = False
                 block_date = None
+                block_fake_id = False
                 block_lines = []
                 for line in lines:
                     line_stripped = line.strip()
@@ -528,6 +617,8 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
                         break
                     if line_stripped.startswith("Date:"):
                         block_date = line_stripped.replace("Date:", "").strip()
+                    if line_stripped.startswith("FakeAppId:"):
+                        block_fake_id = True
                     block_lines.append(line)
                     if line_stripped == "Files:":
                         in_files_section = True
@@ -536,6 +627,9 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
                             files_to_delete.add(line_stripped)
                 if fix_date and block_date and block_date != fix_date:
                     remaining_fixes.append("[FIX]\n" + "\n".join(block_lines) + "\n[/FIX]")
+                    surviving_has_fakeid = surviving_has_fakeid or block_fake_id
+                else:
+                    removed_had_fakeid = removed_had_fakeid or block_fake_id
         else:
             lines = log_content.split("\n")
             in_files_section = False
@@ -584,6 +678,14 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
                 os.remove(log_file_path)
             except Exception:
                 pass
+
+        # Undo the OnlineFix FakeAppId only if we set it and nothing left needs it.
+        if removed_had_fakeid and not surviving_has_fakeid:
+            try:
+                from slssteam_ops import remove_fake_app_id
+                remove_fake_app_id(appid)
+            except Exception as exc:
+                logger.warning(f"LumaDeck: could not remove FakeAppId for {appid}: {exc}")
 
         _set_unfix_state(appid, {
             "status": "done", "success": True,
