@@ -350,22 +350,6 @@ export const computeFixLaunchOptions = async (appid: number, installPath: string
     await call<[number, string], string>("compute_fix_launch_options", appid, installPath),
   );
 
-// Native online (netsock): the crack-free SteamNetworkingSockets route. Enable
-// writes FakeAppId 480 + a per-game marker (so computeFixLaunchOptions re-emits
-// the LD_AUDIT); the caller then recomputes + SetAppLaunchOptions, same as fixes.
-export const enableNativeOnline = async (appid: number, installPath: string) =>
-  parseResult(
-    await call<[number, string], string>("enable_native_online", appid, installPath),
-  );
-export const disableNativeOnline = async (appid: number, installPath: string) =>
-  parseResult(
-    await call<[number, string], string>("disable_native_online", appid, installPath),
-  );
-export const getNativeOnlineStatus = async (appid: number, installPath: string) =>
-  parseResult(
-    await call<[number, string], string>("get_native_online_status", appid, installPath),
-  );
-
 // Repair / Maintenance
 export const repairAppmanifest = async (appid: number) =>
   parseResult(await call<[number], string>("repair_appmanifest", appid));
