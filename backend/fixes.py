@@ -134,10 +134,16 @@ async def _download_and_extract_fix(appid: int, download_url: str, install_path:
 
 
 def _is_path_safe(base_dir: str, member_name: str) -> bool:
-    """Check that a zip member path stays within base_dir (prevents Zip Slip)."""
-    # Normalise the member name and reject absolute paths
-    clean = posixpath.normpath(member_name)
-    if clean.startswith("/") or clean.startswith("\\"):
+    """Check that a zip member path stays within base_dir (prevents Zip Slip).
+
+    A leading '/' or '\\' is treated as archive-root-relative, not as an absolute
+    write: some packers (FreeTP / online-fix) store paths like '/EpicFix.ini', and
+    rejecting those outright made whole fixes extract nothing. We strip the leading
+    separators, then still resolve and require the result to land INSIDE base_dir,
+    so real '..' escapes are rejected exactly as before."""
+    rel = member_name.lstrip("/\\")
+    clean = posixpath.normpath(rel)
+    if not clean or clean == "." or clean.startswith("/") or clean.startswith(".."):
         return False
     # Resolve the final destination and verify it's inside base_dir
     resolved = os.path.realpath(os.path.join(base_dir, clean))
@@ -293,12 +299,22 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
             for member in archive.namelist():
                 if member.endswith("/"):
                     continue
-                if not _is_path_safe(install_path, member):
+                # Some packers (FreeTP / online-fix) store paths with a leading '/'
+                # ('/EpicFix.ini'). Treat it as archive-root-relative so it lands in
+                # the game dir; _is_path_safe still rejects real '..' escapes. Record
+                # the CLEAN relative path so the override + un-fix can find it later.
+                rel = member.lstrip("/\\")
+                if not rel:
+                    continue
+                if not _is_path_safe(install_path, rel):
                     logger.warning(f"Zip Slip blocked: {member}")
                     continue
-                _backup_original_file(install_path, appid, member)
-                archive.extract(member, install_path)
-                extracted_files.append(member.replace("\\", "/"))
+                target = os.path.join(install_path, rel.replace("/", os.sep))
+                _backup_original_file(install_path, appid, rel)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as output:
+                    output.write(archive.read(member))
+                extracted_files.append(rel.replace("\\", "/"))
 
     # Handle unsteam.ini placeholder replacement
     if fix_type.lower() == "online fix (unsteam)":
