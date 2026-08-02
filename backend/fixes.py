@@ -322,6 +322,20 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
     # the un-fix can undo it symmetrically. 0 when the fix declares none.
     applied_fake_id = _apply_onlinefix_fakeappid(appid, install_path, extracted_files)
 
+    # An OnlineFix.ini with a FakeAppId is the definitive "this is an online fix"
+    # signal — Denuvo / single-player / generic cracks have no such .ini, so they
+    # get neither 480 nor netsock. For a real online fix we also drop the native
+    # netsock primitive (non-destructive, inert if the game isn't SNS) so the two
+    # routes are covered at once — EXCEPT on anti-cheat games (netsock scans memory
+    # → ban). Rides the same signal/lifecycle as the FakeAppId above.
+    if applied_fake_id and _netsock_so_installed() and not _has_anticheat(install_path):
+        try:
+            with open(_netsock_marker_path(install_path, appid), "w", encoding="utf-8") as f:
+                f.write("netsock enabled\n")
+            logger.info(f"LumaDeck: netsock enabled for online fix {appid}")
+        except Exception as exc:
+            logger.warning(f"LumaDeck: could not set netsock marker for {appid}: {exc}")
+
     # Write fix log
     log_file_path = os.path.join(install_path, f"luatools-fix-log-{appid}.log")
     try:
@@ -839,13 +853,20 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
             except Exception:
                 pass
 
-        # Undo the OnlineFix FakeAppId only if we set it and nothing left needs it.
+        # Undo the OnlineFix FakeAppId only if we set it and nothing left needs it,
+        # and drop the netsock marker we set alongside it (same online-fix lifecycle).
         if removed_had_fakeid and not surviving_has_fakeid:
             try:
                 from slssteam_ops import remove_fake_app_id
                 remove_fake_app_id(appid)
             except Exception as exc:
                 logger.warning(f"LumaDeck: could not remove FakeAppId for {appid}: {exc}")
+            try:
+                marker = _netsock_marker_path(install_path, appid)
+                if os.path.isfile(marker):
+                    os.remove(marker)
+            except Exception as exc:
+                logger.warning(f"LumaDeck: could not remove netsock marker for {appid}: {exc}")
 
         _set_unfix_state(appid, {
             "status": "done", "success": True,

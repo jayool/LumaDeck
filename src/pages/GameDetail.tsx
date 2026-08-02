@@ -21,7 +21,7 @@ import {
   FaCheckCircle,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
-import { listLuatoolsFixes, downloadLuatoolsFix, selfHealAcfBuild, enableNativeOnline } from "../api";
+import { listLuatoolsFixes, downloadLuatoolsFix, selfHealAcfBuild } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
@@ -469,12 +469,11 @@ export function GameDetail({ appid }: GameDetailProps) {
     const result = await downloadLuatoolsFix(appid, fixId, installPath, "fix");
     if (result.success) {
       setFixStatus({ status: "queued" });
-      // Apply the native online primitives (FakeAppId 480 + netsock) alongside the
-      // crack — always, non-destructive, inert where unneeded. The backend no-ops
-      // on anti-cheat / missing netsock.so. By the time the fix finishes extracting,
-      // the marker is set, so syncFixLaunchOptions emits LD_AUDIT + WINEDLLOVERRIDES
-      // together. Best-effort: never block the fix flow.
-      enableNativeOnline(appid, installPath).catch(() => {});
+      // netsock + 480 are applied by the backend during extraction — but ONLY when
+      // the fix is a real online fix (its zip ships an OnlineFix.ini with a
+      // FakeAppId). Denuvo / single-player cracks have no such .ini, so they get
+      // neither. Nothing to do here; the existing syncFixLaunchOptions on "done"
+      // emits the LD_AUDIT if the backend set the marker.
     } else {
       toast(t("toastError"), result.error || "", 5000);
     }
