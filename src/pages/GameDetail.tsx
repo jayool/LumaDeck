@@ -71,6 +71,7 @@ interface InstalledFix {
   date: string;
   fixType: string;
   filesCount: number;
+  online?: boolean;
 }
 
 function formatSpeed(bytesPerSec: number): string {
@@ -832,6 +833,42 @@ export function GameDetail({ appid }: GameDetailProps) {
     </PanelSection>
   );
 
+  // Installed fixes already applied to THIS game, filtered per tab (online vs not).
+  // Per-fix removal only (a global "remove all" would cross the two tabs).
+  const renderInstalledFixes = (list: InstalledFix[], title: string) => {
+    if (list.length === 0) return null;
+    return (
+      <PanelSection title={title}>
+        {list.map((fix, idx) => (
+          <PanelSectionRow key={`i-${idx}`}>
+            <Field
+              label={`${fix.fixType} · ${t("fixFiles", fix.filesCount)}`}
+              description={t("fixApplied", fix.date)}
+            />
+          </PanelSectionRow>
+        ))}
+        {list.length === 1 ? (
+          <ActionButton
+            label={busy === "unfix" ? t("toastFixRemoving") : t("removeFix")}
+            onClick={() => handleRemoveFix(list[0].date)}
+            variant="danger"
+            disabled={busy === "unfix"}
+          />
+        ) : (
+          list.map((fix, idx) => (
+            <ActionButton
+              key={`r-${idx}`}
+              label={busy === "unfix" ? t("toastFixRemoving") : `${t("removeFix")} · ${fix.fixType}`}
+              onClick={() => handleRemoveFix(fix.date)}
+              variant="danger"
+              disabled={busy === "unfix"}
+            />
+          ))
+        )}
+      </PanelSection>
+    );
+  };
+
   const pages = [
     {
       title: t("gameStatus"),
@@ -1034,50 +1071,9 @@ export function GameDetail({ appid }: GameDetailProps) {
           Repairs. Each keeps its own title. */}
       {renderCatalogueSection("LuaTools Fixes", t("checkForFixes"), t("noOtherFixes"), otherFixes)}
 
-      {/* Installed LuaTools fixes — the fixes already applied to THIS game,
-          shown directly under the catalogue they came from. */}
-      {installedFixes.length > 0 && (
-        <PanelSection title="Installed LuaTools Fixes">
-          {installedFixes.map((fix, idx) => (
-            <PanelSectionRow key={idx}>
-              <Field
-                label={`${fix.fixType} · ${t("fixFiles", fix.filesCount)}`}
-                description={t("fixApplied", fix.date)}
-              />
-            </PanelSectionRow>
-          ))}
-          {installedFixes.length === 1 ? (
-            <ActionButton
-              label={busy === "unfix" ? t("toastFixRemoving") : t("removeFix")}
-              onClick={() => handleRemoveFix(installedFixes[0].date)}
-              variant="danger"
-              disabled={busy === "unfix"}
-            />
-          ) : (
-            <>
-              {installedFixes.map((fix, idx) => (
-                <ActionButton
-                  key={idx}
-                  label={
-                    busy === "unfix"
-                      ? t("toastFixRemoving")
-                      : `${t("removeFix")} · ${fix.fixType}`
-                  }
-                  onClick={() => handleRemoveFix(fix.date)}
-                  variant="danger"
-                  disabled={busy === "unfix"}
-                />
-              ))}
-              <ActionButton
-                label={busy === "unfix" ? t("toastFixRemoving") : t("removeAllFixes")}
-                onClick={() => handleRemoveFix()}
-                variant="danger"
-                disabled={busy === "unfix"}
-              />
-            </>
-          )}
-        </PanelSection>
-      )}
+      {/* Installed non-online fixes applied to THIS game (online ones show in the
+          Online Fixes tab). Shown directly under the catalogue they came from. */}
+      {renderInstalledFixes(installedFixes.filter((f) => !f.online), "Installed LuaTools Fixes")}
 
       {/* Fixes — Steamless (DRM strip) and Goldberg (Steam-API emulator). These
           are cracks applied to the installed game, distinct from the LuaTools
@@ -1167,9 +1163,11 @@ export function GameDetail({ appid }: GameDetailProps) {
       hideTitle: true,
       content: (
         <>
-      {/* Online fixes: the online LuaTools catalogue first, then the crack-free
-          native route (FakeAppId 480 + netsock). */}
+      {/* Online fixes: the online LuaTools catalogue, then the online fixes already
+          installed on THIS game, then the crack-free native route (480 + netsock). */}
       {renderCatalogueSection(t("luatoolsOnlineFixes"), t("checkForOnlineFixes"), t("noOnlineFixes"), onlineFixes)}
+
+      {renderInstalledFixes(installedFixes.filter((f) => f.online), "Installed Online Fixes")}
 
       <PanelSection title={t("nativeOnline")}>
         <ActionButton

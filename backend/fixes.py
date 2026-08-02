@@ -964,7 +964,7 @@ def get_installed_fixes() -> dict:
                             for block in log_content.split("[FIX]"):
                                 if not block.strip():
                                     continue
-                                fix_data = {"appid": appid, "gameName": game_name, "installPath": full_path, "date": "", "fixType": "", "downloadUrl": "", "filesCount": 0, "files": []}
+                                fix_data = {"appid": appid, "gameName": game_name, "installPath": full_path, "date": "", "fixType": "", "downloadUrl": "", "filesCount": 0, "files": [], "online": False}
                                 in_files = False
                                 files = []
                                 block_lines = []
@@ -979,6 +979,11 @@ def get_installed_fixes() -> dict:
                                         fix_data["fixType"] = stripped.replace("Fix Type:", "").strip()
                                     elif stripped.startswith("Download URL:"):
                                         fix_data["downloadUrl"] = stripped.replace("Download URL:", "").strip()
+                                    elif stripped.startswith("FakeAppId:"):
+                                        # We log this line only for online fixes (the
+                                        # OnlineFix.ini declared a FakeAppId) → the flag
+                                        # the UI uses to route the entry to the Online tab.
+                                        fix_data["online"] = True
                                     elif stripped == "Files:":
                                         in_files = True
                                     elif in_files and stripped:
