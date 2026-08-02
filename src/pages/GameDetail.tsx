@@ -35,6 +35,8 @@ import {
   addFakeAppId,
   removeFakeAppId,
   checkFakeAppIdStatus,
+  enableNativeOnline,
+  disableNativeOnline,
   getApplyFixStatus,
   cancelApplyFix,
   getInstalledFixes,
@@ -391,12 +393,26 @@ export function GameDetail({ appid }: GameDetailProps) {
     if (fakeAppId) {
       await removeFakeAppId(appid);
       setFakeAppId(false);
+      // The native online route rides on 480 — drop netsock with it (best-effort).
+      if (installPath) {
+        await disableNativeOnline(appid, installPath).catch(() => {});
+        await syncFixLaunchOptions();
+      }
       toast(t("toastFakeAppIdRemoved"), gameName);
     } else {
       const id = parseInt(fakeIdValue, 10) || 480;
       const result = await addFakeAppId(appid, id);
       if (result.success) {
         setFakeAppId(true);
+        // 480 is the native online (SteamNetworkingSockets) appid: pull netsock in
+        // too so games with no LuaTools online-fix still get the crack-free route
+        // (480 + netsock). Only for 480, only when installed; the backend no-ops on
+        // anti-cheat / missing netsock.so. Then recompute launch options to write
+        // the LD_AUDIT. Best-effort — the FakeAppId itself is already set above.
+        if (id === 480 && installPath) {
+          await enableNativeOnline(appid, installPath).catch(() => {});
+          await syncFixLaunchOptions();
+        }
         toast(t("toastFakeAppIdAdded", id), gameName);
       } else {
         toast(t("toastError"), result.message || result.error || "", 4000);

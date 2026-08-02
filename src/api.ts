@@ -358,6 +358,10 @@ export const enableNativeOnline = async (appid: number, installPath: string) =>
   parseResult(
     await call<[number, string], string>("enable_native_online", appid, installPath),
   );
+export const disableNativeOnline = async (appid: number, installPath: string) =>
+  parseResult(
+    await call<[number, string], string>("disable_native_online", appid, installPath),
+  );
 
 // Repair / Maintenance
 export const repairAppmanifest = async (appid: number) =>
