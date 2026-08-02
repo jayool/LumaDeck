@@ -29,15 +29,25 @@ LumaDeck now does it too (see "Override" below).
 
 ## LumaDeck's fixes (what each does)
 
-The Game Detail → **Fixes & Repairs** tab has three subsections: **LuaTools Fixes**
-(the public catalogue), **Fixes** (Steamless / Goldberg), and **Repairs**
-(install/account plumbing). The FakeAppId 480 control that drives the native
-online route lives separately under the **Game Management** tab (see "Online
-multiplayer" below).
+Two Game Detail tabs carry fixes:
+
+- **Fixes & Repairs**: the **non-online** LuaTools catalogue (crack / Denuvo),
+  **Fixes** (Steamless / Goldberg), and **Repairs** (install/account plumbing).
+- **Online Fixes**: the **online** LuaTools catalogue (its own "Check for Online
+  Fixes"), then a **Native Online** control — the crack-free 480 + netsock route
+  (see "Online multiplayer" below).
+
+The split between the two catalogues is a tag filter: an entry tagged `online`
+goes to the Online Fixes tab, the rest stay in Fixes & Repairs. Both tabs share
+the same loaded listing and the same per-entry rendering; only the filter and the
+check-button label differ. (There is no longer a separate Game Management tab —
+it was only a FakeAppId control; the 480 online case is now the Native Online
+control, and setting an arbitrary FakeAppId lives in Settings.)
 
 ### Block: LuaTools Fixes (the catalogue)
 
-Not fixed buttons — a **catalogue**. "Check for Fixes" loads the public LuaTools
+Not fixed buttons — a **catalogue**, shown across the two tabs above (non-online
+here, online in the Online Fixes tab). "Check for Fixes" loads the public LuaTools
 listing for the appid; each entry then renders its own actions.
 
 | Control | What it does | Source / origin | File treatment |
@@ -122,10 +132,11 @@ not bundle it. Launch option (per its README): `LD_AUDIT="$HOME/.config/SLSsteam
   registers that id in SLSsteam (logged as a `FakeAppId:` line in the `[FIX]`
   block). Denuvo / single-player / generic cracks have **no such `.ini`** → they
   get **neither 480 nor netsock**; only their files are copied.
-- **Native route with no catalogue fix:** the **FakeAppId 480 toggle** under Game
-  Management. Enabling it (id 480, game installed) also enables netsock; removing
-  it drops netsock too. This is how an SNS game that has no LuaTools online-fix
-  still gets the crack-free route.
+- **Native route with no catalogue fix:** the **Native Online** control in the
+  Online Fixes tab. Enabling it (game installed) sets FakeAppId 480 and netsock;
+  disabling drops netsock (480 is left, it's inert). This is how an SNS game that
+  has no LuaTools online-fix still gets the crack-free route. Backend:
+  `enable_native_online` / `disable_native_online`.
 - **netsock rides the 480**, with two extra gates: it is only set when the
   **`netsock.so` is on disk** and the game has **no anti-cheat**.
 
