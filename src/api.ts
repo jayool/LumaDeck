@@ -362,6 +362,11 @@ export const disableNativeOnline = async (appid: number, installPath: string) =>
   parseResult(
     await call<[number, string], string>("disable_native_online", appid, installPath),
   );
+// { enabled, netsockInstalled, hasAntiCheat } — drives the Native Online control.
+export const getNativeOnlineStatus = async (appid: number, installPath: string) =>
+  parseResult(
+    await call<[number, string], string>("get_native_online_status", appid, installPath),
+  );
 
 // Repair / Maintenance
 export const repairAppmanifest = async (appid: number) =>

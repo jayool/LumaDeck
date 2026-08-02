@@ -3,7 +3,6 @@ import {
   PanelSection,
   PanelSectionRow,
   ButtonItem,
-  TextField,
   ToggleField,
   Field,
   Navigation,
@@ -13,12 +12,12 @@ import {
 import {
   FaInfoCircle,
   FaDownload,
-  FaCog,
   FaTrophy,
   FaTools,
   FaTrash,
   FaExclamationTriangle,
   FaCheckCircle,
+  FaUsers,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { listLuatoolsFixes, downloadLuatoolsFix, selfHealAcfBuild } from "../api";
@@ -32,11 +31,9 @@ import {
   cancelDownload,
   hasLuatoolsForApp,
   getGameInstallPath,
-  addFakeAppId,
-  removeFakeAppId,
-  checkFakeAppIdStatus,
   enableNativeOnline,
   disableNativeOnline,
+  getNativeOnlineStatus,
   getApplyFixStatus,
   cancelApplyFix,
   getInstalledFixes,
@@ -127,8 +124,8 @@ export function GameDetail({ appid }: GameDetailProps) {
   // required build tag to warn about a Denuvo build mismatch.
   const [installedBuild, setInstalledBuild] = useState(0);
   const [downloadState, setDownloadState] = useState<any>(null);
-  const [fakeAppId, setFakeAppId] = useState(false);
-  const [fakeIdValue, setFakeIdValue] = useState("480");
+  // Native online (netsock): { enabled, netsockInstalled, hasAntiCheat }. null = not loaded.
+  const [nativeOnline, setNativeOnline] = useState<any>(null);
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
   // LuaTools catalogue fixes for this game (null = not loaded). The listing is
@@ -229,11 +226,11 @@ export function GameDetail({ appid }: GameDetailProps) {
         if (pathResult.installPath) {
           const gbResult = await checkGoldbergStatus(pathResult.installPath);
           if (gbResult.success) setGoldbergApplied(gbResult.applied);
+          getNativeOnlineStatus(appid, pathResult.installPath).then((r: any) => {
+            if (r?.success) setNativeOnline(r);
+          });
         }
       }
-
-      const fakeResult = await checkFakeAppIdStatus(appid);
-      if (fakeResult.success) setFakeAppId(fakeResult.exists);
 
       const dlStatus = await getDownloadStatus(appid);
       if (
@@ -389,34 +386,26 @@ export function GameDetail({ appid }: GameDetailProps) {
     setDownloadState((prev: any) => ({ ...prev, status: "cancelled" }));
   };
 
-  const handleToggleFakeAppId = async () => {
-    if (fakeAppId) {
-      await removeFakeAppId(appid);
-      setFakeAppId(false);
-      // The native online route rides on 480 — drop netsock with it (best-effort).
-      if (installPath) {
-        await disableNativeOnline(appid, installPath).catch(() => {});
-        await syncFixLaunchOptions();
-      }
-      toast(t("toastFakeAppIdRemoved"), gameName);
+  const handleToggleNativeOnline = async () => {
+    if (!installPath) {
+      toast(t("toastError"), t("installPathNotFound"), 4000);
+      return;
+    }
+    const on = !!nativeOnline?.enabled;
+    setBusy("nativeonline");
+    // Enable = FakeAppId 480 + netsock marker (backend no-ops on anti-cheat /
+    // missing netsock.so). Disable = drop the marker. Either way recompute the
+    // launch options so the LD_AUDIT is added or stripped.
+    const result = on
+      ? await disableNativeOnline(appid, installPath)
+      : await enableNativeOnline(appid, installPath);
+    setBusy("");
+    if (result.success) {
+      setNativeOnline((p: any) => ({ ...(p || {}), enabled: !on }));
+      await syncFixLaunchOptions();
+      toast(on ? t("nativeOnlineOffToast") : t("nativeOnlineOnToast"), gameName);
     } else {
-      const id = parseInt(fakeIdValue, 10) || 480;
-      const result = await addFakeAppId(appid, id);
-      if (result.success) {
-        setFakeAppId(true);
-        // 480 is the native online (SteamNetworkingSockets) appid: pull netsock in
-        // too so games with no LuaTools online-fix still get the crack-free route
-        // (480 + netsock). Only for 480, only when installed; the backend no-ops on
-        // anti-cheat / missing netsock.so. Then recompute launch options to write
-        // the LD_AUDIT. Best-effort — the FakeAppId itself is already set above.
-        if (id === 480 && installPath) {
-          await enableNativeOnline(appid, installPath).catch(() => {});
-          await syncFixLaunchOptions();
-        }
-        toast(t("toastFakeAppIdAdded", id), gameName);
-      } else {
-        toast(t("toastError"), result.message || result.error || "", 4000);
-      }
+      toast(t("toastError"), result.error || "", 5000);
     }
   };
 
@@ -662,7 +651,6 @@ export function GameDetail({ appid }: GameDetailProps) {
     setBusy("");
     if (result.success) {
       setHasLua(false);
-      setFakeAppId(false);
       const removed = result.removed || [];
       const hasFiles = removed.includes("game_files");
       const errors = result.errors || [];
@@ -725,6 +713,124 @@ export function GameDetail({ appid }: GameDetailProps) {
     if (downloadState.speed > 0) parts.push(formatSpeed(downloadState.speed));
     return parts.join(" · ");
   })();
+
+  // A fix is "online" when the catalogue tags it so. Splits the catalogue: online
+  // entries go to the Online Fixes tab, the rest stay in Fixes & Repairs.
+  const isOnlineFix = (f: any) => luaFixTagList(f).some((tg: string) => /online/i.test(tg));
+  const otherFixes = luatoolsFixes ? luatoolsFixes.filter((f: any) => !isOnlineFix(f)) : null;
+  const onlineFixes = luatoolsFixes ? luatoolsFixes.filter((f: any) => isOnlineFix(f)) : null;
+
+  // One catalogue entry (name + tags, version button, apply-fix button). Shared by
+  // both catalogue tabs.
+  const renderFixEntry = (f: any) => {
+    const canApply = gameInstalled && luatoolsConnected;
+    const canInstallVersion = luatoolsConnected;
+    const busyManifest = busy === "manifest";
+    const buildTag = luaFixBuildTag(f);
+    const onRequiredBuild = !!buildTag && String(installedBuild) === buildTag;
+    const rawTitle = String(f?.title ?? "").trim();
+    const fTags = luaFixTagList(f);
+    const fixName = /^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : (rawTitle || fTags[0] || "Fix");
+    const tagsSub = (rawTitle ? fTags : fTags.slice(1)).join(" · ");
+    const buildNote = buildTag
+      ? (installedBuild
+          ? (onRequiredBuild
+              ? `You're already on the build this fix needs (${buildTag})`
+              : `⚠ This fix needs build ${buildTag}, you have ${installedBuild}. Install the compatible version first`)
+          : `Needs build ${buildTag}`)
+      : "";
+    const manifestDesc = onRequiredBuild
+      ? buildNote
+      : [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
+          .filter(Boolean).join(". ");
+    const applyDesc = (!f?.hasManifest ? buildNote : "") || undefined;
+    return (
+      <Fragment key={String(f.id)}>
+        {(fixName || tagsSub) && (
+          <PanelSectionRow>
+            <Field label={fixName || undefined} description={tagsSub || undefined} />
+          </PanelSectionRow>
+        )}
+        {f?.hasManifest && (
+          <ActionButton
+            label={busyManifest ? "Installing version…" : "Install the game version this fix needs"}
+            description={manifestDesc}
+            onClick={() => handleInstallManifest(String(f.id))}
+            disabled={!canInstallVersion || busyManifest || !!isFixInProgress || onRequiredBuild}
+          />
+        )}
+        {f?.hasFix !== false && (
+          <ActionButton
+            label="Apply fix"
+            description={applyDesc}
+            onClick={() => handleApplyLuatoolsFix(String(f.id))}
+            disabled={!canApply || !!isFixInProgress || busyManifest}
+          />
+        )}
+      </Fragment>
+    );
+  };
+
+  // A LuaTools catalogue section: check button + login gate + the filtered entries.
+  const renderCatalogueSection = (
+    title: string, checkLabel: string, emptyText: string, filtered: any[] | null,
+  ) => (
+    <PanelSection title={title}>
+      <ActionButton
+        label={busy === "fixes" ? t("checkingForFixes") : checkLabel}
+        onClick={handleCheckFixes}
+        disabled={busy === "fixes"}
+        description={
+          !filtered ? undefined
+            : filtered.length === 0
+              ? (luatoolsError ? "Couldn't load fixes" : emptyText)
+              : (luatoolsConnected && !gameInstalled)
+                ? (filtered.some((f: any) => f?.hasManifest)
+                    ? "Install the correct build first to apply a fix"
+                    : "Install the game first to apply a fix")
+                : undefined
+        }
+      />
+      {filtered && (
+        <>
+          {filtered.length > 0 && !luatoolsConnected && (
+            <>
+              <PanelSectionRow>
+                <Field description={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
+                    Log in with Discord to install versions and apply fixes
+                  </span>
+                } />
+              </PanelSectionRow>
+              <ActionButton
+                label={luatoolsConnecting ? "Logging in…" : "Log in with Discord"}
+                onClick={handleConnectLuatools}
+                disabled={luatoolsConnecting}
+              />
+            </>
+          )}
+          {filtered.map(renderFixEntry)}
+        </>
+      )}
+      {isFixInProgress && (
+        <>
+          <PanelSectionRow>
+            <ProgressBarWithInfo
+              indeterminate={!(fixStatus.totalBytes > 0)}
+              nProgress={
+                fixStatus.totalBytes > 0
+                  ? Math.min(100, ((fixStatus.bytesRead || 0) / fixStatus.totalBytes) * 100)
+                  : 0
+              }
+              sOperationText={fixStatusLabel}
+            />
+          </PanelSectionRow>
+          <ActionButton label={t("cancelFix")} onClick={handleCancelFix} variant="danger" />
+        </>
+      )}
+    </PanelSection>
+  );
 
   const pages = [
     {
@@ -859,38 +965,6 @@ export function GameDetail({ appid }: GameDetailProps) {
         </>
       ),
     },
-    {
-      title: t("gameManagement"),
-      icon: <FaCog />,
-      hideTitle: true,
-      content: (
-        <>
-      {/* No section title — the sidebar tab ("Game Management") already names it. */}
-      <PanelSection>
-        <PanelSectionRow>
-          <TextField
-            value={fakeIdValue}
-            onChange={(e: any) => setFakeIdValue(e?.target?.value ?? "480")}
-            disabled={fakeAppId}
-          />
-        </PanelSectionRow>
-        {/* Mirror the API Credentials rhythm exactly: a label-less TextField
-            (a labeled field's chrome made the gap to the button larger than
-            Settings') + a fixed 12px spacer. The button label names the
-            field. */}
-        <div style={{ height: "12px" }} />
-        <ActionButton
-          label={
-            fakeAppId
-              ? `${t("removeFakeAppId")} (${fakeIdValue})`
-              : `${t("addFakeAppId")} (${fakeIdValue})`
-          }
-          onClick={handleToggleFakeAppId}
-        />
-      </PanelSection>
-        </>
-      ),
-    },
     ...(ACHIEVEMENTS_ENABLED ? [{
       title: t("achievements"),
       icon: <FaTrophy />,
@@ -955,153 +1029,10 @@ export function GameDetail({ appid }: GameDetailProps) {
       hideTitle: true,
       content: (
         <>
-      {/* Three subsections under the "Fixes & Repairs" tab: LuaTools Fixes (the
-          public catalogue), Fixes (Steamless / Goldberg cracks), and Repairs
-          (install/account plumbing). Each keeps its own title. */}
-      <PanelSection title="LuaTools Fixes">
-        <ActionButton
-          label={busy === "fixes" ? t("checkingForFixes") : t("checkForFixes")}
-          onClick={handleCheckFixes}
-          disabled={busy === "fixes"}
-          description={
-            !luatoolsFixes ? undefined
-              : luatoolsFixes.length === 0
-                ? (luatoolsError ? "Couldn't load fixes" : "No fixes for this game")
-                : (luatoolsConnected && !gameInstalled)
-                  ? (luatoolsFixes.some((f: any) => f?.hasManifest)
-                      ? "Install the correct build first to apply a fix"
-                      : "Install the game first to apply a fix")
-                  : undefined
-          }
-        />
-        {/* LuaTools catalogue — public listing (crack / online / Denuvo fixes).
-            Loaded after "Check for Fixes". Applying a fix needs a connected account.
-            The empty-state / install-gate lines ride as the button's description
-            above (compact); the connect prompt needs its own button, so it stays a
-            row. */}
-        {luatoolsFixes && (
-          <>
-            {/* Gate 1 — the listing is public but downloading anything (fix or
-                version) needs a session. Show first, regardless of install state,
-                since both buttons are gated on it. Mirror the QAM Add-Game pattern
-                (reason row + contextual connect button); canonical connect stays
-                in Settings. */}
-            {luatoolsFixes.length > 0 && !luatoolsConnected && (
-              <>
-                <PanelSectionRow>
-                  <Field description={
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                      <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                      Log in with Discord to install versions and apply fixes
-                    </span>
-                  } />
-                </PanelSectionRow>
-                <ActionButton
-                  label={luatoolsConnecting ? "Logging in…" : "Log in with Discord"}
-                  onClick={handleConnectLuatools}
-                  disabled={luatoolsConnecting}
-                />
-              </>
-            )}
-            {luatoolsFixes.map((f: any) => {
-              // Per fix: a header (name + tags) then the version button and the
-              // Apply-fix button (version first — set the build, then apply). The
-              // NAME is the fix's LuaTools title ("voices38 (crack)", "Fix"); when
-              // that title is just a build number, show it "Build 23314029" like
-              // LuaTools. Tags ("SteamTools", "Achievements Fix", "Generic") are the
-              // subtitle. Apply fix patches files in the game dir → needs it
-              // installed + connected; the version button only needs a connected
-              // account. hasFix===false → no crack, so no Apply-fix button.
-              const canApply = gameInstalled && luatoolsConnected;
-              const canInstallVersion = luatoolsConnected;
-              const busyManifest = busy === "manifest";
-              const buildTag = luaFixBuildTag(f);
-              // True when the game is already on the exact build this fix needs
-              // (installed appmanifest buildid == the fix's required build). In
-              // that state the version button is a no-op — re-pinning the same
-              // manifest re-downloads nothing — so we grey it out and drop the
-              // "Sets the game to…" call-to-action from its description.
-              const onRequiredBuild = !!buildTag && String(installedBuild) === buildTag;
-              const rawTitle = String(f?.title ?? "").trim();
-              const fTags = luaFixTagList(f);
-              // Name = the LuaTools title; a bare build number becomes "Build N".
-              // When the fix has no title (e.g. a "Generic" fix whose only label
-              // lives in a tag) fall back to the first tag so the name renders at
-              // label size instead of as tiny subtitle text.
-              const fixName = /^\d{6,}$/.test(rawTitle)
-                ? `Build ${rawTitle}`
-                : (rawTitle || fTags[0] || "Fix");
-              // Don't repeat the tag we promoted to the name in the subtitle.
-              const tagsSub = (rawTitle ? fTags : fTags.slice(1)).join(" · ");
-              // A Denuvo fix targets one Steam build. Warn (don't block) when the
-              // build Steam reports differs; the version button is how you land on
-              // it. No trailing period — manifestDesc joins with ". ".
-              const buildNote = buildTag
-                ? (installedBuild
-                    ? (onRequiredBuild
-                        ? `You're already on the build this fix needs (${buildTag})`
-                        : `⚠ This fix needs build ${buildTag}, you have ${installedBuild}. Install the compatible version first`)
-                    : `Needs build ${buildTag}`)
-                : "";
-              // Already on the build → the button does nothing, so its description
-              // is just the status line (no "Sets the game to…" action).
-              const manifestDesc = onRequiredBuild
-                ? buildNote
-                : [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
-                    .filter(Boolean)
-                    .join(". ");
-              // With no version button, surface the build note on Apply fix so it
-              // isn't lost.
-              const applyDesc = (!f?.hasManifest ? buildNote : "") || undefined;
-              return (
-                <Fragment key={String(f.id)}>
-                  {(fixName || tagsSub) && (
-                    <PanelSectionRow>
-                      <Field label={fixName || undefined} description={tagsSub || undefined} />
-                    </PanelSectionRow>
-                  )}
-                  {f?.hasManifest && (
-                    <ActionButton
-                      label={busyManifest ? "Installing version…" : "Install the game version this fix needs"}
-                      description={manifestDesc}
-                      onClick={() => handleInstallManifest(String(f.id))}
-                      disabled={!canInstallVersion || busyManifest || !!isFixInProgress || onRequiredBuild}
-                    />
-                  )}
-                  {f?.hasFix !== false && (
-                    <ActionButton
-                      label="Apply fix"
-                      description={applyDesc}
-                      onClick={() => handleApplyLuatoolsFix(String(f.id))}
-                      disabled={!canApply || !!isFixInProgress || busyManifest}
-                    />
-                  )}
-                </Fragment>
-              );
-            })}
-          </>
-        )}
-        {isFixInProgress && (
-          <>
-            <PanelSectionRow>
-              <ProgressBarWithInfo
-                indeterminate={!(fixStatus.totalBytes > 0)}
-                nProgress={
-                  fixStatus.totalBytes > 0
-                    ? Math.min(100, ((fixStatus.bytesRead || 0) / fixStatus.totalBytes) * 100)
-                    : 0
-                }
-                sOperationText={fixStatusLabel}
-              />
-            </PanelSectionRow>
-            <ActionButton
-              label={t("cancelFix")}
-              onClick={handleCancelFix}
-              variant="danger"
-            />
-          </>
-        )}
-      </PanelSection>
+      {/* Fixes & Repairs: the NON-online LuaTools catalogue (crack / Denuvo — the
+          online ones live in the Online Fixes tab), then Steamless / Goldberg, then
+          Repairs. Each keeps its own title. */}
+      {renderCatalogueSection("LuaTools Fixes", t("checkForFixes"), t("noOtherFixes"), otherFixes)}
 
       {/* Installed LuaTools fixes — the fixes already applied to THIS game,
           shown directly under the catalogue they came from. */}
@@ -1225,6 +1156,42 @@ export function GameDetail({ appid }: GameDetailProps) {
           onClick={handleRepairAcf}
           disabled={busy === "acf"}
           description={t("regeneratesAcf")}
+        />
+      </PanelSection>
+        </>
+      ),
+    },
+    {
+      title: t("onlineFixesTab"),
+      icon: <FaUsers />,
+      hideTitle: true,
+      content: (
+        <>
+      {/* Online fixes: the online LuaTools catalogue first, then the crack-free
+          native route (FakeAppId 480 + netsock). */}
+      {renderCatalogueSection(t("luatoolsOnlineFixes"), t("checkForOnlineFixes"), t("noOnlineFixes"), onlineFixes)}
+
+      <PanelSection title={t("nativeOnline")}>
+        <ActionButton
+          label={
+            busy === "nativeonline"
+              ? (nativeOnline?.enabled ? t("nativeOnlineDisabling") : t("nativeOnlineEnabling"))
+              : (nativeOnline?.enabled ? t("nativeOnlineDisable") : t("nativeOnlineEnable"))
+          }
+          onClick={handleToggleNativeOnline}
+          disabled={
+            busy === "nativeonline"
+            || !installPath
+            || !!nativeOnline?.hasAntiCheat
+            || (nativeOnline && !nativeOnline.netsockInstalled)
+          }
+          description={
+            nativeOnline?.hasAntiCheat
+              ? t("nativeOnlineAntiCheat")
+              : (nativeOnline && !nativeOnline.netsockInstalled)
+                ? t("nativeOnlineNoLib")
+                : t("nativeOnlineDesc")
+          }
         />
       </PanelSection>
         </>
