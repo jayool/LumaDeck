@@ -350,6 +350,15 @@ export const computeFixLaunchOptions = async (appid: number, installPath: string
     await call<[number, string], string>("compute_fix_launch_options", appid, installPath),
   );
 
+// Native online (netsock): the crack-free SteamNetworkingSockets primitive. Sets
+// FakeAppId 480 + a per-game marker so computeFixLaunchOptions re-emits the
+// LD_AUDIT. Non-destructive and inert where unneeded, so it's applied alongside
+// every online fix (backend no-ops on anti-cheat / missing netsock.so).
+export const enableNativeOnline = async (appid: number, installPath: string) =>
+  parseResult(
+    await call<[number, string], string>("enable_native_online", appid, installPath),
+  );
+
 // Repair / Maintenance
 export const repairAppmanifest = async (appid: number) =>
   parseResult(await call<[number], string>("repair_appmanifest", appid));
