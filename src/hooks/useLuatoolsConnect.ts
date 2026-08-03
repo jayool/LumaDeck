@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigation } from "@decky/ui";
+import { Navigation, Router } from "@decky/ui";
 
 import { connectLuatools, disconnectLuatools, getLuatoolsStatus } from "../api";
 
@@ -38,7 +38,13 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
     try {
       const res = await connectLuatools(); // resolves when captured (or timeout)
       if (res?.success) {
-        Navigation.NavigateBack(); // close the browser, back to the caller
+        // Close the browser via the MAIN window's own router. The global
+        // Navigation.NavigateBack() may act on the wrong window (the QAM lives in
+        // a separate window from the browser), which is likely why it didn't
+        // close. Fall back to the global back if the main-window router isn't there.
+        const mainWin = Router.WindowStore?.GamepadUIMainWindowInstance;
+        if (mainWin?.NavigateBack) mainWin.NavigateBack();
+        else Navigation.NavigateBack();
         setConnected(true);
         toast("LuaTools connected ✓"); // TODO i18n
         return true;
