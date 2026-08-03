@@ -23,7 +23,7 @@ import { toaster } from "@decky/api";
 import { listLuatoolsFixes, downloadLuatoolsFix, selfHealAcfBuild } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { ActionButton } from "../components/ActionButton";
-import { ROUTE_SETTINGS, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
+import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { ACHIEVEMENTS_ENABLED } from "../features";
 import {
   startDownload,
@@ -806,7 +806,7 @@ export function GameDetail({ appid }: GameDetailProps) {
               </PanelSectionRow>
               <ActionButton
                 label={luatoolsConnecting ? "Logging in…" : "Log in with Discord"}
-                onClick={() => handleConnectLuatools(ROUTE_GAME_DETAIL + "/" + appid)}
+                onClick={handleConnectLuatools}
                 disabled={luatoolsConnecting}
               />
             </>

@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
 import { ACHIEVEMENTS_ENABLED, SLSSTEAM_TAB_ENABLED } from "../features";
-import { ROUTE_SETTINGS } from "../routes";
 import {
   PanelSection,
   PanelSectionRow,
@@ -767,7 +766,7 @@ export function Settings() {
             onClick={
               luatoolsConnected
                 ? handleDisconnectLuatools
-                : () => handleConnectLuatools(ROUTE_SETTINGS)
+                : handleConnectLuatools
             }
             description={
               luatoolsConnected
