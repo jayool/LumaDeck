@@ -119,25 +119,42 @@ class TestDistroPredicates(unittest.TestCase):
 
 
 class TestRealUser(unittest.TestCase):
+    # Signature: _resolve_real_user(environ, steam_owner_name, uid1000_name, euid)
     def test_steamos_root_backend_resolves_deck(self):
-        # SteamOS characterization: Decky as root, no SUDO_USER, uid 1000 == deck.
-        self.assertEqual(p._resolve_real_user({}, "deck", euid=0), "deck")
+        # SteamOS: Decky as root, no SUDO_USER, Steam owned by deck (uid 1000).
+        self.assertEqual(p._resolve_real_user({}, "deck", "deck", euid=0), "deck")
 
-    def test_root_backend_resolves_uid1000_on_other_distro(self):
-        self.assertEqual(p._resolve_real_user({}, "jayo", euid=0), "jayo")
+    def test_steam_owner_wins_over_uid1000(self):
+        # The CachyOS jayo=1001 case: Steam is owned by jayo, but uid 1000 is a
+        # different account (builder). Must resolve to jayo, NOT builder.
+        self.assertEqual(p._resolve_real_user({}, "jayo", "builder", euid=0), "jayo")
+
+    def test_falls_back_to_uid1000_when_no_steam_owner(self):
+        # No Steam install found yet (steam_owner_name None) -> uid 1000 name.
+        self.assertEqual(p._resolve_real_user({}, None, "jayo", euid=0), "jayo")
+
+    def test_steam_owner_root_is_ignored(self):
+        self.assertEqual(p._resolve_real_user({}, "root", "bob", euid=0), "bob")
 
     def test_sudo_user_wins(self):
-        self.assertEqual(p._resolve_real_user({"SUDO_USER": "alice"}, "deck", euid=0), "alice")
+        self.assertEqual(p._resolve_real_user({"SUDO_USER": "alice"}, "deck", "deck", euid=0), "alice")
 
     def test_sudo_user_root_is_ignored(self):
-        self.assertEqual(p._resolve_real_user({"SUDO_USER": "root"}, "bob", euid=0), "bob")
+        self.assertEqual(p._resolve_real_user({"SUDO_USER": "root"}, None, "bob", euid=0), "bob")
 
     def test_non_root_trusts_login_env(self):
-        self.assertEqual(p._resolve_real_user({"LOGNAME": "alice"}, None, euid=1000), "alice")
-        self.assertEqual(p._resolve_real_user({"USER": "carol"}, None, euid=1000), "carol")
+        self.assertEqual(p._resolve_real_user({"LOGNAME": "alice"}, None, None, euid=1000), "alice")
+        self.assertEqual(p._resolve_real_user({"USER": "carol"}, None, None, euid=1000), "carol")
 
     def test_last_resort_is_deck(self):
-        self.assertEqual(p._resolve_real_user({}, None, euid=0), "deck")
+        self.assertEqual(p._resolve_real_user({}, None, None, euid=0), "deck")
+
+    def test_steam_owner_scan_never_raises(self):
+        # The FS scan is fully guarded: returns None or an int/str, never raises.
+        uid = p._find_steam_owner_uid()
+        self.assertTrue(uid is None or isinstance(uid, int))
+        name = p._steam_owner_name()
+        self.assertTrue(name is None or isinstance(name, str))
 
 
 class TestRealUid(unittest.TestCase):
@@ -150,6 +167,8 @@ class TestRealUid(unittest.TestCase):
         self.assertEqual(p._resolve_real_uid(None), 1000)
         self.assertEqual(p._resolve_real_uid(-1), 1000)
         self.assertEqual(p._resolve_real_uid("nope"), 1000)
+        self.assertEqual(p._resolve_real_uid(True), 1000)   # bool is not a uid
+        self.assertEqual(p._resolve_real_uid(False), 1000)
 
 
 class TestRealHome(unittest.TestCase):
@@ -203,7 +222,7 @@ class TestSteamOsNonRegressionSummary(unittest.TestCase):
         # building blocks it composes.)
         osr = p._parse_os_release(STEAMOS_OSR)
         self.assertEqual(p._distro_id(osr), "steamos")
-        self.assertEqual(p._resolve_real_user({}, "deck", euid=0), "deck")
+        self.assertEqual(p._resolve_real_user({}, "deck", "deck", euid=0), "deck")
         self.assertEqual(p._resolve_real_home("deck", "/home/deck", {}), "/home/deck")
         self.assertEqual(p._detect_steam_flavor(True, False), "native")
         self.assertEqual(p._session_family("steamos"), "steamos")

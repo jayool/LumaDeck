@@ -122,11 +122,22 @@ def _read_os_release(paths: Iterable[str] = _OS_RELEASE_PATHS) -> dict:
 DEFAULT_USER = "deck"
 
 
-def _resolve_real_user(environ: dict, uid1000_name: Optional[str], euid: int) -> str:
+def _resolve_real_user(environ: dict, steam_owner_name: Optional[str],
+                       uid1000_name: Optional[str], euid: int) -> str:
     """Resolve the real desktop user. Pure (all system state is injected).
 
-    On SteamOS (root backend, no SUDO_USER, uid 1000 == deck) this returns
-    "deck", reproducing today's hardcoded value."""
+    Precedence:
+      1. SUDO_USER (explicit invoker), when non-root.
+      2. LOGNAME/USER, only when not running as root.
+      3. Owner of the Steam install (the Decky-as-root case) — this is the
+         signal that pins the ACTUAL desktop user even when they are NOT uid
+         1000. Steam's tree is owned by the human who runs it.
+      4. uid 1000's name (the common single-user convention).
+      5. DEFAULT_USER ("deck") — last resort, preserves SteamOS behavior.
+
+    On SteamOS the Steam owner is `deck` (uid 1000), so this returns "deck",
+    unchanged. On e.g. CachyOS with user jayo=1001, the Steam owner is jayo, so
+    resolution no longer wrongly assumes uid 1000."""
     sudo_user = environ.get("SUDO_USER")
     if sudo_user and sudo_user != "root":
         return sudo_user
@@ -135,9 +146,11 @@ def _resolve_real_user(environ: dict, uid1000_name: Optional[str], euid: int) ->
             v = environ.get(var)
             if v and v != "root":
                 return v
-    if uid1000_name and uid1000_name != "root":  # the Decky-as-root case
+    if steam_owner_name and steam_owner_name != "root":
+        return steam_owner_name
+    if uid1000_name and uid1000_name != "root":
         return uid1000_name
-    return DEFAULT_USER  # last resort: preserve SteamOS behavior
+    return DEFAULT_USER
 
 
 def _resolve_real_home(user: str, pw_home: Optional[str], environ: dict) -> str:
@@ -158,9 +171,46 @@ def _uid1000_name() -> Optional[str]:
         return None
 
 
+_STEAM_REL_DIRS = (".local/share/Steam", ".steam/steam")
+
+
+def _find_steam_owner_uid() -> Optional[int]:
+    """The desktop user owns their Steam install. Under Decky-as-root, scan
+    /home/*/ for a Steam tree and return its owner uid (subprocess-free), or
+    None. This pins the real user even when they are not uid 1000."""
+    try:
+        entries = list(os.scandir("/home"))
+    except Exception:
+        return None
+    for entry in entries:
+        try:
+            if not entry.is_dir():
+                continue
+        except Exception:
+            continue
+        for rel in _STEAM_REL_DIRS:
+            p = os.path.join(entry.path, rel)
+            try:
+                if os.path.isdir(p):
+                    return os.stat(p).st_uid
+            except Exception:
+                continue
+    return None
+
+
+def _steam_owner_name() -> Optional[str]:
+    uid = _find_steam_owner_uid()
+    if uid is None or uid == 0:
+        return None
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except Exception:
+        return None
+
+
 def real_user(environ: Optional[dict] = None) -> str:
     env = os.environ if environ is None else environ
-    return _resolve_real_user(env, _uid1000_name(), os.geteuid())
+    return _resolve_real_user(env, _steam_owner_name(), _uid1000_name(), os.geteuid())
 
 
 def real_home(user: Optional[str] = None, environ: Optional[dict] = None) -> str:
@@ -179,7 +229,9 @@ DEFAULT_UID = 1000  # SteamOS: the deck user is uid 1000
 
 def _resolve_real_uid(pw_uid: Optional[int]) -> int:
     """Pure: the passwd uid if valid, else the SteamOS default (1000)."""
-    return pw_uid if isinstance(pw_uid, int) and pw_uid >= 0 else DEFAULT_UID
+    if isinstance(pw_uid, bool) or not isinstance(pw_uid, int) or pw_uid < 0:
+        return DEFAULT_UID
+    return pw_uid
 
 
 def real_uid(user: Optional[str] = None, environ: Optional[dict] = None) -> int:

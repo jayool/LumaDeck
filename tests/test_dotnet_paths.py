@@ -27,9 +27,11 @@ class TestDotnetPaths(unittest.TestCase):
         self.assertEqual(os.path.join("/home/deck/.dotnet", "dotnet"),
                          "/home/deck/.dotnet/dotnet")
 
-    def test_chown_spec_is_user_colon(self):
-        # `<user>:` sets the user's primary group; deck: == deck:deck on SteamOS.
-        self.assertEqual(f"{'deck'}:", "deck:")
+    def test_chown_owner_is_real_user_colon(self):
+        # The chown target is `<real_user>:` (primary group). Ties to product
+        # code: on SteamOS real_user()=="deck" so this is "deck:" (== deck:deck).
+        self.assertEqual(f"{paths.real_user()}:", paths.real_user() + ":")
+        self.assertTrue(paths.real_user())  # never empty
 
 
 if __name__ == "__main__":
