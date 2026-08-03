@@ -62,10 +62,44 @@ def _id_like(osr: dict) -> list:
     return [t for t in (osr.get("ID_LIKE") or "").lower().split() if t]
 
 
-def _is_arch_like(osr: dict) -> bool:
-    """True for arch-based distros. Mirrors headcrab's `archcheck` (matches
-    `arch`/`cachyos` in ID or ID_LIKE); steamos is arch-based too."""
-    return _distro_id(osr) in {"arch", "cachyos", "steamos"} or "arch" in _id_like(osr)
+def _tokens(osr: dict) -> list:
+    """[ID] + ID_LIKE, lowercased — the set headcrab matches against in its
+    `case " $OS_ID $OS_ID_LIKE "` distro checks."""
+    return [_distro_id(osr)] + _id_like(osr)
+
+
+# The predicates below mirror headcrab.sh's os-release checks 1:1, so LumaDeck
+# and Headcrab agree on the distro (they must make the same install decisions).
+# Exact-ID checks (steamos/void/cachyos/bazzite) match headcrab's
+# `[ "$OS_ID" = "..." ]`; token checks (arch/debian) match its
+# `case " $OS_ID $OS_ID_LIKE " in *" arch "*|...`.  SLSsteam does NO OS
+# detection of its own — it is distro-agnostic by design — so Headcrab is the
+# only canonical reference here.
+
+def _is_steamos(osr: dict) -> bool:      # headcrab: steamoscheck
+    return _distro_id(osr) == "steamos"
+
+
+def _is_cachyos(osr: dict) -> bool:      # headcrab: cachyoscheck
+    return _distro_id(osr) == "cachyos"
+
+
+def _is_bazzite(osr: dict) -> bool:      # headcrab: bazzitecheck
+    return _distro_id(osr) == "bazzite"
+
+
+def _is_void(osr: dict) -> bool:         # headcrab: voidcheck
+    return _distro_id(osr) == "void"
+
+
+def _is_arch_like(osr: dict) -> bool:    # headcrab: archcheck
+    t = _tokens(osr)
+    return "arch" in t or "cachyos" in t
+
+
+def _is_debian_like(osr: dict) -> bool:  # headcrab: debiancheck
+    t = _tokens(osr)
+    return "debian" in t or "ubuntu" in t
 
 
 def _read_os_release(paths: Iterable[str] = _OS_RELEASE_PATHS) -> dict:
@@ -164,7 +198,12 @@ def steam_flavor(home: Optional[str] = None) -> str:
         os.path.isdir(os.path.join(home, ".local/share/Steam"))
         or os.path.isdir(os.path.join(home, ".steam/steam"))
     )
-    flatpak = os.path.isdir(os.path.join(home, ".var/app", FLATPAK_STEAM_ID))
+    # Match headcrab's flatpakcheck exactly: it tests $FlatpakSteamInstallDir =
+    # ~/.var/app/com.valvesoftware.Steam/.steam/steam (the flatpak Steam data
+    # tree), not merely the app dir.
+    flatpak = os.path.isdir(
+        os.path.join(home, ".var/app", FLATPAK_STEAM_ID, ".steam/steam")
+    )
     return _detect_steam_flavor(native, flatpak)
 
 
@@ -177,7 +216,14 @@ def steam_flavor(home: Optional[str] = None) -> str:
 def _session_family(distro: str) -> str:
     """Which gamescope-session lineage this distro belongs to. steamos is its
     own; cachyos/bazzite/chimeraos share the ChimeraOS `gamescope-session`
-    lineage (different crash-loop + session-select semantics than SteamOS)."""
+    lineage (different crash-loop + session-select semantics than SteamOS).
+
+    NOTE: family is NOT the same as handheld-vs-desktop. Headcrab does not read
+    that from os-release either — it infers "handheld" from the presence of the
+    `steam_client_steamdeck_stable_ubuntu12.installed` marker in the Steam
+    package dir (see CachyClientCheck/CachyWatMani). That marker check is a
+    Phase-1 concern (needs the resolved Steam root); do not conflate it with the
+    session family here."""
     if distro == "steamos":
         return "steamos"
     if distro in ("cachyos", "bazzite", "chimeraos"):
@@ -219,8 +265,13 @@ def summary(environ: Optional[dict] = None) -> dict:
     data = {
         "distro": distro,
         "id_like": _id_like(osr),
+        # Headcrab-parity predicates (see the _is_* helpers).
+        "is_steamos": _is_steamos(osr),
+        "is_cachyos": _is_cachyos(osr),
+        "is_bazzite": _is_bazzite(osr),
+        "is_void": _is_void(osr),
         "arch_like": _is_arch_like(osr),
-        "is_steamos": distro == "steamos",
+        "debian_like": _is_debian_like(osr),
         "user": user,
         "home": home,
         "steam_flavor": steam_flavor(home),

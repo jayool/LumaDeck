@@ -39,6 +39,22 @@ ID=ubuntu
 ID_LIKE=debian
 """
 
+BAZZITE_OSR = """\
+NAME="Bazzite"
+ID=bazzite
+ID_LIKE="fedora"
+"""
+
+VOID_OSR = """\
+NAME="Void"
+ID=void
+"""
+
+ARCH_OSR = """\
+NAME="Arch Linux"
+ID=arch
+"""
+
 
 class TestOsRelease(unittest.TestCase):
     def test_parse_strips_quotes_and_comments(self):
@@ -66,6 +82,40 @@ class TestOsRelease(unittest.TestCase):
         self.assertTrue(p._is_arch_like(p._parse_os_release(CACHYOS_OSR)))
         self.assertTrue(p._is_arch_like({"ID": "arch"}))
         self.assertFalse(p._is_arch_like(p._parse_os_release(UBUNTU_OSR)))
+
+
+class TestDistroPredicates(unittest.TestCase):
+    """1:1 parity with headcrab.sh's steamoscheck/cachyoscheck/bazzitecheck/
+    voidcheck/archcheck/debiancheck."""
+
+    def test_exact_id_predicates(self):
+        steamos = p._parse_os_release(STEAMOS_OSR)
+        cachyos = p._parse_os_release(CACHYOS_OSR)
+        bazzite = p._parse_os_release(BAZZITE_OSR)
+        void = p._parse_os_release(VOID_OSR)
+
+        self.assertTrue(p._is_steamos(steamos))
+        self.assertTrue(p._is_cachyos(cachyos))
+        self.assertTrue(p._is_bazzite(bazzite))
+        self.assertTrue(p._is_void(void))
+
+        # Mutually exclusive on the exact-ID checks.
+        self.assertFalse(p._is_cachyos(steamos))
+        self.assertFalse(p._is_steamos(cachyos))
+        self.assertFalse(p._is_bazzite(void))
+
+    def test_arch_like_via_id_or_id_like(self):
+        # cachyos matches archcheck via its own token; steamos via ID_LIKE=arch.
+        self.assertTrue(p._is_arch_like(p._parse_os_release(CACHYOS_OSR)))
+        self.assertTrue(p._is_arch_like(p._parse_os_release(STEAMOS_OSR)))
+        self.assertTrue(p._is_arch_like(p._parse_os_release(ARCH_OSR)))
+        self.assertFalse(p._is_arch_like(p._parse_os_release(BAZZITE_OSR)))
+        self.assertFalse(p._is_arch_like(p._parse_os_release(UBUNTU_OSR)))
+
+    def test_debian_like(self):
+        self.assertTrue(p._is_debian_like(p._parse_os_release(UBUNTU_OSR)))
+        self.assertTrue(p._is_debian_like({"ID": "debian"}))
+        self.assertFalse(p._is_debian_like(p._parse_os_release(CACHYOS_OSR)))
 
 
 class TestRealUser(unittest.TestCase):
