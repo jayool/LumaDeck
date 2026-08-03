@@ -16,6 +16,11 @@ try:
 except ImportError:
     _DECKY_AVAILABLE = False
 
+try:
+    import platform_info as _platform  # SteamOS-default platform detection
+except Exception:  # pragma: no cover - present in-tree; guarded so import can't break
+    _platform = None  # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Plugin directory helpers
@@ -57,15 +62,41 @@ def settings_dir() -> str:
 # Steam path resolution
 # ---------------------------------------------------------------------------
 
-# On Steam Deck (Decky runs as root), ~ is /root/ — we must list /home/deck/ first.
-_STEAM_PATHS = [
-    "/home/deck/.local/share/Steam",
-    "/home/deck/.steam/steam",
-    os.path.expanduser("~/.steam/steam"),
-    os.path.expanduser("~/.local/share/Steam"),
-    "/opt/steam/steam",
-    "/usr/local/steam",
-]
+# On Steam Deck (Decky runs as root), ~ is /root/ — the real user's home had to
+# be listed explicitly, historically hardcoded to /home/deck. It now comes from
+# platform_info.real_home(); on SteamOS that resolves to /home/deck, so the list
+# below is byte-identical to the previous hardcoded one (pinned by
+# tests/test_paths_characterization.py). Any failure resolving it falls back to
+# /home/deck, so this can neither break paths.py import nor change the Deck path.
+
+
+def _real_home() -> str:
+    try:
+        if _platform is not None:
+            h = _platform.real_home()
+            if h:
+                return h
+    except Exception:
+        pass
+    return "/home/deck"
+
+
+def _build_steam_paths(home: str, expanded_home: str) -> list:
+    """Candidate Steam roots, most-specific first. `home` is the real-user home
+    (from platform_info); `expanded_home` is os.path.expanduser("~") (i.e. /root
+    when Decky runs as root). With home=/home/deck this reproduces the exact
+    historical list. Pure — tested with fixtures."""
+    return [
+        os.path.join(home, ".local/share/Steam"),
+        os.path.join(home, ".steam/steam"),
+        os.path.join(expanded_home, ".steam/steam"),
+        os.path.join(expanded_home, ".local/share/Steam"),
+        "/opt/steam/steam",
+        "/usr/local/steam",
+    ]
+
+
+_STEAM_PATHS = _build_steam_paths(_real_home(), os.path.expanduser("~"))
 
 
 def find_steam_root() -> Optional[str]:
