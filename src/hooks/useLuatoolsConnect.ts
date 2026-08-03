@@ -38,11 +38,7 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
     try {
       const res = await connectLuatools(); // resolves when captured (or timeout)
       if (res?.success) {
-        // Leave the browser for the Library tab. NavigateBack() didn't reliably
-        // close after the Discord OAuth redirect chain, and Navigate()-ing to the
-        // captured SPA pathname black-screened (it isn't a valid route target).
-        // NavigateToLibraryTab is a first-class method that always lands cleanly.
-        Navigation.NavigateToLibraryTab();
+        Navigation.NavigateBack(); // close the browser, back to the caller
         setConnected(true);
         toast("LuaTools connected ✓"); // TODO i18n
         return true;
