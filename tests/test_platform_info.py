@@ -140,6 +140,18 @@ class TestRealUser(unittest.TestCase):
         self.assertEqual(p._resolve_real_user({}, None, euid=0), "deck")
 
 
+class TestRealUid(unittest.TestCase):
+    def test_valid_uid_passthrough(self):
+        self.assertEqual(p._resolve_real_uid(1000), 1000)   # SteamOS: deck
+        self.assertEqual(p._resolve_real_uid(1001), 1001)
+        self.assertEqual(p._resolve_real_uid(0), 0)
+
+    def test_invalid_falls_back_to_1000(self):
+        self.assertEqual(p._resolve_real_uid(None), 1000)
+        self.assertEqual(p._resolve_real_uid(-1), 1000)
+        self.assertEqual(p._resolve_real_uid("nope"), 1000)
+
+
 class TestRealHome(unittest.TestCase):
     def test_prefers_passwd_home(self):
         self.assertEqual(p._resolve_real_home("deck", "/home/deck", {}), "/home/deck")

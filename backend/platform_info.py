@@ -174,6 +174,25 @@ def real_home(user: Optional[str] = None, environ: Optional[dict] = None) -> str
     return _resolve_real_home(user, pw_home, env)
 
 
+DEFAULT_UID = 1000  # SteamOS: the deck user is uid 1000
+
+
+def _resolve_real_uid(pw_uid: Optional[int]) -> int:
+    """Pure: the passwd uid if valid, else the SteamOS default (1000)."""
+    return pw_uid if isinstance(pw_uid, int) and pw_uid >= 0 else DEFAULT_UID
+
+
+def real_uid(user: Optional[str] = None, environ: Optional[dict] = None) -> int:
+    env = os.environ if environ is None else environ
+    user = user or real_user(env)
+    pw_uid = None
+    try:
+        pw_uid = pwd.getpwnam(user).pw_uid
+    except Exception:
+        pass
+    return _resolve_real_uid(pw_uid)
+
+
 # ---------------------------------------------------------------------------
 # Steam flavor (native vs flatpak)
 # ---------------------------------------------------------------------------
@@ -273,6 +292,7 @@ def summary(environ: Optional[dict] = None) -> dict:
         "arch_like": _is_arch_like(osr),
         "debian_like": _is_debian_like(osr),
         "user": user,
+        "uid": real_uid(user, env),
         "home": home,
         "steam_flavor": steam_flavor(home),
         "session_family": _session_family(distro),

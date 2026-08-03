@@ -178,12 +178,34 @@ class TestSteamRootUnification(unittest.TestCase):
         ])
 
 
+class TestIdentityFacades(unittest.TestCase):
+    """Hook #4: paths exposes real_user()/real_home()/real_uid() as the backend's
+    single identity source (uid status path + ryuu's sudo -u <user> / session env
+    now route through them). Cached; SteamOS => deck / /home/deck / 1000."""
+
+    def test_facades_types_and_caching(self):
+        self.assertIsInstance(paths.real_user(), str)
+        self.assertTrue(paths.real_user())
+        self.assertIsInstance(paths.real_uid(), int)
+        self.assertGreaterEqual(paths.real_uid(), 0)
+        self.assertTrue(paths.real_home().startswith("/"))
+        # Cached values are what the façades return.
+        self.assertEqual(paths.real_user(), paths._REAL_USER)
+        self.assertEqual(paths.real_uid(), paths._REAL_UID)
+        self.assertEqual(paths.real_home(), paths._REAL_HOME)
+
+
 class TestRealHomeFallback(unittest.TestCase):
     def test_real_home_never_raises_and_is_nonempty(self):
         # _real_home is guarded: any platform_info failure -> "/home/deck".
         h = paths._real_home()
         self.assertTrue(h)
         self.assertTrue(h.startswith("/"))
+
+    def test_uid_and_user_guarded_fallbacks(self):
+        # The paths-level safe resolvers never raise and default to deck / 1000.
+        self.assertIsInstance(paths._resolve_real_uid_safe(), int)
+        self.assertTrue(paths._resolve_real_user_safe())
 
 
 if __name__ == "__main__":

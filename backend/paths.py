@@ -101,6 +101,49 @@ def _build_steam_paths(home: str, expanded_home: str) -> list:
 _REAL_HOME = _real_home()
 _EXPANDED_HOME = os.path.expanduser("~")
 
+
+def _resolve_real_user_safe() -> str:
+    try:
+        if _platform is not None:
+            u = _platform.real_user()
+            if u:
+                return u
+    except Exception:
+        pass
+    return "deck"
+
+
+def _resolve_real_uid_safe() -> int:
+    try:
+        if _platform is not None:
+            u = _platform.real_uid()
+            if isinstance(u, int) and u >= 0:
+                return u
+    except Exception:
+        pass
+    return 1000
+
+
+_REAL_USER = _resolve_real_user_safe()
+_REAL_UID = _resolve_real_uid_safe()
+
+
+# Public identity façades: backend modules import these from paths (the path/
+# identity hub) instead of platform_info directly. Cached at import; every one
+# resolves to the SteamOS values (deck / 1000 / /home/deck) on a Steam Deck, and
+# is guarded so any resolution failure falls back to them.
+def real_user() -> str:
+    return _REAL_USER
+
+
+def real_home() -> str:
+    return _REAL_HOME
+
+
+def real_uid() -> int:
+    return _REAL_UID
+
+
 _STEAM_PATHS = _build_steam_paths(_REAL_HOME, _EXPANDED_HOME)
 
 
@@ -311,20 +354,12 @@ def find_lumalinux_status_path() -> Optional[str]:
     root so we have to look under the deck user's runtime dir explicitly, not
     just $XDG_RUNTIME_DIR (which under root is /run/user/0).
     """
-    candidates = [
-        # Steam Deck default: deck user is uid 1000.
-        "/run/user/1000/lumalinux/status.json",
-        # Generic: try pwd.getpwnam('deck') for non-default UIDs.
-    ]
-    try:
-        import pwd as _pwd
-        try:
-            deck_uid = _pwd.getpwnam("deck").pw_uid
-            candidates.append(f"/run/user/{deck_uid}/lumalinux/status.json")
-        except KeyError:
-            pass
-    except Exception:
-        pass
+    # The real user's runtime dir (on SteamOS uid 1000 == deck), with the uid
+    # 1000 default kept as a belt fallback.
+    candidates = [f"/run/user/{real_uid()}/lumalinux/status.json"]
+    default_1000 = "/run/user/1000/lumalinux/status.json"
+    if default_1000 not in candidates:
+        candidates.append(default_1000)
     # Cache fallbacks (lumalinux falls back here if XDG_RUNTIME_DIR is unset).
     candidates += [
         os.path.join(_REAL_HOME, ".cache/lumalinux/status.json"),

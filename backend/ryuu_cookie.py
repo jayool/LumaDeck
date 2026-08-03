@@ -20,13 +20,12 @@ from __future__ import annotations
 
 import hashlib
 import os
-import pwd
 import shutil
 import sqlite3
 import subprocess
 import tempfile
 
-from paths import home_candidates
+from paths import home_candidates, real_home, real_uid, real_user
 from subprocess_env import clean_env
 
 try:
@@ -149,23 +148,21 @@ def _deck_session_env() -> dict:
     """Env for running a keyring query AS the deck user, in the deck user's login
     session (Decky's backend is root and not in that session by default). Mirrors
     desktop_handoff.py's `sudo -u deck env DBUS_SESSION_BUS_ADDRESS=...` pattern."""
-    try:
-        uid = pwd.getpwnam("deck").pw_uid
-    except KeyError:
-        uid = 1000
+    uid = real_uid()  # SteamOS: deck == uid 1000
     runtime = f"/run/user/{uid}"
     return {
         "XDG_RUNTIME_DIR": runtime,
         "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
-        "HOME": "/home/deck",
+        "HOME": real_home(),
     }
 
 
 def _run_as_deck(argv: list) -> bytes:
-    """Run `argv` as the deck user with its session bus; return stdout bytes (b''
-    on any failure — this is best-effort keyring probing, never fatal)."""
+    """Run `argv` as the real desktop user with its session bus; return stdout
+    bytes (b'' on any failure — this is best-effort keyring probing, never
+    fatal). On SteamOS the real user is `deck`."""
     env = _deck_session_env()
-    cmd = ["sudo", "-u", "deck", "env"] + [f"{k}={v}" for k, v in env.items()] + argv
+    cmd = ["sudo", "-u", real_user(), "env"] + [f"{k}={v}" for k, v in env.items()] + argv
     try:
         proc = subprocess.run(cmd, capture_output=True, timeout=10)
         return proc.stdout or b""
