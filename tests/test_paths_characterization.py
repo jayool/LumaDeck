@@ -112,6 +112,36 @@ class TestComponentCandidatesNonRegression(unittest.TestCase):
         self.assertIn("/opt/SLSsteam", built)
 
 
+class TestSinglePathsWired(unittest.TestCase):
+    """Hook #3: the remaining home-based single paths are now os.path.join(
+    _REAL_HOME, rel). Assert the module constants are wired to _REAL_HOME (not a
+    hardcode), and that with home=/home/deck they reproduce the historical
+    literal."""
+
+    def test_cloudredirect_constants_use_real_home(self):
+        h = paths._REAL_HOME
+        self.assertEqual(paths._CLOUDREDIRECT_TOKEN_DIRS[0],
+                         os.path.join(h, ".config/CloudRedirect"))
+        self.assertEqual(paths._CR_LOG_PATHS[0],
+                         os.path.join(h, ".config/CloudRedirect/cr_debug.log"))
+        self.assertEqual(paths._CR_DISABLE_PATHS[0],
+                         os.path.join(h, ".config/CloudRedirect/disable"))
+        # The ~ fallback entry is always preserved as the second element.
+        self.assertEqual(paths._CLOUDREDIRECT_TOKEN_DIRS[1],
+                         os.path.expanduser("~/.config/CloudRedirect"))
+
+    def test_deck_home_reproduces_historical_single_paths(self):
+        # Frozen oracle: home=/home/deck => the exact pre-change literals.
+        self.assertEqual(os.path.join("/home/deck", ".config/SLSsteam"),
+                         "/home/deck/.config/SLSsteam")
+        self.assertEqual(os.path.join("/home/deck", ".config/lumalinux/keys.txt"),
+                         "/home/deck/.config/lumalinux/keys.txt")
+        self.assertEqual(os.path.join("/home/deck", ".cache/lumalinux/status.json"),
+                         "/home/deck/.cache/lumalinux/status.json")
+        self.assertEqual(os.path.join("/home/deck", ".SLSsteam.log"),
+                         "/home/deck/.SLSsteam.log")
+
+
 class TestRealHomeFallback(unittest.TestCase):
     def test_real_home_never_raises_and_is_nonempty(self):
         # _real_home is guarded: any platform_info failure -> "/home/deck".

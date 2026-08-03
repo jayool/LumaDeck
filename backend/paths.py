@@ -160,8 +160,9 @@ def find_slssteam_root() -> str:
 
 
 def get_slssteam_config_dir() -> str:
-    # Try deck user first since Decky runs as root
-    deck_path = "/home/deck/.config/SLSsteam"
+    # Try the real user's home first since Decky runs as root (on SteamOS this
+    # is /home/deck, unchanged).
+    deck_path = os.path.join(_REAL_HOME, ".config/SLSsteam")
     if os.path.isdir(deck_path):
         return deck_path
     return os.path.expanduser("~/.config/SLSsteam")
@@ -253,7 +254,7 @@ def get_lumalinux_keys_path() -> str:
     """Path to lumalinux's keys.txt — config lives under ~/.config/, not the
     deploy directory. Returns the path even if the file doesn't exist yet so
     callers can use it as a target."""
-    deck_path = "/home/deck/.config/lumalinux/keys.txt"
+    deck_path = os.path.join(_REAL_HOME, ".config/lumalinux/keys.txt")
     if os.path.isfile(deck_path) or os.path.isdir(os.path.dirname(deck_path)):
         return deck_path
     return os.path.expanduser("~/.config/lumalinux/keys.txt")
@@ -312,7 +313,7 @@ def find_lumalinux_status_path() -> Optional[str]:
         pass
     # Cache fallbacks (lumalinux falls back here if XDG_RUNTIME_DIR is unset).
     candidates += [
-        "/home/deck/.cache/lumalinux/status.json",
+        os.path.join(_REAL_HOME, ".cache/lumalinux/status.json"),
         os.path.expanduser("~/.cache/lumalinux/status.json"),
     ]
     for p in candidates:
@@ -526,7 +527,7 @@ def check_cloudredirect_active() -> bool:
 
 
 _CLOUDREDIRECT_TOKEN_DIRS = [
-    "/home/deck/.config/CloudRedirect",
+    os.path.join(_REAL_HOME, ".config/CloudRedirect"),
     os.path.expanduser("~/.config/CloudRedirect"),
 ]
 
@@ -570,11 +571,11 @@ def check_cloudredirect_authed() -> bool:
 
 
 _CR_LOG_PATHS = (
-    "/home/deck/.config/CloudRedirect/cr_debug.log",
+    os.path.join(_REAL_HOME, ".config/CloudRedirect/cr_debug.log"),
     os.path.expanduser("~/.config/CloudRedirect/cr_debug.log"),
 )
 _CR_DISABLE_PATHS = (
-    "/home/deck/.config/CloudRedirect/disable",
+    os.path.join(_REAL_HOME, ".config/CloudRedirect/disable"),
     os.path.expanduser("~/.config/CloudRedirect/disable"),
 )
 
@@ -799,9 +800,9 @@ def verify_slssteam_injected() -> dict:
 
 
 def _slssteam_log_path() -> Optional[str]:
-    """Path to SLSsteam's log (~/.SLSsteam.log). Decky runs as root, so the
-    deck user's home is checked explicitly first."""
-    for p in ("/home/deck/.SLSsteam.log", os.path.expanduser("~/.SLSsteam.log")):
+    """Path to SLSsteam's log (~/.SLSsteam.log). Decky runs as root, so the real
+    user's home is checked explicitly first (on SteamOS that's /home/deck)."""
+    for p in (os.path.join(_REAL_HOME, ".SLSsteam.log"), os.path.expanduser("~/.SLSsteam.log")):
         if os.path.isfile(p):
             return p
     return None
