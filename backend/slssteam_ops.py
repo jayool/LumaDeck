@@ -8,7 +8,7 @@ import shutil
 from downloads import delete_luatools_for_app
 from http_client import ensure_http_client
 from steam_utils import get_game_install_path_response
-from paths import get_slssteam_config_path, read_lumalinux_hook
+from paths import get_slssteam_config_path, read_lumalinux_hook, real_home
 
 try:
     import decky  # type: ignore
@@ -374,7 +374,7 @@ def add_game_token(appid: int) -> dict:
         # token file. Games with no `addtoken` line aren't token-gated, so we
         # skip cleanly (a no-op, not an error).
         from steam_utils import detect_steam_install_path
-        steam_path = detect_steam_install_path() or "/home/deck/.local/share/Steam"
+        steam_path = detect_steam_install_path() or os.path.join(real_home(), ".local/share/Steam")
         lua_path = os.path.join(steam_path, "config", "stplug-in", f"{appid}.lua")
         if not os.path.exists(lua_path):
             lua_path += ".disabled"  # tolerate a disabled game
@@ -1115,7 +1115,7 @@ def write_depot_decryption_keys(depot_token_map: dict) -> dict:
 #  Headcrab repair
 # ==========================================
 
-_SLS_LOG_PATH = "/home/deck/.SLSsteam.log"
+_SLS_LOG_PATH = os.path.join(real_home(), ".SLSsteam.log")
 _HEADCRAB_RESET_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/reset2vanilla.sh"
 _HEADCRAB_PATCH_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/headcrab.sh"
 
@@ -1203,7 +1203,7 @@ async def reconfigure_slssteam(appid: int) -> dict:
         results["additional_apps"] = add_to_additional_apps(appid)
         results["token"] = add_game_token(appid)
 
-        steam_path = detect_steam_install_path() or "/home/deck/.local/share/Steam"
+        steam_path = detect_steam_install_path() or os.path.join(real_home(), ".local/share/Steam")
         lua_path = os.path.join(steam_path, "config", "stplug-in", f"{appid}.lua")
         if os.path.exists(lua_path):
             with open(lua_path, "r", encoding="utf-8") as lf:

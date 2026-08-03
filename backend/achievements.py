@@ -24,7 +24,7 @@ import re
 import struct
 from typing import Any, Dict, Optional
 
-from paths import get_steam_appcache_stats_dir, find_steam_root, settings_dir
+from paths import get_steam_appcache_stats_dir, find_steam_root, real_user, settings_dir
 from subprocess_env import clean_env
 
 try:
@@ -265,7 +265,7 @@ async def _fetch_and_write(appid: int, key: str, stats_dir: str, acc: Optional[i
     # Decky runs as root (or deck); ensure Steam can read the files.
     try:
         import subprocess
-        subprocess.run(["chown", "deck:deck", schema_path], timeout=5, capture_output=True, env=clean_env())
+        subprocess.run(["chown", f"{real_user()}:", schema_path], timeout=5, capture_output=True, env=clean_env())
     except Exception:
         pass
     return True, "ok"

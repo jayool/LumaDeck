@@ -23,7 +23,7 @@ import os
 import re
 
 from http_client import ensure_http_client
-from paths import find_steam_root
+from paths import find_steam_root, real_home
 
 try:
     import decky  # type: ignore
@@ -34,7 +34,7 @@ except ImportError:
 
 
 _HEADCRAB_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh"
-_CACHE_DIR = "/home/deck/.cache/lumadeck"
+_CACHE_DIR = os.path.join(real_home(), ".cache", "lumadeck")
 _CACHE_FILE = os.path.join(_CACHE_DIR, "headcrab_target")
 _FETCH_TIMEOUT = 5.0
 

@@ -1050,10 +1050,11 @@ def apply_linux_native_fix(install_path: str) -> dict:
     if not install_path or not os.path.exists(install_path):
         return {"success": False, "error": "Game path not found."}
     try:
-        # Fix ownership first (Decky runs as root, Steam runs as deck)
+        # Fix ownership first (Decky runs as root, Steam runs as the real user)
         try:
+            from paths import real_user
             subprocess.run(
-                ["chown", "-R", "deck:deck", install_path],
+                ["chown", "-R", f"{real_user()}:", install_path],
                 timeout=120, capture_output=True, env=clean_env(),
             )
         except Exception as chown_exc:

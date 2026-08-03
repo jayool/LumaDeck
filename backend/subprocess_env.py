@@ -32,7 +32,8 @@ def clean_env(**overrides: str) -> dict:
 
     Use as ``env=clean_env()`` when invoking system binaries via subprocess
     from a Decky plugin. Optional kwargs add or override variables, e.g.
-    ``env=clean_env(HOME="/home/deck", DOTNET_ROOT="/home/deck/.dotnet")``.
+    ``env=clean_env(HOME=real_home(), DOTNET_ROOT=DOTNET_ROOT)`` (real_home()
+    resolves to /home/deck on SteamOS).
     """
     env = os.environ.copy()
     for key in _PYINSTALLER_KEYS:

@@ -17,7 +17,7 @@ import tempfile
 import zipfile
 
 from http_client import ensure_http_client
-from paths import get_plugin_dir, settings_dir
+from paths import get_plugin_dir, real_home, settings_dir
 
 try:
     import decky  # type: ignore
@@ -205,13 +205,14 @@ async def update_plugin() -> dict:
 
 
 def _downloads_dir() -> str:
-    """The Steam Deck user's Downloads folder. The plugin process runs as
-    `deck`, so this is writable — unlike the root-owned plugin dir. Created if
-    missing; falls back to the home dir if even that can't be made."""
-    for cand in ("/home/deck/Downloads", os.path.expanduser("~/Downloads")):
+    """The real user's Downloads folder (on SteamOS the `deck` user's). The
+    plugin process runs as that user, so this is writable — unlike the root-owned
+    plugin dir. Created if missing; falls back to the home dir if even that can't
+    be made."""
+    target = os.path.join(real_home(), "Downloads")
+    for cand in (target, os.path.expanduser("~/Downloads")):
         if os.path.isdir(cand):
             return cand
-    target = "/home/deck/Downloads"
     try:
         os.makedirs(target, exist_ok=True)
         return target

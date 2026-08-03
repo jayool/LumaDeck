@@ -26,7 +26,7 @@ from config import (
     GAMES_DB_URL,
 )
 from http_client import ensure_http_client
-from paths import backend_path
+from paths import backend_path, real_home
 from steam_utils import detect_steam_install_path, has_lua_for_app
 from utils import ensure_temp_download_dir
 
@@ -523,7 +523,7 @@ def _get_installed_size_bytes(appid: int) -> int:
     try:
         from steam_utils import detect_steam_install_path, get_steam_libraries
         libraries = get_steam_libraries()
-        steam_path = detect_steam_install_path() or "/home/deck/.local/share/Steam"
+        steam_path = detect_steam_install_path() or os.path.join(real_home(), ".local/share/Steam")
         if not libraries:
             libraries = [{"path": steam_path}]
 
@@ -1578,9 +1578,9 @@ def _ensure_accela_mark(appid: int, base_path: str) -> None:
     the game has actually been installed. Idempotent, non-blocking, and a no-op
     unless a marker is genuinely missing on a downloaded game.
 
-    Passes --steam-root and HOME=/home/deck explicitly so the marker and the
-    ~/.local/share/ACCELA/depots tracker land in the deck user's tree (the
-    plugin runs as root, where ~ would otherwise be /root).
+    Passes --steam-root and HOME=<real home> explicitly so the marker and the
+    ~/.local/share/ACCELA/depots tracker land in the real user's tree (on SteamOS
+    the deck user; the plugin runs as root, where ~ would otherwise be /root).
 
     Requires lumalinux v0.13.0+. --accela-mark itself landed in v0.11.0, but
     the install flow this self-heal feeds off (Steam actually downloading the
@@ -1609,7 +1609,7 @@ def _ensure_accela_mark(appid: int, base_path: str) -> None:
             return
         subprocess.Popen(
             [_LUMALINUX_PYTHON, script, "--accela-mark", str(appid), "--steam-root", base_path],
-            env=clean_env(HOME="/home/deck"),
+            env=clean_env(HOME=real_home()),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

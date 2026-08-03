@@ -7,7 +7,7 @@ import re
 import subprocess
 from typing import Dict, Optional
 
-from paths import find_steam_root, steam_root_candidates
+from paths import find_steam_root, real_home, steam_root_candidates
 from subprocess_env import clean_env
 
 try:
@@ -155,7 +155,7 @@ def get_game_install_path_response(appid: int) -> Dict[str, any]:
     try:
         import dev
         if dev.is_fake_appid(appid):
-            _root = detect_steam_install_path() or "/home/deck/.local/share/Steam"
+            _root = detect_steam_install_path() or os.path.join(real_home(), ".local/share/Steam")
             return {
                 "success": True,
                 "installPath": os.path.join(_root, "steamapps/common", f"Fake Game {appid}"),

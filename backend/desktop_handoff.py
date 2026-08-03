@@ -20,6 +20,8 @@ import shlex
 import shutil
 import subprocess
 
+from paths import real_home, real_user
+
 try:
     import decky  # type: ignore
     logger = decky.logger
@@ -27,7 +29,10 @@ except ImportError:
     import logging
     logger = logging.getLogger("lumadeck")
 
-_HOME = "/home/deck"
+# Real user's home (on SteamOS /home/deck). NOTE: the session-switch tooling in
+# this module (steamos-session-select, KDE autostart/konsole) is still SteamOS-
+# specific — that's Phase 2 (CachyOS uses the ChimeraOS gamescope-session).
+_HOME = real_home()
 _AUTOSTART = os.path.join(_HOME, ".config", "autostart")
 _DESKTOP_FILE = os.path.join(_AUTOSTART, "lumadeck-handoff.desktop")
 _SCRIPT_DIR = os.path.join(_HOME, ".local", "share", "lumadeck")
@@ -79,7 +84,8 @@ fi
 
 
 def _deck_ids() -> tuple[int, int]:
-    p = pwd.getpwnam("deck")
+    # Real user's uid/gid (on SteamOS that's the deck user).
+    p = pwd.getpwnam(real_user())
     return p.pw_uid, p.pw_gid
 
 
@@ -185,10 +191,10 @@ def _run_handoff(payload: str) -> dict:
         # (non-persistent X11 desktop) so the default login mode stays Game Mode
         # and we land back in Game Mode after the task.
         subprocess.Popen(
-            ["sudo", "-u", "deck", "env",
+            ["sudo", "-u", real_user(), "env",
              f"XDG_RUNTIME_DIR={runtime}",
              f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
-             "HOME=/home/deck",
+             f"HOME={real_home()}",
              sel, "plasma"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
@@ -251,7 +257,7 @@ def run_desktop_handoff_quick_install() -> dict:
 
 
 # Full diagnostic written to a file so a tiny toast doesn't truncate it: the user
-# can `cat /home/deck/lh.json` in Konsole for the complete result.
+# can `cat ~/lh.json` in Konsole for the complete result.
 _DIAG_FILE = os.path.join(_HOME, "lh.json")
 
 
