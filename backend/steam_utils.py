@@ -7,7 +7,7 @@ import re
 import subprocess
 from typing import Dict, Optional
 
-from paths import find_steam_root
+from paths import find_steam_root, steam_root_candidates
 from subprocess_env import clean_env
 
 try:
@@ -19,15 +19,10 @@ except ImportError:
 
 _STEAM_INSTALL_PATH: Optional[str] = None
 
-# Well-known Linux Steam paths (same priority as paths.py)
-_LINUX_STEAM_PATHS = [
-    "/home/deck/.local/share/Steam",
-    "/home/deck/.steam/steam",
-    os.path.expanduser("~/.steam/steam"),
-    os.path.expanduser("~/.local/share/Steam"),
-    "/opt/steam/steam",
-    "/usr/local/steam",
-]
+# Single source of truth: the canonical Steam-root candidate list from paths.py
+# (which resolves the real user's home via platform_info). Was a duplicated
+# hardcoded /home/deck copy; now deduplicated so it can never drift.
+_LINUX_STEAM_PATHS = steam_root_candidates()
 
 
 def detect_steam_install_path() -> str:
@@ -160,9 +155,10 @@ def get_game_install_path_response(appid: int) -> Dict[str, any]:
     try:
         import dev
         if dev.is_fake_appid(appid):
+            _root = detect_steam_install_path() or "/home/deck/.local/share/Steam"
             return {
                 "success": True,
-                "installPath": f"/home/deck/.local/share/Steam/steamapps/common/Fake Game {appid}",
+                "installPath": os.path.join(_root, "steamapps/common", f"Fake Game {appid}"),
                 "sizeOnDisk": 12_884_901_888,
             }
     except Exception:

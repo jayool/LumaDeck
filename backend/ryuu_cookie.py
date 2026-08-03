@@ -26,6 +26,7 @@ import sqlite3
 import subprocess
 import tempfile
 
+from paths import home_candidates
 from subprocess_env import clean_env
 
 try:
@@ -56,17 +57,11 @@ def _find_cookie_dbs() -> list:
     walk the whole Steam install, which holds the game library and would make a
     recursive scan crawl (that hang bit the earlier glob-based version).
 
-    Decky runs as root (~ = /root), so list the deck user's Steam paths first —
-    the same convention paths.py uses — before falling back to $HOME."""
-    home = os.path.expanduser("~")
-    roots = [
-        "/home/deck/.local/share/Steam",
-        "/home/deck/.steam/steam",
-        "/home/deck/.steam/root",
-        os.path.join(home, ".local", "share", "Steam"),
-        os.path.join(home, ".steam", "steam"),
-        os.path.join(home, ".steam", "root"),
-    ]
+    Decky runs as root (~ = /root), so list the real user's Steam paths first —
+    sourced from paths.home_candidates so the /home/deck -> real-user resolution
+    lives in one place — before falling back to $HOME. Keeps this module's own
+    `.steam/root` entry, which the generic Steam-root list doesn't carry."""
+    roots = home_candidates([".local/share/Steam", ".steam/steam", ".steam/root"])
     found, seen = [], set()
     for root in roots:
         cfg = os.path.join(root, "config")

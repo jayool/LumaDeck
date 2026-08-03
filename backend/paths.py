@@ -116,6 +116,20 @@ def _home_candidates(home, expanded, home_rels, expanded_rels=None, extras=()):
     return out
 
 
+def steam_root_candidates() -> list:
+    """Canonical Steam-root candidate list (a fresh copy). The single source of
+    truth other modules must use instead of keeping their own hardcoded copy."""
+    return list(_STEAM_PATHS)
+
+
+def home_candidates(home_rels, expanded_rels=None, extras=()) -> list:
+    """Public 'deck-first' candidate builder rooted at the resolved real-user
+    home (see _home_candidates). Consumers pass only their own relative
+    subpaths, so the /home/deck -> real-user generalization lives in ONE place
+    (here) rather than being re-hardcoded per module."""
+    return _home_candidates(_REAL_HOME, _EXPANDED_HOME, home_rels, expanded_rels, extras)
+
+
 def find_steam_root() -> Optional[str]:
     """Search well-known locations for the Steam installation."""
     for path in _STEAM_PATHS:

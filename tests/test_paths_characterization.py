@@ -142,6 +142,42 @@ class TestSinglePathsWired(unittest.TestCase):
                          "/home/deck/.SLSsteam.log")
 
 
+class TestSteamRootUnification(unittest.TestCase):
+    """Hook #4b: steam_utils.py and ryuu_cookie.py no longer keep their own
+    hardcoded /home/deck Steam-root lists; they consume paths.py's single
+    source (steam_root_candidates / home_candidates)."""
+
+    def test_steam_root_candidates_is_a_copy(self):
+        c = paths.steam_root_candidates()
+        self.assertEqual(c, paths._STEAM_PATHS)
+        c.append("SENTINEL")  # mutating the returned list must not leak back
+        self.assertNotIn("SENTINEL", paths._STEAM_PATHS)
+
+    def test_home_candidates_public_matches_private(self):
+        rels = [".local/share/Steam", ".steam/root"]
+        self.assertEqual(
+            paths.home_candidates(rels),
+            paths._home_candidates(paths._REAL_HOME, paths._EXPANDED_HOME, rels),
+        )
+
+    def test_ryuu_roots_reproduce_historical_literal_on_deck(self):
+        # Frozen oracle: ryuu_cookie._find_cookie_dbs roots with home=/home/deck,
+        # ~==/root. Must equal the exact pre-unification literal, .steam/root
+        # entries included.
+        built = paths._home_candidates(
+            "/home/deck", "/root",
+            [".local/share/Steam", ".steam/steam", ".steam/root"],
+        )
+        self.assertEqual(built, [
+            "/home/deck/.local/share/Steam",
+            "/home/deck/.steam/steam",
+            "/home/deck/.steam/root",
+            "/root/.local/share/Steam",
+            "/root/.steam/steam",
+            "/root/.steam/root",
+        ])
+
+
 class TestRealHomeFallback(unittest.TestCase):
     def test_real_home_never_raises_and_is_nonempty(self):
         # _real_home is guarded: any platform_info failure -> "/home/deck".
