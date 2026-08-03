@@ -96,7 +96,24 @@ def _build_steam_paths(home: str, expanded_home: str) -> list:
     ]
 
 
-_STEAM_PATHS = _build_steam_paths(_real_home(), os.path.expanduser("~"))
+# Resolved once at import. On SteamOS _REAL_HOME == /home/deck, so every list
+# built from it below is byte-identical to the previous hardcoded ones.
+_REAL_HOME = _real_home()
+_EXPANDED_HOME = os.path.expanduser("~")
+
+_STEAM_PATHS = _build_steam_paths(_REAL_HOME, _EXPANDED_HOME)
+
+
+def _home_candidates(home, expanded, home_rels, expanded_rels=None, extras=()):
+    """Generic 'deck-first' candidate list builder: the real-user home entries,
+    then the expanded-home (~) entries, then any fixed extras (/opt/...). With
+    home=/home/deck this reproduces the historical hardcoded lists exactly.
+    Pure — tested with fixtures. `expanded_rels` defaults to `home_rels`."""
+    rels_e = home_rels if expanded_rels is None else expanded_rels
+    out = [os.path.join(home, r) for r in home_rels]
+    out += [os.path.join(expanded, r) for r in rels_e]
+    out += list(extras)
+    return out
 
 
 def find_steam_root() -> Optional[str]:
@@ -128,13 +145,11 @@ def get_depotcache_dir(steam_root: Optional[str] = None) -> Optional[str]:
 # SLSsteam paths
 # ---------------------------------------------------------------------------
 
-_SLSSTEAM_CANDIDATES = [
-    "/home/deck/.local/share/SLSsteam",
-    "/home/deck/SLSsteam",
-    os.path.expanduser("~/.local/share/SLSsteam"),
-    os.path.expanduser("~/SLSsteam"),
-    "/opt/SLSsteam",
-]
+_SLSSTEAM_CANDIDATES = _home_candidates(
+    _REAL_HOME, _EXPANDED_HOME,
+    [".local/share/SLSsteam", "SLSsteam"],
+    extras=["/opt/SLSsteam"],
+)
 
 
 def find_slssteam_root() -> str:
@@ -167,12 +182,10 @@ def check_slssteam_installed() -> bool:
 # ACCELA paths
 # ---------------------------------------------------------------------------
 
-_ACCELA_CANDIDATES = [
-    "/home/deck/.local/share/ACCELA",
-    "/home/deck/accela",
-    os.path.expanduser("~/.local/share/ACCELA"),
-    os.path.expanduser("~/accela"),
-]
+_ACCELA_CANDIDATES = _home_candidates(
+    _REAL_HOME, _EXPANDED_HOME,
+    [".local/share/ACCELA", "accela"],
+)
 
 
 def find_accela_root() -> Optional[str]:
@@ -213,10 +226,10 @@ def get_steam_appcache_stats_dir() -> Optional[str]:
 # lumalinux paths (32-bit hook library injected via LD_PRELOAD)
 # ---------------------------------------------------------------------------
 
-_LUMALINUX_CANDIDATES = [
-    "/home/deck/.local/share/lumalinux",
-    os.path.expanduser("~/.local/share/lumalinux"),
-]
+_LUMALINUX_CANDIDATES = _home_candidates(
+    _REAL_HOME, _EXPANDED_HOME,
+    [".local/share/lumalinux"],
+)
 
 
 def find_lumalinux_root() -> Optional[str]:
@@ -473,10 +486,10 @@ def read_lumalinux_health() -> dict:
 # CloudRedirect paths (32-bit cloud-save RPC hook library, also via LD_PRELOAD)
 # ---------------------------------------------------------------------------
 
-_CLOUDREDIRECT_CANDIDATES = [
-    "/home/deck/.local/share/CloudRedirect",
-    os.path.expanduser("~/.local/share/CloudRedirect"),
-]
+_CLOUDREDIRECT_CANDIDATES = _home_candidates(
+    _REAL_HOME, _EXPANDED_HOME,
+    [".local/share/CloudRedirect"],
+)
 
 
 def find_cloudredirect_root() -> Optional[str]:

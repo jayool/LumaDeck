@@ -61,6 +61,57 @@ class TestSteamPathsGeneralization(unittest.TestCase):
         self.assertEqual(built[-2:], ["/opt/steam/steam", "/usr/local/steam"])
 
 
+class TestComponentCandidatesNonRegression(unittest.TestCase):
+    """Hook #2: the SLSsteam/ACCELA/lumalinux/CloudRedirect candidate lists are
+    now built with _home_candidates(). With home=/home/deck, expanded=/root they
+    must equal the exact pre-change hardcoded literals."""
+
+    H = "/home/deck"
+    E = "/root"
+
+    def test_slssteam_candidates_identical(self):
+        built = paths._home_candidates(
+            self.H, self.E, [".local/share/SLSsteam", "SLSsteam"], extras=["/opt/SLSsteam"]
+        )
+        self.assertEqual(built, [
+            "/home/deck/.local/share/SLSsteam",
+            "/home/deck/SLSsteam",
+            "/root/.local/share/SLSsteam",
+            "/root/SLSsteam",
+            "/opt/SLSsteam",
+        ])
+
+    def test_accela_candidates_identical(self):
+        built = paths._home_candidates(self.H, self.E, [".local/share/ACCELA", "accela"])
+        self.assertEqual(built, [
+            "/home/deck/.local/share/ACCELA",
+            "/home/deck/accela",
+            "/root/.local/share/ACCELA",
+            "/root/accela",
+        ])
+
+    def test_lumalinux_candidates_identical(self):
+        built = paths._home_candidates(self.H, self.E, [".local/share/lumalinux"])
+        self.assertEqual(built, [
+            "/home/deck/.local/share/lumalinux",
+            "/root/.local/share/lumalinux",
+        ])
+
+    def test_cloudredirect_candidates_identical(self):
+        built = paths._home_candidates(self.H, self.E, [".local/share/CloudRedirect"])
+        self.assertEqual(built, [
+            "/home/deck/.local/share/CloudRedirect",
+            "/root/.local/share/CloudRedirect",
+        ])
+
+    def test_non_deck_home_generalizes(self):
+        built = paths._home_candidates("/home/jayo", "/root", [".local/share/SLSsteam", "SLSsteam"],
+                                       extras=["/opt/SLSsteam"])
+        self.assertEqual(built[0], "/home/jayo/.local/share/SLSsteam")
+        self.assertEqual(built[1], "/home/jayo/SLSsteam")
+        self.assertIn("/opt/SLSsteam", built)
+
+
 class TestRealHomeFallback(unittest.TestCase):
     def test_real_home_never_raises_and_is_nonempty(self):
         # _real_home is guarded: any platform_info failure -> "/home/deck".
