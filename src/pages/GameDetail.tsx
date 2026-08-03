@@ -815,20 +815,15 @@ export function GameDetail({ appid }: GameDetailProps) {
         </>
       )}
       {isFixInProgress && (
-        <>
-          <PanelSectionRow>
-            <ProgressBarWithInfo
-              indeterminate={!(fixStatus.totalBytes > 0)}
-              nProgress={
-                fixStatus.totalBytes > 0
-                  ? Math.min(100, ((fixStatus.bytesRead || 0) / fixStatus.totalBytes) * 100)
-                  : 0
-              }
-              sOperationText={fixStatusLabel}
-            />
-          </PanelSectionRow>
-          <ActionButton label={t("cancelFix")} onClick={handleCancelFix} variant="danger" />
-        </>
+        // No progress bar: the step just rides as the Cancel button's description
+        // (Queued → Downloading → Extracting → Done). Avoids the native bar that
+        // overflowed the right edge, and reads cleaner for a quick apply.
+        <ActionButton
+          label={t("cancelFix")}
+          description={fixStatusLabel}
+          onClick={handleCancelFix}
+          variant="danger"
+        />
       )}
     </PanelSection>
   );
