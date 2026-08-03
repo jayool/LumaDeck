@@ -794,7 +794,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       />
       {filtered && (
         <>
-          {filtered.length > 0 && !luatoolsConnected && (
+          {filtered.length > 0 && luatoolsConnected === false && (
             <>
               <PanelSectionRow>
                 <Field description={
