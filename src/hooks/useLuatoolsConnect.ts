@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigation } from "@decky/ui";
+import { Navigation, Router } from "@decky/ui";
 
 import { connectLuatools, disconnectLuatools, getLuatoolsStatus } from "../api";
 
@@ -34,11 +34,24 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
 
   const connect = useCallback(async (): Promise<boolean> => {
     setConnecting(true);
+    // Capture where the main window is BEFORE we open the browser, so we can
+    // return to that exact route afterwards. NavigateBack() proved unreliable
+    // here: the Discord OAuth redirect chain leaves the browser with internal
+    // history, so a single back steps within the browser instead of closing it.
+    let returnPath = "";
+    try {
+      returnPath =
+        Router.WindowStore?.GamepadUIMainWindowInstance?.BrowserWindow?.location?.pathname || "";
+    } catch {
+      /* best-effort; fall back to NavigateBack below */
+    }
     Navigation.NavigateToExternalWeb("https://lua.tools/");
     try {
       const res = await connectLuatools(); // resolves when captured (or timeout)
       if (res?.success) {
-        Navigation.NavigateBack(); // close the browser, back to the caller
+        // Close the browser by navigating the main window back to where it was.
+        if (returnPath) Navigation.Navigate(returnPath);
+        else Navigation.NavigateBack();
         setConnected(true);
         toast("LuaTools connected ✓"); // TODO i18n
         return true;
