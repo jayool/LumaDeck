@@ -3,18 +3,20 @@
 Ports the install logic from niwia/ASSella (src/utils/helpers.py:_install_dotnet_9_linux)
 with three adaptations for LumaDeck:
 
-  1. Path hardcoded to /home/deck/.dotnet. LumaDeck runs as root via Decky's
-     `_root` flag; os.path.expanduser("~/.dotnet") would resolve to /root/.dotnet,
-     which neither LumaDeck nor ACCELA look at later.
-  2. HOME=/home/deck is forced in the subprocess env so dotnet-install.sh's
+  1. Path is the real user's home + /.dotnet (resolved via paths/platform_info).
+     LumaDeck runs as root via Decky's `_root` flag; os.path.expanduser(
+     "~/.dotnet") would resolve to /root/.dotnet, which neither LumaDeck nor
+     ACCELA look at later. On SteamOS the user is `deck`, so this stays
+     /home/deck/.dotnet.
+  2. HOME=<real home> is forced in the subprocess env so dotnet-install.sh's
      internal $HOME-based path resolution targets the user's home, not root's.
-  3. chown -R deck:deck after install so the resulting tree is owned by the
-     user. Otherwise the files end up owned by root and the user couldn't
-     update or replace them without sudo.
+  3. chown -R <real user>: after install so the resulting tree is owned by the
+     user (and their primary group). Otherwise the files end up owned by root
+     and the user couldn't update or replace them without sudo.
 
-End state: /home/deck/.dotnet/dotnet exists, owned by deck:deck. ACCELA's
-own get_dotnet_path() points at the same location, so the two tools find
-each other's installs transparently.
+End state: <home>/.dotnet/dotnet exists, owned by the real user. ACCELA's own
+get_dotnet_path() points at the same location, so the two tools find each
+other's installs transparently.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import shutil
 import subprocess
 from typing import Optional
 
+from paths import real_home, real_user
 from subprocess_env import clean_env
 
 try:
@@ -34,10 +37,11 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 
-DOTNET_ROOT = "/home/deck/.dotnet"
-DOTNET_BIN = "/home/deck/.dotnet/dotnet"
-DECK_USER = "deck"
-DECK_GROUP = "deck"
+# Deployed under the real user's home (Decky runs as root, so ~ is /root and
+# expanduser can't be used). On SteamOS the user is `deck`, so these resolve to
+# /home/deck/.dotnet — unchanged.
+DOTNET_ROOT = os.path.join(real_home(), ".dotnet")
+DOTNET_BIN = os.path.join(DOTNET_ROOT, "dotnet")
 DOTNET_INSTALL_URL = "https://dot.net/v1/dotnet-install.sh"
 
 
@@ -77,7 +81,7 @@ def find_dotnet_path() -> Optional[str]:
 
 
 def _install_dotnet_9_linux() -> bool:
-    """Download Microsoft's dotnet-install.sh and run it into /home/deck/.dotnet.
+    """Download Microsoft's dotnet-install.sh and run it into DOTNET_ROOT.
 
     Adapted from niwia/ASSella:_install_dotnet_9_linux with the three changes
     documented in the module docstring. Returns True on success, False on any
@@ -86,7 +90,7 @@ def _install_dotnet_9_linux() -> bool:
     try:
         os.makedirs(DOTNET_ROOT, exist_ok=True)
 
-        env = clean_env(DOTNET_ROOT=DOTNET_ROOT, HOME="/home/deck")
+        env = clean_env(DOTNET_ROOT=DOTNET_ROOT, HOME=real_home())
 
         install_script = os.path.join(DOTNET_ROOT, "dotnet-install.sh")
 
@@ -140,8 +144,11 @@ def _install_dotnet_9_linux() -> bool:
         # chown -R so the user owns the install. LumaDeck runs as root, but
         # the .NET tree should belong to the user so future updates / removals
         # work from the user's session without sudo.
+        # `<user>:` (trailing colon) sets the group to the user's primary group,
+        # so this is correct on any distro; on SteamOS it resolves to deck:deck.
+        owner = real_user()
         chown = subprocess.run(
-            ["chown", "-R", f"{DECK_USER}:{DECK_GROUP}", DOTNET_ROOT],
+            ["chown", "-R", f"{owner}:", DOTNET_ROOT],
             capture_output=True,
             text=True,
             timeout=30,
@@ -149,11 +156,11 @@ def _install_dotnet_9_linux() -> bool:
         )
         if chown.returncode != 0:
             logger.warning(
-                "dotnet: chown to %s:%s failed: %s. .NET is installed but owned "
-                "by root; user can run `sudo chown -R %s:%s %s` to fix.",
-                DECK_USER, DECK_GROUP,
+                "dotnet: chown to %s failed: %s. .NET is installed but owned "
+                "by root; user can run `sudo chown -R %s: %s` to fix.",
+                owner,
                 chown.stderr.strip() or "(no stderr)",
-                DECK_USER, DECK_GROUP, DOTNET_ROOT,
+                owner, DOTNET_ROOT,
             )
 
         return True
