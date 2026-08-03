@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigation, Router } from "@decky/ui";
+import { Navigation } from "@decky/ui";
 
 import { connectLuatools, disconnectLuatools, getLuatoolsStatus } from "../api";
 
@@ -32,18 +32,18 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
     refresh();
   }, [refresh]);
 
-  const connect = useCallback(async (): Promise<boolean> => {
+  const connect = useCallback(async (returnRoute?: string): Promise<boolean> => {
     setConnecting(true);
     Navigation.NavigateToExternalWeb("https://lua.tools/");
     try {
       const res = await connectLuatools(); // resolves when captured (or timeout)
       if (res?.success) {
-        // Close the browser via the MAIN window's own router. The global
-        // Navigation.NavigateBack() may act on the wrong window (the QAM lives in
-        // a separate window from the browser), which is likely why it didn't
-        // close. Fall back to the global back if the main-window router isn't there.
-        const mainWin = Router.WindowStore?.GamepadUIMainWindowInstance;
-        if (mainWin?.NavigateBack) mainWin.NavigateBack();
+        // Close the browser by navigating FORWARD to the caller's own registered
+        // route (Settings page, or this game's detail page). Forward-nav to a valid
+        // route reliably closes the browser AND lands you exactly where you were —
+        // unlike NavigateBack(), which didn't close. The typeof guard means a stray
+        // click event (if a call site forgot to pass a route) safely falls back.
+        if (typeof returnRoute === "string" && returnRoute) Navigation.Navigate(returnRoute);
         else Navigation.NavigateBack();
         setConnected(true);
         toast("LuaTools connected ✓"); // TODO i18n
