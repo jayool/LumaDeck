@@ -122,12 +122,28 @@ def _reassemble(chunks: dict) -> dict | None:
 
 
 def _harvest_once() -> dict | None:
-    """Read the CEF cookie store and return the lua.tools Supabase session, or
-    None if the user hasn't logged in yet. Blocking (copies the SQLite DB)."""
+    """Return the lua.tools Supabase session from the CEF cookie store, or None if
+    the user hasn't logged in yet.
+
+    Prefers CDP (the Steam CEF debug port): it reads the LIVE, already-decrypted
+    cookie, which CEF holds in memory ~15 s before flushing to the on-disk SQLite
+    store — so the login is captured the instant it lands instead of after that
+    flush. Only when the debug port isn't reachable does it fall back to the
+    on-disk scrape (copy DB + openssl decrypt) that this used to do exclusively."""
+    import cef_cdp
+    live = cef_cdp.get_cookies()
+    if live is not None:
+        chunks = {c["name"]: c["value"] for c in live
+                  if c.get("name", "").startswith(_TOKEN_COOKIE_PREFIX)
+                  and _HOST in c.get("domain", "")}
+        session = _reassemble(chunks)
+        if session and session.get("access_token"):
+            return session
+        return None  # debug port reachable but no session yet — skip the disk
+
+    # Debug port unreachable → on-disk fallback. Narrow the query to the session
+    # cookie(s) so we don't openssl-decrypt every unrelated lua.tools cookie.
     from ryuu_cookie import _read_all_cookies_for_host
-    # Only decrypt the session cookie(s) — narrowing the query avoids spawning an
-    # openssl decrypt per unrelated lua.tools cookie (cf_clearance, analytics, …)
-    # on every poll of the connect loop.
     cookies = _read_all_cookies_for_host(_HOST, name_prefix=_TOKEN_COOKIE_PREFIX)
     chunks = {n: v for n, v in cookies.items() if n.startswith(_TOKEN_COOKIE_PREFIX)}
     session = _reassemble(chunks)
@@ -184,6 +200,16 @@ def disconnect_luatools() -> dict:
             os.remove(p)
     except Exception:
         pass
+    # Also clear the LIVE CEF cookie. Deleting the on-disk store (or our session
+    # file) doesn't drop CEF's in-memory copy, so without this the browser stays
+    # logged in and lua.tools shows the account as signed in on the next login.
+    try:
+        import cef_cdp
+        n = cef_cdp.delete_cookies_matching(_TOKEN_COOKIE_PREFIX, _HOST)
+        if n > 0:
+            logger.info(f"LuaTools: cleared {n} live CEF session cookie(s)")
+    except Exception as exc:
+        logger.info(f"LuaTools: CEF cookie clear skipped: {exc}")
     return {"success": True}
 
 
