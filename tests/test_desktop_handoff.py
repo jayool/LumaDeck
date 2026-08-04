@@ -1,9 +1,12 @@
 """Phase 2 — the desktop session-select arg differs by lineage.
 
 `steamos-session-select` reaches the desktop session with 'plasma' on SteamOS
-(HoloISO) but 'desktop' on the ChimeraOS gamescope-session lineage (CachyOS
-Handheld, Bazzite). desktop_handoff picks the right one, defaulting to the
-tested SteamOS value.
+(HoloISO) AND on CachyOS Handheld — its gamescope-session-cachyos is a
+Valve/SteamOS fork (verified against CachyOS/gamescope-session @cachyos:
+usr/bin/steamos-session-select accepts only plasma/gamescope/persistent/oneshot,
+NOT 'desktop'). The ChimeraOS gamescope-session-plus lineage (Bazzite) uses
+'desktop'. desktop_handoff picks the right one, defaulting to the tested SteamOS
+value ('plasma') for anything not positively a ChimeraOS lineage.
 
     python -m unittest discover -s tests
 """
@@ -21,8 +24,12 @@ class TestDesktopArgByLineage(unittest.TestCase):
     def test_steamos_uses_plasma(self):
         self.assertEqual(dh._desktop_arg_for("steamos"), "plasma")
 
+    def test_cachyos_uses_plasma_valve_fork(self):
+        # CachyOS Handheld's gamescope-session is a Valve/SteamOS fork; its
+        # steamos-session-select has NO 'desktop' case. Verified from source.
+        self.assertEqual(dh._desktop_arg_for("cachyos"), "plasma")
+
     def test_chimeraos_lineage_uses_desktop(self):
-        self.assertEqual(dh._desktop_arg_for("cachyos"), "desktop")
         self.assertEqual(dh._desktop_arg_for("bazzite"), "desktop")
         self.assertEqual(dh._desktop_arg_for("chimeraos"), "desktop")
 

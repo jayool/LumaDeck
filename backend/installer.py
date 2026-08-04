@@ -167,18 +167,70 @@ _SESSION_TRACKER_RESET = (
     "# LumaDeck: reset the gamescope-session short-session counter so even if a "
     "patched call slips through, it can't accumulate toward the crash-loop "
     "recovery. The tracker file is named per session lineage:\n"
-    "#   /tmp/steamos-short-session-tracker    — SteamOS (HoloISO)\n"
+    "#   /tmp/steamos-short-session-tracker    — SteamOS (HoloISO) AND CachyOS\n"
+    "#     Handheld: its gamescope-session-cachyos is a *Valve/SteamOS* fork\n"
+    "#     (verified: CachyOS/gamescope-session usr/lib/steamos/…), so it uses the\n"
+    "#     SAME steamos- path and the SAME `steam-short-session-tracker` script.\n"
+    "#     After short_session_count_before_reset=3 short (<60s) sessions its\n"
+    "#     do_repair() re-extracts /usr/lib/steam/bootstraplinux_ubuntu12_32.tar.xz\n"
+    "#     OVER ~/.local/share/Steam (clobbering the lumalinux/SLSsteam steam.sh\n"
+    "#     LD_PRELOAD patch) and moves ~/.steam aside — i.e. issue #31's 'nothing\n"
+    "#     injected on restart' + 'black screen returning to Game Mode'. This bites\n"
+    "#     on CachyOS but not SteamOS because CachyOS ships a much newer client, so\n"
+    "#     the downgrade needs several Steam restarts and trips the count; SteamOS\n"
+    "#     barely downgrades and never reaches 3.\n"
     "#   /tmp/chimeraos-short-session-tracker  — ChimeraOS gamescope-session-plus\n"
-    "#     lineage (CachyOS Handheld, Bazzite). There, short_session_recover()\n"
-    "#     re-extracts the vanilla Steam bootstrap OVER ~/.local/share/Steam\n"
-    "#     (clobbering the lumalinux/SLSsteam steam.sh LD_PRELOAD patch) and runs\n"
-    "#     `steamos-session-select desktop` — i.e. issue #31's 'nothing injected\n"
-    "#     on restart' + 'black screen returning to Game Mode'. (NOT the full\n"
-    "#     Steam-dir wipe SteamOS does; verified against ChimeraOS's session src.)\n"
+    "#     lineage (Bazzite). Same idea, different file name.\n"
     "# Clear the whole *-short-session-tracker family (harmless if absent) so this\n"
-    "# neutralises the counter on every lineage, not just SteamOS.\n"
+    "# neutralises the counter on every lineage, not just SteamOS. NOTE: this is a\n"
+    "# one-shot reset — the durable protection is (a) routing the downgrade through\n"
+    "# the Desktop hand-off, where the gamescope steam-launcher.service (and thus\n"
+    "# the tracker) isn't running, and (b) the ~/.config/inhibit-short-session-\n"
+    "# tracker backstop that install_dependencies() sets around the downgrade.\n"
     "rm -f /tmp/*-short-session-tracker 2>/dev/null\n"
 )
+
+
+def _inhibit_tracker_path() -> str:
+    """Path to CachyOS/SteamOS's officially-supported crash-loop-repair inhibit
+    file. When present, steam-short-session-tracker's do_repair() is skipped
+    ('Auto-repair disabled by config'). We create it around the downgrade window
+    (where Steam restarts several times) so the repair cannot re-bootstrap over
+    the injected steam.sh, then remove it again — leaving it in place would
+    permanently disable the user's crash-loop protection."""
+    from paths import real_home
+    return os.path.join(real_home(), ".config", "inhibit-short-session-tracker")
+
+
+def _set_inhibit_tracker() -> bool:
+    """Create the inhibit file if absent. Returns True only if WE created it (so
+    the caller removes exactly what it added and never deletes a file the user
+    put there themselves). Best-effort — never raises."""
+    try:
+        path = _inhibit_tracker_path()
+        if os.path.exists(path):
+            return False  # user (or a prior run) owns it — don't touch.
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write("# created by LumaDeck around the Steam client downgrade; auto-removed\n")
+        logger.info("LumaDeck: set crash-loop inhibit %s", path)
+        return True
+    except Exception as exc:
+        logger.warning("LumaDeck: could not set crash-loop inhibit: %s", exc)
+        return False
+
+
+def _clear_inhibit_tracker(created: bool) -> None:
+    """Remove the inhibit file, but only if this run created it."""
+    if not created:
+        return
+    try:
+        os.remove(_inhibit_tracker_path())
+        logger.info("LumaDeck: cleared crash-loop inhibit")
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        logger.warning("LumaDeck: could not clear crash-loop inhibit: %s", exc)
 
 
 def _patch_headcrab_script(content: str, gamemode: bool = True) -> str:
@@ -303,7 +355,18 @@ async def install_dependencies(gamemode: bool = True) -> dict:
     logger.info("LumaDeck: install_dependencies() entered")
 
     tmp_dir = None
+    inhibit_created = False
     try:
+        # Defense-in-depth for the crash-loop repair (issue #31 tail): while the
+        # client downgrade restarts Steam several times, the gamescope
+        # short-session tracker could reach its repair threshold and re-bootstrap
+        # over the injected steam.sh. The primary protection is routing the
+        # downgrade through the Desktop hand-off (no gamescope session there), but
+        # a Game-Mode install has no such cover, so we also set the officially-
+        # supported inhibit file for the duration and clear it in `finally`. It is
+        # NOT the confirmed fix for #31's desktop-mode symptom (root cause
+        # unconfirmed, device-gated) — it's a cheap, self-cleaning backstop.
+        inhibit_created = _set_inhibit_tracker()
         # No config seeding here anymore. The force-cr-install patch makes
         # headcrab install CloudRedirect unconditionally (it no longer needs
         # DisableCloud: no present at crconfigcheck time), so there's nothing to
@@ -435,6 +498,9 @@ async def install_dependencies(gamemode: bool = True) -> dict:
         INSTALL_STATE["error"] = str(exc)
         logger.exception("LumaDeck: install_dependencies crashed: %s", exc)
     finally:
+        # Always lift the crash-loop inhibit we set — never leave the user's
+        # auto-repair protection disabled, even if the install crashed.
+        _clear_inhibit_tracker(inhibit_created)
         if tmp_dir:
             import shutil
             try:

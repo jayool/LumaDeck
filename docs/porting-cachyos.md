@@ -23,10 +23,13 @@
   resolves bit-for-bit to `deck` / `/home/deck` as before.
 - **Phase 2 — session/crash-loop layer**: crash-loop tracker reset generalised
   to `rm -f /tmp/*-short-session-tracker`; `steamos-session-select` desktop arg
-  is lineage-correct (`desktop` for the ChimeraOS family, `plasma` for SteamOS);
-  DE-agnostic terminal + centralised game-mode arg. **Written entirely from
-  ChimeraOS `gamescope-session` source — correct by construction, but NOT
-  executed against a real crash-loop** (the Codespace has no Game Mode).
+  is lineage-correct — **`plasma` for SteamOS AND CachyOS** (both Valve/SteamOS
+  forks; source-verified), `desktop` only for the ChimeraOS family (Bazzite);
+  a `~/.config/inhibit-short-session-tracker` backstop around the downgrade; and
+  a faithful `do_repair()` reproduction test. **NOTE:** an earlier revision put
+  CachyOS in the ChimeraOS family and sent it `desktop` — a regression (CachyOS
+  rejects `desktop`); now fixed. The crash-loop fix is verified against the
+  *reproduced* clobber, but is **not** confirmed to be #31's desktop-mode cause.
 - **`origin/main` (0.6.0) merged in**: the new CDP login flow
   (`backend/cef_cdp.py`, `luatools_auth.py`) audited clean; `main.py`'s new
   `restart_steam()` carried fresh `deck`/`/home/deck` hardcoding, now routed
@@ -39,7 +42,7 @@
 | Core hooks (`steamclient.so`) | ✅ verified (identical binary, whitelisted build, `check_patterns` CLEAN on live desktop client) | ✅ same binary — same verdict |
 | Path / user / cache resolution | ✅ verified (tests + live run with uid≠1000) | ✅ same code path |
 | Install (Headcrab downgrade) | ✅ pacman — Headcrab already supports it | ❌ **blocker: Fedora-atomic, no `pacman`, `/usr` read-only, SELinux — no install route designed yet** |
-| Session / crash-loop (#31) | ⚠️ correct by construction, **not run on a device** | ⚠️ same code by construction |
+| Session / crash-loop (#31) | ⚠️ session args source-verified; #31 root cause **unconfirmed** (desktop-mode symptom is device-gated) | ⚠️ same code by construction |
 
 **Bottom line:** **CachyOS Handheld** is one on-device test away from being
 callable done — every layer is either verified or written from authoritative
@@ -104,26 +107,39 @@ everything injected**, but on the next restart nothing was injected and Steam
 hung; returning to Game Mode gave a **black screen**. They switched to SteamOS
 and it worked flawlessly.
 
-That the plugin reported **everything injected on first boot** is the key
-signal: the hooking core *did* load and hook on CachyOS. The failure is entirely
-**downstream, in the session/crash-loop layer** — exactly the environment layer
-this document scopes. Most likely root cause (symptom↔code, not log-confirmed):
+That the plugin reported **everything injected on first boot** is the one solid
+signal: the hooking core *did* load and hook on CachyOS. Everything past that is
+**unconfirmed — the reporter explicitly had no logs.**
 
-- CachyOS ships a newer Steam than Headcrab's pin, so the install triggers the
-  **client downgrade** (multiple Steam restarts).
-- LumaDeck neutralises SteamOS's crash-loop detector by removing
-  `/tmp/steamos-short-session-tracker` (`installer.py` `_SESSION_TRACKER_RESET`,
-  ~L166-170). That path is **SteamOS/HoloISO-specific**. CachyOS Handheld runs
-  `gamescope-session-cachyos` (ChimeraOS `gamescope-session` lineage) with its
-  **own** short-session mechanism → the reset is a no-op → the downgrade's
-  restarts trip CachyOS's detector → it wipes `~/.local/share/Steam` → "nothing
-  injected on restart" + black screen.
+> ⚠️ **Correction (2026-08, verified against source).** Earlier revisions of this
+> doc named the **crash-loop tracker mismatch** as the "strong cause" of #31 and
+> assumed CachyOS Handheld is **ChimeraOS lineage**. Both were wrong, and I'm
+> leaving the retraction visible rather than silently editing it:
+>
+> - CachyOS Handheld's `gamescope-session-cachyos` is a **Valve/SteamOS fork**,
+>   not ChimeraOS (verified: `CachyOS/gamescope-session@cachyos`,
+>   `usr/lib/steamos/…`). It uses the **same** `/tmp/steamos-short-session-tracker`
+>   path and the **same** `steam-short-session-tracker` script as SteamOS, and its
+>   `steamos-session-select` accepts only `plasma`/`gamescope`/`persistent`/
+>   `oneshot` (**no `desktop` case**). So the pre-#31 SteamOS values (`plasma`
+>   arg, `steamos-` tracker) were already correct for CachyOS.
+> - The tracker's `do_repair()` fires only inside the **gamescope session**
+>   (`steam-launcher.service`, `PartOf=graphical-session.target`). But #31's
+>   primary symptom is *"steam restarted **in desktop mode**, nothing injected,
+>   stuck loading"* — and in Plasma that service isn't running. **do_repair() is
+>   therefore NOT the desktop-mode mechanism.** It best fits only the *"black
+>   screen returning to Game Mode"* tail.
+> - Claims that were unsubstantiated inference (now retracted): "SteamOS barely
+>   downgrades / CachyOS downgrades a lot" — never measured.
 
-(Correction from earlier analysis: CachyOS Handheld **does** provide a
-`steamos-session-select` wrapper via the ChimeraOS base, so the session-switch
-call in `desktop_handoff.py` is likely *not* the primary culprit — persistence
-semantics differ, but the binary exists. The crash-loop tracker mismatch is the
-strong cause.)
+**Honest current read of #31:** root cause **unconfirmed**. The best-supported
+suspect for the primary (desktop-mode) symptom is that the client downgrade's own
+Steam restarts re-extract the bootstrap over `steam.sh` (wiping the LD_PRELOAD
+block) and the re-patch never settles because Steam hangs on CachyOS — but *why*
+it hangs on CachyOS and not SteamOS is exactly what needs a device/repro. The
+`do_repair()` clobber is a real, reproduced failure mode (see
+`tests/test_installer_crashloop.py`) but for the game-mode / return-to-gamemode
+path, not the reported desktop-mode one.
 
 ## 3. CachyOS: two editions, very different for us
 
@@ -131,8 +147,8 @@ strong cause.)
 |---|---|---|
 | Boots to | KDE desktop | **Game Mode** (`gamescope-session-cachyos`) |
 | Steam UI | window / **Big Picture Mode** | gamescope session |
-| Crash-loop detector | none | **yes** (ChimeraOS lineage) |
-| Session switch | n/a | `steamos-session-select` (ChimeraOS-provided), persistence via `~/.config/last-session-mode` |
+| Crash-loop detector | none | **yes** (`steam-short-session-tracker`, Valve/SteamOS fork) |
+| Session switch | n/a | `steamos-session-select` (Valve/SteamOS fork; args `plasma`/`gamescope`/`persistent`/`oneshot`) |
 | Extras | — | HHD (Handheld Daemon) for power/controller |
 | Difficulty for us | **low** (env-only) | **high** (session/crash-loop) |
 | Real audience? | stepping stone | **yes — this is what handheld users run** |
@@ -197,8 +213,8 @@ It must resolve:
   while lumalinux's `install.sh` writes `~/.local/share/Steam/steam.sh`; confirm
   the symlink holds so both target the same file.
 - **Session type** — are we in a gamescope Game Mode session, and of which
-  family (SteamOS vs ChimeraOS/CachyOS)? This gates the crash-loop and
-  session-switch behavior.
+  family (SteamOS-lineage — includes CachyOS — vs the ChimeraOS lineage /
+  Bazzite)? This gates the crash-loop and session-switch behavior.
 
 Use the existing **`dev` override mechanism** (already used in
 `paths.py` health functions via `dev.get(...)`) to add a **platform override**,
@@ -220,14 +236,17 @@ so both branches can be exercised without hardware.
   Steam via Xvfb + software Vulkan). The **end-to-end Desktop/BPM install** is
   still pending a machine that actually runs the CachyOS desktop client — the
   code is done, the on-device confirmation is not.
-- **Phase 2 — Handheld Edition. ✅ done (code); ⏳ device validation.** Crash-loop
-  reset generalised to all session lineages (`rm -f /tmp/*-short-session-tracker`,
-  not just the SteamOS path); session-switch arg is lineage-correct
-  (`desktop` for the ChimeraOS family). Written from ChimeraOS
-  `gamescope-session` **source**. This is what should close #31 — but the
-  crash-loop **cannot be reproduced in the Codespace**, so it is unverified
-  against a real Game Mode session. This is the single remaining gate for
-  CachyOS.
+- **Phase 2 — Handheld Edition. ◑ code done; #31 root cause UNCONFIRMED.**
+  Crash-loop reset generalised to all lineages (`rm -f /tmp/*-short-session-
+  tracker`); session-switch arg source-verified (**`plasma` for CachyOS**, a
+  Valve/SteamOS fork — an earlier `desktop` value was a regression, now fixed;
+  `desktop` reserved for the ChimeraOS family/Bazzite); an inhibit-file backstop
+  around the downgrade; and a faithful `do_repair()` clobber reproduction
+  (`tests/test_installer_crashloop.py`). **What is NOT done:** confirming #31's
+  *desktop-mode* symptom. The reproduced clobber is the game-mode/return-to-
+  gamemode path; the reporter's primary failure was in Plasma, where the tracker
+  service isn't running, so its root cause is still open and **device/repro-
+  gated** (see the §2 correction box). This is the remaining gate for CachyOS.
 - **Phase 3 — Bazzite (future, blocked). ⛔ not started.** Bazzite Game Mode is
   a wanted target, but it is **Fedora-atomic**: `rpm-ostree`, read-only `/usr`,
   SELinux enforcing, **no `pacman`**. The hooking core and the entire env layer
@@ -268,23 +287,31 @@ resolves there — verify).
 
 ## 8. Open questions — resolved vs. still open
 
-Resolved during Phase 1–2 (from ChimeraOS/Headcrab source, not a device):
+Resolved by reading the **actual CachyOS source** (`CachyOS/gamescope-session
+@cachyos`, cloned and inspected — not inferred):
 
-- **Crash-loop mechanism** — ChimeraOS lineage uses
-  `/tmp/chimeraos-short-session-tracker` (vs SteamOS's
-  `/tmp/steamos-short-session-tracker`). The reset now clears **both** via the
-  glob, so it is correct on either lineage. ✅
-- **`steamos-session-select` args** — `gamescope` for Game Mode (uniform);
-  `desktop` on the ChimeraOS family vs `plasma` on SteamOS for the desktop
-  hand-off. Gated on `session_family()`. ✅
-- **Real-user / `~`-is-`/root`** — Decky's Python backend runs as root
-  everywhere, so this is handled by resolving the real user via the Steam-install
-  owner (not "uid 1000"), which also covers non-1000 users. ✅
+- **Crash-loop mechanism** — CachyOS Handheld uses `/tmp/steamos-short-session-
+  tracker` (its `steam-short-session-tracker` is a Valve/SteamOS fork), **not**
+  a `chimeraos-` variant as an earlier revision claimed. `do_repair()` fires at
+  `short_session_count_before_reset=3` and re-extracts
+  `/usr/lib/steam/bootstraplinux_ubuntu12_32.tar.xz` over `~/.local/share/Steam`.
+  The glob reset covers it; the officially-supported
+  `~/.config/inhibit-short-session-tracker` disables it. Reproduced in
+  `tests/test_installer_crashloop.py`. ✅ (mechanism) / ⚠️ (that it's #31's cause)
+- **`steamos-session-select` args** — verified from source: `gamescope` (Game
+  Mode), `plasma` (desktop) on **both SteamOS and CachyOS**, `persistent`/
+  `oneshot` for boot behaviour. **No `desktop` case on CachyOS.** `desktop` is
+  the ChimeraOS-family value only. ✅
+- **Real-user / `~`-is-`/root`** — resolved via the Steam-install owner (not
+  "uid 1000"), covering non-1000 users. ✅
 
-Still open — **only answerable on a real device**:
+Still open — **only answerable on a real device / repro**:
 
-- End-to-end confirmation that the generalised crash-loop reset + session
-  hand-off actually breaks the #31 loop on CachyOS Handheld Game Mode.
+- **#31's actual root cause.** The reproduced `do_repair()` clobber is the
+  game-mode path; the reporter's failure was in **desktop mode**, where that
+  service isn't running. The desktop-mode mechanism (suspect: the downgrade's own
+  Steam restarts re-extract `steam.sh` and the re-patch doesn't settle because
+  Steam hangs on CachyOS) is unconfirmed and needs logs/repro.
 - `~/.steam/steam` → `~/.local/share/Steam` symlink on a stock CachyOS Steam
   install (assumed, matches SteamOS; unverified on CachyOS).
 - Persistence semantics of `~/.config/last-session-mode` on CachyOS vs the

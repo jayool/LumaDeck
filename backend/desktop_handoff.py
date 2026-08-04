@@ -162,16 +162,26 @@ def _arm(payload: str) -> dict:
         return {"success": False, "error": f"arm: {exc}"}
 
 
-_CHIMERAOS_LINEAGE = frozenset({"cachyos", "bazzite", "chimeraos"})
+# Lineages whose `steamos-session-select` exposes a 'desktop' case (ChimeraOS
+# gamescope-session-plus). NOTE: CachyOS Handheld is NOT here — its
+# gamescope-session-cachyos is forked from *Valve/SteamOS*, not ChimeraOS
+# (verified against CachyOS/gamescope-session @cachyos: usr/lib/steamos/…). Its
+# steamos-session-select accepts ONLY plasma / gamescope / persistent / oneshot;
+# passing 'desktop' hits the `*)` case and exits 1, breaking the hand-off. So
+# CachyOS resolves to 'plasma', exactly like the tested SteamOS path.
+# Bazzite IS ChimeraOS/GamerOS lineage (bazzite-org/gamescope-session), so it
+# keeps 'desktop' — but that is inferred from lineage, not yet source-verified
+# on a Bazzite image (Bazzite is a deferred Phase-3 target).
+_CHIMERAOS_LINEAGE = frozenset({"bazzite", "chimeraos"})
 
 
 def _desktop_arg_for(family: str) -> str:
     """The `steamos-session-select` arg that reaches the desktop session, by
-    lineage. SteamOS (HoloISO) exposes 'plasma' and has NO 'desktop' case; the
-    ChimeraOS gamescope-session lineage (CachyOS Handheld, Bazzite) uses
-    'desktop' (as its own short_session_recover does). Pure. Default 'plasma'
-    (the tested SteamOS platform) for steamos AND anything we can't positively
-    classify — only switch to 'desktop' when the lineage is known."""
+    lineage. SteamOS (HoloISO) AND CachyOS Handheld (a Valve/SteamOS fork) expose
+    'plasma' with NO 'desktop' case; the ChimeraOS gamescope-session-plus lineage
+    (Bazzite) uses 'desktop'. Pure. Default 'plasma' (the tested SteamOS platform)
+    for steamos, cachyos, AND anything we can't positively classify — only switch
+    to 'desktop' when the lineage is a known ChimeraOS one."""
     return "desktop" if family in _CHIMERAOS_LINEAGE else "plasma"
 
 
