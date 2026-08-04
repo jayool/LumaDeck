@@ -302,6 +302,14 @@ def _session_family(distro: str) -> str:
     return "unknown"
 
 
+def session_family() -> str:
+    """Public: the gamescope-session lineage of the current distro — "steamos"
+    (HoloISO) vs the ChimeraOS gamescope-session lineage ("cachyos"/"bazzite"/
+    "chimeraos") vs "unknown". Callers branch session behavior (crash-loop reset,
+    session-select args) on it."""
+    return _session_family(_distro_id(_read_os_release()))
+
+
 def _gamescope_running(comms: Iterable[str]) -> bool:
     """True if any process comm is exactly `gamescope`. Pure."""
     return any(c.strip() == "gamescope" for c in comms)

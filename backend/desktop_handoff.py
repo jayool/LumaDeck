@@ -23,6 +23,11 @@ import subprocess
 from paths import real_home, real_user
 
 try:
+    import platform_info as _platform  # session-lineage detection (guarded)
+except Exception:  # pragma: no cover - present in-tree
+    _platform = None  # type: ignore
+
+try:
     import decky  # type: ignore
     logger = decky.logger
 except ImportError:
@@ -145,6 +150,28 @@ def _arm(payload: str) -> dict:
         return {"success": False, "error": f"arm: {exc}"}
 
 
+_CHIMERAOS_LINEAGE = frozenset({"cachyos", "bazzite", "chimeraos"})
+
+
+def _desktop_arg_for(family: str) -> str:
+    """The `steamos-session-select` arg that reaches the desktop session, by
+    lineage. SteamOS (HoloISO) exposes 'plasma' and has NO 'desktop' case; the
+    ChimeraOS gamescope-session lineage (CachyOS Handheld, Bazzite) uses
+    'desktop' (as its own short_session_recover does). Pure. Default 'plasma'
+    (the tested SteamOS platform) for steamos AND anything we can't positively
+    classify — only switch to 'desktop' when the lineage is known."""
+    return "desktop" if family in _CHIMERAOS_LINEAGE else "plasma"
+
+
+def _desktop_session_arg() -> str:
+    try:
+        if _platform is not None:
+            return _desktop_arg_for(_platform.session_family())
+    except Exception:
+        pass
+    return "plasma"
+
+
 def _find_session_select() -> str | None:
     for p in (
         "/usr/bin/steamos-session-select",
@@ -184,20 +211,24 @@ def _run_handoff(payload: str) -> dict:
     runtime = f"/run/user/{uid}"
     try:
         # sudo strips the env, so set the session vars on the command line via
-        # `env`. steamos-session-select needs deck's session bus to trigger the
-        # switch — the root backend isn't in that session by default.
-        # NOTE: steamos-session-select has NO "desktop" case — valid args are
-        # plasma / plasma-wayland / gamescope / ...-persistent. We use "plasma"
-        # (non-persistent X11 desktop) so the default login mode stays Game Mode
-        # and we land back in Game Mode after the task.
+        # `env`. steamos-session-select needs the user's session bus to trigger
+        # the switch — the root backend isn't in that session by default.
+        # The desktop arg is lineage-specific: SteamOS(HoloISO) has NO "desktop"
+        # case (valid args plasma / plasma-wayland / gamescope), while the
+        # ChimeraOS gamescope-session lineage (CachyOS Handheld, Bazzite) uses
+        # "desktop". _desktop_session_arg() picks the right one (default "plasma",
+        # the tested SteamOS value). Either way the default login mode stays Game
+        # Mode, so we land back in Game Mode after the task.
+        desktop_arg = _desktop_session_arg()
         subprocess.Popen(
             ["sudo", "-u", real_user(), "env",
              f"XDG_RUNTIME_DIR={runtime}",
              f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
              f"HOME={real_home()}",
-             sel, "plasma"],
+             sel, desktop_arg],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+        info["desktopArg"] = desktop_arg
         info["success"] = True
         info["switchLaunched"] = True
         info["switchRuntime"] = runtime
