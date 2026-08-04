@@ -58,7 +58,14 @@ _SCRIPT_FILE = os.path.join(_SCRIPT_DIR, "handoff.sh")
 #     regenerates steam.sh) so its hooks aren't wiped.
 #   - Returns to Game Mode ONLY on success. On failure it stays in Desktop so the
 #     konsole window (--hold) shows the error.
-_REAL_PAYLOAD = """
+# The Game-Mode session target for `steamos-session-select`. Unlike the desktop
+# arg (plasma vs desktop, see _desktop_arg_for), this is "gamescope" on EVERY
+# supported lineage (SteamOS + the ChimeraOS lineage: CachyOS/Bazzite), so it
+# does not vary by distro — centralised here so both session-select args are
+# explicit. NOTE: _REAL_PAYLOAD is an f-string below; keep literal { } out of it.
+_GAMEMODE_ARG = "gamescope"
+
+_REAL_PAYLOAD = f"""
 set +e
 echo "================================================================"
 echo " LumaDeck - Aligning Steam to the supported build"
@@ -79,7 +86,7 @@ if curl -fsSL headcrab.pages.dev | bash; then
   echo
   echo " All done. Returning to Game Mode in 6s..."
   sleep 6
-  steamos-session-select gamescope
+  steamos-session-select {_GAMEMODE_ARG}
 else
   echo
   echo "!! headcrab FAILED. Staying in Desktop so you can read the error."
@@ -130,14 +137,19 @@ def _arm(payload: str) -> dict:
         # Plain freedesktop autostart entry (Type=Application + Exec). NO
         # X-KDE-AutostartScript — that legacy key makes Plasma route it through
         # the login-script path and can make it ignore a Type=Application entry.
+        # Open the script in whatever terminal is installed (konsole on KDE,
+        # else a GNOME-family/X terminal). If none is found, run it headless —
+        # the script still writes ~/lumadeck-quickinstall.json + the diag file,
+        # the user just doesn't see a live window instead of the run silently
+        # never happening (the old konsole-only Exec on a non-KDE distro).
+        term = _terminal_exec_prefix()
+        exec_line = f"Exec={term} {_SCRIPT_FILE}\n" if term else f"Exec={_SCRIPT_FILE}\n"
         desktop_entry = (
             "[Desktop Entry]\n"
             "Type=Application\n"
             "Name=LumaDeck Desktop Hand-off\n"
-            # --hold keeps the terminal open if the gamescope switch fails, so a
-            # failed run is visible instead of vanishing.
-            f"Exec=konsole --hold -e {_SCRIPT_FILE}\n"
-            "Terminal=false\n"
+            + exec_line
+            + "Terminal=false\n"
             "X-GNOME-Autostart-enabled=true\n"
         )
         # 0755 so a Plasma build that requires autostart .desktop files to be
@@ -170,6 +182,34 @@ def _desktop_session_arg() -> str:
     except Exception:
         pass
     return "plasma"
+
+
+# DE-agnostic terminal resolution for the hand-off window. konsole is KDE-only
+# (present on the tested SteamOS/Plasma path, and on CachyOS Handheld / Bazzite
+# default which are Plasma), but the GNOME-family targets (ChimeraOS, Bazzite-
+# GNOME) don't ship it. Each entry is the argv prefix that runs a command in a
+# visible terminal; picked by availability at ARM time (same machine runs it at
+# next login). `--hold`/`-hold` where available keeps the window open on failure.
+_TERMINALS = (
+    ("konsole", "konsole --hold -e"),          # KDE — SteamOS / CachyOS / Bazzite-Plasma
+    ("ptyxis", "ptyxis --"),                   # new GNOME default (Fedora/Bazzite-GNOME)
+    ("kgx", "kgx -e"),                          # GNOME Console
+    ("gnome-terminal", "gnome-terminal --"),   # GNOME
+    ("foot", "foot"),                          # wlroots / sway
+    ("alacritty", "alacritty -e"),
+    ("xterm", "xterm -hold -e"),               # X fallback
+)
+
+
+def _terminal_exec_prefix() -> str | None:
+    """The command prefix that opens the hand-off script in whatever terminal is
+    installed, or None if none is found (caller runs the script headless). konsole
+    first (the tested KDE path); GNOME-family terminals follow so the hand-off
+    works on ChimeraOS / Bazzite-GNOME too."""
+    for name, prefix in _TERMINALS:
+        if shutil.which(name):
+            return prefix
+    return None
 
 
 def _find_session_select() -> str | None:
@@ -277,7 +317,7 @@ def run_desktop_handoff_quick_install() -> dict:
         '  echo\n'
         '  echo " All done. Returning to Game Mode in 8s..."\n'
         '  sleep 8\n'
-        '  steamos-session-select gamescope\n'
+        f'  steamos-session-select {_GAMEMODE_ARG}\n'
         'else\n'
         '  echo\n'
         '  echo "!! Setup failed (exit $rc). Staying in Desktop so you can read it."\n'

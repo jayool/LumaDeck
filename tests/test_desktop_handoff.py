@@ -36,6 +36,46 @@ class TestDesktopArgByLineage(unittest.TestCase):
         self.assertIn(arg, ("plasma", "desktop"))
 
 
+class TestTerminalResolver(unittest.TestCase):
+    """The hand-off must open in a terminal that actually exists — konsole is
+    KDE-only and breaks the hand-off on GNOME-family distros (ChimeraOS,
+    Bazzite-GNOME). _terminal_exec_prefix resolves a DE-agnostic one."""
+
+    def _with_which(self, present):
+        import shutil
+        orig = shutil.which
+        shutil.which = lambda n: ("/usr/bin/" + n) if n in present else None
+        self.addCleanup(lambda: setattr(shutil, "which", orig))
+
+    def test_konsole_first_on_kde(self):
+        self._with_which({"konsole", "xterm"})
+        self.assertEqual(dh._terminal_exec_prefix(), "konsole --hold -e")
+
+    def test_falls_through_to_gnome_family(self):
+        self._with_which({"gnome-terminal"})
+        self.assertEqual(dh._terminal_exec_prefix(), "gnome-terminal --")
+        self._with_which({"ptyxis"})
+        self.assertEqual(dh._terminal_exec_prefix(), "ptyxis --")
+
+    def test_none_when_no_terminal(self):
+        self._with_which(set())
+        self.assertIsNone(dh._terminal_exec_prefix())  # -> caller runs headless
+
+    def test_konsole_is_tried_first(self):
+        self.assertEqual(dh._TERMINALS[0][0], "konsole")
+
+
+class TestGameModeArg(unittest.TestCase):
+    def test_gamemode_arg_is_gamescope_and_used_in_both_payloads(self):
+        self.assertEqual(dh._GAMEMODE_ARG, "gamescope")
+        self.assertIn("steamos-session-select gamescope", dh._REAL_PAYLOAD)
+        # The quick-install payload is built in run_desktop_handoff_quick_install;
+        # its game-mode line uses the same constant.
+        import inspect
+        src = inspect.getsource(dh.run_desktop_handoff_quick_install)
+        self.assertIn("steamos-session-select {_GAMEMODE_ARG}", src)
+
+
 class TestSessionFamilyPublic(unittest.TestCase):
     def test_session_family_matches_pure_helper(self):
         # Public wrapper is consistent with the pure classifier on the live distro.
