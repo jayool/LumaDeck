@@ -31,14 +31,14 @@
 - **GitHub Codespaces is a different environment** and its KVM status is **not
   clearly documented**. GitHub *Actions* Linux runners gained nested-virt/KVM;
   Codespaces (Docker-in-VM) historically does **not** hand `/dev/kvm` to the
-  container, and community reports are mixed. **You must verify it in your own
-  Codespace** with:
-  ```sh
-  ls -l /dev/kvm && grep -oE 'vmx|svm' /proc/cpuinfo | sort -u
-  ```
-  If `/dev/kvm` is absent, QEMU falls back to **TCG** (pure software emulation):
-  it still boots, but ~10–50× slower — a full CachyOS image boot becomes minutes,
-  and anything interactive is painful.
+  container, and community reports are mixed.
+- **CONFIRMED (2026-08) on the maintainer's own Codespace:** `ls -l /dev/kvm`
+  → *"No such file or directory"*. **No KVM in the Codespace.** So any VM here is
+  **TCG** (pure software emulation): it still boots, but ~10–50× slower — a full
+  CachyOS image boot becomes many minutes and anything interactive is painful.
+  Combined with the no-GPU finding below, this takes approaches **C and D from
+  "gated on KVM" to "not practical in a Codespace"** — see the recalibration
+  note at the end.
 
 ### 2. A GPU for gamescope — *unavailable in Codespaces*
 
@@ -115,10 +115,44 @@ On the existing headless Codespace:
 - The gamescope session's actual behaviour on the return-to-Game-Mode path.
 - HHD / firmware-update unit interactions unique to handheld hardware.
 
+## Recalibration after the confirmed no-KVM finding
+
+The no-`/dev/kvm` result forces an honest downgrade of the options:
+
+- **C (desktop CachyOS in QEMU) is now TCG-only** — technically possible, but a
+  CachyOS ISO under pure software emulation is slow enough that it's poor ROI for
+  iterative debugging. Keep it as a last-resort "real CachyOS userland" option,
+  not a daily driver.
+- **SUPERSEDED — we built a real CachyOS *container* instead.** The earlier
+  framing ("the Codespace runs Arch, so approach A only re-confirms the generic
+  path; the best we can do headless is vendor CachyOS's session scripts onto
+  Arch — A′") is no longer the ceiling. A **container** (unlike a VM) needs
+  **neither KVM nor a GPU** — it's just the CachyOS userland on the host kernel.
+  So the port-testing devcontainer was rebuilt on a genuine CachyOS userland
+  (`.devcontainer/port-testing/` in the lumalinux repo): CachyOS optimized repos
+  via `cachyos-repo.sh`, `ID=cachyos`, and the **real** `gamescope-session-cachyos`
+  scripts (`steamos-session-select`, `steam-short-session-tracker`). That gives
+  approach A on **real CachyOS userland**, not Arch — so it *can* now surface
+  CachyOS-userland-specific behaviour, which A′'s hand-vendored scripts only
+  approximated.
+- **Still out of reach in any container: the gamescope Game Mode compositor**
+  (no GPU/seat). And **#31's hang** remains CachyOS-driver/timing-specific, so
+  **real-user logs** stay the highest-signal path for the actual "stuck loading"
+  — a diagnostic build (verbose install logging + steam.sh state dumped across
+  each downgrade restart) handed to a CachyOS Handheld user beats any GPU-less env.
+
 ## Bottom line
 
-Don't build a CachyOS Handheld VM first — it's the **lowest-feasibility, highest-
-effort** option and the target symptom doesn't even need it. Chase #31's
-desktop-mode symptom on the **headless Codespace you already have** (approach A),
-fall back to a **desktop-only CachyOS QEMU** if you have KVM (C), and treat the
-**full Game Mode session** as device-or-real-user-logs territory (D).
+Don't build a CachyOS Handheld **VM** — confirmed no KVM and no GPU make the full
+Game-Mode route impractical here. But a CachyOS **container** needs neither, so
+that's what we run. Ranked by signal-per-effort now:
+
+1. **Approach A on the real CachyOS container** (`.devcontainer/port-testing/`) —
+   drive the desktop-mode downgrade on genuine CachyOS userland and watch whether
+   `steam.sh` loses/regains the injection. Reproduces #31's *primary* (desktop)
+   symptom if it's userland-side.
+2. **Real-user diagnostic build** — instrument, ship to a CachyOS Handheld user,
+   read the logs. Highest signal for the actual gamescope-session hang.
+3. **C** — TCG QEMU of CachyOS desktop, only if 1–2 are inconclusive and something
+   needs a booted system rather than a container.
+4. **D** — full Game Mode compositor: real device only.
