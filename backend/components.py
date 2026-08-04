@@ -32,6 +32,23 @@ except ImportError:
 # The exact asset h3adcr-b installs for CloudRedirect: a rolling `linux-test`
 # tag whose cloud_redirect.so is replaced in place (no semver). The only honest
 # "is there an update" check is a content-hash compare against this file.
+#
+# Fork note (looks like a mismatch but isn't — see #30): the Steam-pin fork is
+# Deadboy666/h3adcr-b (headcrab_compat._HEADCRAB_URL), but the CloudRedirect asset
+# lives under Selectively11/h3adcr-b. That's correct and aligned: Deadboy666's
+# headcrab.sh — the one `curl headcrab.pages.dev | bash` actually runs — fetches
+# CloudRedirect FROM this Selectively11 linux-test asset in its crinstall()
+# (CloudRedirectLib="…/Selectively11/h3adcr-b/…/linux-test/cloud_redirect.so"). So
+# hashing against this URL matches exactly what's installed. Don't "fix" it to
+# Deadboy666 — CR simply doesn't live there.
+#
+# Upstream note (no staleness, verified 2026-08): Selectively11 also authors
+# CloudRedirect itself (github.com/Selectively11/CloudRedirect). The h3adcr-b
+# linux-test asset we hash here is a BYTE-IDENTICAL mirror of that upstream release
+# (same content, verified sha256 013f99a6…74d1d9, same date), so tracking this asset
+# also tracks CloudRedirect upstream — the two are kept in sync by the same author.
+# We deliberately hash the h3adcr-b asset (not the CloudRedirect repo) because it's
+# the exact file headcrab installs; if they ever diverge, "what's installed" wins.
 _CR_LINUX_TEST_SO = (
     "https://github.com/Selectively11/h3adcr-b/releases/download/"
     "linux-test/cloud_redirect.so"
