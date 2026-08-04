@@ -24,9 +24,12 @@
 - **Phase 2 — session/crash-loop layer**: crash-loop tracker reset generalised
   to `rm -f /tmp/*-short-session-tracker`; `steamos-session-select` desktop arg
   is lineage-correct — **`plasma` for SteamOS AND CachyOS** (both Valve/SteamOS
-  forks; source-verified), `desktop` only for the ChimeraOS family (Bazzite);
-  a `~/.config/inhibit-short-session-tracker` backstop around the downgrade; and
-  a faithful `do_repair()` reproduction test. **NOTE:** an earlier revision put
+  forks; source-verified), `desktop` only for the ChimeraOS family (Bazzite); and
+  a faithful `do_repair()` reproduction test. (The durable crash-loop protection
+  is the Desktop-routing of the downgrade, where the tracker service isn't
+  running; CachyOS's own `~/.config/inhibit-short-session-tracker` is documented
+  but deliberately NOT set — redundant, and setting it would touch SteamOS.)
+  **NOTE:** an earlier revision put
   CachyOS in the ChimeraOS family and sent it `desktop` — a regression (CachyOS
   rejects `desktop`); now fixed. The crash-loop fix is verified against the
   *reproduced* clobber, but is **not** confirmed to be #31's desktop-mode cause.
@@ -240,9 +243,9 @@ so both branches can be exercised without hardware.
   Crash-loop reset generalised to all lineages (`rm -f /tmp/*-short-session-
   tracker`); session-switch arg source-verified (**`plasma` for CachyOS**, a
   Valve/SteamOS fork — an earlier `desktop` value was a regression, now fixed;
-  `desktop` reserved for the ChimeraOS family/Bazzite); an inhibit-file backstop
-  around the downgrade; and a faithful `do_repair()` clobber reproduction
-  (`tests/test_installer_crashloop.py`). **What is NOT done:** confirming #31's
+  `desktop` reserved for the ChimeraOS family/Bazzite); and a faithful
+  `do_repair()` clobber reproduction (`tests/test_installer_crashloop.py`).
+  **What is NOT done:** confirming #31's
   *desktop-mode* symptom. The reproduced clobber is the game-mode/return-to-
   gamemode path; the reporter's primary failure was in Plasma, where the tracker
   service isn't running, so its root cause is still open and **device/repro-
@@ -295,8 +298,10 @@ Resolved by reading the **actual CachyOS source** (`CachyOS/gamescope-session
   a `chimeraos-` variant as an earlier revision claimed. `do_repair()` fires at
   `short_session_count_before_reset=3` and re-extracts
   `/usr/lib/steam/bootstraplinux_ubuntu12_32.tar.xz` over `~/.local/share/Steam`.
-  The glob reset covers it; the officially-supported
-  `~/.config/inhibit-short-session-tracker` disables it. Reproduced in
+  The glob reset covers it (and the desktop-routing avoids it entirely, since the
+  tracker service isn't running in Plasma). CachyOS/SteamOS also expose
+  `~/.config/inhibit-short-session-tracker` to disable it, but LumaDeck does NOT
+  set it — redundant given the routing, and it would touch SteamOS. Reproduced in
   `tests/test_installer_crashloop.py`. ✅ (mechanism) / ⚠️ (that it's #31's cause)
 - **`steamos-session-select` args** — verified from source: `gamescope` (Game
   Mode), `plasma` (desktop) on **both SteamOS and CachyOS**, `persistent`/

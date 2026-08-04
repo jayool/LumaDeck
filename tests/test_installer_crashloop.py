@@ -11,10 +11,12 @@ What is verified (from source, CachyOS/gamescope-session @cachyos):
     exists ("Auto-repair disabled by config").
 
 What this test does and does NOT cover — read this before trusting it:
-  * COVERS: that do_repair() genuinely wipes the steam.sh injection, and that the
-    inhibit backstop + the tracker reset neutralise it. This is a real
-    reproduction of the tracker->repair->clobber mechanism (the "black screen
-    returning to Game Mode" tail of #31, and any game-mode install path).
+  * COVERS: that do_repair() genuinely wipes the steam.sh injection, and pins the
+    two mechanisms that stop it — the /tmp/*-short-session-tracker reset, and
+    CachyOS/SteamOS's own ~/.config/inhibit-short-session-tracker (which LumaDeck
+    documents but does NOT set; see test_native_inhibit_would_prevent_repair).
+    This is a real reproduction of the tracker->repair->clobber mechanism (the
+    "black screen returning to Game Mode" tail of #31, and any game-mode path).
   * DOES NOT COVER: #31's *primary* reported symptom — "when steam restarted in
     DESKTOP mode, nothing was injected + stuck loading". In Plasma/desktop the
     gamescope steam-launcher.service (which drives the tracker) is NOT running,
@@ -117,7 +119,8 @@ class TestCrashLoopTrackerReset(unittest.TestCase):
 
 class TestDoRepairClobber(unittest.TestCase):
     """Drive the faithful CachyOS tracker: prove do_repair() wipes the injection,
-    and prove the inhibit backstop stops it."""
+    and pin that CachyOS's own inhibit file would stop it (a mechanism we
+    document but deliberately don't wire)."""
 
     def _run(self, with_inhibit):
         import shutil
@@ -151,51 +154,17 @@ class TestDoRepairClobber(unittest.TestCase):
             return _MARKER in fh.read()
 
     def test_repair_wipes_injection_when_not_inhibited(self):
-        # Reproduces #31's clobber: 3 short sessions -> do_repair -> injection gone.
+        # Reproduces the clobber: 3 short sessions -> do_repair -> injection gone.
         self.assertFalse(self._run(with_inhibit=False))
 
-    def test_inhibit_backstop_preserves_injection(self):
-        # The fix: ~/.config/inhibit-short-session-tracker -> do_repair skipped ->
-        # injection survives even at the repair threshold.
+    def test_native_inhibit_would_prevent_repair(self):
+        # Documents CachyOS/SteamOS's OWN inhibit mechanism: with
+        # ~/.config/inhibit-short-session-tracker present, do_repair() is skipped.
+        # LumaDeck deliberately does NOT set this file (redundant given the
+        # desktop-routing protection, and setting it unconditionally would alter
+        # SteamOS behaviour) — this test just pins the upstream behaviour so the
+        # decision stays informed if we ever revisit it.
         self.assertTrue(self._run(with_inhibit=True))
-
-
-class TestInhibitHelpers(unittest.TestCase):
-    """installer._set_inhibit_tracker / _clear_inhibit_tracker must create the
-    file only when absent, remove only what THEY created, and never touch a file
-    the user placed themselves."""
-
-    def _patch_path(self):
-        import shutil
-        d = tempfile.mkdtemp(prefix="ld-inhibit-")
-        self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
-        path = os.path.join(d, ".config", "inhibit-short-session-tracker")
-        orig = installer._inhibit_tracker_path
-        installer._inhibit_tracker_path = lambda: path
-        self.addCleanup(lambda: setattr(installer, "_inhibit_tracker_path", orig))
-        return path
-
-    def test_set_creates_and_reports_ownership(self):
-        path = self._patch_path()
-        created = installer._set_inhibit_tracker()
-        self.assertTrue(created)
-        self.assertTrue(os.path.exists(path))
-
-    def test_clear_removes_only_what_we_created(self):
-        path = self._patch_path()
-        created = installer._set_inhibit_tracker()
-        installer._clear_inhibit_tracker(created)
-        self.assertFalse(os.path.exists(path))
-
-    def test_does_not_clobber_a_user_owned_inhibit(self):
-        path = self._patch_path()
-        os.makedirs(os.path.dirname(path))
-        with open(path, "w") as fh:
-            fh.write("user's own\n")
-        created = installer._set_inhibit_tracker()
-        self.assertFalse(created)  # we did not create it...
-        installer._clear_inhibit_tracker(created)
-        self.assertTrue(os.path.exists(path))  # ...so we must not remove it.
 
 
 if __name__ == "__main__":
