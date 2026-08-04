@@ -164,9 +164,20 @@ _HEADCRAB_PATCHES: tuple[tuple[str, str, str, bool], ...] = (
 )
 
 _SESSION_TRACKER_RESET = (
-    "# LumaDeck: reset gamescope-session short-session counter so even if a "
-    "patched call slips through it can't accumulate towards recovery.\n"
-    "rm -f /tmp/steamos-short-session-tracker 2>/dev/null\n"
+    "# LumaDeck: reset the gamescope-session short-session counter so even if a "
+    "patched call slips through, it can't accumulate toward the crash-loop "
+    "recovery. The tracker file is named per session lineage:\n"
+    "#   /tmp/steamos-short-session-tracker    — SteamOS (HoloISO)\n"
+    "#   /tmp/chimeraos-short-session-tracker  — ChimeraOS gamescope-session-plus\n"
+    "#     lineage (CachyOS Handheld, Bazzite). There, short_session_recover()\n"
+    "#     re-extracts the vanilla Steam bootstrap OVER ~/.local/share/Steam\n"
+    "#     (clobbering the lumalinux/SLSsteam steam.sh LD_PRELOAD patch) and runs\n"
+    "#     `steamos-session-select desktop` — i.e. issue #31's 'nothing injected\n"
+    "#     on restart' + 'black screen returning to Game Mode'. (NOT the full\n"
+    "#     Steam-dir wipe SteamOS does; verified against ChimeraOS's session src.)\n"
+    "# Clear the whole *-short-session-tracker family (harmless if absent) so this\n"
+    "# neutralises the counter on every lineage, not just SteamOS.\n"
+    "rm -f /tmp/*-short-session-tracker 2>/dev/null\n"
 )
 
 
