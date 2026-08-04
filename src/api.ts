@@ -83,6 +83,14 @@ export const loadRyuCookie = async () =>
 export const importRyuuCookieFromBrowser = async () =>
   parseResult(await call<[], string>("import_ryuu_cookie_from_browser"));
 
+// Auto-connect (mirrors LuaTools): resolves when the Ryuu session cookie is
+// captured (or on timeout). The caller opens the browser and closes it on success.
+export const connectRyuu = async () =>
+  parseResult(await call<[], string>("connect_ryuu"));
+
+export const cancelConnectRyuu = async () =>
+  parseResult(await call<[], string>("cancel_connect_ryuu"));
+
 export const updateHubcapKey = async (key: string) =>
   parseResult(await call<[string], string>("update_hubcap_key", key));
 
@@ -305,14 +313,18 @@ export const downloadLuatoolsFix = async (
   fixId: string,
   installPath: string,
   slot: string = "",
+  title: string = "",
+  online: boolean = false,
 ) =>
   parseResult(
-    await call<[number, string, string, string], string>(
+    await call<[number, string, string, string, string, boolean], string>(
       "download_luatools_fix",
       appid,
       fixId,
       installPath,
       slot,
+      title,
+      online,
     ),
   );
 

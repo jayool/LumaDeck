@@ -18,7 +18,7 @@ import { HelpContent } from "./Help";
 import {
   saveRyuCookie,
   loadRyuCookie,
-  importRyuuCookieFromBrowser,
+  connectRyuu,
   updateHubcapKey,
   loadHubcapKey,
   getCredentialStatus,
@@ -45,6 +45,7 @@ import {
 import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall } from "../api";
 import { getDevState, setDevState, clearDevState } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
+import { closeLoginBrowser } from "../browserLogin";
 import { requestRefresh } from "../refresh";
 import {
   getInstalledLuaScripts,
@@ -60,6 +61,7 @@ import { primarySystemAction, ComponentsStatus } from "../components/SystemStatu
 export function Settings() {
   const t = useT();
   const [ryuCookie, setRyuCookie] = useState("");
+  const [ryuuConnecting, setRyuuConnecting] = useState(false);
   const [hubcapKey, setHubcapKey] = useState("");
   const [cred, setCred] = useState<any>(null);
   const [deps, setDeps] = useState<any>(null);
@@ -434,23 +436,28 @@ export function Settings() {
     }
   };
 
-  const handleOpenRyuu = () => {
-    // Open Ryuu in Game Mode's built-in Steam browser so the user can log in
-    // with Discord. The session cookie it sets is then importable below
-    // (no DevTools / copy-paste needed).
+  // Auto-connect Ryuu, same dance as LuaTools: open the login in the built-in
+  // browser, poll the backend until it captures the session cookie (via CDP —
+  // instant, no disk-flush lag, no decrypt failures), then close the browser and
+  // refresh the credential row. Replaces the old open-then-manually-import steps.
+  const handleConnectRyuu = async () => {
+    setRyuuConnecting(true);
     Navigation.NavigateToExternalWeb("https://generator.ryuu.lol/");
-  };
-
-  const handleImportRyuuCookie = async () => {
-    const result = await importRyuuCookieFromBrowser();
-    if (result.success) {
-      // Refresh the displayed value from the saved cookie file.
-      const reloaded = await loadRyuCookie();
-      if (reloaded.success && reloaded.cookie) setRyuCookie(reloaded.cookie);
-      refreshCred();
-      toast(result.message || t("ryuuCookieImported"));
-    } else {
-      toast(t("toastError"), result.error || "", 5000);
+    try {
+      const res = await connectRyuu();
+      if (res?.success) {
+        closeLoginBrowser();
+        const reloaded = await loadRyuCookie();
+        if (reloaded.success && reloaded.cookie) setRyuCookie(reloaded.cookie);
+        refreshCred();
+        toast(t("ryuuCookieImported"));
+      } else if (!res?.cancelled) {
+        toast(t("toastError"), "Ryuu login timed out", 5000);
+      }
+    } catch {
+      /* component unmounted during nav; backend saved the cookie anyway */
+    } finally {
+      setRyuuConnecting(false);
     }
   };
 
@@ -740,18 +747,18 @@ export function Settings() {
             {t("saveCookie")}
           </ButtonItem>
         </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleOpenRyuu}>
-            {t("openRyuu")}
-          </ButtonItem>
-        </PanelSectionRow>
+        {/* One-tap auto-connect: opens Ryuu, captures the session cookie the
+            instant you log in (via CDP), and closes the browser — no manual
+            "import" or back-navigation. The TextField above stays as a manual
+            paste fallback. */}
         <PanelSectionRow>
           <ButtonItem
             layout="below"
-            onClick={handleImportRyuuCookie}
+            onClick={handleConnectRyuu}
+            disabled={ryuuConnecting}
             description={t("importRyuuCookieDesc")}
           >
-            {t("importRyuuCookie")}
+            {ryuuConnecting ? "Logging in…" : "Log in with Discord"}
           </ButtonItem>
         </PanelSectionRow>
         {renderCredLine("ryuu")}

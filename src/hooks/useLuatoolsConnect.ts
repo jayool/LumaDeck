@@ -2,6 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigation } from "@decky/ui";
 
 import { connectLuatools, disconnectLuatools, getLuatoolsStatus } from "../api";
+import { closeLoginBrowser } from "../browserLogin";
+import {
+  getLuatoolsConnected,
+  setLuatoolsConnected,
+  subscribeLuatoolsConnected,
+} from "../luatoolsConnection";
 
 type Toast = (title: string, body?: string, duration?: number) => void;
 type Translate = (key: string, ...args: any[]) => string;
@@ -18,13 +24,19 @@ type Translate = (key: string, ...args: any[]) => string;
  * backend still saves the session, and the next status refresh reflects it.
  */
 export function useLuatoolsConnect(toast: Toast, t: Translate) {
-  const [connected, setConnected] = useState(false);
+  // Mirror the shared module state (null = not resolved yet). Every hook instance
+  // subscribes, so a connect/disconnect/refresh anywhere updates all of them.
+  const [connected, setConnectedLocal] = useState<boolean | null>(
+    getLuatoolsConnected(),
+  );
   const [connecting, setConnecting] = useState(false);
+
+  useEffect(() => subscribeLuatoolsConnected(setConnectedLocal), []);
 
   const refresh = useCallback(async () => {
     const r = await getLuatoolsStatus();
     const c = !!(r?.success && r.connected);
-    setConnected(c);
+    setLuatoolsConnected(c); // → notifies every subscribed instance
     return c;
   }, []);
 
@@ -38,12 +50,12 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
     try {
       const res = await connectLuatools(); // resolves when captured (or timeout)
       if (res?.success) {
-        Navigation.NavigateBack(); // close the browser, back to the caller
-        setConnected(true);
+        closeLoginBrowser(); // pop /externalweb off the main window's backstack
+        setLuatoolsConnected(true);
         toast("LuaTools connected ✓"); // TODO i18n
         return true;
       } else if (!res?.cancelled) {
-        toast(t("toastError"), "LuaTools login timed out", 5000);
+        toast(t("toastError"), "LuaTools login timed out — try again", 5000);
       }
     } catch {
       /* component unmounted during nav; backend saved the session anyway */
@@ -55,9 +67,16 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
 
   const disconnect = useCallback(async () => {
     await disconnectLuatools();
-    setConnected(false);
+    setLuatoolsConnected(false);
     toast("LuaTools disconnected"); // TODO i18n
   }, [toast]);
 
-  return { connected, connecting, connect, disconnect, refresh, setConnected };
+  return {
+    connected,
+    connecting,
+    connect,
+    disconnect,
+    refresh,
+    setConnected: setLuatoolsConnected,
+  };
 }

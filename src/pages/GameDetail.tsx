@@ -35,7 +35,6 @@ import {
   disableNativeOnline,
   getNativeOnlineStatus,
   getApplyFixStatus,
-  cancelApplyFix,
   getInstalledFixes,
   unfixGame,
   getUnfixStatus,
@@ -174,6 +173,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           date: f.date,
           fixType: f.fixType,
           filesCount: f.filesCount || 0,
+          online: !!f.online,
         }));
       setInstalledFixes(gameFixes);
     }
@@ -464,15 +464,30 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
-  const handleApplyLuatoolsFix = async (fixId: string) => {
+  const handleApplyLuatoolsFix = async (f: any) => {
     if (!installPath) {
       toast(t("toastError"), t("installPathNotFound"), 4000);
       return;
     }
+    // Carry the catalogue entry's real name and online tag to the backend: the
+    // name becomes the recorded fix type (instead of a generic "LuaTools Catalog"),
+    // and the online tag files the installed entry under the right tab — including
+    // EOS/EpicFix online fixes, which have no FakeAppId for the backend to detect.
+    // Same name the catalogue showed (renderFixEntry): title, else first tag.
+    // Many online entries have no title — without the tag fallback the backend
+    // would record the generic "LuaTools Catalog" instead of e.g. "OnlineFix".
+    const rawTitle = String(f?.title ?? "").trim();
+    const name =
+      (/^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : rawTitle) ||
+      luaFixTagList(f)[0] ||
+      "";
+    const online = luaFixTagList(f).some((tg: string) => /online/i.test(tg));
     // slot="fix" downloads the crack zip (vs "manifest"); download_luatools_fix
     // resolves the signed URL server-side and hands it to the same apply pipeline
     // as applyGameFix, so the existing fixStatus polling and progress UI cover it.
-    const result = await downloadLuatoolsFix(appid, fixId, installPath, "fix");
+    const result = await downloadLuatoolsFix(
+      appid, String(f.id), installPath, "fix", name, online,
+    );
     if (result.success) {
       setFixStatus({ status: "queued" });
       // netsock + 480 are applied by the backend during extraction — but ONLY when
@@ -498,11 +513,6 @@ export function GameDetail({ appid }: GameDetailProps) {
     } else {
       toast(t("toastError"), r?.error || "", 5000);
     }
-  };
-
-  const handleCancelFix = async () => {
-    await cancelApplyFix(appid);
-    setFixStatus((prev: any) => ({ ...prev, status: "cancelled" }));
   };
 
   const handleRemoveFix = async (fixDate?: string) => {
@@ -764,7 +774,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           <ActionButton
             label="Apply fix"
             description={applyDesc}
-            onClick={() => handleApplyLuatoolsFix(String(f.id))}
+            onClick={() => handleApplyLuatoolsFix(f)}
             disabled={!canApply || !!isFixInProgress || busyManifest}
           />
         )}
@@ -794,7 +804,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       />
       {filtered && (
         <>
-          {filtered.length > 0 && !luatoolsConnected && (
+          {filtered.length > 0 && luatoolsConnected === false && (
             <>
               <PanelSectionRow>
                 <Field description={
@@ -815,20 +825,13 @@ export function GameDetail({ appid }: GameDetailProps) {
         </>
       )}
       {isFixInProgress && (
-        <>
-          <PanelSectionRow>
-            <ProgressBarWithInfo
-              indeterminate={!(fixStatus.totalBytes > 0)}
-              nProgress={
-                fixStatus.totalBytes > 0
-                  ? Math.min(100, ((fixStatus.bytesRead || 0) / fixStatus.totalBytes) * 100)
-                  : 0
-              }
-              sOperationText={fixStatusLabel}
-            />
-          </PanelSectionRow>
-          <ActionButton label={t("cancelFix")} onClick={handleCancelFix} variant="danger" />
-        </>
+        // Plain status line, not a button: applying a fix is quick (small zip +
+        // extract), so a Cancel is pointless — and cancelling mid-extract would
+        // leave a half-applied fix. The step (Queued → Downloading → Extracting)
+        // rides as the description; no overflowing progress bar.
+        <PanelSectionRow>
+          <Field label="Applying fix…" description={fixStatusLabel} />
+        </PanelSectionRow>
       )}
     </PanelSection>
   );

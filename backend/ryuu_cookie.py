@@ -18,12 +18,14 @@ SteamOS) so we need no Python crypto dependency.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import shutil
 import sqlite3
 import subprocess
 import tempfile
+import time
 
 from paths import home_candidates, real_home, real_uid, real_user
 from subprocess_env import clean_env
@@ -121,6 +123,19 @@ def _chromium_epoch_to_iso(expires_utc):
         if unix <= 0:
             return None
         return (datetime.datetime.utcfromtimestamp(unix)
+                .replace(microsecond=0).isoformat())
+    except Exception:
+        return None
+
+
+def _unix_to_iso(expires_unix):
+    """CDP cookie `expires` is unix seconds (float; -1/0 = session cookie).
+    Returns an ISO-8601 string, or None — same shape as _chromium_epoch_to_iso."""
+    try:
+        if not expires_unix or expires_unix <= 0:
+            return None
+        import datetime
+        return (datetime.datetime.utcfromtimestamp(expires_unix)
                 .replace(microsecond=0).isoformat())
     except Exception:
         return None
@@ -396,3 +411,72 @@ def import_ryuu_cookie_from_browser() -> dict:
                  "generator.ryuu.lol in the Steam browser, log in with Discord, "
                  "then try again.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Auto-connect flow (mirrors LuaTools): open Ryuu in the browser, poll for the
+# session cookie, capture it the instant it lands, and let the frontend close the
+# browser. Reads the LIVE cookie via CDP (already decrypted, no ~15s disk-flush
+# lag, no v10/v11 keyring decrypt failures); falls back to the on-disk decrypt
+# scrape only when the CEF debug port isn't reachable.
+# ---------------------------------------------------------------------------
+_ryuu_connect_state = {"status": "idle"}
+
+
+def _harvest_ryuu_once():
+    """Return (value, iso_expiry) for the ryuu.lol `session` cookie, or None if it
+    isn't present yet. CDP first (live + decrypted), on-disk decrypt as fallback."""
+    import cef_cdp
+    live = cef_cdp.get_cookies()
+    if live is not None:
+        for c in live:
+            if (c.get("name") == _RYUU_COOKIE_NAME
+                    and _RYUU_HOST_MATCH in c.get("domain", "")):
+                value = c.get("value") or ""
+                if value:
+                    return value, _unix_to_iso(c.get("expires"))
+        return None  # debug port reachable but no cookie yet — skip the disk
+    # Fallback: on-disk copy + decrypt (v10 peanuts / v11 keyring).
+    for db in _find_cookie_dbs():
+        res = _read_encrypted_session(db)
+        if res is None:
+            continue
+        enc, expires_utc = res
+        value, _reason = _decrypt_cookie(enc)
+        if value:
+            return value, _chromium_epoch_to_iso(expires_utc)
+    return None
+
+
+async def connect_ryuu(timeout_s: int = 180) -> dict:
+    """Poll the CEF cookie store until the Ryuu Discord-login session appears, then
+    persist it. Resolves as soon as it's captured (so the frontend can close the
+    browser), or after `timeout_s`."""
+    global _ryuu_connect_state
+    _ryuu_connect_state = {"status": "waiting"}
+    loop = asyncio.get_event_loop()
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if _ryuu_connect_state.get("status") == "cancelled":
+            return {"success": False, "cancelled": True}
+        try:
+            res = await loop.run_in_executor(None, _harvest_ryuu_once)
+        except Exception as exc:
+            logger.warning(f"Ryuu: harvest error: {exc}")
+            res = None
+        if res:
+            value, iso = res
+            from api_manifest import save_ryu_cookie, save_ryu_cookie_expiry
+            save_ryu_cookie(value)          # prepends "session=" itself
+            save_ryu_cookie_expiry(iso)     # None clears the sidecar (session cookie)
+            _ryuu_connect_state = {"status": "connected"}
+            logger.info("Ryuu: session cookie captured from the Steam browser.")
+            return {"success": True}
+        await asyncio.sleep(1)
+    _ryuu_connect_state = {"status": "timeout"}
+    return {"success": False, "error": "timeout"}
+
+
+def cancel_connect_ryuu() -> dict:
+    _ryuu_connect_state["status"] = "cancelled"
+    return {"success": True}

@@ -256,6 +256,14 @@ class Plugin:
         from ryuu_cookie import import_ryuu_cookie_from_browser
         return _j(import_ryuu_cookie_from_browser())
 
+    async def connect_ryuu(self) -> str:
+        from ryuu_cookie import connect_ryuu
+        return _j(await connect_ryuu())
+
+    async def cancel_connect_ryuu(self) -> str:
+        from ryuu_cookie import cancel_connect_ryuu
+        return _j(cancel_connect_ryuu())
+
     async def update_hubcap_key(self, key_content: str) -> str:
         from api_manifest import update_hubcap_key
         return _j(update_hubcap_key(key_content))
@@ -540,9 +548,9 @@ class Plugin:
         from luatools_auth import list_luatools_fixes
         return _j(await list_luatools_fixes(appid))
 
-    async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "") -> str:
+    async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "", title: str = "", online: bool = False) -> str:
         from luatools_auth import download_luatools_fix
-        return _j(await download_luatools_fix(appid, fix_id, install_path, slot))
+        return _j(await download_luatools_fix(appid, fix_id, install_path, slot, title, online))
 
     async def unfix_game(self, appid: int, install_path: str = "", fix_date: str = "") -> str:
         from fixes import unfix_game
