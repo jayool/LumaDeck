@@ -1,11 +1,14 @@
 # Porting LumaDeck (+ lumalinux) to other distros — starting with CachyOS
 
-> Status: **Phases 0–2 implemented on `claude/cachyos-support`; awaiting
-> validation on a real device.** The platform layer, environment generalisation,
-> and the session/crash-loop layer are written and unit-tested. What remains is
-> not code we can write blind — it is an on-device run of Game Mode, which the
-> development Codespace cannot reproduce (see §10). This stays a planning +
-> honest-status contract; the work is additive and **does not regress the tested
+> Status: **Phases 0–2 implemented on `claude/cachyos-support` and VALIDATED
+> LIVE on a real CachyOS userland (2026-08-04).** The platform layer, the
+> environment generalisation, and the session-layer fixes are done, unit-tested,
+> and now confirmed against real CachyOS: lumalinux loaded **3/3 hooks** on a
+> genuine CachyOS install, `platform_info` detected `cachyos`, and the real
+> `steamos-session-select` / `steam-short-session-tracker` scripts matched what we
+> ported. The **one** remaining gate is the **Game-Mode gamescope crash-loop**
+> (#31's core), which needs an actual handheld — a GPU-less container has no
+> compositor (see §10). The work is additive and **does not regress the tested
 > SteamOS path** (65 characterization tests hold the SteamOS golden values).
 > Read "Non-regression invariants" before touching any of it.
 
@@ -38,21 +41,53 @@
   `restart_steam()` carried fresh `deck`/`/home/deck` hardcoding, now routed
   through `real_user()`/`real_home()`.
 
+**Live validation on real CachyOS userland (2026-08-04).** Run in the CachyOS
+port-testing devcontainer (real CachyOS repos + session packages, headless
+Steam), NOT an Arch stand-in:
+
+- **Core: lumalinux `3/3 hooks active`** on a genuine CachyOS Steam (DepotKey,
+  GMRC, ShaderDepot, package-0 finder all installed) — the hooking core works on
+  CachyOS, live, not by inference.
+- **Env layer:** `platform_info.summary()` returned `distro=cachyos` from the
+  backend; user/home/paths resolved correctly.
+- **Session scripts source-verified ON the machine:** the real
+  `/usr/bin/steamos-session-select` has a `plasma` case and **no `desktop` case**
+  (confirming the `plasma` fix and that the earlier `desktop` was a regression);
+  `/usr/lib/steamos/steam-short-session-tracker` uses `/tmp/steamos-short-session-
+  tracker`, `count_before_reset=3`, and `do_repair()` re-extracts the bootstrap
+  over `~/.local/share/Steam` — exactly the mechanism modelled in the tests.
+- **Full desktop flow works E2E** (headcrab → SLSsteam → lumalinux → LumaDeck →
+  Decky).
+
+**Upstream caveat found live (NOT our code, NOT CachyOS-specific).** On a *fresh*
+non-Deck-Linux install (CachyOS-Desktop, or a fresh Arch), SLSsteam can abort
+with "Unknown steamclient.so hash" and LumaDeck shows "Steam build not supported".
+Root cause: **Headcrab's `LinuxClientManifest` (build 1784669098, 2026-07-21)
+lags its own `HeadcrabCompatibleClientVer` (1785187029, 2026-07-27) by ~6 days**,
+and SLSsteam's whitelist tracks the newer (compatible) build. So Headcrab
+downgrades non-Deck-Linux clients to a build it itself no longer calls compatible
+and that SLSsteam doesn't whitelist. **CachyOS-*Handheld* is unaffected** — it
+uses Headcrab's Deck manifest (1785187029), which is aligned. An already-pinned
+install (the long-lived Arch env) also dodges it (Headcrab's compat check skips
+the downgrade). This resolves upstream when Headcrab bumps its Linux manifest.
+
 **Confidence, per target — calibrated, not optimistic:**
 
 | Layer | CachyOS Handheld | Bazzite |
 |---|---|---|
-| Core hooks (`steamclient.so`) | ✅ verified (identical binary, whitelisted build, `check_patterns` CLEAN on live desktop client) | ✅ same binary — same verdict |
-| Path / user / cache resolution | ✅ verified (tests + live run with uid≠1000) | ✅ same code path |
-| Install (Headcrab downgrade) | ✅ pacman — Headcrab already supports it | ❌ **blocker: Fedora-atomic, no `pacman`, `/usr` read-only, SELinux — no install route designed yet** |
-| Session / crash-loop (#31) | ⚠️ session args source-verified; #31 root cause **unconfirmed** (desktop-mode symptom is device-gated) | ⚠️ same code by construction |
+| Core hooks (`steamclient.so`) | ✅ **verified LIVE — lumalinux 3/3 hooks on real CachyOS** | ✅ same binary — same verdict |
+| Path / user / cache resolution | ✅ verified (tests + live `distro=cachyos` on the machine) | ✅ same code path |
+| Install (Headcrab downgrade) | ✅ pacman; Handheld uses the aligned Deck manifest (SLSsteam-whitelisted) | ❌ **blocker: Fedora-atomic, no `pacman`, `/usr` read-only, SELinux — no install route designed yet** |
+| Session / crash-loop (#31) | ✅ session scripts source-verified on the machine (`plasma`, `steamos-` tracker, `do_repair`); ⏳ the **Game-Mode gamescope crash-loop** itself is device-gated | ⚠️ same code by construction |
 
-**Bottom line:** **CachyOS Handheld** is one on-device test away from being
-callable done — every layer is either verified or written from authoritative
-source. **Bazzite** is *not*: the hooking core and the env layer carry over
-unchanged, but its **package/immutability model breaks the Headcrab install
-path**, and no Fedora-atomic install route exists yet. Bazzite is deferred to a
-future phase (§6, Phase 3) with that blocker documented, not hand-waved.
+**Bottom line:** **CachyOS Handheld** — the core, the env layer, and the session
+scripts are now **verified live on real CachyOS**; the only unverified piece is
+the Game-Mode gamescope crash-loop, which is device-gated (no compositor in a
+container). One on-device Game-Mode run from callable done. **Bazzite** is *not*:
+the hooking core and the env layer carry over unchanged, but its
+**package/immutability model breaks the Headcrab install path**, and no
+Fedora-atomic install route exists yet. Bazzite is deferred to a future phase
+(§6, Phase 3) with that blocker documented, not hand-waved.
 
 ## 1. Goal & scope
 
