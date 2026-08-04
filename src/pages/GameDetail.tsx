@@ -174,6 +174,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           date: f.date,
           fixType: f.fixType,
           filesCount: f.filesCount || 0,
+          online: !!f.online,
         }));
       setInstalledFixes(gameFixes);
     }
@@ -464,15 +465,24 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
-  const handleApplyLuatoolsFix = async (fixId: string) => {
+  const handleApplyLuatoolsFix = async (f: any) => {
     if (!installPath) {
       toast(t("toastError"), t("installPathNotFound"), 4000);
       return;
     }
+    // Carry the catalogue entry's real name and online tag to the backend: the
+    // name becomes the recorded fix type (instead of a generic "LuaTools Catalog"),
+    // and the online tag files the installed entry under the right tab — including
+    // EOS/EpicFix online fixes, which have no FakeAppId for the backend to detect.
+    const rawTitle = String(f?.title ?? "").trim();
+    const name = /^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : rawTitle;
+    const online = luaFixTagList(f).some((tg: string) => /online/i.test(tg));
     // slot="fix" downloads the crack zip (vs "manifest"); download_luatools_fix
     // resolves the signed URL server-side and hands it to the same apply pipeline
     // as applyGameFix, so the existing fixStatus polling and progress UI cover it.
-    const result = await downloadLuatoolsFix(appid, fixId, installPath, "fix");
+    const result = await downloadLuatoolsFix(
+      appid, String(f.id), installPath, "fix", name, online,
+    );
     if (result.success) {
       setFixStatus({ status: "queued" });
       // netsock + 480 are applied by the backend during extraction — but ONLY when
@@ -764,7 +774,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           <ActionButton
             label="Apply fix"
             description={applyDesc}
-            onClick={() => handleApplyLuatoolsFix(String(f.id))}
+            onClick={() => handleApplyLuatoolsFix(f)}
             disabled={!canApply || !!isFixInProgress || busyManifest}
           />
         )}

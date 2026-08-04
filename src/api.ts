@@ -305,14 +305,18 @@ export const downloadLuatoolsFix = async (
   fixId: string,
   installPath: string,
   slot: string = "",
+  title: string = "",
+  online: boolean = false,
 ) =>
   parseResult(
-    await call<[number, string, string, string], string>(
+    await call<[number, string, string, string, string, boolean], string>(
       "download_luatools_fix",
       appid,
       fixId,
       installPath,
       slot,
+      title,
+      online,
     ),
   );
 

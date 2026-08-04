@@ -540,9 +540,9 @@ class Plugin:
         from luatools_auth import list_luatools_fixes
         return _j(await list_luatools_fixes(appid))
 
-    async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "") -> str:
+    async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "", title: str = "", online: bool = False) -> str:
         from luatools_auth import download_luatools_fix
-        return _j(await download_luatools_fix(appid, fix_id, install_path, slot))
+        return _j(await download_luatools_fix(appid, fix_id, install_path, slot, title, online))
 
     async def unfix_game(self, appid: int, install_path: str = "", fix_date: str = "") -> str:
         from fixes import unfix_game

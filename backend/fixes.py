@@ -91,7 +91,7 @@ async def check_for_fixes(appid: int) -> dict:
     return result
 
 
-async def _download_and_extract_fix(appid: int, download_url: str, install_path: str, fix_type: str, game_name: str = "") -> None:
+async def _download_and_extract_fix(appid: int, download_url: str, install_path: str, fix_type: str, game_name: str = "", online: bool = False) -> None:
     client = await ensure_http_client("fix download")
     dest_zip = ""
     try:
@@ -118,7 +118,7 @@ async def _download_and_extract_fix(appid: int, download_url: str, install_path:
 
         # Run extraction in executor (blocking I/O)
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _extract_fix_sync, appid, dest_zip, install_path, fix_type, game_name, download_url)
+        await loop.run_in_executor(None, _extract_fix_sync, appid, dest_zip, install_path, fix_type, game_name, download_url, online)
 
     except Exception as exc:
         if str(exc) == "cancelled":
@@ -259,7 +259,7 @@ def _apply_onlinefix_fakeappid(appid: int, install_path: str, extracted_files: l
         return 0
 
 
-def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: str, game_name: str, download_url: str) -> None:
+def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: str, game_name: str, download_url: str, online: bool = False) -> None:
     """Synchronous extraction of fix zip (runs in executor)."""
     if not zipfile.is_zipfile(dest_zip):
         # A LuaTools fix is always a real .zip. A non-zip here means the link
@@ -372,6 +372,12 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
             f.write(f"Download URL: {download_url}\n")
             if applied_fake_id:
                 f.write(f"FakeAppId: {applied_fake_id}\n")
+            # Explicit online marker from the catalogue's tag, independent of the
+            # FakeAppId. Needed for EOS/EpicFix online fixes, which are self-contained
+            # (no OnlineFix.ini, no 480) yet are still online fixes — without this they
+            # would be misfiled under Fixes & Repairs instead of the Online tab.
+            if online:
+                f.write("Online: yes\n")
             f.write("Files:\n")
             for fp in extracted_files:
                 f.write(f"{fp}\n")
@@ -731,7 +737,7 @@ def get_native_online_status(appid: int, install_path: str = "") -> dict:
     }
 
 
-async def apply_game_fix(appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "") -> dict:
+async def apply_game_fix(appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "", online: bool = False) -> dict:
     try:
         appid = int(appid)
     except Exception:
@@ -743,7 +749,7 @@ async def apply_game_fix(appid: int, download_url: str, install_path: str, fix_t
         return {"success": False, "error": "Install path does not exist"}
 
     _set_fix_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0, "error": None})
-    asyncio.create_task(_download_and_extract_fix(appid, download_url, install_path, fix_type, game_name))
+    asyncio.create_task(_download_and_extract_fix(appid, download_url, install_path, fix_type, game_name, online))
     return {"success": True}
 
 
@@ -996,9 +1002,13 @@ def get_installed_fixes() -> dict:
                                     elif stripped.startswith("Download URL:"):
                                         fix_data["downloadUrl"] = stripped.replace("Download URL:", "").strip()
                                     elif stripped.startswith("FakeAppId:"):
-                                        # We log this line only for online fixes (the
-                                        # OnlineFix.ini declared a FakeAppId) → the flag
-                                        # the UI uses to route the entry to the Online tab.
+                                        # OnlineFix (480) route: the OnlineFix.ini declared
+                                        # a FakeAppId → definitely an online fix.
+                                        fix_data["online"] = True
+                                    elif stripped.startswith("Online:"):
+                                        # Explicit catalogue-tag marker → catches online
+                                        # fixes with no FakeAppId (EOS/EpicFix), which the
+                                        # FakeAppId signal alone would miss.
                                         fix_data["online"] = True
                                     elif stripped == "Files:":
                                         in_files = True

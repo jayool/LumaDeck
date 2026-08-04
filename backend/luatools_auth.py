@@ -307,7 +307,8 @@ async def list_luatools_fixes(appid: int) -> dict:
 
 
 async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
-                                slot: str = "") -> dict:
+                                slot: str = "", title: str = "",
+                                online: bool = False) -> dict:
     """Resolve the signed download URL for a catalogue fix and hand it to the
     existing fix pipeline (download → extract → Proton launch-option wiring)."""
     token = await _access_token()
@@ -365,5 +366,9 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
     # (signed) URL, extracts into the game dir with zip-slip protection, logs the
     # [FIX] block, and the frontend computes WINEDLLOVERRIDES from the dropped DLLs.
     from fixes import apply_game_fix
+    # Use the catalogue fix's real title as the recorded fix type (falls back to a
+    # generic label), and pass the catalogue's online tag so the installed entry is
+    # filed under the right tab even for EOS/EpicFix fixes (no FakeAppId).
     return await apply_game_fix(appid, signed_url, install_path,
-                                fix_type="LuaTools Catalog")
+                                fix_type=(title.strip() or "LuaTools Catalog"),
+                                online=bool(online))
