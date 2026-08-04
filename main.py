@@ -182,24 +182,28 @@ class Plugin:
         return _j(await get_components_status(force))
 
     async def restart_steam(self) -> str:
-        """Shutdown Steam as deck user (Game Mode auto-restarts it)."""
+        """Shutdown Steam as the real user (Game Mode auto-restarts it). On
+        SteamOS the user is deck / home is /home/deck; elsewhere resolved via
+        platform_info."""
         import subprocess, os
-        steam_bin = "/home/deck/.local/share/Steam/ubuntu12_32/steam"
-        # Try IPC shutdown as deck user first
+        from paths import real_home, real_user
+        _user = real_user()
+        steam_bin = os.path.join(real_home(), ".local/share/Steam/ubuntu12_32/steam")
+        # Try IPC shutdown as the real user first
         for cmd in [
-            ["sudo", "-u", "deck", steam_bin, "-shutdown"],
-            ["su", "-c", f"{steam_bin} -shutdown", "deck"],
+            ["sudo", "-u", _user, steam_bin, "-shutdown"],
+            ["su", "-c", f"{steam_bin} -shutdown", _user],
         ]:
             try:
                 subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return _j({"success": True})
             except Exception:
                 continue
-        # Fallback: SIGTERM to steam process owned by deck
+        # Fallback: SIGTERM to steam process owned by the real user
         try:
             import signal
             result = subprocess.run(
-                ["pgrep", "-u", "deck", "-f", "ubuntu12_32/steam"],
+                ["pgrep", "-u", _user, "-f", "ubuntu12_32/steam"],
                 capture_output=True, text=True
             )
             for pid_str in result.stdout.strip().splitlines():

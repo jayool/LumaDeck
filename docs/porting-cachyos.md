@@ -1,9 +1,52 @@
 # Porting LumaDeck (+ lumalinux) to other distros — starting with CachyOS
 
-> Status: **design / not started**. This is the planning contract for adding
-> non-SteamOS support. It exists so the work stays additive and **cannot regress
-> the tested SteamOS path**. Read the "Non-regression invariants" section before
-> writing any code.
+> Status: **Phases 0–2 implemented on `claude/cachyos-support`; awaiting
+> validation on a real device.** The platform layer, environment generalisation,
+> and the session/crash-loop layer are written and unit-tested. What remains is
+> not code we can write blind — it is an on-device run of Game Mode, which the
+> development Codespace cannot reproduce (see §10). This stays a planning +
+> honest-status contract; the work is additive and **does not regress the tested
+> SteamOS path** (65 characterization tests hold the SteamOS golden values).
+> Read "Non-regression invariants" before touching any of it.
+
+## 0. Current status & confidence (read this first)
+
+**What is done and how it was verified:**
+
+- **Phase 0 — platform layer** (`backend/platform_info.py`, ~307 lines): distro
+  detection (os-release `ID`/`ID_LIKE`, mirroring Headcrab), real-user/home/uid
+  resolution, Steam flavor, `session_family()`. **Done, unit-tested.**
+- **Phase 1 — environment generalisation**: every hardcoded `deck` /
+  `/home/deck` / uid-1000 / cache-dir literal across the backend now routes
+  through `platform_info` (see §7 for the full inventory, all struck through).
+  **Done.** 65 tests, including golden-value characterization that SteamOS
+  resolves bit-for-bit to `deck` / `/home/deck` as before.
+- **Phase 2 — session/crash-loop layer**: crash-loop tracker reset generalised
+  to `rm -f /tmp/*-short-session-tracker`; `steamos-session-select` desktop arg
+  is lineage-correct (`desktop` for the ChimeraOS family, `plasma` for SteamOS);
+  DE-agnostic terminal + centralised game-mode arg. **Written entirely from
+  ChimeraOS `gamescope-session` source — correct by construction, but NOT
+  executed against a real crash-loop** (the Codespace has no Game Mode).
+- **`origin/main` (0.6.0) merged in**: the new CDP login flow
+  (`backend/cef_cdp.py`, `luatools_auth.py`) audited clean; `main.py`'s new
+  `restart_steam()` carried fresh `deck`/`/home/deck` hardcoding, now routed
+  through `real_user()`/`real_home()`.
+
+**Confidence, per target — calibrated, not optimistic:**
+
+| Layer | CachyOS Handheld | Bazzite |
+|---|---|---|
+| Core hooks (`steamclient.so`) | ✅ verified (identical binary, whitelisted build, `check_patterns` CLEAN on live desktop client) | ✅ same binary — same verdict |
+| Path / user / cache resolution | ✅ verified (tests + live run with uid≠1000) | ✅ same code path |
+| Install (Headcrab downgrade) | ✅ pacman — Headcrab already supports it | ❌ **blocker: Fedora-atomic, no `pacman`, `/usr` read-only, SELinux — no install route designed yet** |
+| Session / crash-loop (#31) | ⚠️ correct by construction, **not run on a device** | ⚠️ same code by construction |
+
+**Bottom line:** **CachyOS Handheld** is one on-device test away from being
+callable done — every layer is either verified or written from authoritative
+source. **Bazzite** is *not*: the hooking core and the env layer carry over
+unchanged, but its **package/immutability model breaks the Headcrab install
+path**, and no Fedora-atomic install route exists yet. Bazzite is deferred to a
+future phase (§6, Phase 3) with that blocker documented, not hand-waved.
 
 ## 1. Goal & scope
 
@@ -12,9 +55,13 @@ Big Picture Mode** with **Decky Loader**. First target: **CachyOS**. The
 architecture stays generic (a platform layer) so other distros can slot in
 later, but only CachyOS is in scope for now.
 
-**Explicitly out of scope for this pass:** Flatpak/Snap Steam, Bazzite
-(Fedora-atomic, no `pacman`), and any distro-specific work beyond CachyOS. The
-platform layer must leave room for them without committing to them.
+**Explicitly out of scope for this pass:** Flatpak/Snap Steam, and any
+distro-specific install work beyond CachyOS. **Bazzite** is a stated future
+target (§6, Phase 3) but is deferred, not attempted here: it is Fedora-atomic
+(`rpm-ostree`, read-only `/usr`, SELinux enforcing, no `pacman`), which breaks
+the Headcrab install path. The platform layer already leaves room for it — its
+hooking core and env layer carry over unchanged — but the install route is
+undesigned. The platform layer must leave room without committing.
 
 The prime directive: **SteamOS on a Steam Deck is the tested, working platform
 and must keep behaving exactly as today.**
@@ -159,26 +206,36 @@ so both branches can be exercised without hardware.
 
 ## 6. Phased plan
 
-- **Phase 0 — platform layer.** Build the detection/abstraction module above,
-  SteamOS-as-default from line one. Prerequisite for everything; cheap; shared
-  across editions. *This is where we start.*
-- **Core cold-check (lumalinux side).** Fetch the **desktop-channel**
-  `steamclient.so` for Headcrab's pinned build and run lumalinux's
-  `check_patterns.py` + hash gate against it, to confirm the "identical binary"
-  conclusion for the exact pinned build. Fix the now-outdated comment in
-  `tools/fetch_steamclient.py` ("DIFFERENT builds with different hashes") and
-  ensure lumalinux's own `res/updates.yaml` whitelist stays in sync with the
-  build Headcrab pins. (#31 already gives strong empirical support that the core
-  works on CachyOS.)
-- **Phase 1 — environment fixes → Desktop/BPM works E2E.** Route all consumers
-  through the platform layer: user/home, Steam root, cache/config/status paths.
-  Milestone: a clean, testable end-to-end install on **CachyOS Desktop + Big
-  Picture Mode**, with no session/crash-loop code involved.
-- **Phase 2 — Handheld Edition.** Route the initial downgrade through the
-  Desktop hand-off (safe, no crash-loop detector), then adapt: the crash-loop
-  reset to CachyOS's mechanism (not `/tmp/steamos-short-session-tracker`), and
-  the session-switch/persistence to CachyOS's `steamos-session-select` +
-  `~/.config/last-session-mode`. This is what actually closes issue #31.
+- **Phase 0 — platform layer. ✅ done.** `backend/platform_info.py`, SteamOS as
+  default/fallback from line one. Prerequisite for everything.
+- **Core cold-check (lumalinux side). ✅ done.** The port validator
+  (`.devcontainer/port-testing/validate-port.sh`) fetches the **pinned-build**
+  desktop-channel `steamclient.so` and runs `check_patterns.py` + the hash gate
+  against it — **CLEAN** on the live desktop client, confirming the "identical
+  binary" conclusion for Headcrab's exact pin. lumalinux `res/updates.yaml`
+  whitelist confirmed in sync with the pinned build.
+- **Phase 1 — environment fixes → Desktop/BPM. ✅ done (env layer).** All
+  consumers route through the platform layer: user/home, Steam root,
+  cache/config/status paths (§7). Validated at the Codespace ceiling (headless
+  Steam via Xvfb + software Vulkan). The **end-to-end Desktop/BPM install** is
+  still pending a machine that actually runs the CachyOS desktop client — the
+  code is done, the on-device confirmation is not.
+- **Phase 2 — Handheld Edition. ✅ done (code); ⏳ device validation.** Crash-loop
+  reset generalised to all session lineages (`rm -f /tmp/*-short-session-tracker`,
+  not just the SteamOS path); session-switch arg is lineage-correct
+  (`desktop` for the ChimeraOS family). Written from ChimeraOS
+  `gamescope-session` **source**. This is what should close #31 — but the
+  crash-loop **cannot be reproduced in the Codespace**, so it is unverified
+  against a real Game Mode session. This is the single remaining gate for
+  CachyOS.
+- **Phase 3 — Bazzite (future, blocked). ⛔ not started.** Bazzite Game Mode is
+  a wanted target, but it is **Fedora-atomic**: `rpm-ostree`, read-only `/usr`,
+  SELinux enforcing, **no `pacman`**. The hooking core and the entire env layer
+  (Phases 0–1) carry over unchanged, and its ChimeraOS-lineage session bits
+  overlap Phase 2 — but Headcrab's **install/downgrade path is pacman-based and
+  will not run on Bazzite**. A Fedora-atomic install route (layered package or a
+  `~`-local, rootfs-free installer) must be designed before Bazzite is viable.
+  Nothing about Phases 0–2 blocks it; it simply is not built.
 
 ## 7. Concrete change inventory (LumaDeck env layer)
 
@@ -209,16 +266,41 @@ the outdated hash comment, and hash-whitelist sync. `install.sh` hardcodes
 `~/.local/share/Steam/steam.sh` (fine as long as the `~/.steam/steam` symlink
 resolves there — verify).
 
-## 8. Open questions / to verify
+## 8. Open questions — resolved vs. still open
 
-- Exact short-session/crash-loop mechanism of `gamescope-session-cachyos` (file
-  path / service) so the Phase-2 reset targets the right thing.
-- `steamos-session-select` argument names on CachyOS (`gamescope` / `plasma` /
-  `desktop`?) and whether the persistence rewrite interferes with the hand-off.
-- Confirm `~/.steam/steam` → `~/.local/share/Steam` symlink on a stock CachyOS
-  Steam install.
-- Whether Decky runs as root on CachyOS Handheld the same way it does on SteamOS
-  (affects the `~`-is-`/root` assumption).
+Resolved during Phase 1–2 (from ChimeraOS/Headcrab source, not a device):
+
+- **Crash-loop mechanism** — ChimeraOS lineage uses
+  `/tmp/chimeraos-short-session-tracker` (vs SteamOS's
+  `/tmp/steamos-short-session-tracker`). The reset now clears **both** via the
+  glob, so it is correct on either lineage. ✅
+- **`steamos-session-select` args** — `gamescope` for Game Mode (uniform);
+  `desktop` on the ChimeraOS family vs `plasma` on SteamOS for the desktop
+  hand-off. Gated on `session_family()`. ✅
+- **Real-user / `~`-is-`/root`** — Decky's Python backend runs as root
+  everywhere, so this is handled by resolving the real user via the Steam-install
+  owner (not "uid 1000"), which also covers non-1000 users. ✅
+
+Still open — **only answerable on a real device**:
+
+- End-to-end confirmation that the generalised crash-loop reset + session
+  hand-off actually breaks the #31 loop on CachyOS Handheld Game Mode.
+- `~/.steam/steam` → `~/.local/share/Steam` symlink on a stock CachyOS Steam
+  install (assumed, matches SteamOS; unverified on CachyOS).
+- Persistence semantics of `~/.config/last-session-mode` on CachyOS vs the
+  hand-off (does not block install; affects "sticky desktop" behavior).
+
+## 10. Why the remaining gates need hardware (Codespace ceiling)
+
+The development environment is a Linux Codespace, **not** a handheld. It can and
+does validate: the platform layer, the env-layer generalisation (65 tests +
+live run with uid≠1000), and the hooking core against the pinned desktop-channel
+`steamclient.so` (headless Steam via Xvfb + software Vulkan). It **cannot**
+reproduce a **gamescope Game Mode session** or its **short-session crash-loop
+detector** — there is no compositor, no seat, no session manager. Issue #31 is
+by definition a Game Mode failure, so the Phase-2 fix is verifiable only on a
+device that boots CachyOS Handheld Game Mode. Everything writable-blind has been
+written; the rest is a hardware-gated test, not missing code.
 
 ## 9. Reference
 
