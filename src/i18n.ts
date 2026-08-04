@@ -636,7 +636,7 @@ const strings: Record<Lang, Record<string, string>> = {
     quickInstallStarting: "Iniciando Instalação Rápida...",
     quickInstallDesktop: "Instalação Rápida",
     quickInstallDesktopSwitching: "Indo para o Desktop para configurar tudo (a Steam é mais nova que o build suportado). Instala lá e te traz de volta.",
-    quickInstallDesktopManual: "Pronto. Vá para o Modo Desktop agora; a configuração roda no Konsole e te traz de volta ao Modo de Jogo ao terminar.",
+    quickInstallDesktopManual: "Pronto. Vá para o Modo Desktop agora; a configuração roda em um terminal e te traz de volta ao Modo de Jogo ao terminar.",
     quickInstallConfirm: "CONFIRMAR — Vai reiniciar a Steam",
     quickInstallConfirmDesktop: "CONFIRMAR — Continua no Desktop",
     toastQuickInstallDone: "Instalação Rápida concluída!",

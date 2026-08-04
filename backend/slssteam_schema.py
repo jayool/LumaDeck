@@ -31,7 +31,7 @@ import os
 import re
 from typing import List, Tuple
 
-from paths import get_slssteam_config_path
+from paths import get_slssteam_config_path, real_home
 
 try:
     import decky  # type: ignore
@@ -43,7 +43,7 @@ except ImportError:
 
 # Raw config_default.hpp URL (the authoritative default SLSsteam compiles in).
 _CONFIG_DEFAULT_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/master/src/config_default.hpp"
-_CACHE_DIR = os.path.expanduser("~/.cache/lumadeck")
+_CACHE_DIR = os.path.join(real_home(), ".cache/lumadeck")
 _CACHE_FILE = os.path.join(_CACHE_DIR, "slssteam_config_default.yaml")
 _FETCH_TIMEOUT = 8.0
 

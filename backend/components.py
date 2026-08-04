@@ -18,6 +18,7 @@ import time
 from typing import Optional
 
 from http_client import ensure_http_client
+from paths import real_home
 from update_checks import has_update
 
 try:
@@ -35,7 +36,7 @@ _CR_LINUX_TEST_SO = (
     "https://github.com/Selectively11/h3adcr-b/releases/download/"
     "linux-test/cloud_redirect.so"
 )
-_CR_HASH_CACHE = os.path.expanduser("~/.cache/lumadeck/releases/cr_linux_test.json")
+_CR_HASH_CACHE = os.path.join(real_home(), ".cache/lumadeck/releases/cr_linux_test.json")
 _CR_CACHE_TTL = 6 * 60 * 60  # 6 h, same TTL as the GitHub release checks
 _FETCH_TIMEOUT = 20.0
 

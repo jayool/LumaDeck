@@ -18,6 +18,7 @@ import time
 from typing import Optional
 
 from http_client import ensure_http_client
+from paths import real_home
 
 try:
     import decky  # type: ignore
@@ -27,7 +28,10 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 
-_CACHE_DIR = os.path.expanduser("~/.cache/lumadeck/releases")
+# Decky runs the backend as root, so expanduser("~") would be /root; use the
+# real user's home so every lumadeck cache lives under one tree (matches
+# headcrab_compat._CACHE_DIR). On SteamOS this is /home/deck/.cache/... as before.
+_CACHE_DIR = os.path.join(real_home(), ".cache/lumadeck/releases")
 _CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 h
 _FETCH_TIMEOUT = 10.0
 
