@@ -256,6 +256,14 @@ class Plugin:
         from ryuu_cookie import import_ryuu_cookie_from_browser
         return _j(import_ryuu_cookie_from_browser())
 
+    async def connect_ryuu(self) -> str:
+        from ryuu_cookie import connect_ryuu
+        return _j(await connect_ryuu())
+
+    async def cancel_connect_ryuu(self) -> str:
+        from ryuu_cookie import cancel_connect_ryuu
+        return _j(cancel_connect_ryuu())
+
     async def update_hubcap_key(self, key_content: str) -> str:
         from api_manifest import update_hubcap_key
         return _j(update_hubcap_key(key_content))

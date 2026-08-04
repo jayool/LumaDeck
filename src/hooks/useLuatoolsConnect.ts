@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigation } from "@decky/ui";
 
 import { connectLuatools, disconnectLuatools, getLuatoolsStatus } from "../api";
+import { closeLoginBrowser } from "../browserLogin";
 import {
   getLuatoolsConnected,
   setLuatoolsConnected,
@@ -49,17 +50,7 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
     try {
       const res = await connectLuatools(); // resolves when captured (or timeout)
       if (res?.success) {
-        // Close the /externalweb login browser by popping it off the MAIN window's
-        // backstack. Proven on-device: one NavigateBack() on the
-        // GamepadUIMainWindowInstance pops /externalweb and lands back on the
-        // launching route (Settings/GameDetail) with no history pollution — B/ESC
-        // afterwards no longer returns to the browser. Reached via the SteamUIStore
-        // global because the decky Router.WindowStore path didn't resolve reliably;
-        // fall back to the decky global back if the instance isn't there.
-        const inst = (window as any)?.SteamUIStore?.WindowStore
-          ?.GamepadUIMainWindowInstance;
-        if (inst?.NavigateBack) inst.NavigateBack();
-        else Navigation.NavigateBack();
+        closeLoginBrowser(); // pop /externalweb off the main window's backstack
         setLuatoolsConnected(true);
         toast("LuaTools connected ✓"); // TODO i18n
         return true;
