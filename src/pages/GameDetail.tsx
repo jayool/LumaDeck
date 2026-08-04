@@ -35,7 +35,6 @@ import {
   disableNativeOnline,
   getNativeOnlineStatus,
   getApplyFixStatus,
-  cancelApplyFix,
   getInstalledFixes,
   unfixGame,
   getUnfixStatus,
@@ -474,8 +473,14 @@ export function GameDetail({ appid }: GameDetailProps) {
     // name becomes the recorded fix type (instead of a generic "LuaTools Catalog"),
     // and the online tag files the installed entry under the right tab — including
     // EOS/EpicFix online fixes, which have no FakeAppId for the backend to detect.
+    // Same name the catalogue showed (renderFixEntry): title, else first tag.
+    // Many online entries have no title — without the tag fallback the backend
+    // would record the generic "LuaTools Catalog" instead of e.g. "OnlineFix".
     const rawTitle = String(f?.title ?? "").trim();
-    const name = /^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : rawTitle;
+    const name =
+      (/^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : rawTitle) ||
+      luaFixTagList(f)[0] ||
+      "";
     const online = luaFixTagList(f).some((tg: string) => /online/i.test(tg));
     // slot="fix" downloads the crack zip (vs "manifest"); download_luatools_fix
     // resolves the signed URL server-side and hands it to the same apply pipeline
@@ -508,11 +513,6 @@ export function GameDetail({ appid }: GameDetailProps) {
     } else {
       toast(t("toastError"), r?.error || "", 5000);
     }
-  };
-
-  const handleCancelFix = async () => {
-    await cancelApplyFix(appid);
-    setFixStatus((prev: any) => ({ ...prev, status: "cancelled" }));
   };
 
   const handleRemoveFix = async (fixDate?: string) => {
@@ -825,15 +825,13 @@ export function GameDetail({ appid }: GameDetailProps) {
         </>
       )}
       {isFixInProgress && (
-        // No progress bar: the step just rides as the Cancel button's description
-        // (Queued → Downloading → Extracting → Done). Avoids the native bar that
-        // overflowed the right edge, and reads cleaner for a quick apply.
-        <ActionButton
-          label={t("cancelFix")}
-          description={fixStatusLabel}
-          onClick={handleCancelFix}
-          variant="danger"
-        />
+        // Plain status line, not a button: applying a fix is quick (small zip +
+        // extract), so a Cancel is pointless — and cancelling mid-extract would
+        // leave a half-applied fix. The step (Queued → Downloading → Extracting)
+        // rides as the description; no overflowing progress bar.
+        <PanelSectionRow>
+          <Field label="Applying fix…" description={fixStatusLabel} />
+        </PanelSectionRow>
       )}
     </PanelSection>
   );
