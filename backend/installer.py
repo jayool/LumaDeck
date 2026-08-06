@@ -400,7 +400,7 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                 )
             else:
                 # Set the flags LumaDeck depends on (DisableCloud: no,
-                # DisableUpdates: no, SafeMode: yes) on the config SLSsteam wrote
+                # DisableUpdates: no, SafeMode: no) on the config SLSsteam wrote
                 # itself. On a fresh Game Mode install the config usually isn't
                 # there yet (Steam hasn't restarted with SLSsteam), so this is a
                 # best-effort no-op and the startup task in main.py sets them once
@@ -513,16 +513,22 @@ def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
     return False, "DisableCloud line missing from SLSsteam config — reinstall dependencies"
 
 
-def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
-    """Flip `SafeMode: no` -> `SafeMode: yes` in SLSsteam's config.yaml.
+def _set_safemode_no(config_path: str) -> tuple[bool, str]:
+    """Flip `SafeMode: yes` -> `SafeMode: no` in SLSsteam's config.yaml.
 
-    SLSsteam's own config recommends SafeMode for Steam Deck gamemode: it
-    auto-disables SLSsteam when steamclient.so doesn't match a known-good hash,
-    so a Steam client update can't make SLSsteam inject against changed offsets
-    and break/crash gamemode (it just no-ops until AceSLS ships a new hash).
-    Headcrab tries to set it but its editconfig() races SLSsteam creating
-    config.yaml and silently fails, leaving the default (no) — so we seed the
-    config if missing and flip the flag ourselves, exactly like DisableCloud.
+    SafeMode makes SLSsteam auto-disable (unload + return) whenever steamclient.so
+    does not match a known-good hash. We used to force it ON for Deck gamemode, but
+    the hash is unique per build, so a brand-new yet fully compatible Steam client
+    degrades the whole stack until AceSLS ships the new hash, and it is what fires
+    the `Unknown steamclient.so hash! Aborting...` self-abort on fresh builds.
+
+    SLSsteam's own default is `no`: on a hash mismatch it does NOT block, it tries
+    to hook, and still aborts gracefully if the pattern/VFTable scan fails
+    (`Failed to find all patterns! Aborting...`). So the scan is the real gate, not
+    the hash. We stop overriding SLSsteam's default and let it ride fresh builds.
+    (WarnHashMissmatch is already `no` in SLSsteam's schema, so no user-facing
+    warning fires under SafeMode=no; we do not touch it.) Existing installs that we
+    previously flipped to `yes` get flipped back here.
 
     Returns (ok, message). ok=False only when the config is missing or has no
     SafeMode line.
@@ -537,8 +543,8 @@ def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
         return False, f"Cannot read SLSsteam config: {exc}"
 
     new_content, n = re.subn(
-        r"^(\s*SafeMode\s*:\s*)no\s*$",
-        r"\1yes",
+        r"^(\s*SafeMode\s*:\s*)yes\s*$",
+        r"\1no",
         content,
         flags=re.MULTILINE,
     )
@@ -549,12 +555,12 @@ def _set_safemode_yes(config_path: str) -> tuple[bool, str]:
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write(new_content)
             os.replace(tmp, config_path)
-            return True, "SafeMode flipped to yes"
+            return True, "SafeMode flipped to no"
         except Exception as exc:
             return False, f"Cannot write SLSsteam config: {exc}"
 
-    if re.search(r"^\s*SafeMode\s*:\s*yes\s*$", content, flags=re.MULTILINE):
-        return True, "SafeMode already set to yes"
+    if re.search(r"^\s*SafeMode\s*:\s*no\s*$", content, flags=re.MULTILINE):
+        return True, "SafeMode already set to no"
 
     return False, "SafeMode line missing from SLSsteam config — reinstall dependencies"
 
@@ -612,7 +618,7 @@ def ensure_slssteam_flags() -> dict:
 
         DisableCloud: no   — CloudRedirect owns cloud saves; SLSsteam must not disable them
         DisableUpdates: no — added (unowned) games must be allowed to auto-update
-        SafeMode: yes      — auto-disable SLSsteam on an unknown steamclient.so hash (Deck gamemode)
+        SafeMode: no       — let SLSsteam hook fresh builds (scan is the gate, not the hash); don't override its default
 
     Returns {"applied": bool, ...}. applied=False means the config isn't there yet
     (SLSsteam writes it on its first injected run) — the caller should retry later.
@@ -634,7 +640,7 @@ def ensure_slssteam_flags() -> dict:
     results = {
         "DisableCloud": _set_disablecloud_no(path),
         "DisableUpdates": _set_disableupdates_no(path),
-        "SafeMode": _set_safemode_yes(path),
+        "SafeMode": _set_safemode_no(path),
     }
     return {"applied": True, "completion": completion,
             "results": {k: {"ok": v[0], "msg": v[1]} for k, v in results.items()}}

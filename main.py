@@ -87,7 +87,7 @@ class Plugin:
             await init_games_db()
 
             # Ensure SLSsteam's config flags (DisableCloud: no / DisableUpdates:
-            # no / SafeMode: yes) once SLSsteam has written its own config. It
+            # no / SafeMode: no) once SLSsteam has written its own config. It
             # creates it on its first injected run, which can land a few seconds
             # after we load, so poll briefly in the background. Idempotent, and
             # SLSsteam hot-reloads config.yaml so the flags apply without a
