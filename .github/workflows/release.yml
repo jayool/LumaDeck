@@ -6,6 +6,7 @@ on:
       - 'claude/steam-update-gating'   # TEMP (test build): build the v0.7.0-test.1 prerelease from this branch — do NOT merge this trigger to main
     tags:
       - 'v*'
+  workflow_dispatch:                   # TEMP (test build): allow manual dispatch to publish the v0.7.0-test.1 prerelease — do NOT merge to main
 
 permissions:
   contents: write
