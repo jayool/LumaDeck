@@ -2,6 +2,8 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - 'claude/steam-update-gating'   # TEMP (test build): build the v0.7.0-test.1 prerelease from this branch — do NOT merge this trigger to main
     tags:
       - 'v*'
 
@@ -95,6 +97,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # On a tag push: normal behaviour (release named after the tag). On a
+          # push to the test branch: publish the fixed v0.7.0-test.1 PRERELEASE.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.7.0-test.1' }}
+          prerelease: ${{ github.ref_type != 'tag' || contains(github.ref_name, '-') }}
+          target_commitish: ${{ github.sha }}
           files: LumaDeck.zip
           generate_release_notes: true
         env:
