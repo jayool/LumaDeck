@@ -231,6 +231,15 @@ class Plugin:
         from headcrab_compat import check_headcrab_compat
         return _j(await check_headcrab_compat())
 
+    def get_steam_freeze_status(self) -> str:
+        # Whether Steam auto-updates are currently frozen (steam.cfg /
+        # BootStrapperInhibitAll). In LumaDeck's model frozen==True means "held
+        # back after a Steam update broke the stack" — the freeze is written only
+        # by the break-recovery downgrade and lifted on catch-up. See
+        # steam_freeze.py.
+        from steam_freeze import read_freeze
+        return _j(read_freeze())
+
     async def repair_slssteam_headcrab(self) -> str:
         from slssteam_ops import repair_slssteam_headcrab
         return _j(await repair_slssteam_headcrab())

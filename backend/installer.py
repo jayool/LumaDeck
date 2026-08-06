@@ -161,6 +161,23 @@ _HEADCRAB_PATCHES: tuple[tuple[str, str, str, bool], ...] = (
         "force-cr-install",
         False,
     ),
+    #   5) suppress the Steam-update freeze (suppress-freeze) — headcrab's
+    #      createsteamcfg writes steam.cfg with BootStrapperInhibitAll=enable on
+    #      EVERY run (compatible path included), which pins Steam to the current
+    #      build forever (it never removes it). In LumaDeck's model the freeze must
+    #      exist ONLY during break recovery, so we redirect createsteamcfg's write
+    #      to /dev/null in every headcrab WE patch (install / quick-install /
+    #      catch-up). The freeze is therefore written only by the break-recovery
+    #      downgrade — desktop_handoff's REAL payload runs raw `curl | bash`, which
+    #      is NOT patched — so steam.cfg's presence cleanly means "held back after
+    #      a break". steam_freeze.py lifts it once the ecosystem catches up. Applies
+    #      in both modes (a routine Game Mode or Desktop install must not freeze).
+    (
+        r"> steam\.cfg\n",
+        "> /dev/null  # LumaDeck: Steam-update freeze suppressed here; only the break-recovery downgrade writes steam.cfg, and steam_freeze.py lifts it\n",
+        "suppress-freeze",
+        False,
+    ),
 )
 
 _SESSION_TRACKER_RESET = (
@@ -425,6 +442,27 @@ async def install_dependencies(gamemode: bool = True) -> dict:
                 INSTALL_STATE["progress"] = "Installing .NET 9 runtime if missing..."
                 loop = asyncio.get_event_loop()
                 dotnet_ok = await loop.run_in_executor(None, ensure_dotnet_available)
+
+                # #4 catch-up: if this run refreshed the components while Steam was
+                # frozen after a break AND the ecosystem has now caught up (Headcrab
+                # pin advanced past our build + latest lumalinux release supports
+                # it), lift the Steam-update freeze so Steam self-updates back up to
+                # the supported latest — the fresh components just installed will
+                # hook it. No-op otherwise (not frozen, or not caught up yet):
+                # steam.cfg is only present during break recovery because headcrab's
+                # createsteamcfg is patched out of every run WE launch (see
+                # _HEADCRAB_PATCHES "suppress-freeze"); only the desktop break-
+                # downgrade writes it. See steam_freeze.py.
+                try:
+                    from steam_freeze import maybe_lift_freeze
+                    from headcrab_compat import check_headcrab_compat
+                    lift = maybe_lift_freeze(await check_headcrab_compat())
+                    if lift.get("lifted"):
+                        logger.info("LumaDeck: lifted Steam-update freeze (catch-up): %s", lift)
+                    elif not lift.get("success", True):
+                        logger.warning("LumaDeck: freeze lift failed: %s", lift)
+                except Exception as exc:
+                    logger.warning("LumaDeck: steam freeze lift check failed: %s", exc)
 
                 INSTALL_STATE["status"] = "done"
                 if dotnet_ok and cr_ok:
