@@ -930,6 +930,26 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                     "(likely a transient network drop). Retry."
                 )
             else:
+                # Catch-up lift: if this run refreshed the stack while Steam was
+                # pinned after a break-recovery downgrade AND the ecosystem has
+                # now caught up (pin advanced past our build + latest lumalinux
+                # supports it), lift the Steam-update freeze so Steam self-updates
+                # back up to the now-supported build — the fresh components just
+                # installed will hook it. No-op when not pinned or not caught up
+                # (fresh install / plain repair). steam.cfg is written ONLY by the
+                # break-recovery downgrade (desktop_handoff REAL payload); setup.sh
+                # never writes it, so its presence cleanly means "held after break".
+                try:
+                    from steam_freeze import maybe_lift_freeze
+                    from headcrab_compat import check_headcrab_compat
+                    lift = maybe_lift_freeze(await check_headcrab_compat())
+                    if lift.get("lifted"):
+                        logger.info("LumaDeck: lifted Steam-update freeze (catch-up): %s", lift)
+                    elif not lift.get("success", True):
+                        logger.warning("LumaDeck: freeze lift failed: %s", lift)
+                except Exception as exc:
+                    logger.warning("LumaDeck: steam freeze lift check failed: %s", exc)
+
                 SETUP_INSTALL_STATE["status"] = "done"
                 SETUP_INSTALL_STATE["progress"] = "Stack installed!"
         else:

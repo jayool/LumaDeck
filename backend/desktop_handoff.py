@@ -44,20 +44,8 @@ _SCRIPT_DIR = os.path.join(_HOME, ".local", "share", "lumadeck")
 _SCRIPT_FILE = os.path.join(_SCRIPT_DIR, "handoff.sh")
 
 # Each payload ends with its own return-to-Game-Mode logic (the real one only
-# returns on success).
-#
-# REAL payload: aligns Steam to headcrab's pin, then re-injects
-# lumalinux so the native-download hooks survive the regenerated steam.sh. This
-# is the ONE fix that can't run in Game Mode (Steam is live there).
-#
-#   - `set +e`: never abort the script on a sub-command failure; we branch
-#     explicitly on the headcrab exit code.
-#   - lumalinux re-inject is GATED on lumalinux being installed (the .so present)
-#     and mirrors install_lumalinux(): download install.sh from main and bash it.
-#     It's patch-only and idempotent, and MUST run last (after headcrab
-#     regenerates steam.sh) so its hooks aren't wiped.
-#   - Returns to Game Mode ONLY on success. On failure it stays in Desktop so the
-#     konsole window (--hold) shows the error.
+# returns on success). The REAL payload (the break-recovery downgrade) is defined
+# below, next to _SETUP_SH_URL — see its comment for the wrapper-model flow.
 # The Game-Mode session target for `steamos-session-select`. Unlike the desktop
 # arg (plasma vs desktop, see _desktop_arg_for), this is "gamescope" on EVERY
 # supported lineage (SteamOS + the ChimeraOS lineage: CachyOS/Bazzite), so it
@@ -65,24 +53,42 @@ _SCRIPT_FILE = os.path.join(_SCRIPT_DIR, "handoff.sh")
 # explicit. NOTE: _REAL_PAYLOAD is an f-string below; keep literal { } out of it.
 _GAMEMODE_ARG = "gamescope"
 
+# setup.sh (wrapper model) URL — kept in sync with installer.SETUP_SH_URL via the
+# same env override. Defined locally (not imported) to avoid a circular import at
+# module load. TODO(WS4): flip the branch to main on merge.
+_SETUP_SH_URL = os.environ.get(
+    "LUMADECK_SETUP_URL",
+    "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/setup.sh",
+)
+
+# REAL payload = the break-recovery downgrade escape-hatch. It is the ONE fix that
+# can't run in Game Mode (Steam is live there): a genuinely-unsupported Steam
+# build (byte patterns broke after a major update) must be aligned down to a
+# supported build. We reuse headcrab ONLY for the client downgrade — it writes the
+# pin (steam.cfg / BootStrapperInhibitAll) that HOLDS Steam at the downgraded
+# build, which is exactly what we want here (steam_freeze.py lifts it later, once
+# the ecosystem catches up and the QAM offers the align-up update). We then
+# re-establish OUR injection with setup.sh (the wrapper), NOT install.sh — the
+# steam.sh patch is dead; headcrab's own steam.sh handling is overridden by the
+# wrapper. Returns to Game Mode ONLY on success; on failure it stays in Desktop
+# (--hold) so the konsole shows the error.
+#   - `set +e`: never abort on a sub-command failure; branch on headcrab's exit.
+#   - setup.sh re-run is idempotent and MUST run last (after the downgrade) so the
+#     wrapper coverage is reasserted on the downgraded build.
 _REAL_PAYLOAD = f"""
 set +e
 echo "================================================================"
 echo " LumaDeck - Aligning Steam to the supported build"
-echo " (this runs headcrab, then re-injects lumalinux)"
+echo " (downgrade via headcrab, then re-establish the wrapper via setup.sh)"
 echo "================================================================"
 echo
-echo ">>> Running headcrab (Steam downgrade)..."
+echo ">>> Running headcrab (Steam downgrade + pin)..."
 if curl -fsSL headcrab.pages.dev | bash; then
   echo
-  echo ">>> headcrab finished OK."
-  if [ -f "$HOME/.local/share/lumalinux/liblumalinux.so" ]; then
-    echo ">>> Re-injecting lumalinux..."
-    curl -fsSL https://raw.githubusercontent.com/jayool/lumalinux/main/install.sh | bash
-    echo ">>> lumalinux re-inject finished (exit $?)."
-  else
-    echo ">>> lumalinux not installed, skipping re-inject."
-  fi
+  echo ">>> headcrab finished OK (Steam downgraded and pinned)."
+  echo ">>> Re-establishing the injection wrapper via setup.sh..."
+  curl -fsSL {_SETUP_SH_URL} | bash
+  echo ">>> setup.sh finished (exit $?)."
   echo
   echo " All done. Returning to Game Mode in 6s..."
   sleep 6
@@ -292,9 +298,10 @@ def _run_handoff(payload: str) -> dict:
 
 
 def run_desktop_handoff_real() -> dict:
-    """Arm the REAL task (headcrab downgrade + lumalinux re-inject) and
-    switch to Desktop. Returns to Game Mode only on success; stays in Desktop on
-    failure so the error is readable."""
+    """Arm the REAL task — the break-recovery downgrade escape-hatch: headcrab
+    downgrades + pins Steam to a supported build, then setup.sh re-establishes the
+    injection wrapper — and switch to Desktop. Returns to Game Mode only on
+    success; stays in Desktop on failure so the error is readable."""
     return _run_handoff(_REAL_PAYLOAD)
 
 

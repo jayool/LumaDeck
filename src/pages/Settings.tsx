@@ -42,7 +42,7 @@ import {
   addFakeAppId,
   removeFakeAppId,
 } from "../api";
-import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall } from "../api";
+import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall, runDesktopHandoffReal } from "../api";
 import { getDevState, setDevState, clearDevState } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { closeLoginBrowser } from "../browserLogin";
@@ -1069,10 +1069,15 @@ export function Settings() {
             fire();
           };
           if (primary === "downgrade") {
-            // Genuinely unsupported build (Steam ahead of / off the pin) → repair.
+            // Genuinely unsupported build (Steam moved off a build we can hook) →
+            // the break-recovery downgrade: headcrab aligns Steam DOWN to a
+            // supported build and pins it (steam.cfg), then setup.sh re-establishes
+            // the wrapper. This is the ONE fix that can't run in Game Mode, and the
+            // ONE path that writes the pin (steam_freeze.py lifts it once the
+            // ecosystem catches up and the align-up update is offered below).
             label = confirmDesktop ? t("sysConfirmTap") : t("sysFixInDesktop");
             desc = t("sysSteamTooNewFixDesc");
-            onClick = armDesktop(() => fixInDesktop(runDesktopHandoffQuickInstall));
+            onClick = armDesktop(() => fixInDesktop(runDesktopHandoffReal));
           } else if (primary === "core") {
             // Partial install, Steam at the pin → install the missing core in
             // place (Game Mode safe), then restart.
@@ -1088,9 +1093,13 @@ export function Settings() {
             label = t("restartSteam");
             onClick = () => runFix(async () => ({ success: true })); // restart + refresh
           } else if (steamUpdate) {
-            // Healthy, but Steam sits behind a newer SUPPORTED pin → offer the
-            // Desktop align-up as an UPDATE (same machinery as the downgrade
-            // hand-off, opposite direction), framed as an update, not a fix.
+            // Healthy, but Steam sits behind a newer SUPPORTED build → offer the
+            // align-up as an UPDATE (not a fix). This is the "first update after a
+            // break" the QAM surfaces: quick_install re-establishes the wrapper
+            // and, via install_via_setup, lifts the pin (steam_freeze) now that the
+            // ecosystem caught up, so Steam self-updates UP on the next launch —
+            // back to the update-free state. Opposite direction to the downgrade,
+            // and deliberately NOT the downgrade machinery (no pin written here).
             label = confirmDesktop ? t("sysConfirmTap") : t("sysSteamUpdateBtn");
             desc = t("sysSteamUpdateAvailableDesc");
             onClick = armDesktop(() => fixInDesktop(runDesktopHandoffQuickInstall));
