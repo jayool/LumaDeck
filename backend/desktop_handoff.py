@@ -4,9 +4,10 @@ Desktop login and returns to Game Mode.
 There are two payloads:
   - DUMMY: prints visible output, always returns to Game Mode. Used to validate
     the round-trip.
-  - REAL: runs headcrab (the Steam downgrade that can't run in
-    Game Mode) and re-injects lumalinux afterwards. Only returns to Game Mode on
-    success; on failure it stays in Desktop (--hold) so the error is readable.
+  - REAL: the break-recovery downgrade (can't run in Game Mode) — downgrade.sh
+    aligns Steam down + pins it, then setup.sh re-establishes the wrapper stack.
+    Only returns to Game Mode on success; on failure it stays in Desktop (--hold)
+    so the error is readable.
 
 Each payload owns its own return-to-Game-Mode line, because the real one must
 NOT return when the downgrade fails.
@@ -53,39 +54,44 @@ _SCRIPT_FILE = os.path.join(_SCRIPT_DIR, "handoff.sh")
 # explicit. NOTE: _REAL_PAYLOAD is an f-string below; keep literal { } out of it.
 _GAMEMODE_ARG = "gamescope"
 
-# setup.sh (wrapper model) URL — kept in sync with installer.SETUP_SH_URL via the
-# same env override. Defined locally (not imported) to avoid a circular import at
-# module load. TODO(WS4): flip the branch to main on merge.
+# setup.sh + downgrade.sh (wrapper model) URLs — kept in sync with
+# installer.SETUP_SH_URL via the same env override. Defined locally (not imported)
+# to avoid a circular import at module load. TODO(WS4): flip the branch to main on
+# merge.
 _SETUP_SH_URL = os.environ.get(
     "LUMADECK_SETUP_URL",
     "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/setup.sh",
 )
+_DOWNGRADE_SH_URL = os.environ.get(
+    "LUMADECK_DOWNGRADE_URL",
+    "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/downgrade.sh",
+)
 
 # REAL payload = the break-recovery downgrade escape-hatch. It is the ONE fix that
-# can't run in Game Mode (Steam is live there): a genuinely-unsupported Steam
-# build (byte patterns broke after a major update) must be aligned down to a
-# supported build. We reuse headcrab ONLY for the client downgrade — it writes the
-# pin (steam.cfg / BootStrapperInhibitAll) that HOLDS Steam at the downgraded
-# build, which is exactly what we want here (steam_freeze.py lifts it later, once
-# the ecosystem catches up and the QAM offers the align-up update). We then
-# re-establish OUR injection with setup.sh (the wrapper), NOT install.sh — the
-# steam.sh patch is dead; headcrab's own steam.sh handling is overridden by the
-# wrapper. Returns to Game Mode ONLY on success; on failure it stays in Desktop
-# (--hold) so the konsole shows the error.
-#   - `set +e`: never abort on a sub-command failure; branch on headcrab's exit.
-#   - setup.sh re-run is idempotent and MUST run last (after the downgrade) so the
-#     wrapper coverage is reasserted on the downgraded build.
+# can't run in Game Mode (Steam is live there): a genuinely-unsupported Steam build
+# (byte patterns broke after a major update) must be aligned down to a supported
+# build. FULLY decoupled from headcrab now:
+#   1. downgrade.sh aligns the Steam CLIENT down to the supported build and writes
+#      the pin (steam.cfg) that HOLDS it there — a faithful port of headcrab's
+#      clientdowngrade (dgsc/dlm depot), but WITHOUT running headcrab, so it never
+#      replaces steam.sh or reinstalls components (no double injection).
+#   2. setup.sh re-establishes OUR stack + wrapper against the downgraded build.
+# steam_freeze.py lifts the pin later, once the ecosystem catches up and the QAM
+# offers the align-up update. Returns to Game Mode ONLY on success; on failure it
+# stays in Desktop (--hold) so the konsole shows the error.
+#   - `set +e`: never abort on a sub-command failure; branch on the exit codes.
+#   - downgrade FIRST (fix the Steam build), then setup.sh against the good build.
 _REAL_PAYLOAD = f"""
 set +e
 echo "================================================================"
 echo " LumaDeck - Aligning Steam to the supported build"
-echo " (downgrade via headcrab, then re-establish the wrapper via setup.sh)"
+echo " (downgrade.sh: client downgrade + pin, then setup.sh: wrapper stack)"
 echo "================================================================"
 echo
-echo ">>> Running headcrab (Steam downgrade + pin)..."
-if curl -fsSL headcrab.pages.dev | bash; then
+echo ">>> Downgrading Steam + writing the pin (downgrade.sh)..."
+if curl -fsSL {_DOWNGRADE_SH_URL} | bash; then
   echo
-  echo ">>> headcrab finished OK (Steam downgraded and pinned)."
+  echo ">>> Downgrade finished OK (Steam downgraded and pinned)."
   echo ">>> Re-establishing the injection wrapper via setup.sh..."
   curl -fsSL {_SETUP_SH_URL} | bash
   echo ">>> setup.sh finished (exit $?)."
@@ -95,7 +101,7 @@ if curl -fsSL headcrab.pages.dev | bash; then
   steamos-session-select {_GAMEMODE_ARG}
 else
   echo
-  echo "!! headcrab FAILED. Staying in Desktop so you can read the error."
+  echo "!! Downgrade FAILED. Staying in Desktop so you can read the error."
   echo "!! Close this window and switch back to Game Mode manually when ready."
 fi
 """
@@ -298,10 +304,11 @@ def _run_handoff(payload: str) -> dict:
 
 
 def run_desktop_handoff_real() -> dict:
-    """Arm the REAL task — the break-recovery downgrade escape-hatch: headcrab
-    downgrades + pins Steam to a supported build, then setup.sh re-establishes the
-    injection wrapper — and switch to Desktop. Returns to Game Mode only on
-    success; stays in Desktop on failure so the error is readable."""
+    """Arm the REAL task — the break-recovery downgrade escape-hatch: downgrade.sh
+    aligns Steam down to a supported build and pins it, then setup.sh re-establishes
+    the injection wrapper — and switch to Desktop. Fully decoupled from headcrab.
+    Returns to Game Mode only on success; stays in Desktop on failure so the error
+    is readable."""
     return _run_handoff(_REAL_PAYLOAD)
 
 
