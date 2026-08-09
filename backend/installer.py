@@ -18,11 +18,11 @@ from paths import (
     check_cloudredirect_active,
     check_cloudredirect_authed,
     verify_slssteam_injected,
-    _lumalinux_injected_in_steam_sh,
-    _cloudredirect_injected_in_steam_sh,
     get_slssteam_config_path,
     get_slssteam_config_dir,
     real_home,
+    real_user,
+    real_uid,
 )
 from dotnet import find_dotnet_path
 from subprocess_env import clean_env
@@ -387,12 +387,45 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             return {"success": False}
 
         SETUP_INSTALL_STATE["progress"] = "Running installer..."
+        # setup.sh is ENTIRELY $HOME-based (SLSsteam, config, wrapper, .dotnet,
+        # systemd --user). Decky runs this backend as ROOT, so a plain `bash
+        # setup.sh` would (a) install everything under /root — where Steam (uid
+        # 1000) never looks — and (b) fail to reach the deck user's systemd --user
+        # session, silently skipping the Game Mode drop-in + guardian (the whole
+        # point). So when we're root, run it AS the real user in their session
+        # (HOME + XDG_RUNTIME_DIR + DBUS), mirroring desktop_handoff. mkdtemp is
+        # 0700/root, so open up the dir + script first or the deck user can't read
+        # them. When already running as the real user (the Desktop hand-off path,
+        # quick_install_cli), run directly — HOME/session are already correct.
+        _uid = real_uid()
+        _runtime = f"/run/user/{_uid}"
+        if os.geteuid() == 0 and _uid != 0:
+            try:
+                os.chmod(tmp_dir, 0o755)
+                os.chmod(script_path, 0o755)
+            except Exception:
+                pass
+            argv = [
+                "sudo", "-u", real_user(), "env",
+                f"HOME={real_home()}",
+                f"XDG_RUNTIME_DIR={_runtime}",
+                f"DBUS_SESSION_BUS_ADDRESS=unix:path={_runtime}/bus",
+                "bash", script_path,
+            ]
+            proc_env = clean_env()
+        else:
+            argv = ["bash", script_path]
+            proc_env = clean_env(
+                HOME=real_home(),
+                XDG_RUNTIME_DIR=_runtime,
+                DBUS_SESSION_BUS_ADDRESS=f"unix:path={_runtime}/bus",
+            )
         process = await asyncio.create_subprocess_exec(
-            "bash", script_path,
+            *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=tmp_dir,
-            env=clean_env(),
+            env=proc_env,
         )
 
         async def _read_output():
