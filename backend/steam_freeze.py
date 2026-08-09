@@ -24,8 +24,11 @@ build AND the latest lumalinux release supports it), which is exactly the
 Steam self-updates back up to the now-supported latest on next launch; the fresh
 components installed by the same catch-up run hook it.
 
-LumaDeck never WRITES steam.cfg — its only action here is to remove the freeze
-(Headcrab's two lines, keeping any user content), verified.
+WS4: LumaDeck now also WRITES the pin itself (write_pin), the native port of
+headcrab's createsteamcfg. The break-recovery downgrade (our own downgrade.sh /
+the desktop hand-off) pins Steam to the build it just aligned down to; lift_freeze
+/ maybe_lift_freeze remove it once the ecosystem catches up. Both write and lift
+touch ONLY headcrab's two BootStrapper* lines and keep any user content, verified.
 """
 
 from __future__ import annotations
@@ -121,6 +124,58 @@ def lift_freeze() -> dict:
         return {"success": False, "error": "steam.cfg still frozen after lift"}
     logger.info("steam_freeze: lifted Steam-update freeze at %s", path)
     return {"success": True, "lifted": True, "path": path}
+
+
+def write_pin() -> dict:
+    """Write the Steam-update pin (headcrab's two BootStrapper lines) to steam.cfg,
+    holding Steam at the current (just-downgraded) build. Native port of headcrab's
+    createsteamcfg — but idempotent and update-in-place: it REPLACES any existing
+    BootStrapper* lines and preserves every other line, where headcrab's version is
+    non-overwriting (skips if steam.cfg already exists).
+
+    Called by the break-recovery downgrade after aligning Steam down to a supported
+    build. lift_freeze()/maybe_lift_freeze() remove it once the ecosystem catches up
+    (the QAM align-up). Backs up to steam.cfg.lumadeck.bak first and verifies the
+    freeze is actually present before reporting success.
+
+    Returns {"success": bool, "path": str|None, "pinned": bool}."""
+    path = _steam_cfg_path()
+    if not path:
+        return {"success": False, "error": "steam root not found"}
+
+    lines: list[str] = []
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+        except Exception as exc:
+            logger.error("steam_freeze: read failed on write_pin: %s", exc)
+            return {"success": False, "error": f"read failed: {exc}"}
+        try:
+            shutil.copy2(path, path + ".lumadeck.bak")
+        except Exception as exc:
+            logger.warning("steam_freeze: backup failed (continuing): %s", exc)
+
+    # Keep everything that isn't a BootStrapper* line, then append our two.
+    kept = [ln for ln in lines if not _FREEZE_LINE_RE.match(ln)]
+    if kept and not kept[-1].endswith("\n"):
+        kept[-1] += "\n"
+    kept.append("BootStrapperInhibitAll=enable\n")
+    kept.append("BootStrapperForceSelfUpdate=disable\n")
+
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(kept)
+    except Exception as exc:
+        logger.error("steam_freeze: write failed on write_pin: %s", exc)
+        return {"success": False, "error": f"write failed: {exc}"}
+
+    st = read_freeze()
+    if not st.get("frozen"):
+        return {"success": False, "error": "steam.cfg not frozen after write_pin"}
+    logger.info("steam_freeze: wrote Steam-update pin at %s", path)
+    return {"success": True, "path": path, "pinned": True}
 
 
 def maybe_lift_freeze(compat: dict) -> dict:
