@@ -83,6 +83,11 @@ _DOWNGRADE_SH_URL = os.environ.get(
 #   - downgrade FIRST (fix the Steam build), then setup.sh against the good build.
 _REAL_PAYLOAD = f"""
 set +e
+# pipefail so `curl … | bash` reflects curl's exit, not bash's: without it a
+# 404/timeout makes curl fail while bash reads empty stdin and exits 0, and the
+# `if` below would take the SUCCESS branch — returning to Game Mode on a broken,
+# un-downgraded, un-pinned Steam. With pipefail the pipe returns curl's failure.
+set -o pipefail
 echo "================================================================"
 echo " LumaDeck - Aligning Steam to the supported build"
 echo " (downgrade.sh: client downgrade + pin, then setup.sh: wrapper stack)"
