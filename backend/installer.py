@@ -22,6 +22,7 @@ from paths import (
     _cloudredirect_injected_in_steam_sh,
     get_slssteam_config_path,
     get_slssteam_config_dir,
+    real_home,
 )
 from dotnet import find_dotnet_path, ensure_dotnet_available
 from subprocess_env import clean_env
@@ -44,6 +45,21 @@ LL_INSTALL_STATE = {
     "progress": "",
     "error": None,
 }
+
+# WS2: state for the wrapper-model installer (lumalinux/setup.sh), which replaces
+# the headcrab install_dependencies + install_lumalinux pair with one script.
+SETUP_INSTALL_STATE = {
+    "status": "idle",
+    "progress": "",
+    "error": None,
+}
+
+# setup.sh source. Points at the steam-update-gating branch while WS2 is validated;
+# flip to .../main/setup.sh on merge. Overridable for testing.
+SETUP_SH_URL = os.environ.get(
+    "LUMADECK_SETUP_URL",
+    "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/setup.sh",
+)
 
 # Combined state for the "Quick Install" flow, which chains the two installers
 # below in dependency order (dependencies [= SLSsteam + CloudRedirect] → lumalinux).
@@ -844,6 +860,105 @@ def get_ll_install_status() -> dict:
     return LL_INSTALL_STATE.copy()
 
 
+async def install_via_setup(gamemode: bool = True) -> dict:
+    """WS2: install the whole unlock stack via lumalinux/setup.sh (wrapper model).
+
+    Replaces the headcrab install_dependencies + install_lumalinux pair with ONE
+    script. setup.sh fetches SLSsteam + library-inject + CloudRedirect (+ its app)
+    + netsock + lumalinux + .NET 9, applies the SLSsteam config flags, writes the
+    injection wrapper + Game Mode drop-in (both via the crash-loop fail-safe), and
+    covers Desktop + Game Mode. No headcrab, no downgrade, no freeze, no steam.sh.
+
+    `gamemode` is accepted for a uniform step signature but ignored — setup.sh
+    handles both modes itself. Idempotent, so this is also the repair/reinject path.
+    """
+    global SETUP_INSTALL_STATE
+    SETUP_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
+    logger.info("LumaDeck: install_via_setup() entered (url=%s)", SETUP_SH_URL)
+
+    tmp_dir = None
+    try:
+        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_setup_")
+        script_path = os.path.join(tmp_dir, "setup.sh")
+        SETUP_INSTALL_STATE["progress"] = "Downloading setup.sh..."
+        if not await _download(SETUP_SH_URL, script_path):
+            SETUP_INSTALL_STATE["status"] = "failed"
+            SETUP_INSTALL_STATE["error"] = "Failed to download setup.sh"
+            return {"success": False}
+        os.chmod(script_path, 0o700)
+
+        try:
+            with open(script_path, "r", encoding="utf-8", errors="replace") as f:
+                if not f.readline(256).startswith("#"):
+                    SETUP_INSTALL_STATE["status"] = "failed"
+                    SETUP_INSTALL_STATE["error"] = "Downloaded file does not look like a shell script"
+                    return {"success": False}
+        except Exception as read_exc:
+            SETUP_INSTALL_STATE["status"] = "failed"
+            SETUP_INSTALL_STATE["error"] = f"Cannot read setup.sh: {read_exc}"
+            return {"success": False}
+
+        SETUP_INSTALL_STATE["progress"] = "Running installer..."
+        process = await asyncio.create_subprocess_exec(
+            "bash", script_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=tmp_dir,
+            env=clean_env(),
+        )
+
+        async def _read_output():
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                SETUP_INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
+
+        asyncio.create_task(_read_output())
+        await process.wait()
+
+        if process.returncode == 0:
+            # Verify the post-condition instead of trusting the exit code: the
+            # wrapper + the two load-bearing .so's must be on disk.
+            wrapper = os.path.join(real_home(), ".local", "share", "SLSsteam", "path", "steam")
+            if not (os.path.exists(wrapper)
+                    and check_slssteam_installed()
+                    and check_lumalinux_installed()):
+                SETUP_INSTALL_STATE["status"] = "failed"
+                SETUP_INSTALL_STATE["error"] = (
+                    "Installer finished but the wrapper or a core .so is missing "
+                    "(likely a transient network drop). Retry."
+                )
+            else:
+                SETUP_INSTALL_STATE["status"] = "done"
+                SETUP_INSTALL_STATE["progress"] = "Stack installed!"
+        else:
+            SETUP_INSTALL_STATE["status"] = "failed"
+            SETUP_INSTALL_STATE["error"] = (
+                f"Installer exited with code {process.returncode} — "
+                f"last line: {SETUP_INSTALL_STATE['progress']}"
+            )
+
+    except Exception as exc:
+        SETUP_INSTALL_STATE["status"] = "failed"
+        SETUP_INSTALL_STATE["error"] = str(exc)
+        logger.exception("LumaDeck: install_via_setup crashed: %s", exc)
+    finally:
+        if tmp_dir:
+            import shutil
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+    logger.info("LumaDeck: install_via_setup finished, state=%s", SETUP_INSTALL_STATE)
+    return {"success": SETUP_INSTALL_STATE["status"] == "done"}
+
+
+def get_setup_status() -> dict:
+    return SETUP_INSTALL_STATE.copy()
+
+
 async def quick_install(gamemode: bool = True) -> dict:
     """Run the installers in dependency order, stopping at the first failure:
 
@@ -870,9 +985,9 @@ async def quick_install(gamemode: bool = True) -> dict:
     """
     global QUICK_INSTALL_STATE
 
+    # WS2: one setup.sh call does the whole stack (was headcrab + lumalinux).
     steps = [
-        ("dependencies", install_dependencies, get_install_status),
-        ("lumalinux", install_lumalinux, get_ll_install_status),
+        ("stack", install_via_setup, get_setup_status),
     ]
     QUICK_INSTALL_STATE = {
         "status": "installing",
@@ -952,12 +1067,11 @@ async def reinject_installed() -> dict:
     the same get_quick_install_status().
     """
     steps = []
-    # One headcrab (install_dependencies) re-installs and re-injects BOTH
-    # SLSsteam and CloudRedirect, so run it when either is present.
-    if check_slssteam_installed() or check_cloudredirect_installed():
-        steps.append(("dependencies", install_dependencies, get_install_status))
-    if check_lumalinux_installed():
-        steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
+    # WS2: setup.sh re-installs and re-injects the WHOLE stack idempotently, so run
+    # it if any component is present (reinject = re-run setup.sh).
+    if (check_slssteam_installed() or check_cloudredirect_installed()
+            or check_lumalinux_installed()):
+        steps.append(("stack", install_via_setup, get_setup_status))
 
     if not steps:
         return {"success": True, "skipped": "nothing installed"}
@@ -1014,32 +1128,20 @@ async def apply_component(component_id: str, op: str = "repair") -> dict:
     """Install / repair / update one component, keeping steam.sh correct.
 
     `op` (install|repair|update) is the same mechanically — every op re-runs the
-    component's installer(s), which always fetch the latest, so a repair and an
-    update run identical code; `op` is only the trigger/label. The per-component
-    cascade follows DESIGN_UI.md §3b:
+    installer, which always fetches the latest, so repair and update run identical
+    code; `op` is only the trigger/label.
 
-      - slssteam /
-        cloudredirect: both are installed by the same headcrab run, so repairing
-                       either re-runs it and re-injects the whole installed set in
-                       order = reinject_installed.
-      - lumalinux:     patch-only, touches nobody else → install_lumalinux alone.
-      - core:          install_dependencies (SLSsteam + CloudRedirect in one
-                       headcrab) → install_lumalinux.
+    WS2: in the wrapper model there is no per-component cascade — setup.sh is one
+    idempotent script that (re)installs the whole stack and re-asserts the wrapper +
+    Game Mode drop-in. So every component id maps to a single setup.sh run.
 
     Drives QUICK_INSTALL_STATE; poll get_quick_install_status.
     """
-    if component_id in ("slssteam", "cloudredirect"):
-        return await reinject_installed()
-
-    if component_id == "lumalinux":
+    # WS2: every component maps to one idempotent setup.sh run (it (re)installs
+    # SLSsteam + CloudRedirect + netsock + lumalinux + .NET and re-asserts the
+    # wrapper + Game Mode drop-in). Per-component granularity collapses into it.
+    if component_id in ("slssteam", "cloudredirect", "lumalinux", "core"):
         return await _run_install_steps(
-            [("lumalinux", install_lumalinux, get_ll_install_status)], "Applying")
-
-    if component_id == "core":
-        # install_dependencies installs SLSsteam + CloudRedirect together, so no
-        # separate CR step is needed.
-        steps = [("dependencies", install_dependencies, get_install_status)]
-        steps.append(("lumalinux", install_lumalinux, get_ll_install_status))
-        return await _run_install_steps(steps, "Installing")
+            [("stack", install_via_setup, get_setup_status)], "Installing")
 
     return {"success": False, "error": f"unknown component '{component_id}'"}
