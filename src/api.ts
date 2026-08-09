@@ -410,13 +410,7 @@ export const detectStoreAppid = async () =>
 export const checkDependencies = async () =>
   parseResult(await call<[], string>("check_dependencies"));
 
-export const installLumalinux = async () =>
-  parseResult(await call<[], string>("install_lumalinux"));
-
-export const getLlInstallStatus = async () =>
-  parseResult(await call<[], string>("get_ll_install_status"));
-
-// Quick Install — chains dependencies → CloudRedirect → lumalinux in order.
+// Quick Install — one idempotent setup.sh run (the whole wrapper-model stack).
 export const quickInstall = async () =>
   parseResult(await call<[], string>("quick_install"));
 

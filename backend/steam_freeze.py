@@ -10,10 +10,9 @@ build headcrab just downgraded to. Upstream's `createsteamcfg` is non-overwritin
 and NEVER removes the file, so once written the user is frozen on that build
 forever until something deletes it.
 
-LumaDeck's model: the freeze exists ONLY during break recovery. The break-
-recovery downgrade (desktop_handoff REAL payload, raw `curl headcrab.pages.dev |
-bash`) writes it; every OTHER headcrab run LumaDeck launches is patched to NOT
-write it (installer._HEADCRAB_PATCHES → "suppress-freeze"). So:
+LumaDeck's model: the freeze exists ONLY during break recovery. WS3/WS4: the pin
+is written by our own downgrade.sh (via write_pin below) in the break-recovery
+desktop hand-off; the normal installer (setup.sh) never writes steam.cfg. So:
 
     steam.cfg present  ⟺  we are held back after a Steam update broke the stack.
 
@@ -186,7 +185,7 @@ def maybe_lift_freeze(compat: dict) -> dict:
     i.e. Headcrab's pin has advanced past the build we're pinned to and the
     latest lumalinux release supports that pin — the same "update available"
     signal the QAM already surfaces. Called as the closing step of a catch-up
-    install (installer.install_dependencies), AFTER the fresh components are in
+    install (installer.install_via_setup), AFTER the fresh components are in
     place, so when Steam self-updates up they hook the new build.
 
     No-op (lifted=False) when not frozen, when the build/target are unknown, or

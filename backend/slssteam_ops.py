@@ -1116,8 +1116,6 @@ def write_depot_decryption_keys(depot_token_map: dict) -> dict:
 # ==========================================
 
 _SLS_LOG_PATH = os.path.join(real_home(), ".SLSsteam.log")
-_HEADCRAB_RESET_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/reset2vanilla.sh"
-_HEADCRAB_PATCH_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/headcrab.sh"
 
 
 def check_slssteam_hash_status() -> dict:
@@ -1141,8 +1139,8 @@ async def repair_slssteam_headcrab() -> dict:
     ran `reset2vanilla.sh`, hard-killed Steam, and re-patched steam.sh — exactly
     the Game Mode crash-loop / brick pattern seen in the SFF post-mortem. setup.sh
     touches neither steam.sh nor kills Steam, and is idempotent, so a repair is
-    just a fresh run of it. (Name kept for the existing main.py/UI binding; the
-    headcrab reset/repatch URLs above are now unused — removed in WS3.)
+    just a fresh run of it. (Name kept for the existing main.py/UI binding; WS3
+    removed the dead headcrab reset/repatch URLs this used to fetch.)
     """
     from installer import install_via_setup
     return await install_via_setup()

@@ -24,7 +24,7 @@ from paths import (
     get_slssteam_config_dir,
     real_home,
 )
-from dotnet import find_dotnet_path, ensure_dotnet_available
+from dotnet import find_dotnet_path
 from subprocess_env import clean_env
 
 try:
@@ -34,17 +34,6 @@ except ImportError:
     import logging
     logger = logging.getLogger("lumadeck")
 
-INSTALL_STATE = {
-    "status": "idle",
-    "progress": "",
-    "error": None,
-}
-
-LL_INSTALL_STATE = {
-    "status": "idle",
-    "progress": "",
-    "error": None,
-}
 
 # WS2: state for the wrapper-model installer (lumalinux/setup.sh), which replaces
 # the headcrab install_dependencies + install_lumalinux pair with one script.
@@ -61,212 +50,16 @@ SETUP_SH_URL = os.environ.get(
     "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/setup.sh",
 )
 
-# Combined state for the "Quick Install" flow, which chains the two installers
-# below in dependency order (dependencies [= SLSsteam + CloudRedirect] → lumalinux).
+# State for the "Quick Install" flow. WS2/WS3: it's now a single setup.sh step
+# ("stack"); totalSteps is set dynamically from the step list at run time.
 QUICK_INSTALL_STATE = {
     "status": "idle",
     "step": None,
     "stepIndex": 0,
-    "totalSteps": 2,
+    "totalSteps": 1,
     "progress": "",
     "error": None,
 }
-
-
-# Upstream Headcrab is hosted at Deadboy666/h3adcr-b. The `headcrab.pages.dev`
-# alias serves the same file from main. We fetch the raw GitHub URL directly
-# so we can guarantee what we patch.
-_HEADCRAB_RAW_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/main/headcrab.sh"
-
-# String replacements applied to the downloaded headcrab.sh BEFORE we run it.
-#
-# Four classes of patch:
-#
-#   1) no-op the Steam-killing lines (killall steam | true,
-#      wheresteam -exitsteam variants) — in SteamOS Game Mode,
-#      gamescope-session-plus counts 5 Steam exits of < 60 s each as a
-#      crash loop and triggers `short_session_recover` which wipes
-#      ~/.local/share/Steam and drops the user to OOBE. Even outside that
-#      race, the kill mid-install is what forced our handlers' `restartSteam`
-#      to fire prematurely. We no-op all kill paths. Steam stays alive for
-#      the full install; the handler fires one controlled `steam -shutdown`
-#      after install_*() returns success.
-#
-#   2) atomic .so copies (atomic-so-copy) — upstream's wheresteamdir() uses
-#      `cp -f $InstallDir/<file>.so $...SLSsteamInstallDir/`, which truncates
-#      the destination file in place. On re-installs (any later Repair /
-#      Reinstall Dependencies) Steam is already running with those
-#      .so files mmap'd, and the in-place rewrite leaves the kernel serving
-#      pages from a file whose on-disk content has been swapped underneath —
-#      Steam crashes / its UI subsystem (CEF) disconnects mid-install, the
-#      handler's await never resolves, and the user sees "CloudRedirect: not
-#      found" because no restartSteam ever fired. Replacing `cp -f X DST/` with
-#      `cp -f X DST/X.lumadeck-new && mv -f DST/X.lumadeck-new DST/X` keeps
-#      the running Steam pinned to the old inode (it stays valid until Steam
-#      exits) and atomically swaps the path to a fresh inode for the next
-#      Steam launch.
-#
-#   3) atomic CR wget (atomic-cr-wget) — exactly the same bug class as (2)
-#      but for cloud_redirect.so, which upstream downloads via
-#      `wget -O cloud_redirect.so $CloudRedirectLib`. `wget -O` is also an
-#      in-place overwrite: open(O_TRUNC) + write. Same corruption window for
-#      a running Steam that has cloud_redirect.so mmap'd. Manifests as
-#      latent memory corruption that fires at unrelated code paths later
-#      (mz_zip_end → getpid PLT SEGV; libcrypto OPENSSL_cleanup abort; C++
-#      exception unwind abort during shutdown). Different crash signatures,
-#      same root cause. Fix mirrors (2): download to .lumadeck-new and only
-#      mv on success.
-#
-#   4) force CloudRedirect install (force-cr-install) — upstream gates every
-#      CloudRedirect step behind `crconfigcheck`, which greps the SLSsteam
-#      config.yaml for `DisableCloud: no`. On a fresh device that config doesn't
-#      exist yet (SLSsteam only writes it on its first injected run), so the gate
-#      fails and CR is skipped. We no-op the gate's grep to `true` so CR always
-#      installs, and set `DisableCloud: no` (+ `DisableUpdates: no`) AFTER the
-#      install on the real config SLSsteam generates itself. This removes the
-#      need to seed a fake config.yaml before headcrab just to pass the grep.
-#
-# If upstream changes the wording of these lines, the patch fails and the
-# user gets an explicit "headcrab format changed" error instead of a silent
-# half-broken install.
-# Each patch carries a `gamemode_only` flag. The kill / short-session-relaunch
-# no-ops exist purely to survive SteamOS Game Mode's crash-loop detector; in a
-# Desktop session those kills are normal and REQUIRED (the Steam downgrade needs
-# them to restart Steam), so they're skipped there. The atomic .so copies are
-# robustness fixes for a running Steam and apply in BOTH modes.
-_HEADCRAB_PATCHES: tuple[tuple[str, str, str, bool], ...] = (
-    (
-        r"killall steam \| true",
-        ": # LumaDeck: skip mid-install Steam kill (restart fires at end of install_*)",
-        "nuketheclient",
-        True,
-    ),
-    (
-        r"wheresteam -exitsteam",
-        ": # LumaDeck: skipped short-session relaunch",
-        "exitsteam-A",
-        True,
-    ),
-    (
-        r"wheresteam -clearbeta steam://exit",
-        ": # LumaDeck: skipped short-session relaunch",
-        "exitsteam-B",
-        True,
-    ),
-    (
-        r"wheresteam -clearbeta -exitsteam",
-        ": # LumaDeck: skipped short-session relaunch",
-        "exitsteam-C",
-        True,
-    ),
-    (
-        r"cp -f \$InstallDir/(\S+\.so) (\S+SLSsteamInstallDir)/",
-        r"cp -f $InstallDir/\1 \2/\1.lumadeck-new && mv -f \2/\1.lumadeck-new \2/\1",
-        "atomic-so-copy",
-        False,
-    ),
-    (
-        r'wget -O cloud_redirect\.so "\$CloudRedirectLib" &> /dev/null',
-        r'wget -O cloud_redirect.so.lumadeck-new "$CloudRedirectLib" &> /dev/null && mv -f cloud_redirect.so.lumadeck-new cloud_redirect.so',
-        "atomic-cr-wget",
-        False,
-    ),
-    (
-        r'grep -F "DisableCloud: no" config\.yaml &> /dev/null',
-        "true # LumaDeck: force CloudRedirect (gate; DisableCloud/DisableUpdates flipped post-install)",
-        "force-cr-install",
-        False,
-    ),
-    #   5) suppress the Steam-update freeze (suppress-freeze) — headcrab's
-    #      createsteamcfg writes steam.cfg with BootStrapperInhibitAll=enable on
-    #      EVERY run (compatible path included), which pins Steam to the current
-    #      build forever (it never removes it). In LumaDeck's model the freeze must
-    #      exist ONLY during break recovery, so we redirect createsteamcfg's write
-    #      to /dev/null in every headcrab WE patch (install / quick-install /
-    #      catch-up). The freeze is therefore written only by the break-recovery
-    #      downgrade — desktop_handoff's REAL payload runs raw `curl | bash`, which
-    #      is NOT patched — so steam.cfg's presence cleanly means "held back after
-    #      a break". steam_freeze.py lifts it once the ecosystem catches up. Applies
-    #      in both modes (a routine Game Mode or Desktop install must not freeze).
-    (
-        r"> steam\.cfg\n",
-        "> /dev/null  # LumaDeck: Steam-update freeze suppressed here; only the break-recovery downgrade writes steam.cfg, and steam_freeze.py lifts it\n",
-        "suppress-freeze",
-        False,
-    ),
-)
-
-_SESSION_TRACKER_RESET = (
-    "# LumaDeck: reset the gamescope-session short-session counter so even if a "
-    "patched call slips through, it can't accumulate toward the crash-loop "
-    "recovery. The tracker file is named per session lineage:\n"
-    "#   /tmp/steamos-short-session-tracker    — SteamOS (HoloISO) AND CachyOS\n"
-    "#     Handheld: its gamescope-session-cachyos is a *Valve/SteamOS* fork\n"
-    "#     (verified: CachyOS/gamescope-session usr/lib/steamos/…), so it uses the\n"
-    "#     SAME steamos- path and the SAME `steam-short-session-tracker` script.\n"
-    "#     After short_session_count_before_reset=3 short (<60s) sessions its\n"
-    "#     do_repair() re-extracts /usr/lib/steam/bootstraplinux_ubuntu12_32.tar.xz\n"
-    "#     OVER ~/.local/share/Steam (clobbering the lumalinux/SLSsteam steam.sh\n"
-    "#     LD_PRELOAD patch) and moves ~/.steam aside — i.e. issue #31's 'nothing\n"
-    "#     injected on restart' + 'black screen returning to Game Mode'. This bites\n"
-    "#     on CachyOS but not SteamOS because CachyOS ships a much newer client, so\n"
-    "#     the downgrade needs several Steam restarts and trips the count; SteamOS\n"
-    "#     barely downgrades and never reaches 3.\n"
-    "#   /tmp/chimeraos-short-session-tracker  — ChimeraOS gamescope-session-plus\n"
-    "#     lineage (Bazzite). Same idea, different file name.\n"
-    "# Clear the whole *-short-session-tracker family (harmless if absent) so this\n"
-    "# neutralises the counter on every lineage, not just SteamOS. The durable\n"
-    "# protection, though, is routing the downgrade through the Desktop hand-off:\n"
-    "# in Plasma the gamescope steam-launcher.service (which drives the tracker)\n"
-    "# isn't running, so do_repair() can't fire there at all.\n"
-    "# (CachyOS/SteamOS also expose ~/.config/inhibit-short-session-tracker to skip\n"
-    "# do_repair(); LumaDeck deliberately does NOT set it — it's redundant given\n"
-    "# the desktop routing, and setting it unconditionally would alter SteamOS\n"
-    "# behaviour, violating the non-regression contract.)\n"
-    "rm -f /tmp/*-short-session-tracker 2>/dev/null\n"
-)
-
-
-def _patch_headcrab_script(content: str, gamemode: bool = True) -> str:
-    """Apply the safety patches to a freshly downloaded headcrab.sh.
-
-    gamemode=True (default, Game Mode): apply ALL patches + the gamescope
-    short-session tracker reset — headcrab must not kill/relaunch Steam or it
-    trips the crash-loop wipe.
-
-    gamemode=False (Desktop hand-off): apply ONLY the always-on robustness
-    patches (atomic .so copies) and SKIP the kill/relaunch no-ops + the tracker
-    reset — in Desktop the kills are normal and REQUIRED so the Steam downgrade
-    can restart Steam to step the version down.
-
-    Raises RuntimeError if a patch that SHOULD apply doesn't — upstream changed
-    the wording and the plugin needs updating.
-    """
-    failed: list[str] = []
-    for pattern, replacement, label, gamemode_only in _HEADCRAB_PATCHES:
-        if gamemode_only and not gamemode:
-            continue  # Desktop: leave the kill/relaunch lines intact.
-        content, n = re.subn(pattern, replacement, content)
-        if n == 0:
-            failed.append(label)
-    if failed:
-        raise RuntimeError(
-            "headcrab.sh format changed upstream — these LumaDeck patches "
-            f"failed to apply: {failed}. Update _HEADCRAB_PATCHES."
-        )
-    if not gamemode:
-        return content  # no tracker reset in Desktop (gamescope isn't running).
-    # Prepend the tracker reset so it runs before anything else in the script.
-    # We keep the shebang on line 1 and inject right after it.
-    if content.startswith("#!"):
-        first_nl = content.find("\n")
-        if first_nl != -1:
-            content = content[: first_nl + 1] + _SESSION_TRACKER_RESET + content[first_nl + 1:]
-        else:
-            content = content + "\n" + _SESSION_TRACKER_RESET
-    else:
-        content = _SESSION_TRACKER_RESET + content
-    return content
 
 
 def check_dependencies() -> dict:
@@ -317,204 +110,6 @@ async def _download(url: str, dest: str) -> bool:
     )
     await dl.wait()
     return dl.returncode == 0
-
-
-async def install_dependencies(gamemode: bool = True) -> dict:
-    """Install SLSsteam via the patched headcrab.sh — no ACCELA, no enter-the-wired.
-
-    headcrab.sh (Deadboy666/h3adcr-b) installs SLSsteam and performs the Steam
-    version downgrade. We download it and apply _HEADCRAB_PATCHES: in Game Mode
-    that replaces the Steam kills with `steam -shutdown` and skips the
-    short-cycle relaunches, so the gamescope-session crash-loop detector doesn't
-    wipe the Steam install. Then we run it.
-
-    CloudRedirect ships with the base install: headcrab installs it whenever
-    `DisableCloud: no` is present in config.yaml, so we seed the config and set
-    that flag before running headcrab. CR is inert until the user configures a
-    provider, so bundling it here (rather than a separate opt-in step) removes
-    the second headcrab run without forcing anything on.
-
-    ACCELA used to come from enter-the-wired for Steamless + Goldberg; both now
-    ship bundled with the plugin, so enter-the-wired/ACCELA is gone entirely. We
-    still install .NET 9 (Steamless uses it) via dotnet.py — Microsoft's own
-    installer script, not ACCELA.
-
-    gamemode=False is the Desktop variant (kills kept; see _patch_headcrab_script).
-
-    If upstream wording of any patched line changes, the install fails fast with
-    a clear "format changed" error instead of bricking Steam.
-    """
-    global INSTALL_STATE
-    INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
-    logger.info("LumaDeck: install_dependencies() entered")
-
-    tmp_dir = None
-    try:
-        # No config seeding here anymore. The force-cr-install patch makes
-        # headcrab install CloudRedirect unconditionally (it no longer needs
-        # DisableCloud: no present at crconfigcheck time), so there's nothing to
-        # seed before the run. SLSsteam writes its own config.yaml on its first
-        # injected run; we set the flags LumaDeck needs afterwards via
-        # ensure_slssteam_flags() (below + a startup task in main.py).
-        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_deps_")
-        script_path = os.path.join(tmp_dir, "headcrab_patched.sh")
-        INSTALL_STATE["progress"] = "Downloading + patching headcrab.sh..."
-        logger.info("LumaDeck: fetching headcrab.sh")
-        if not await _download(_HEADCRAB_RAW_URL, script_path):
-            INSTALL_STATE["status"] = "failed"
-            INSTALL_STATE["error"] = "Failed to download headcrab.sh"
-            return {"success": False}
-        try:
-            with open(script_path, "r", encoding="utf-8") as f:
-                hc_content = f.read()
-            hc_content = _patch_headcrab_script(hc_content, gamemode)
-            with open(script_path, "w", encoding="utf-8") as f:
-                f.write(hc_content)
-            os.chmod(script_path, 0o700)
-            logger.info("LumaDeck: headcrab.sh patched OK (%d bytes, gamemode=%s)", len(hc_content), gamemode)
-        except RuntimeError as exc:
-            INSTALL_STATE["status"] = "failed"
-            INSTALL_STATE["error"] = str(exc)
-            logger.error("LumaDeck: headcrab patch failed: %s", exc)
-            return {"success": False}
-
-        INSTALL_STATE["progress"] = "Running installer..."
-        # `yes y` covers any interactive prompt in the script (harmless — headcrab
-        # itself doesn't `read`, and pacman calls are --noconfirm).
-        process = await asyncio.create_subprocess_shell(
-            f"yes y | bash {script_path}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd=tmp_dir,
-            env=clean_env(),
-        )
-
-        async def _read_output():
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
-                INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
-
-        asyncio.create_task(_read_output())
-        await process.wait()
-
-        if process.returncode == 0:
-            # #19: Headcrab can exit 0 even when a transient
-            # wget drop left steam.sh unpatched (its wgets are `&> /dev/null`).
-            # Verify the post-condition (INJECT_SLS in steam.sh) instead of
-            # trusting the exit code, so we don't report a green "done" that
-            # isn't functional.
-            #
-            # In the Desktop / off-pin path the Steam DOWNGRADE settles
-            # asynchronously — Steam restarts to step the client version down and
-            # steam.sh's INJECT_SLS can land a few seconds after headcrab exits.
-            # Poll before declaring failure so we don't abort a setup that's
-            # actually finishing (that abort is what skipped CR + lumalinux).
-            sls_check = verify_slssteam_injected()
-            if not sls_check.get("already_ok"):
-                for _ in range(20):  # ~60s (20 x 3s)
-                    await asyncio.sleep(3)
-                    INSTALL_STATE["progress"] = "Waiting for Steam to settle after the downgrade..."
-                    sls_check = verify_slssteam_injected()
-                    if sls_check.get("already_ok"):
-                        break
-            if not sls_check.get("already_ok"):
-                INSTALL_STATE["status"] = "failed"
-                INSTALL_STATE["error"] = (
-                    "Installer finished but SLSsteam was not injected into "
-                    "steam.sh (likely a transient network drop during Headcrab's "
-                    "downloads). Click Install / Reinstall Dependencies again to "
-                    "retry."
-                )
-                logger.error(
-                    "LumaDeck: install_dependencies post-check failed: %s",
-                    sls_check.get("error"),
-                )
-            else:
-                # Set the flags LumaDeck depends on (DisableCloud: no,
-                # DisableUpdates: no, SafeMode: no) on the config SLSsteam wrote
-                # itself. On a fresh Game Mode install the config usually isn't
-                # there yet (Steam hasn't restarted with SLSsteam), so this is a
-                # best-effort no-op and the startup task in main.py sets them once
-                # SLSsteam has created it. On a reinstall / Desktop run the config
-                # already exists, so this applies immediately (SLSsteam hot-reloads).
-                flags = ensure_slssteam_flags()
-                logger.info("LumaDeck: ensure_slssteam_flags: %s", flags)
-
-                # CloudRedirect rides the same headcrab run. A transient
-                # wget/steam.sh drop can leave it missing,
-                # so verify both post-conditions (cloud_redirect.so on disk AND
-                # INJECT_CR in steam.sh) — the #19 defense. Non-fatal: SLSsteam is
-                # the critical piece; a CR miss just gets surfaced so users retry.
-                cr_ok = check_cloudredirect_installed() and _cloudredirect_injected_in_steam_sh()
-                if not cr_ok:
-                    logger.warning("LumaDeck: CloudRedirect not installed/injected after headcrab "
-                                   "— likely a transient drop")
-
-                # headcrab installs SLSsteam but not .NET 9. Steamless needs it,
-                # so we install it here in the same "Install / Reinstall" click.
-                # ensure_dotnet_available() is a no-op if .NET 9 is already there.
-                INSTALL_STATE["progress"] = "Installing .NET 9 runtime if missing..."
-                loop = asyncio.get_event_loop()
-                dotnet_ok = await loop.run_in_executor(None, ensure_dotnet_available)
-
-                # #4 catch-up: if this run refreshed the components while Steam was
-                # frozen after a break AND the ecosystem has now caught up (Headcrab
-                # pin advanced past our build + latest lumalinux release supports
-                # it), lift the Steam-update freeze so Steam self-updates back up to
-                # the supported latest — the fresh components just installed will
-                # hook it. No-op otherwise (not frozen, or not caught up yet):
-                # steam.cfg is only present during break recovery because headcrab's
-                # createsteamcfg is patched out of every run WE launch (see
-                # _HEADCRAB_PATCHES "suppress-freeze"); only the desktop break-
-                # downgrade writes it. See steam_freeze.py.
-                try:
-                    from steam_freeze import maybe_lift_freeze
-                    from headcrab_compat import check_headcrab_compat
-                    lift = maybe_lift_freeze(await check_headcrab_compat())
-                    if lift.get("lifted"):
-                        logger.info("LumaDeck: lifted Steam-update freeze (catch-up): %s", lift)
-                    elif not lift.get("success", True):
-                        logger.warning("LumaDeck: freeze lift failed: %s", lift)
-                except Exception as exc:
-                    logger.warning("LumaDeck: steam freeze lift check failed: %s", exc)
-
-                INSTALL_STATE["status"] = "done"
-                if dotnet_ok and cr_ok:
-                    INSTALL_STATE["progress"] = "Installation complete!"
-                elif not dotnet_ok:
-                    INSTALL_STATE["progress"] = (
-                        "SLSsteam installed. .NET 9 install failed — "
-                        "click Install / Reinstall Dependencies again to retry."
-                    )
-                else:
-                    INSTALL_STATE["progress"] = (
-                        "SLSsteam installed, but CloudRedirect didn't (cloud saves) — "
-                        "click Install / Reinstall Dependencies again to retry."
-                    )
-        else:
-            INSTALL_STATE["status"] = "failed"
-            INSTALL_STATE["error"] = f"Installer exited with code {process.returncode}"
-
-    except Exception as exc:
-        INSTALL_STATE["status"] = "failed"
-        INSTALL_STATE["error"] = str(exc)
-        logger.exception("LumaDeck: install_dependencies crashed: %s", exc)
-    finally:
-        if tmp_dir:
-            import shutil
-            try:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            except Exception:
-                pass
-
-    logger.info("LumaDeck: install_dependencies finished, state=%s", INSTALL_STATE)
-    return {"success": INSTALL_STATE["status"] == "done"}
-
-
-def get_install_status() -> dict:
-    return INSTALL_STATE.copy()
 
 
 # NOTE: LumaDeck no longer seeds a hardcoded config.yaml. The force-cr-install
@@ -753,113 +348,6 @@ def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:
     return True, "PlayNotOwnedGames absent (removed in SLSsteam 20260707+): nothing to flip"
 
 
-async def install_lumalinux(gamemode: bool = True) -> dict:
-    """Run lumalinux/install.sh from the jayool/lumalinux repo.
-
-    (`gamemode` is accepted for a uniform quick_install() call signature but
-    ignored here — lumalinux never touches Steam at runtime, no kills to patch.)
-
-    Unlike headcrab, this one does NOT touch Steam at
-    runtime: it only patches ~/.local/share/Steam/steam.sh (idempotent
-    managed-block insert before `source $STEAM_CLIENT`) and drops the .so +
-    keys dir. No killall, no exec of Steam with env vars, no downgrade.
-
-    Also serves as the recovery path after a Headcrab Updater run: Headcrab
-    regenerates steam.sh from scratch, wiping the lumalinux block, so
-    re-invoking this is how the user gets back to a loaded state.
-    """
-    global LL_INSTALL_STATE
-    LL_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
-    logger.info("LumaDeck: install_lumalinux() entered")
-
-    tmp_dir = None
-    try:
-        tmp_dir = tempfile.mkdtemp(prefix="lumadeck_ll_")
-        script_path = os.path.join(tmp_dir, "install.sh")
-        LL_INSTALL_STATE["progress"] = "Downloading lumalinux installer..."
-        if not await _download(
-            "https://raw.githubusercontent.com/jayool/lumalinux/main/install.sh",
-            script_path,
-        ):
-            LL_INSTALL_STATE["status"] = "failed"
-            LL_INSTALL_STATE["error"] = "Failed to download lumalinux installer"
-            return {"success": False}
-        os.chmod(script_path, 0o700)
-
-        try:
-            with open(script_path, "r", encoding="utf-8", errors="replace") as f:
-                first_line = f.readline(256)
-            if not first_line.startswith("#"):
-                LL_INSTALL_STATE["status"] = "failed"
-                LL_INSTALL_STATE["error"] = "Downloaded file does not look like a shell script"
-                return {"success": False}
-        except Exception as read_exc:
-            LL_INSTALL_STATE["status"] = "failed"
-            LL_INSTALL_STATE["error"] = f"Cannot read installer script: {read_exc}"
-            return {"success": False}
-
-        # No `yes y |` — lumalinux/install.sh contains zero `read` prompts
-        # (only curl/sed/awk/install), so there's nothing to auto-confirm.
-        LL_INSTALL_STATE["progress"] = "Running installer..."
-        process = await asyncio.create_subprocess_exec(
-            "bash", script_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd=tmp_dir,
-            env=clean_env(),
-        )
-
-        async def _read_output():
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
-                LL_INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
-
-        asyncio.create_task(_read_output())
-        await process.wait()
-
-        if process.returncode == 0:
-            # #19: verify the post-condition (the lumalinux LD_PRELOAD block
-            # landed in steam.sh) rather than trusting the exit code, so a
-            # transient download/patch failure can't report a green "done".
-            if not _lumalinux_injected_in_steam_sh():
-                LL_INSTALL_STATE["status"] = "failed"
-                LL_INSTALL_STATE["error"] = (
-                    "Installer finished but the lumalinux block was not added to "
-                    "steam.sh (likely a transient network drop). Click Install "
-                    "lumalinux again to retry."
-                )
-            else:
-                LL_INSTALL_STATE["status"] = "done"
-                LL_INSTALL_STATE["progress"] = "lumalinux installed!"
-        else:
-            LL_INSTALL_STATE["status"] = "failed"
-            LL_INSTALL_STATE["error"] = (
-                f"Installer exited with code {process.returncode} — "
-                f"last line: {LL_INSTALL_STATE['progress']}"
-            )
-
-    except Exception as exc:
-        LL_INSTALL_STATE["status"] = "failed"
-        LL_INSTALL_STATE["error"] = str(exc)
-        logger.exception("LumaDeck: install_lumalinux crashed: %s", exc)
-    finally:
-        if tmp_dir:
-            import shutil
-            try:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            except Exception:
-                pass
-
-    logger.info("LumaDeck: install_lumalinux finished, state=%s", LL_INSTALL_STATE)
-    return {"success": LL_INSTALL_STATE["status"] == "done"}
-
-
-def get_ll_install_status() -> dict:
-    return LL_INSTALL_STATE.copy()
-
-
 async def install_via_setup(gamemode: bool = True) -> dict:
     """WS2: install the whole unlock stack via lumalinux/setup.sh (wrapper model).
 
@@ -980,28 +468,20 @@ def get_setup_status() -> dict:
 
 
 async def quick_install(gamemode: bool = True) -> dict:
-    """Run the installers in dependency order, stopping at the first failure:
+    """Run the wrapper-model installer, stopping at the first failure:
 
-        1. dependencies   — SLSsteam + CloudRedirect + .NET 9 (install_dependencies)
-        2. lumalinux      — liblumalinux.so + steam.sh patch   (install_lumalinux)
+        1. stack — SLSsteam + library-inject + CloudRedirect + netsock + lumalinux
+                   + .NET 9 + the injection wrapper (lumalinux/setup.sh)
 
-    dependencies now installs CloudRedirect in the same headcrab run (it sets
-    DisableCloud: no first), so there's no separate CR step — one headcrab, not
-    two.
+    WS2/WS3: one idempotent setup.sh run replaces the old headcrab
+    install_dependencies + install_lumalinux pair — no Steam downgrade, no freeze,
+    no steam.sh patch. The break-recovery downgrade is a separate escape-hatch
+    (desktop_handoff REAL payload → downgrade.sh).
 
-    gamemode=False is the DESKTOP variant (run by the Desktop hand-off launcher
-    when Steam is off the headcrab pin): headcrab keeps its Steam kills so the
-    downgrade actually applies. In Game Mode that would trip the crash-loop wipe,
-    which is exactly why an off-pin install must go through Desktop.
-
-    Order matters: dependencies runs headcrab, which regenerates steam.sh from
-    scratch — that would wipe lumalinux's managed block. lumalinux must therefore
-    run LAST (it's patch-only and idempotent) so its steam.sh patch survives.
-
-    Each sub-installer keeps updating its own state global with live progress;
-    get_quick_install_status() merges that in for the currently-running step.
-    The caller (frontend) does a single Steam restart at the end — the
-    sub-installers don't restart Steam themselves.
+    `gamemode` is accepted for a uniform step signature but setup.sh handles both
+    modes itself. install_via_setup keeps updating SETUP_INSTALL_STATE with live
+    progress; get_quick_install_status() merges that in for the running step. The
+    caller (frontend) does a single Steam restart at the end.
     """
     global QUICK_INSTALL_STATE
 
@@ -1054,8 +534,7 @@ def get_quick_install_status() -> dict:
     state = QUICK_INSTALL_STATE.copy()
     if state.get("status") == "installing":
         live_getter = {
-            "dependencies": get_install_status,
-            "lumalinux": get_ll_install_status,
+            "stack": get_setup_status,
         }.get(state.get("step"))
         if live_getter:
             sub = live_getter()
@@ -1067,24 +546,15 @@ def get_quick_install_status() -> dict:
 
 
 async def reinject_installed() -> dict:
-    """Re-inject every INSTALLED component into steam.sh, in dependency order.
+    """Re-establish injection for every INSTALLED component.
 
-    steam.sh is shared: SLSsteam, CloudRedirect and lumalinux each inject a
-    block. install_dependencies runs headcrab, which REGENERATES steam.sh from
-    scratch (installing + re-injecting BOTH SLSsteam and CloudRedirect in one
-    pass). install_lumalinux only patches (idempotent), so it never wipes the
-    others and must run LAST to survive the headcrab regeneration.
+    WS2/WS3: in the wrapper model there is no per-component steam.sh cascade —
+    setup.sh is one idempotent script that (re)installs the whole stack and
+    re-asserts the wrapper + Game Mode drop-in. So a repair of a `not_injected`
+    component is just a single setup.sh run, gated on something being installed
+    (never pulls in the stack on a bare device).
 
-    Repairing injection with a single installer would silently break the others.
-    This re-runs the installers for the components that are actually installed,
-    in order (SLSsteam+CloudRedirect) -> lumalinux. SLSsteam and CloudRedirect are
-    one unit now (same headcrab), so a repair on a legacy SLSsteam-only setup also
-    (re)installs CloudRedirect — harmless, it's inert until a provider is set. It
-    never pulls in lumalinux if the user doesn't have it.
-
-    Used to repair a `not_injected` component (any repair that runs headcrab).
-    Shares QUICK_INSTALL_STATE so the frontend polls
-    the same get_quick_install_status().
+    Shares QUICK_INSTALL_STATE so the frontend polls get_quick_install_status().
     """
     steps = []
     # WS2: setup.sh re-installs and re-injects the WHOLE stack idempotently, so run

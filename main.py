@@ -702,14 +702,6 @@ class Plugin:
         from desktop_handoff import disarm_desktop_handoff
         return _j(disarm_desktop_handoff())
 
-    async def install_lumalinux(self) -> str:
-        from installer import install_lumalinux
-        return _j(await install_lumalinux())
-
-    async def get_ll_install_status(self) -> str:
-        from installer import get_ll_install_status
-        return _j(get_ll_install_status())
-
     async def quick_install(self) -> str:
         from installer import quick_install
         return _j(await quick_install())
