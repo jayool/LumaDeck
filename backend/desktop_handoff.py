@@ -299,10 +299,13 @@ def run_desktop_handoff_real() -> dict:
 
 
 def run_desktop_handoff_quick_install() -> dict:
-    """Arm a Desktop hand-off that runs the FULL Quick Install (SLSsteam +
-    CloudRedirect + lumalinux, incl. the Steam downgrade) in Desktop, then
-    returns to Game Mode on success. Used when Steam is off the headcrab pin and
-    the downgrade can't run in Game Mode.
+    """Arm a Desktop hand-off that runs the FULL Quick Install in Desktop, then
+    returns to Game Mode on success.
+
+    WS2: quick_install now runs lumalinux/setup.sh (wrapper model) — SLSsteam +
+    CloudRedirect + netsock + lumalinux + .NET, no Steam downgrade, no freeze. So
+    this hand-off is no longer downgrade-related; it just runs the installer in a
+    visible Desktop konsole (handy for a first setup / seeing progress).
 
     It runs quick_install_cli.py (which calls installer.quick_install(
     gamemode=False)) under the system Python — the real installer code, nothing
