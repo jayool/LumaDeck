@@ -139,10 +139,18 @@ export function Settings() {
   // Arm the one-shot Desktop hand-off (same mechanism the QAM "Fix in Desktop"
   // uses) instead of making the user type the headcrab command in a Desktop
   // terminal by hand. The command line is kept below as a manual fallback.
-  const fixInDesktop = async (fn: () => Promise<any>) => {
+  // Toast copy defaults to the downgrade direction ("too new / roll back"); the
+  // align-up caller passes the update-direction keys so the message matches the
+  // action (the shared handler used to toast "roll Steam back" on an UP move).
+  const fixInDesktop = async (
+    fn: () => Promise<any>,
+    titleKey: string = "sysSteamTooNew",
+    switchKey: string = "sysHandoffSwitching",
+    manualKey: string = "sysHandoffManual",
+  ) => {
     const r: any = await fn();
-    if (r?.switchLaunched) toast(t("sysSteamTooNew"), t("sysHandoffSwitching"), 8000);
-    else if (r?.armed) toast(t("sysSteamTooNew"), t("sysHandoffManual"), 12000);
+    if (r?.switchLaunched) toast(t(titleKey), t(switchKey), 8000);
+    else if (r?.armed) toast(t(titleKey), t(manualKey), 12000);
     else toast(t("toastError"), r?.error || "", 6000);
   };
 
@@ -1070,7 +1078,7 @@ export function Settings() {
           };
           if (primary === "downgrade") {
             // Genuinely unsupported build (Steam moved off a build we can hook) →
-            // the break-recovery downgrade: headcrab aligns Steam DOWN to a
+            // the break-recovery downgrade: downgrade.sh aligns Steam DOWN to a
             // supported build and pins it (steam.cfg), then setup.sh re-establishes
             // the wrapper. This is the ONE fix that can't run in Game Mode, and the
             // ONE path that writes the pin (steam_freeze.py lifts it once the
@@ -1084,9 +1092,9 @@ export function Settings() {
             label = t("sysFinishSetup");
             onClick = () => runFix(() => applyComponent("core", "install"));
           } else if (primary === "reinject") {
-            // not_injected: steam.sh lost the line, so a plain restart won't help.
-            // Repair re-patches steam.sh (reinject) and restarts. "Repair", not
-            // "Restart Steam", because a manual restart genuinely doesn't fix this.
+            // not_injected: the wrapper interposition was lost, so a plain restart
+            // won't help. Repair re-runs setup.sh (reinject) and restarts. "Repair",
+            // not "Restart Steam", because a manual restart genuinely doesn't fix it.
             label = t("repair");
             onClick = () => runFix(() => reinjectInstalled());
           } else if (primary === "restart") {
@@ -1102,7 +1110,9 @@ export function Settings() {
             // and deliberately NOT the downgrade machinery (no pin written here).
             label = confirmDesktop ? t("sysConfirmTap") : t("sysSteamUpdateBtn");
             desc = t("sysSteamUpdateAvailableDesc");
-            onClick = armDesktop(() => fixInDesktop(runDesktopHandoffQuickInstall));
+            onClick = armDesktop(() => fixInDesktop(
+              runDesktopHandoffQuickInstall,
+              "sysSteamUpdateAvailable", "sysAlignUpSwitching", "sysAlignUpManual"));
           } else {
             // healthy on-pin: manual maintenance. Reflect the real state in the
             // label — "Reinstall" when the core is already there (nothing is

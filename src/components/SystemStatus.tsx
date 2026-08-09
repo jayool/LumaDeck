@@ -47,7 +47,8 @@ export interface SystemStatusActions {
   restart: () => void;       // not_loaded — plain Steam restart
   repair: () => void;        // not_injected — re-inject steam.sh, then restart
   reinstallCore: () => void; // (unused since the 2-action model; kept for callers)
-  downgrade: () => void;     // not_supported / partial install: hand off to Desktop
+  downgrade: () => void;     // not_supported / partial install: hand off to Desktop (downgrade + pin)
+  alignUp: () => void;       // steam-update align-up: Desktop quick_install (lifts the pin, Steam self-updates UP)
   update: () => void;        // component update(s) available
   pluginUpdate: () => void;  // LumaDeck plugin update
   openGame: (appid: number) => void; // a stuck game
@@ -209,8 +210,10 @@ function buildRows(
     // a normal update (info, not a problem). Requires lumalinux_ready === true, not
     // just "not false": pushing a WORKING user up to a build lumalinux can't hook
     // yet would regress them, so only nudge when support is positively published.
-    // The button reuses the downgrade hand-off — headcrab.sh applies the pinned
-    // Steam build in either direction, so aligning UP is the same machinery.
+    // Aligning UP is NOT the downgrade: it hands off to quick_install (setup.sh),
+    // which LIFTS the pin (steam_freeze.maybe_lift_freeze) so Steam self-updates
+    // up to the now-supported build. Routing this to actions.downgrade would
+    // re-write the pin and freeze Steam on the OLD build forever — hence alignUp.
     const target = status.headcrab?.target;
     const current = status.headcrab?.current;
     const steamBehindPin = target != null && current != null && current < target;
@@ -219,7 +222,7 @@ function buildRows(
         key: "steam-update", severity: "info",
         label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),
         actionLabel: busy ? t("sysWorking") : t("sysSteamUpdateBtn"),
-        onAction: actions.downgrade,
+        onAction: actions.alignUp,
         confirmFirst: true,
       });
     }

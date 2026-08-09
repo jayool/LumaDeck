@@ -66,9 +66,6 @@ export const checkHeadcrabCompat = async () =>
 export const getComponentsStatus = async (force = false) =>
   parseResult(await call<[boolean], string>("get_components_status", force));
 
-export const repairSlssteamHeadcrab = async () =>
-  parseResult(await call<[], string>("repair_slssteam_headcrab"));
-
 export const restartSteam = async () =>
   parseResult(await call<[], string>("restart_steam"));
 
