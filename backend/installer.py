@@ -397,9 +397,16 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         # 0700/root, so open up the dir + script first or the deck user can't read
         # them. When already running as the real user (the Desktop hand-off path,
         # quick_install_cli), run directly — HOME/session are already correct.
-        _uid = real_uid()
-        _runtime = f"/run/user/{_uid}"
-        if os.geteuid() == 0 and _uid != 0:
+        # The proven `curl|bash setup.sh` path (quick_install_cli, already deck)
+        # runs directly and we DON'T touch the session — the real session already
+        # has the correct XDG_RUNTIME_DIR/DBUS, and overwriting them with computed
+        # values could break a path that works. Only pin HOME (already == $HOME
+        # there, so effectively a no-op), matching dotnet.py / downloads.py. All
+        # the sudo/session machinery is gated on euid==0, so the proven path is
+        # unchanged except for that explicit HOME.
+        if os.geteuid() == 0 and real_uid() != 0:
+            _uid = real_uid()
+            _runtime = f"/run/user/{_uid}"
             try:
                 os.chmod(tmp_dir, 0o755)
                 os.chmod(script_path, 0o755)
@@ -415,11 +422,7 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             proc_env = clean_env()
         else:
             argv = ["bash", script_path]
-            proc_env = clean_env(
-                HOME=real_home(),
-                XDG_RUNTIME_DIR=_runtime,
-                DBUS_SESSION_BUS_ADDRESS=f"unix:path={_runtime}/bus",
-            )
+            proc_env = clean_env(HOME=real_home())
         process = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
