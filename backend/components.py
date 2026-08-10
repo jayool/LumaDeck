@@ -60,12 +60,15 @@ _FETCH_TIMEOUT = 20.0
 
 # --- SLSsteam update (via h3adcr-b's source repo) ---------------------------
 
-async def check_slssteam_update() -> dict:
-    """SLSsteam update = a newer release at AceSLS/SLSsteam — the repo h3adcr-b
-    installs `latest` from. Compares the installed config Version against it.
-    Replaces the old (wrong) signal derived from headcrab compatibility."""
+async def check_slssteam_update(force: bool = False) -> dict:
+    """SLSsteam update = a newer release at AceSLS/SLSsteam — the repo setup.sh
+    installs `latest` from. Compares the version setup.sh recorded at install
+    (`.slssteam.version`, a build timestamp like '20260801163409') against the
+    latest release tag (same timestamp format). has_update's semver compare works
+    on timestamps unchanged (bigger = newer). None recorded → no update, the safe
+    default. force=True bypasses the release cache for a manual refresh."""
     from slssteam_config import get_sls_version
-    return await has_update("AceSLS", "SLSsteam", get_sls_version())
+    return await has_update("AceSLS", "SLSsteam", get_sls_version(), force=force)
 
 
 # --- CloudRedirect update (content hash, via h3adcr-b's asset) ---------------
@@ -196,20 +199,23 @@ async def get_components_status(force: bool = False) -> dict:
     ll_health = _safe_sync(read_lumalinux_health, {"state": None})
     cr_health = _safe_sync(read_cloudredirect_health, {"state": None})
 
-    # SLSsteam exposes no readable installed version (config.yaml is settings
-    # only; no version file on disk), and its updates ride headcrab + are gated,
-    # so we don't surface them (choice B). Skip the check to avoid a wasted API
-    # call. check_slssteam_update() stays defined for if we ever record the
-    # version at install time.
+    # SLSsteam has no readable version on disk of its own (config.yaml is settings
+    # only; the version is a build timestamp embedded inside the .so). setup.sh
+    # records the release tag it installed into `.slssteam.version`, so we CAN now
+    # surface updates — needed since headcrab is decoupled and no longer carries
+    # SLSsteam updates along. Without a recorded version the check reports no
+    # update (safe default), so this is inert on pre-this-feature installs.
     # When a component's health is FORCED via the Dev tab, its version is
     # synthetic ("9.9.9"), so a real update check would compare against a fake
     # value and spuriously report "update available". Skip the check for any
     # Dev-forced component (preview only; no effect on a normal install).
     import dev
+    sls_forced = dev.get("slssteam_health") is not None
     ll_forced = dev.get("lumalinux_health") is not None
     cr_forced = dev.get("cloudredirect_health") is not None
 
-    sls_update = dict(no_update)
+    sls_update = no_update if sls_forced else await _safe(
+        check_slssteam_update(force=force), no_update)
     ll_update = no_update if ll_forced else await _safe(
         has_update("jayool", "lumalinux", ll_health.get("version"), force=force), no_update)
     cr_update = no_update if cr_forced else await _safe(
