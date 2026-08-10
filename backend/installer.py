@@ -454,15 +454,14 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                     "(likely a transient network drop). Retry."
                 )
             else:
-                # Catch-up lift: if this run refreshed the stack while Steam was
-                # pinned after a break-recovery downgrade AND the ecosystem has
-                # now caught up (pin advanced past our build + latest lumalinux
-                # supports it), lift the Steam-update freeze so Steam self-updates
-                # back up to the now-supported build — the fresh components just
-                # installed will hook it. No-op when not pinned or not caught up
-                # (fresh install / plain repair). steam.cfg is written ONLY by the
-                # break-recovery downgrade (desktop_handoff REAL payload); setup.sh
-                # never writes it, so its presence cleanly means "held after break".
+                # Catch-up lift: reconcile the Steam-update freeze now that fresh
+                # components are in place. maybe_lift_freeze lifts a FOREIGN pin
+                # (headcrab's — no `# lumalinux` signature; written on every headcrab
+                # install, so a migrating device arrives frozen with no break to
+                # recover from) ON SIGHT, and lifts OUR signed break-recovery pin only
+                # once the ecosystem has caught up (pin advanced past our build +
+                # latest lumalinux supports it). No-op when not pinned. This is the
+                # step that un-freezes every device migrating from headcrab.
                 try:
                     from steam_freeze import maybe_lift_freeze
                     from headcrab_compat import check_headcrab_compat
