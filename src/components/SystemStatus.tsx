@@ -236,11 +236,14 @@ function buildRows(
     // current Steam build.
     const llSupportsCurrent = status.headcrab?.current_build_supported_by_latest;
     const llUpdate = !!ll?.installed && !!ll.update?.available && llSupportsCurrent !== false;
-    // SLSsteam updates are NOT surfaced (choice B): it exposes no readable
-    // installed version, and it rides headcrab + is gated anyway. Of the
-    // headcrab bundle, only CloudRedirect has a checkable update here.
+    // All three component updates are surfaced: setup.sh reinstalls the whole
+    // stack at latest, so any of them having an update warrants the row. SLSsteam's
+    // installed version is recorded by setup.sh (.slssteam.version); gate it (and
+    // CloudRedirect) on `compatible` — don't offer while Steam is off a supported
+    // build. lumalinux keeps its own build-support gate above.
     const crUpdate = compatible && !!cr?.installed && !!cr.update?.available;
-    if (llUpdate || crUpdate) {
+    const slsUpdate = compatible && !!sls?.installed && !!sls.update?.available;
+    if (llUpdate || crUpdate || slsUpdate) {
       rows.push({
         key: "update", severity: "info",
         label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),

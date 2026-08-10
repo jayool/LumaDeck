@@ -468,16 +468,11 @@ export function GameList() {
       else toast(t("toastError"), r?.error || "", 6000);
     }),
     update: () => runSysAction(async () => {
-      // SLSsteam/CloudRedirect updates ride headcrab (a full reinject pulls all
-      // latest); a lumalinux-only update is the light, patch-only path.
-      const comps = compStatus?.components || [];
-      // Only CloudRedirect rides headcrab in the update surface (SLSsteam isn't
-      // surfaced — choice B); a CR update needs the full reinject.
-      const heavy = comps.some((c) =>
-        c.installed && c.id === "cloudredirect" && c.update?.available);
-      const r = heavy
-        ? await reinjectInstalled()
-        : await applyComponent("lumalinux", "update");
+      // Wrapper model: every component update is a single full setup.sh run.
+      // reinject_installed re-runs setup.sh, reinstalling the whole stack at latest
+      // (SLSsteam, CloudRedirect, lumalinux), so this covers ANY combination of
+      // updates — including SLSsteam alone. There is no per-component "light" path.
+      const r = await reinjectInstalled();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
     }),
