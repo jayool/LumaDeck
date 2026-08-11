@@ -56,15 +56,14 @@ _GAMEMODE_ARG = "gamescope"
 
 # setup.sh + downgrade.sh (wrapper model) URLs — kept in sync with
 # installer.SETUP_SH_URL via the same env override. Defined locally (not imported)
-# to avoid a circular import at module load. TODO(WS4): flip the branch to main on
-# merge.
+# to avoid a circular import at module load.
 _SETUP_SH_URL = os.environ.get(
     "LUMADECK_SETUP_URL",
-    "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/setup.sh",
+    "https://raw.githubusercontent.com/jayool/lumalinux/main/setup.sh",
 )
 _DOWNGRADE_SH_URL = os.environ.get(
     "LUMADECK_DOWNGRADE_URL",
-    "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/downgrade.sh",
+    "https://raw.githubusercontent.com/jayool/lumalinux/main/downgrade.sh",
 )
 
 # REAL payload = the break-recovery downgrade escape-hatch. It is the ONE fix that

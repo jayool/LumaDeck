@@ -43,11 +43,10 @@ SETUP_INSTALL_STATE = {
     "error": None,
 }
 
-# setup.sh source. Points at the steam-update-gating branch while WS2 is validated;
-# flip to .../main/setup.sh on merge. Overridable for testing.
+# setup.sh source (main). Overridable for testing via LUMADECK_SETUP_URL.
 SETUP_SH_URL = os.environ.get(
     "LUMADECK_SETUP_URL",
-    "https://raw.githubusercontent.com/jayool/lumalinux/claude/steam-update-gating/setup.sh",
+    "https://raw.githubusercontent.com/jayool/lumalinux/main/setup.sh",
 )
 
 # State for the "Quick Install" flow. WS2/WS3: it's now a single setup.sh step
