@@ -11,12 +11,14 @@ What is verified (from source, CachyOS/gamescope-session @cachyos):
     exists ("Auto-repair disabled by config").
 
 What this test does and does NOT cover — read this before trusting it:
-  * COVERS: that do_repair() genuinely wipes the steam.sh injection, and pins the
-    two mechanisms that stop it — the /tmp/*-short-session-tracker reset, and
+  * COVERS: that do_repair() genuinely wipes the steam.sh injection, and pins
     CachyOS/SteamOS's own ~/.config/inhibit-short-session-tracker (which LumaDeck
-    documents but does NOT set; see test_native_inhibit_would_prevent_repair).
-    This is a real reproduction of the tracker->repair->clobber mechanism (the
-    "black screen returning to Game Mode" tail of #31, and any game-mode path).
+    documents but does NOT set). This is a real reproduction of the
+    tracker->repair->clobber mechanism (the "black screen returning to Game Mode"
+    tail of #31, and any game-mode path). NOTE: the wrapper model no longer runs
+    or patches headcrab, so the old /tmp/*-short-session-tracker reset that
+    LumaDeck used to prepend is gone — the durable protection is now the wrapper +
+    crash-loop guard, not a tracker reset.
   * DOES NOT COVER: #31's *primary* reported symptom — "when steam restarted in
     DESKTOP mode, nothing was injected + stuck loading". In Plasma/desktop the
     gamescope steam-launcher.service (which drives the tracker) is NOT running,
@@ -30,27 +32,9 @@ What this test does and does NOT cover — read this before trusting it:
 """
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
-
-import installer  # noqa: E402
-
-
-# A minimal fake headcrab.sh carrying a literal instance of every _HEADCRAB_PATCHES
-# anchor, so _patch_headcrab_script applies cleanly (it raises if one is missing).
-FAKE_HEADCRAB = (
-    "#!/usr/bin/env bash\n"
-    "killall steam | true\n"
-    "wheresteam -exitsteam\n"
-    "wheresteam -clearbeta steam://exit\n"
-    "wheresteam -clearbeta -exitsteam\n"
-    "cp -f $InstallDir/SLSsteam.so $SLSsteamInstallDir/\n"
-    'wget -O cloud_redirect.so "$CloudRedirectLib" &> /dev/null\n'
-    'grep -F "DisableCloud: no" config.yaml &> /dev/null\n'
-)
 
 # A faithful, sandbox-parameterised port of CachyOS's steam-short-session-tracker
 # do_repair()/handle_started() (verified: CachyOS/gamescope-session @cachyos
@@ -84,37 +68,6 @@ handle_started
 """
 
 _MARKER = "# >>> lumalinux launcher patch >>>"
-
-
-class TestCrashLoopTrackerReset(unittest.TestCase):
-    def test_reset_covers_the_whole_tracker_family(self):
-        # Must clear /tmp/*-short-session-tracker (steamos-, chimeraos-, any
-        # rename), NOT just the SteamOS-only path the pre-#31 code used.
-        self.assertIn("/tmp/*-short-session-tracker", installer._SESSION_TRACKER_RESET)
-        self.assertIn("rm -f /tmp/*-short-session-tracker", installer._SESSION_TRACKER_RESET)
-
-    def test_reset_documents_the_verified_cachyos_lineage(self):
-        # CachyOS is documented as the Valve/SteamOS fork (steamos- tracker),
-        # NOT chimeraos — the earlier assumption this file used was wrong.
-        reset = installer._SESSION_TRACKER_RESET
-        self.assertIn("steamos-short-session-tracker", reset)
-        self.assertIn("Valve/SteamOS", reset)
-        self.assertIn("count_before_reset=3", reset)
-
-    def test_gamemode_prepends_the_reset_after_the_shebang(self):
-        out = installer._patch_headcrab_script(FAKE_HEADCRAB, gamemode=True)
-        self.assertIn("rm -f /tmp/*-short-session-tracker", out)
-        self.assertTrue(out.startswith("#!/usr/bin/env bash\n"))  # shebang stays line 1
-        # kill/relaunch lines are no-op'd in Game Mode.
-        self.assertNotIn("killall steam | true", out)
-
-    def test_desktop_mode_omits_the_reset(self):
-        # In the Desktop hand-off the kills are REQUIRED (to step the downgrade)
-        # and gamescope isn't running, so no tracker reset is injected.
-        out = installer._patch_headcrab_script(FAKE_HEADCRAB, gamemode=False)
-        self.assertNotIn("short-session-tracker", out)
-        # gamemode-only kill no-ops are skipped -> the kill line survives verbatim.
-        self.assertIn("killall steam | true", out)
 
 
 class TestDoRepairClobber(unittest.TestCase):

@@ -66,9 +66,6 @@ export const checkHeadcrabCompat = async () =>
 export const getComponentsStatus = async (force = false) =>
   parseResult(await call<[boolean], string>("get_components_status", force));
 
-export const repairSlssteamHeadcrab = async () =>
-  parseResult(await call<[], string>("repair_slssteam_headcrab"));
-
 export const restartSteam = async () =>
   parseResult(await call<[], string>("restart_steam"));
 
@@ -410,13 +407,7 @@ export const detectStoreAppid = async () =>
 export const checkDependencies = async () =>
   parseResult(await call<[], string>("check_dependencies"));
 
-export const installLumalinux = async () =>
-  parseResult(await call<[], string>("install_lumalinux"));
-
-export const getLlInstallStatus = async () =>
-  parseResult(await call<[], string>("get_ll_install_status"));
-
-// Quick Install — chains dependencies → CloudRedirect → lumalinux in order.
+// Quick Install — one idempotent setup.sh run (the whole wrapper-model stack).
 export const quickInstall = async () =>
   parseResult(await call<[], string>("quick_install"));
 

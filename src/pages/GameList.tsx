@@ -456,17 +456,23 @@ export function GameList() {
       else if (r?.armed) toast(t("sysSteamTooNew"), t("sysHandoffManual"), 12000);
       else toast(t("toastError"), r?.error || "", 6000);
     }),
+    alignUp: () => runSysAction(async () => {
+      // Steam sits behind a newer SUPPORTED pin → move it UP. This is the
+      // "first update after a break": hand off to Desktop quick_install (setup.sh
+      // via install_via_setup), which LIFTS the pin (maybe_lift_freeze) so Steam
+      // self-updates up on the next launch, returning to the update-free state.
+      // NOT the downgrade hand-off — that would re-pin and freeze Steam.
+      const r: any = await runDesktopHandoffQuickInstall();
+      if (r?.switchLaunched) toast(t("sysSteamUpdateAvailable"), t("sysAlignUpSwitching"), 8000);
+      else if (r?.armed) toast(t("sysSteamUpdateAvailable"), t("sysAlignUpManual"), 12000);
+      else toast(t("toastError"), r?.error || "", 6000);
+    }),
     update: () => runSysAction(async () => {
-      // SLSsteam/CloudRedirect updates ride headcrab (a full reinject pulls all
-      // latest); a lumalinux-only update is the light, patch-only path.
-      const comps = compStatus?.components || [];
-      // Only CloudRedirect rides headcrab in the update surface (SLSsteam isn't
-      // surfaced — choice B); a CR update needs the full reinject.
-      const heavy = comps.some((c) =>
-        c.installed && c.id === "cloudredirect" && c.update?.available);
-      const r = heavy
-        ? await reinjectInstalled()
-        : await applyComponent("lumalinux", "update");
+      // Wrapper model: every component update is a single full setup.sh run.
+      // reinject_installed re-runs setup.sh, reinstalling the whole stack at latest
+      // (SLSsteam, CloudRedirect, lumalinux), so this covers ANY combination of
+      // updates — including SLSsteam alone. There is no per-component "light" path.
+      const r = await reinjectInstalled();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
     }),

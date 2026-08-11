@@ -418,49 +418,110 @@ def read_lumalinux_hook(name: str) -> Optional[str]:
     return outcome if isinstance(outcome, str) else None
 
 
-_LUMALINUX_STEAM_SH_MARKER = "# >>> lumalinux launcher patch >>>"
+# ---------------------------------------------------------------------------
+# Wrapper-coverage detection (the moon-model injection mechanism)
+# ---------------------------------------------------------------------------
+#
+# setup.sh no longer patches steam.sh (Steam re-extracts steam.sh from its
+# manifest whenever the size drifts, so a patch there is transient). Instead it
+# interposes a wrapper that exports the injection env (LD_AUDIT for SLSsteam,
+# LD_PRELOAD for CloudRedirect + lumalinux) and then execs the real Steam:
+#
+#   * the wrapper binary lives at ~/.local/share/SLSsteam/path/steam
+#   * Desktop reaches it via *steam*.desktop Exec= lines carrying the
+#     `X-LumaLinux-Wrapped=1` tag — patched in place (also under
+#     /usr/share/applications on a writable-/usr distro), or written as an
+#     override shadow under ~/.local/share/applications / ~/.config/autostart
+#   * Game Mode reaches it via a systemd drop-in on steam-launcher.service:
+#     ~/.config/systemd/user/steam-launcher.service.d/lumalinux.conf
+#   * (a shell PATH drop-in also exists but only covers a terminal `steam` — it
+#     is NOT counted as coverage; see _wrapper_coverage_present for why.)
+#
+# So the wrapper-model analogue of "steam.sh still carries the LD_PRELOAD block"
+# is "the wrapper binary is on disk AND a STRONG interposition point (Desktop
+# .desktop or the Game Mode drop-in) still routes a Steam launch through it".
+# _wrapper_coverage_present() answers exactly that, and replaces the old
+# steam.sh injection checks in the health fallbacks: when the stack isn't live
+# this session, coverage-present means a plain restart re-injects (not_loaded),
+# while coverage-absent means the interposition was lost — a Steam update
+# regenerated its own .desktop, an uninstall, a half-run setup — so setup.sh
+# must run again (not_injected).
+#
+# Decky runs as root (~ == /root) so every path is checked under BOTH the real
+# user's home and the expanded ~; setup.sh writes them under the real user.
+
+_WRAPPER_REL = ".local/share/SLSsteam/path/steam"
+_WRAPPER_DESKTOP_TAG = "X-LumaLinux-Wrapped=1"
+_GM_DROPIN_REL = ".config/systemd/user/steam-launcher.service.d/lumalinux.conf"
+_WRAPPER_DESKTOP_DIRS_REL = (".local/share/applications", ".config/autostart")
 
 
-def _lumalinux_injected_in_steam_sh() -> bool:
-    """True if the user's steam.sh still carries lumalinux's managed LD_PRELOAD
-    block. Mirrors the INJECT_SLS check in verify_slssteam_injected.
+def _wrapper_homes() -> tuple:
+    """The homes setup.sh may have written under: the real user's (Decky runs as
+    root, so this is where the artifacts actually land) and the expanded ~."""
+    seen = []
+    for home in (_REAL_HOME, _EXPANDED_HOME):
+        if home and home not in seen:
+            seen.append(home)
+    return tuple(seen)
 
-    install.sh inserts a marked block (`# >>> lumalinux launcher patch >>>`)
-    that exports LD_PRELOAD with liblumalinux.so before `source $STEAM_CLIENT`.
-    Headcrab regenerates steam.sh from scratch on its runs (e.g. a CloudRedirect
-    install), which wipes that block — so an on-disk .so can coexist with a
-    steam.sh that no longer injects it. Checks the first steam.sh found across
-    the known Steam locations; returns False if none has the block."""
-    for candidate in _STEAM_PATHS:
-        steam_sh = os.path.join(candidate, "steam.sh")
-        if not os.path.isfile(steam_sh):
-            continue
-        try:
-            with open(steam_sh, "r", encoding="utf-8") as f:
-                content = f.read()
-        except Exception:
-            continue
-        return _LUMALINUX_STEAM_SH_MARKER in content or "liblumalinux.so" in content
+
+def _wrapper_binary_present() -> bool:
+    """True if setup.sh's injection wrapper (~/.local/share/SLSsteam/path/steam)
+    is on disk."""
+    return any(os.path.isfile(os.path.join(h, _WRAPPER_REL)) for h in _wrapper_homes())
+
+
+def _wrapper_desktop_coverage() -> bool:
+    """True if any *steam*.desktop carries the wrapper tag (patched in place or
+    written as an override shadow) — i.e. a Desktop launch routes through the
+    wrapper. Scans the user's applications/autostart dirs AND the system
+    /usr/share/applications: on a distro where /usr is writable setup.sh patches
+    the system entry IN PLACE (no home shadow), so a home-only scan would
+    false-negative there. On SteamOS /usr is read-only so a shadow lands in the
+    home dir instead — both cases covered."""
+    import glob as _glob
+    dirs = [os.path.join(home, rel) for home in _wrapper_homes()
+            for rel in _WRAPPER_DESKTOP_DIRS_REL]
+    dirs.append("/usr/share/applications")
+    for d in dirs:
+        for f in _glob.glob(os.path.join(d, "*steam*.desktop")):
+            try:
+                with open(f, "r", encoding="utf-8", errors="replace") as fh:
+                    if _WRAPPER_DESKTOP_TAG in fh.read():
+                        return True
+            except Exception:
+                continue
     return False
 
 
-def _cloudredirect_injected_in_steam_sh() -> bool:
-    """True if steam.sh carries Headcrab's CloudRedirect injection (the
-    INJECT_CR / LD_PRELOAD cloud_redirect.so line). Same swallowed-wget risk as
-    the SLSsteam INJECT_SLS line: Headcrab can exit 0 having left it out (a
-    transient network drop during one of its wgets). Checks the first steam.sh
-    found across the known Steam locations; returns False if none carries it."""
-    for candidate in _STEAM_PATHS:
-        steam_sh = os.path.join(candidate, "steam.sh")
-        if not os.path.isfile(steam_sh):
-            continue
-        try:
-            with open(steam_sh, "r", encoding="utf-8") as f:
-                content = f.read()
-        except Exception:
-            continue
-        return "cloud_redirect.so" in content or "INJECT_CR" in content
-    return False
+def _wrapper_gamemode_coverage() -> bool:
+    """True if the Game Mode systemd drop-in is installed — i.e. a Game Mode
+    launch (steam-launcher.service) routes through the wrapper."""
+    return any(os.path.isfile(os.path.join(h, _GM_DROPIN_REL)) for h in _wrapper_homes())
+
+
+def _wrapper_coverage_present() -> bool:
+    """True if setup.sh's injection wrapper is installed AND a STRONG interposition
+    point still routes a real Steam launch through it — a patched/shadow .desktop
+    (Desktop icon) or the Game Mode systemd drop-in.
+
+    This is the wrapper-model replacement for the old steam.sh injection checks:
+    it answers "will the next Steam launch inject the stack?" without a live
+    process, to split not_loaded (restart works) from not_injected (re-run setup).
+
+    The shell PATH drop-in is DELIBERATELY NOT a qualifying signal here: it is
+    sticky (written to ~/.bashrc on every setup AND every guardian run, removed
+    only by --uninstall, and never touched by a Steam update), and it only covers
+    a *terminal* `steam` launch — never Game Mode (the Deck's primary surface) or
+    the Desktop icon. Counting it would make _wrapper_coverage_present ≈
+    _wrapper_binary_present: a Deck whose Game Mode drop-in was lost (systemd
+    unavailable at setup, or ~/.config/systemd wiped) would forever report
+    not_loaded/"restart" — the injection can't happen, yet the user is never
+    routed to the not_injected → re-run-setup path this split exists for."""
+    if not _wrapper_binary_present():
+        return False
+    return _wrapper_desktop_coverage() or _wrapper_gamemode_coverage()
 
 
 # The load-bearing lumalinux hooks: if one of THESE reports "failed", downloads
@@ -481,9 +542,9 @@ def read_lumalinux_health() -> dict:
         not_installed  — .so not on disk                  → install
         not_loaded     — installed, steam.sh still injects it, no live
                          status.json                       → restart Steam
-        not_injected   — installed, but steam.sh lost the lumalinux block
-                         (e.g. a CloudRedirect/Headcrab run regenerated
-                         steam.sh)                          → restart (re-injects)
+        not_injected   — installed, but the wrapper interposition was lost
+                         (e.g. a Steam update regenerated its .desktop, or the
+                         wrapper binary is gone)             → re-run setup.sh
         not_supported  — status blocked=hash_unverified (cause "version"), or a
                          hook reported "failed" (cause "hooks") — both mean Steam
                          moved off a build we hook           → fix in Desktop
@@ -502,14 +563,15 @@ def read_lumalinux_health() -> dict:
     status = read_lumalinux_status()
     if status is None:
         # On disk but no live snapshot — Steam not running with lumalinux this
-        # session. Mirror SLSsteam's not_loaded vs not_injected split: a
-        # plain restart only helps if steam.sh STILL carries the lumalinux
-        # block. Headcrab regenerates steam.sh on its own runs (notably a
-        # CloudRedirect install), wiping the block — then a restart won't
-        # reload the .so and it must re-inject to re-patch steam.sh first.
-        if _lumalinux_injected_in_steam_sh():
+        # session. Mirror SLSsteam's not_loaded vs not_injected split: a plain
+        # restart only re-injects if the wrapper interposition is STILL in place
+        # (wrapper binary + a patched .desktop / Game Mode drop-in / PATH
+        # drop-in). If that coverage was lost — a Steam update regenerated its
+        # own .desktop, an uninstall, a half-run setup — a restart won't reload
+        # the .so; setup.sh must run again to re-establish the wrapper first.
+        if _wrapper_coverage_present():
             return {"state": "not_loaded", "cause": None, "version": None, "action": "restart"}
-        return {"state": "not_injected", "cause": "steam_sh", "version": None, "action": "restart"}
+        return {"state": "not_injected", "cause": "wrapper", "version": None, "action": "install"}
 
     version = status.get("version")
     blocked = status.get("blocked")
@@ -679,8 +741,8 @@ def read_cloudredirect_health() -> dict:
     Canonical states (action in parens):
         not_installed  — .so not on disk                    (install)
         disabled       — ~/.config/CloudRedirect/disable    (none — user choice)
-        not_loaded     — not mapped, steam.sh has INJECT_CR (restart Steam)
-        not_injected   — not mapped, steam.sh lost INJECT_CR(restart, re-injects)
+        not_loaded     — not mapped, wrapper coverage present (restart Steam)
+        not_injected   — not mapped, wrapper coverage lost (re-run setup.sh)
         not_supported  — mapped + log "Init failed: ..."    (fix in Desktop)
                          (cause "version" for vtable/steam issues, "hooks" for a
                          failed trampoline install)
@@ -704,12 +766,13 @@ def read_cloudredirect_health() -> dict:
     version, cause = _cloudredirect_log_inspect()
 
     if not mapped:
-        # Symmetric with SLSsteam / lumalinux: a plain restart only helps if
-        # steam.sh STILL injects CR; if the INJECT_CR line was wiped (a Headcrab
-        # regeneration) the restart must re-inject first.
-        if _cloudredirect_injected_in_steam_sh():
+        # Symmetric with SLSsteam / lumalinux: CR rides the same wrapper env
+        # (LD_PRELOAD). A plain restart only re-injects if the wrapper
+        # interposition is STILL in place; if it was lost, setup.sh must run
+        # again to re-establish the wrapper first.
+        if _wrapper_coverage_present():
             return {"state": "not_loaded", "cause": None, "version": version, "action": "restart"}
-        return {"state": "not_injected", "cause": "steam_sh", "version": version, "action": "restart"}
+        return {"state": "not_injected", "cause": "wrapper", "version": version, "action": "install"}
 
     if cause:
         # no_steam / incompatible = Steam-side (cause "version"); hook = a failed
@@ -727,22 +790,21 @@ def read_cloudredirect_health() -> dict:
 # SLSsteam injection verification
 # ---------------------------------------------------------------------------
 #
-# LumaDeck's actual architecture: Headcrab manages
-# ~/.local/share/Steam/steam.sh (lives under user home, survives Steam
-# updates because Headcrab's updater reapplies it after each one). The
-# SLSsteam injection lives there as an `INJECT_SLS=LD_AUDIT=...` variable
-# defined near the top and `export $INJECT_SLS` inside GameLauncher().
-# We do NOT write to /usr/bin/steam (the read-only rootfs target the
-# old DeckTools fork used) — Headcrab is the source of truth for steam.sh
-# and any plugin-side patching there would race with it on every Steam
-# update.
+# LumaDeck's actual architecture: setup.sh interposes a launch wrapper
+# (~/.local/share/SLSsteam/path/steam) that exports LD_AUDIT before exec-ing
+# the real Steam. Desktop reaches it via patched *steam*.desktop entries + a
+# PATH drop-in; Game Mode reaches it via a systemd drop-in on
+# steam-launcher.service. We do NOT patch steam.sh (Steam re-extracts it from
+# its manifest on size drift) and do NOT write /usr/bin/steam (read-only
+# rootfs). setup.sh owns the wrapper; the plugin only reads state.
 #
 # So `verify_slssteam_injected` is purely a status check now:
 #   1. Process check: SLSsteam.so mapped in any running process → active.
-#   2. Otherwise look for INJECT_SLS in ~/.local/share/Steam/steam.sh →
-#      Headcrab-configured, will activate on next Steam launch.
-#   3. Otherwise error → Headcrab not installed / steam.sh got blown away;
-#      user needs to re-run Install Dependencies.
+#   2. Otherwise check wrapper coverage (_wrapper_coverage_present) → the
+#      wrapper is installed and a launcher routes through it, so the next
+#      Steam launch will inject; needs a restart.
+#   3. Otherwise error → wrapper not installed / interposition lost; user
+#      needs to re-run setup.sh (Install / Reinject).
 #
 # No writes. No /usr/bin/steam, no steam.sh rewriting from the plugin.
 
@@ -766,12 +828,11 @@ def _check_process_injected() -> bool:
 def verify_slssteam_injected() -> dict:
     """Verify SLSsteam injection state. Read-only: never writes anywhere.
 
-    Headcrab owns ~/.local/share/Steam/steam.sh and re-applies INJECT_SLS
-    after Steam updates, so the plugin has no business patching it. The
-    previous version of this function tried to write to /usr/bin/steam
-    (DeckTools heritage) which fails on SteamOS' read-only rootfs and
-    surfaces an `[Errno 30] Read-only file system` error in the Platform
-    summary even when SLSsteam is fully functional.
+    setup.sh owns the launch wrapper (~/.local/share/SLSsteam/path/steam) that
+    exports LD_AUDIT before exec-ing Steam, so the plugin has no business
+    patching steam.sh (Steam re-extracts it on size drift) or /usr/bin/steam
+    (read-only rootfs — the DeckTools-heritage write there surfaced a spurious
+    `[Errno 30] Read-only file system` even when SLSsteam was fully functional).
     """
     if not check_slssteam_installed():
         return {"patched": False, "already_ok": False, "error": "SLSsteam not installed"}
@@ -781,42 +842,32 @@ def verify_slssteam_injected() -> dict:
     if _check_process_injected():
         return {"patched": False, "already_ok": True, "method": "active", "error": None}
 
-    # 2. Headcrab marker: INJECT_SLS variable in steam.sh. Means everything is
-    #    configured and the next Steam launch will pick it up; no error, just
-    #    needs a restart.
-    #
-    #    We accept the `INJECT_SLS=` marker ON ITS OWN — Headcrab references the
-    #    .so via its own variable, so requiring the literal SLSsteam.so path here
-    #    false-negatived (e.g. right after a Steam downgrade). And we scan ALL
-    #    candidate steam.sh files, only failing if NONE carry the marker — the
-    #    old loop returned on the first existing steam.sh, so a transiently
-    #    unpatched one (Steam mid-restart) masked a patched sibling.
-    found_steam_sh = False
-    for candidate in _STEAM_PATHS:
-        steam_sh = os.path.join(candidate, "steam.sh")
-        if not os.path.isfile(steam_sh):
-            continue
-        found_steam_sh = True
-        try:
-            with open(steam_sh, "r", encoding="utf-8") as f:
-                content = f.read()
-        except Exception:
-            continue
-        if "INJECT_SLS=" in content:
-            return {
-                "patched": False,
-                "already_ok": True,
-                "method": "steam_sh_configured",
-                "error": None,
-            }
+    # 2. Wrapper coverage: the wrapper binary is installed AND a launcher (a
+    #    patched/shadow .desktop, the Game Mode systemd drop-in, or the PATH
+    #    drop-in) still routes through it. Everything is configured and the next
+    #    Steam launch will pick it up; no error, just needs a restart.
+    if _wrapper_coverage_present():
+        return {
+            "patched": False,
+            "already_ok": True,
+            "method": "wrapper_configured",
+            "error": None,
+        }
 
-    if found_steam_sh:
+    # 3. Wrapper installed but no launcher routes through it — the interposition
+    #    was lost (a Steam update regenerated its .desktop, an uninstall, a
+    #    half-run setup). A restart alone won't help; setup.sh must run again.
+    if _wrapper_binary_present():
         return {
             "patched": False,
             "already_ok": False,
-            "error": "steam.sh has no INJECT_SLS line — Headcrab not installed or steam.sh was overwritten. Re-run Install Dependencies.",
+            "error": "The lumalinux launch wrapper is installed but no Steam launcher routes through it — the interposition was lost. Re-run setup (Reinject).",
         }
-    return {"patched": False, "already_ok": False, "error": "steam.sh not found"}
+    return {
+        "patched": False,
+        "already_ok": False,
+        "error": "The lumalinux launch wrapper is not installed. Re-run setup (Install).",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -840,8 +891,8 @@ def verify_slssteam_injected() -> dict:
 #
 # Resulting states (canonical set, shared across all three components):
 #   not_installed  — .so not on disk                         → install
-#   not_loaded     — not mapped, steam.sh has INJECT_SLS     → restart Steam
-#   not_injected   — not mapped, steam.sh lost INJECT_SLS    → restart (re-injects)
+#   not_loaded     — not mapped, wrapper coverage present    → restart Steam
+#   not_injected   — not mapped, wrapper coverage lost       → re-run setup.sh
 #   not_supported  — mapped + an "Aborting" line in the log  → fix in Desktop
 #                    (cause: "version" for the hash abort, "hooks" for the
 #                    pattern abort — both mean Steam moved off a build we hook)
@@ -901,11 +952,11 @@ def read_slssteam_health() -> dict:
     mapped = inj.get("method") == "active"  # .so present in a running process
 
     if not mapped:
-        if inj.get("method") == "steam_sh_configured":
+        if inj.get("method") == "wrapper_configured":
             # Configured, just not loaded yet (Steam not running / not restarted).
             return {"state": "not_loaded", "cause": None, "action": "restart"}
-        # steam.sh has no INJECT_SLS line, or wasn't found — injection is lost.
-        return {"state": "not_injected", "cause": None, "action": "restart"}
+        # Wrapper coverage lost (no launcher routes through it) — injection lost.
+        return {"state": "not_injected", "cause": "wrapper", "action": "install"}
 
     # Mapped — but mapped != working. The log is the only honest discriminator.
     # Both aborts mean Steam moved off a build SLSsteam can hook (patterns after a

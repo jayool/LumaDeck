@@ -87,7 +87,7 @@ class Plugin:
             await init_games_db()
 
             # Ensure SLSsteam's config flags (DisableCloud: no / DisableUpdates:
-            # no / SafeMode: yes) once SLSsteam has written its own config. It
+            # no / SafeMode: no) once SLSsteam has written its own config. It
             # creates it on its first injected run, which can land a few seconds
             # after we load, so poll briefly in the background. Idempotent, and
             # SLSsteam hot-reloads config.yaml so the flags apply without a
@@ -230,6 +230,15 @@ class Plugin:
     async def check_headcrab_compat(self) -> str:
         from headcrab_compat import check_headcrab_compat
         return _j(await check_headcrab_compat())
+
+    def get_steam_freeze_status(self) -> str:
+        # Whether Steam auto-updates are currently frozen (steam.cfg /
+        # BootStrapperInhibitAll), and whether the pin is ours. frozen==True means
+        # updates are inhibited; mine==True means it carries our `# lumalinux`
+        # signature (an active break-recovery pin) vs. a foreign one (headcrab's,
+        # lifted on sight at the next catch-up). See steam_freeze.py.
+        from steam_freeze import read_freeze
+        return _j(read_freeze())
 
     async def repair_slssteam_headcrab(self) -> str:
         from slssteam_ops import repair_slssteam_headcrab
@@ -692,14 +701,6 @@ class Plugin:
     async def disarm_desktop_handoff(self) -> str:
         from desktop_handoff import disarm_desktop_handoff
         return _j(disarm_desktop_handoff())
-
-    async def install_lumalinux(self) -> str:
-        from installer import install_lumalinux
-        return _j(await install_lumalinux())
-
-    async def get_ll_install_status(self) -> str:
-        from installer import get_ll_install_status
-        return _j(get_ll_install_status())
 
     async def quick_install(self) -> str:
         from installer import quick_install

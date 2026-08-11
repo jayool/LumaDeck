@@ -18,9 +18,9 @@ Decky Loader plugin for Steam Deck — game library and configuration manager wi
 
    CloudRedirect is installed with the base dependencies in step 3, so the *library* is in place but no provider is signed in. The CloudRedirect Flatpak's sign-in opens a real browser, which gamemode can't drive — switch to desktop mode once, open the **CloudRedirect** app from the application menu, and sign into Google Drive / OneDrive / Dropbox. The Dependencies panel will then show *CloudRedirect provider: Configured* once tokens exist at `~/.config/CloudRedirect/tokens_<provider>.json`.
 
-### After a Headcrab/SLSsteam update
+### After a Steam update
 
-Headcrab regenerates `~/.local/share/Steam/steam.sh` whenever its updater runs. That erases the lumalinux managed block (the deployed `.so` and `keys.txt` survive). Fix it from the plugin: tap **Install / Reapply lumalinux** in Settings → Dependencies.
+Injection comes from a wrapper at `~/.local/share/SLSsteam/path/steam` (installed by lumalinux's `setup.sh`); `steam.sh` is left vanilla. A systemd `--user` guardian re-affirms the wrapper coverage after Steam self-updates, and a crash-loop fail-safe boots vanilla instead of bricking if a bad update breaks the byte patterns. If injection ever stops, or to pull fresh `.so`s, fix it from the plugin: tap **Install / Reapply lumalinux** in Settings → Dependencies.
 
 ### Tested platforms
 
@@ -104,7 +104,7 @@ LumaDeck is a fork of [DeckTools](https://github.com/lopesleo/DeckTools) by **lo
 | [Goldberg Steam Emulator](https://gitlab.com/nichelimux/goldberg_emulator) | nichelimux        | Steam API emulator                                                            |
 | [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)          | SteamDeckHomebrew | Plugin platform                                                               |
 | [Hubcap](https://hubcapmanifest.com)                                       | Hubcap            | Manifest API (formerly Morrenus)                                              |
-| [Headcrab / h3adcr-b](https://github.com/Deadboy666/h3adcr-b)              | Deadboy666        | SLSsteam launcher wrapper + CloudRedirect installer (`headcrab.pages.dev`)    |
+| [Headcrab / h3adcr-b](https://github.com/Deadboy666/h3adcr-b)              | Deadboy666        | Steam client-downgrade data (compat pin + sources) used by the break-recovery escape-hatch |
 | [CloudRedirect](https://github.com/Selectively11/CloudRedirect)            | Selectively11     | Cloud-save RPC redirector to third-party providers                            |
 
 Research / educational. Use with your own Steam account and content. Do not redistribute Valve binaries.

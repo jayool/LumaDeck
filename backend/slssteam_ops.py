@@ -1116,8 +1116,6 @@ def write_depot_decryption_keys(depot_token_map: dict) -> dict:
 # ==========================================
 
 _SLS_LOG_PATH = os.path.join(real_home(), ".SLSsteam.log")
-_HEADCRAB_RESET_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/reset2vanilla.sh"
-_HEADCRAB_PATCH_URL = "https://raw.githubusercontent.com/Deadboy666/h3adcr-b/refs/heads/main/headcrab.sh"
 
 
 def check_slssteam_hash_status() -> dict:
@@ -1134,59 +1132,18 @@ def check_slssteam_hash_status() -> dict:
 
 
 async def repair_slssteam_headcrab() -> dict:
-    """Reset and repatch SLSsteam via Headcrab scripts.
+    """Repair the unlock stack.
 
-    Follows the official troubleshooting sequence:
-      1. reset2vanilla.sh  — unlinks Millennium/SLSsteam, resets Steam install
-      2. launch Steam briefly so it reconfigures its bootstrap
-      3. kill Steam
-      4. headcrab.sh       — repatch with fresh SLSsteam injection
+    WS2: re-runs lumalinux/setup.sh (idempotent wrapper-model reinstall of the
+    whole stack) instead of headcrab's reset2vanilla + repatch. The old sequence
+    ran `reset2vanilla.sh`, hard-killed Steam, and re-patched steam.sh — exactly
+    the Game Mode crash-loop / brick pattern seen in the SFF post-mortem. setup.sh
+    touches neither steam.sh nor kills Steam, and is idempotent, so a repair is
+    just a fresh run of it. (Name kept for the existing main.py/UI binding; WS3
+    removed the dead headcrab reset/repatch URLs this used to fetch.)
     """
-    import asyncio
-
-    async def _run_shell(cmd: str):
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await proc.communicate()
-        return proc.returncode, stdout.decode(errors="replace")
-
-    try:
-        # Step 1: reset to vanilla (kills Steam + unlinks injection)
-        rc, out = await _run_shell(f'curl -fsSL "{_HEADCRAB_RESET_URL}" | bash')
-        if rc != 0:
-            return {"success": False, "step": "reset", "error": out}
-
-        # Step 2: launch Steam so it reconfigures its bootstrap, then kill it
-        steam_proc = await asyncio.create_subprocess_exec(
-            "steam",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        # Give Steam ~15 s to do its initial bootstrap reconfiguration
-        await asyncio.sleep(15)
-        try:
-            steam_proc.kill()
-        except Exception:
-            pass
-        try:
-            await asyncio.wait_for(steam_proc.wait(), timeout=5)
-        except asyncio.TimeoutError:
-            pass
-        # Also kill any lingering steam processes
-        await _run_shell("pkill -x steam || true")
-        await asyncio.sleep(2)
-
-        # Step 3: repatch with Headcrab
-        rc, out = await _run_shell(f'curl -fsSL "{_HEADCRAB_PATCH_URL}" | bash')
-        if rc != 0:
-            return {"success": False, "step": "headcrab", "error": out}
-
-        return {"success": True, "output": out}
-    except Exception as exc:
-        return {"success": False, "error": str(exc)}
+    from installer import install_via_setup
+    return await install_via_setup()
 
 
 async def reconfigure_slssteam(appid: int) -> dict:

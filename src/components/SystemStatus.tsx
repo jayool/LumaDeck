@@ -47,7 +47,8 @@ export interface SystemStatusActions {
   restart: () => void;       // not_loaded — plain Steam restart
   repair: () => void;        // not_injected — re-inject steam.sh, then restart
   reinstallCore: () => void; // (unused since the 2-action model; kept for callers)
-  downgrade: () => void;     // not_supported / partial install: hand off to Desktop
+  downgrade: () => void;     // not_supported / partial install: hand off to Desktop (downgrade + pin)
+  alignUp: () => void;       // steam-update align-up: Desktop quick_install (lifts the pin, Steam self-updates UP)
   update: () => void;        // component update(s) available
   pluginUpdate: () => void;  // LumaDeck plugin update
   openGame: (appid: number) => void; // a stuck game
@@ -119,7 +120,6 @@ function buildRows(
   const sls = get("slssteam");
   const cr = get("cloudredirect");
   const ll = get("lumalinux");
-  const compatible = status.headcrab?.compatible === true;
   const installed = comps.filter((c) => c.installed);
 
   // A core component is installed but its partner isn't (a failed/partial install).
@@ -199,18 +199,22 @@ function buildRows(
   }
 
   // ---- updates (info track) ----
-  // lumalinux is independent of headcrab (patch-only, validates itself via its
-  // hash check) → its update shows whenever available, regardless of the Steam
-  // pin. SLSsteam/CloudRedirect updates RIDE headcrab — re-running it would move
-  // the Steam build — so they're only offered when Steam is already at the pin.
+  // Component updates roll independently of the Steam build: applying one re-runs
+  // setup.sh (wrapper model), which is Steam-build-agnostic, so each is offered
+  // whenever a newer version exists — no per-build gate. The one guard is the
+  // abnormal state: while Steam has broken the hooks (any component not_supported)
+  // the whole block is skipped (the downgrade row above owns that case), and
+  // updates resume once the stack hooks the build again.
   if (!anyUnsupported) {
     // Steam sits BEHIND Headcrab's pin (the pin was bumped forward) and lumalinux
     // is confirmed ready for the new target — offer to move Steam up to the pin as
     // a normal update (info, not a problem). Requires lumalinux_ready === true, not
     // just "not false": pushing a WORKING user up to a build lumalinux can't hook
     // yet would regress them, so only nudge when support is positively published.
-    // The button reuses the downgrade hand-off — headcrab.sh applies the pinned
-    // Steam build in either direction, so aligning UP is the same machinery.
+    // Aligning UP is NOT the downgrade: it hands off to quick_install (setup.sh),
+    // which LIFTS the pin (steam_freeze.maybe_lift_freeze) so Steam self-updates
+    // up to the now-supported build. Routing this to actions.downgrade would
+    // re-write the pin and freeze Steam on the OLD build forever — hence alignUp.
     const target = status.headcrab?.target;
     const current = status.headcrab?.current;
     const steamBehindPin = target != null && current != null && current < target;
@@ -219,25 +223,19 @@ function buildRows(
         key: "steam-update", severity: "info",
         label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),
         actionLabel: busy ? t("sysWorking") : t("sysSteamUpdateBtn"),
-        onAction: actions.downgrade,
+        onAction: actions.alignUp,
         confirmFirst: true,
       });
     }
 
-    // Suppress the lumalinux update offer only when the latest release POSITIVELY
-    // dropped support for the build the user is on (a re-derived pattern-set that
-    // no longer hooks it) — updating would break a working install. `false` only,
-    // never `null`: on unknown we still offer (fail-open, matching the backend's
-    // "don't hard-block on ambiguity"). This is the symmetric partner of the
-    // Steam-update gate: never cross to a lumalinux generation that can't hook the
-    // current Steam build.
-    const llSupportsCurrent = status.headcrab?.current_build_supported_by_latest;
-    const llUpdate = !!ll?.installed && !!ll.update?.available && llSupportsCurrent !== false;
-    // SLSsteam updates are NOT surfaced (choice B): it exposes no readable
-    // installed version, and it rides headcrab + is gated anyway. Of the
-    // headcrab bundle, only CloudRedirect has a checkable update here.
-    const crUpdate = compatible && !!cr?.installed && !!cr.update?.available;
-    if (llUpdate || crUpdate) {
+    // No per-build gate: an update just re-runs setup.sh, which handles any Steam
+    // build. The abnormal case (hooks broken → not_supported) is already excluded
+    // by the enclosing `if (!anyUnsupported)`, so here we only ask "is there a
+    // newer version of an installed component?".
+    const llUpdate = !!ll?.installed && !!ll.update?.available;
+    const crUpdate = !!cr?.installed && !!cr.update?.available;
+    const slsUpdate = !!sls?.installed && !!sls.update?.available;
+    if (llUpdate || crUpdate || slsUpdate) {
       rows.push({
         key: "update", severity: "info",
         label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),

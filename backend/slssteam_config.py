@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-from paths import get_slssteam_config_path
+from paths import get_slssteam_config_dir, get_slssteam_config_path
 
 try:
     import decky  # type: ignore
@@ -101,4 +101,18 @@ def config_exists() -> bool:
 
 
 def get_sls_version() -> Optional[str]:
-    return get_value("Version", None)
+    """The installed SLSsteam version — a build timestamp like '20260801163409'.
+
+    SLSsteam embeds its version only inside the compiled .so and writes nothing
+    readable to disk (its config.yaml has no version field), so setup.sh records
+    the release tag it pulled at install time into `.slssteam.version` beside the
+    config. None when that file is absent (a pre-this-feature install, or an
+    install where the tag couldn't be resolved) — the update check then reports
+    "no update", the safe default."""
+    path = os.path.join(get_slssteam_config_dir(), ".slssteam.version")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            version = fh.read().strip()
+        return version or None
+    except Exception:
+        return None
