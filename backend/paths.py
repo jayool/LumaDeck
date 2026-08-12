@@ -553,24 +553,20 @@ def _resolve_bin(name: str, fallbacks: tuple) -> str:
     return name
 
 
-def _systemctl_user_daemon_reload() -> tuple:
-    """Best-effort `systemctl --user daemon-reload` in the REAL user's session, so
-    systemd re-reads the freshly-written drop-in without a full reboot (a plain
-    Steam restart does NOT reload the --user manager; only this, a session switch,
-    or a reboot does). Decky runs us as root in Game Mode, so when euid==0 we cross
-    into the deck user's session; when already the real user, we still must inject
-    the session env (Decky's spawn env lacks XDG_RUNTIME_DIR/DBUS, so a bare
-    `systemctl --user` would fail).
+def _run_user_systemctl(args: list) -> tuple:
+    """Run `systemctl --user <args>` in the REAL user's session and return
+    (rc, out, err, via). rc is None on an exec error (with the reason in err).
 
-    root→user uses `runuser`, NOT `sudo`: in a systemd-service context sudo can
-    need a tty / a writable rootfs for its timestamp, whereas runuser needs
-    neither (both return 0 when tested by hand as root, so runuser is the safer
-    encoding). All binaries are resolved to absolute paths (see _resolve_bin)
-    because the service PATH is minimal.
-
-    Returns (ok, detail). `detail` (rc + stderr, or the exec error) is logged so a
-    failure is diagnosable instead of a silent False. Non-fatal either way: the
-    drop-in file still takes effect on the next Game Mode start / session reload."""
+    Handles the root→user crossing shared by the reload and the live-state query.
+    Decky's PluginLoader runs as ROOT in Game Mode, so when euid==0 we cross into
+    the deck user's session with `runuser` (NOT sudo: in a systemd-service context
+    sudo can need a tty / a writable rootfs for its timestamp, whereas runuser
+    needs neither — both returned 0 when tested by hand as root, so runuser is the
+    safer encoding). When already the real user we still inject the session env,
+    because Decky's spawn env lacks XDG_RUNTIME_DIR/DBUS and a bare
+    `systemctl --user` would fail. All binaries resolve to absolute paths because
+    the service PATH is minimal (that missing PATH is what silently broke the
+    first attempt: sudo/systemctl not found → FileNotFoundError → bare False)."""
     import subprocess
     uid = real_uid()
     runtime = f"/run/user/{uid}"
@@ -583,77 +579,119 @@ def _systemctl_user_daemon_reload() -> tuple:
     ]
     if os.geteuid() == 0 and uid != 0:
         runuser = _resolve_bin("runuser", ("/usr/sbin/runuser", "/sbin/runuser", "/usr/bin/runuser"))
-        argv = [runuser, "-u", real_user(), "--", env_bin, *session_env, systemctl, "--user", "daemon-reload"]
+        argv = [runuser, "-u", real_user(), "--", env_bin, *session_env, systemctl, "--user", *args]
     else:
-        argv = [env_bin, *session_env, systemctl, "--user", "daemon-reload"]
+        argv = [env_bin, *session_env, systemctl, "--user", *args]
+    via = os.path.basename(argv[0])
     try:
         r = subprocess.run(argv, timeout=20, capture_output=True, text=True)
-        detail = f"rc={r.returncode} via={os.path.basename(argv[0])}"
-        if r.returncode != 0:
-            detail += " err=" + ((r.stderr or r.stdout or "").strip()[:200] or "(no output)")
-        return r.returncode == 0, detail
+        return r.returncode, r.stdout or "", r.stderr or "", via
     except Exception as exc:
-        return False, f"exec_error={exc}"
+        return None, "", str(exc), via
+
+
+def _systemctl_user_daemon_reload() -> tuple:
+    """`systemctl --user daemon-reload` in the real user's session so systemd
+    re-reads the drop-in without a reboot (a plain Steam restart does NOT reload
+    the --user manager — only this, a session switch, or a reboot does). Returns
+    (ok, detail); detail is logged so a failure is diagnosable, never a silent
+    False."""
+    rc, out, err, via = _run_user_systemctl(["daemon-reload"])
+    ok = rc == 0
+    detail = f"rc={rc} via={via}"
+    if not ok:
+        detail += " err=" + ((err or out).strip()[:200] or "(no output)")
+    return ok, detail
+
+
+def _gm_dropin_loaded() -> object:
+    """Whether the LIVE steam-launcher.service already routes through our launcher,
+    per its LOADED ExecStart (not the on-disk file). Returns True / False, or None
+    when the query itself failed (unknown — don't treat as broken).
+
+    This is the load-bearing distinction the 0.7.1 self-heal missed: a drop-in can
+    be correct ON DISK yet inert because systemd never re-read it (0.7.1 wrote the
+    file but its daemon-reload failed). Checking the loaded unit — not just the
+    file — is what lets the heal recover that exact state."""
+    rc, out, err, via = _run_user_systemctl(["show", "steam-launcher.service", "-p", "ExecStart"])
+    if rc != 0:
+        return None
+    return _GM_DROPIN_LAUNCHER_MARK in out
 
 
 def heal_gamemode_dropin() -> dict:
-    """Self-heal the Game Mode systemd drop-in on plugin startup.
+    """Self-heal the Game Mode systemd drop-in on plugin startup, ensuring it is
+    both present on disk AND live in systemd.
 
     Repairs already-installed Decks whose steam-launcher.service drop-in was never
-    written or was lost. The historical bug: setup.sh ran from the LumaDeck Desktop
-    hand-off (an autostart konsole) before the user bus was up, so its
-    `have_user_systemd` guard skipped writing the drop-in entirely — Game Mode then
-    launched Steam un-injected and every component showed "Installed", never
-    "Active", while Desktop (which uses the .desktop/PATH path, not systemd) worked.
-    A Steam/SteamOS update wiping ~/.config/systemd has the same effect. This runs
-    as the deck user's session is reachable (Decky backend, Game Mode) and rewrites
-    the drop-in, exactly as setup.sh's install_gamemode_dropin would.
+    written, was lost, or was written-but-never-loaded. The historical bugs:
+    (1) setup.sh ran from the LumaDeck Desktop hand-off (an autostart konsole)
+    before the user bus was up, so its `have_user_systemd` guard skipped writing
+    the drop-in entirely; (2) a Steam/SteamOS update wiped ~/.config/systemd;
+    (3) the 0.7.1 self-heal wrote the file but its daemon-reload failed, leaving it
+    inert. In every case Game Mode launched Steam un-injected and every component
+    showed "Installed", never "Active", while Desktop (which uses the .desktop/PATH
+    path, not systemd) worked. Decky runs this backend with the deck user's session
+    reachable, so we rewrite the drop-in AND make systemd load it.
 
     HARD GUARD: only writes the drop-in when the launcher it points at
     (~/.local/share/SLSsteam/lumalinux-steam-launcher) actually exists. Pointing
     steam-launcher.service's ExecStart at a missing binary would break the Game
     Mode Steam launch outright — strictly worse than the un-injected state we heal.
 
-    Idempotent: no-ops when the drop-in already routes through our launcher, and
-    when lumalinux isn't installed (the launcher won't exist). Returns
-    {"healed": bool, "reason": str, "reloaded": bool, "reload_detail": str}.
+    Idempotent: no-ops when the drop-in is already loaded and routing through our
+    launcher, and when lumalinux isn't installed (the launcher won't exist).
+    Returns {"healed", "reason", "wrote", "loaded", "reloaded", "reload_detail"}.
     """
     home = _REAL_HOME
     launcher = os.path.join(home, _GM_LAUNCHER_REL)
     dropin = os.path.join(home, _GM_DROPIN_REL)
     dropin_dir = os.path.join(home, _GM_DROPIN_DIR_REL)
+    base = {"healed": False, "reason": None, "wrote": False,
+            "loaded": None, "reloaded": False, "reload_detail": "skipped"}
 
     # Guard: never write a drop-in whose ExecStart target is missing — that would
     # brick the Game Mode Steam launch. No launcher ⇒ setup.sh hasn't installed
     # the Game Mode path here (or lumalinux isn't installed) ⇒ nothing to heal.
     if not os.path.isfile(launcher):
-        return {"healed": False, "reason": "no_launcher", "reloaded": False}
+        return {**base, "reason": "no_launcher"}
 
-    # Already routed through us under the real-user home — nothing to do.
-    if _gm_dropin_routes_through_us(home):
-        return {"healed": False, "reason": "already_ok", "reloaded": False}
-
-    # Write the drop-in owned by the real user (Decky runs us as root; a
-    # root-owned file under the deck user's ~/.config/systemd is fragile). Same
-    # ownership discipline as desktop_handoff._write_as_deck.
-    try:
-        os.makedirs(dropin_dir, exist_ok=True)
-        with open(dropin, "w", encoding="utf-8") as fh:
-            fh.write(_GM_DROPIN_CONTENT)
-        os.chmod(dropin, 0o644)
+    # Step 1 — ensure the on-disk file is correct. Write only if missing/wrong, so
+    # a healthy Deck doesn't churn the file (and its ownership) every boot.
+    wrote = False
+    if not _gm_dropin_routes_through_us(home):
         try:
-            import pwd
-            pw = pwd.getpwnam(real_user())
-            os.chown(dropin_dir, pw.pw_uid, pw.pw_gid)
-            os.chown(dropin, pw.pw_uid, pw.pw_gid)
-        except Exception:
-            pass
-    except Exception as exc:
-        return {"healed": False, "reason": f"write_failed: {exc}", "reloaded": False}
+            os.makedirs(dropin_dir, exist_ok=True)
+            with open(dropin, "w", encoding="utf-8") as fh:
+                fh.write(_GM_DROPIN_CONTENT)
+            os.chmod(dropin, 0o644)
+            try:
+                import pwd
+                pw = pwd.getpwnam(real_user())
+                os.chown(dropin_dir, pw.pw_uid, pw.pw_gid)
+                os.chown(dropin, pw.pw_uid, pw.pw_gid)
+            except Exception:
+                pass
+            wrote = True
+        except Exception as exc:
+            return {**base, "reason": f"write_failed: {exc}"}
 
-    reloaded, reload_detail = _systemctl_user_daemon_reload()
-    return {"healed": True, "reason": "written", "reloaded": reloaded,
-            "reload_detail": reload_detail}
+    # Step 2 — ensure it is LOADED, not merely present. A correct file that systemd
+    # never re-read (the 0.7.1 state) still launches Steam vanilla, so query the
+    # live unit and reload when it isn't routing through us yet. If we just wrote
+    # the file, or the query is inconclusive (None), reload anyway — daemon-reload
+    # is idempotent and cheap, so erring toward it is safe.
+    loaded = _gm_dropin_loaded()
+    if wrote or loaded is not True:
+        reloaded, reload_detail = _systemctl_user_daemon_reload()
+        reason = ("written" if wrote
+                  else "reloaded_inert_dropin" if loaded is False
+                  else "reloaded_unverified")
+        return {"healed": True, "reason": reason, "wrote": wrote,
+                "loaded": loaded, "reloaded": reloaded, "reload_detail": reload_detail}
+
+    # File correct AND already loaded — genuinely nothing to do.
+    return {**base, "reason": "already_active", "loaded": True}
 
 
 def _wrapper_coverage_present() -> bool:
