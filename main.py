@@ -85,7 +85,8 @@ class Plugin:
                 if heal.get("healed"):
                     logger.info(
                         "LumaDeck: Game Mode drop-in was missing — wrote it "
-                        f"(daemon-reload={heal.get('reloaded')}). Steam restart required."
+                        f"(daemon-reload={heal.get('reloaded')} [{heal.get('reload_detail')}])."
+                        " Steam restart required."
                     )
                 else:
                     logger.info(f"LumaDeck: Game Mode drop-in check: {heal.get('reason')}")

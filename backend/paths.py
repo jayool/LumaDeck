@@ -536,31 +536,64 @@ def _gm_dropin_routes_through_us(home: str) -> bool:
         return False
 
 
-def _systemctl_user_daemon_reload() -> bool:
+def _resolve_bin(name: str, fallbacks: tuple) -> str:
+    """Resolve an executable by name, then by absolute-path fallbacks. Decky's
+    system service runs with a MINIMAL PATH, so shutil.which() alone can miss
+    /usr/bin or /usr/sbin binaries — the exact reason the first daemon-reload
+    attempt failed silently (sudo/systemctl not found → FileNotFoundError →
+    swallowed as a bare False). Returns `name` as a last resort so the failure is
+    at least logged rather than hidden."""
+    import shutil
+    found = shutil.which(name)
+    if found:
+        return found
+    for cand in fallbacks:
+        if os.path.exists(cand):
+            return cand
+    return name
+
+
+def _systemctl_user_daemon_reload() -> tuple:
     """Best-effort `systemctl --user daemon-reload` in the REAL user's session, so
-    systemd re-reads the freshly-written drop-in without a full reboot. Decky runs
-    us as root in Game Mode, so when euid==0 we cross into the deck user's bus
-    (mirroring installer.install_via_setup); when already the real user, run it
-    directly. Returns True only on a clean exit — a failure is non-fatal: the
-    drop-in file still takes effect on the next Game Mode start."""
+    systemd re-reads the freshly-written drop-in without a full reboot (a plain
+    Steam restart does NOT reload the --user manager; only this, a session switch,
+    or a reboot does). Decky runs us as root in Game Mode, so when euid==0 we cross
+    into the deck user's session; when already the real user, we still must inject
+    the session env (Decky's spawn env lacks XDG_RUNTIME_DIR/DBUS, so a bare
+    `systemctl --user` would fail).
+
+    root→user uses `runuser`, NOT `sudo`: in a systemd-service context sudo can
+    need a tty / a writable rootfs for its timestamp, whereas runuser needs
+    neither (both return 0 when tested by hand as root, so runuser is the safer
+    encoding). All binaries are resolved to absolute paths (see _resolve_bin)
+    because the service PATH is minimal.
+
+    Returns (ok, detail). `detail` (rc + stderr, or the exec error) is logged so a
+    failure is diagnosable instead of a silent False. Non-fatal either way: the
+    drop-in file still takes effect on the next Game Mode start / session reload."""
     import subprocess
+    uid = real_uid()
+    runtime = f"/run/user/{uid}"
+    env_bin = _resolve_bin("env", ("/usr/bin/env", "/bin/env"))
+    systemctl = _resolve_bin("systemctl", ("/usr/bin/systemctl", "/bin/systemctl"))
+    session_env = [
+        f"HOME={real_home()}",
+        f"XDG_RUNTIME_DIR={runtime}",
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
+    ]
+    if os.geteuid() == 0 and uid != 0:
+        runuser = _resolve_bin("runuser", ("/usr/sbin/runuser", "/sbin/runuser", "/usr/bin/runuser"))
+        argv = [runuser, "-u", real_user(), "--", env_bin, *session_env, systemctl, "--user", "daemon-reload"]
+    else:
+        argv = [env_bin, *session_env, systemctl, "--user", "daemon-reload"]
     try:
-        if os.geteuid() == 0 and real_uid() != 0:
-            runtime = f"/run/user/{real_uid()}"
-            argv = [
-                "sudo", "-u", real_user(), "env",
-                f"HOME={real_home()}",
-                f"XDG_RUNTIME_DIR={runtime}",
-                f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
-                "systemctl", "--user", "daemon-reload",
-            ]
-        else:
-            argv = ["systemctl", "--user", "daemon-reload"]
-        return subprocess.run(argv, timeout=15,
-                              stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL).returncode == 0
-    except Exception:
-        return False
+        r = subprocess.run(argv, timeout=20, capture_output=True, text=True)
+        detail = f"rc={r.returncode} via={os.path.basename(argv[0])}"
+        if r.returncode != 0:
+            detail += " err=" + ((r.stderr or r.stdout or "").strip()[:200] or "(no output)")
+        return r.returncode == 0, detail
+    except Exception as exc:
+        return False, f"exec_error={exc}"
 
 
 def heal_gamemode_dropin() -> dict:
@@ -583,7 +616,7 @@ def heal_gamemode_dropin() -> dict:
 
     Idempotent: no-ops when the drop-in already routes through our launcher, and
     when lumalinux isn't installed (the launcher won't exist). Returns
-    {"healed": bool, "reason": str, "reloaded": bool}.
+    {"healed": bool, "reason": str, "reloaded": bool, "reload_detail": str}.
     """
     home = _REAL_HOME
     launcher = os.path.join(home, _GM_LAUNCHER_REL)
@@ -618,8 +651,9 @@ def heal_gamemode_dropin() -> dict:
     except Exception as exc:
         return {"healed": False, "reason": f"write_failed: {exc}", "reloaded": False}
 
-    reloaded = _systemctl_user_daemon_reload()
-    return {"healed": True, "reason": "written", "reloaded": reloaded}
+    reloaded, reload_detail = _systemctl_user_daemon_reload()
+    return {"healed": True, "reason": "written", "reloaded": reloaded,
+            "reload_detail": reload_detail}
 
 
 def _wrapper_coverage_present() -> bool:
