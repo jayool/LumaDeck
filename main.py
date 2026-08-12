@@ -72,6 +72,26 @@ class Plugin:
             except Exception as exc:
                 logger.warning(f"LumaDeck: SLSsteam injection check failed: {exc}")
 
+            # Self-heal the Game Mode systemd drop-in. Decky runs this backend
+            # with the deck user's session reachable, so we can write the
+            # steam-launcher.service drop-in that a Desktop-hand-off setup.sh run
+            # may have skipped (no user bus when it ran) — the regression where
+            # Game Mode launched Steam un-injected and every component showed
+            # "Installed" not "Active" while Desktop worked. Guarded on the
+            # launcher existing (never points ExecStart at a missing binary).
+            try:
+                from paths import heal_gamemode_dropin
+                heal = heal_gamemode_dropin()
+                if heal.get("healed"):
+                    logger.info(
+                        "LumaDeck: Game Mode drop-in was missing — wrote it "
+                        f"(daemon-reload={heal.get('reloaded')}). Steam restart required."
+                    )
+                else:
+                    logger.info(f"LumaDeck: Game Mode drop-in check: {heal.get('reason')}")
+            except Exception as exc:
+                logger.warning(f"LumaDeck: Game Mode drop-in self-heal failed: {exc}")
+
             summary = get_platform_summary()
             logger.info(f"LumaDeck: Platform summary: {json.dumps(summary)}")
 

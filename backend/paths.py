@@ -453,7 +453,21 @@ def read_lumalinux_hook(name: str) -> Optional[str]:
 _WRAPPER_REL = ".local/share/SLSsteam/path/steam"
 _WRAPPER_DESKTOP_TAG = "X-LumaLinux-Wrapped=1"
 _GM_DROPIN_REL = ".config/systemd/user/steam-launcher.service.d/lumalinux.conf"
+_GM_DROPIN_DIR_REL = ".config/systemd/user/steam-launcher.service.d"
+_GM_LAUNCHER_REL = ".local/share/SLSsteam/lumalinux-steam-launcher"
 _WRAPPER_DESKTOP_DIRS_REL = (".local/share/applications", ".config/autostart")
+
+# Byte-identical to setup.sh's install_gamemode_dropin heredoc. `%h` is systemd's
+# user-home specifier, so the file is home-agnostic (setup.sh writes the same).
+_GM_DROPIN_CONTENT = (
+    "# lumalinux Game Mode injection (managed by setup.sh — safe to delete)\n"
+    "[Service]\n"
+    "ExecStart=\n"
+    "ExecStart=%h/.local/share/SLSsteam/lumalinux-steam-launcher\n"
+)
+# A present-but-healthy drop-in must route through OUR launcher. Anything else
+# (missing file, or a file that doesn't name the launcher) is a broken state.
+_GM_DROPIN_LAUNCHER_MARK = "lumalinux-steam-launcher"
 
 
 def _wrapper_homes() -> tuple:
@@ -499,6 +513,113 @@ def _wrapper_gamemode_coverage() -> bool:
     """True if the Game Mode systemd drop-in is installed — i.e. a Game Mode
     launch (steam-launcher.service) routes through the wrapper."""
     return any(os.path.isfile(os.path.join(h, _GM_DROPIN_REL)) for h in _wrapper_homes())
+
+
+def _gm_launcher_present() -> bool:
+    """True if setup.sh's Game Mode launcher
+    (~/.local/share/SLSsteam/lumalinux-steam-launcher) — the drop-in's ExecStart
+    target — is on disk under any home setup.sh may have written to."""
+    return any(os.path.isfile(os.path.join(h, _GM_LAUNCHER_REL)) for h in _wrapper_homes())
+
+
+def _gm_dropin_routes_through_us(home: str) -> bool:
+    """True if the drop-in under `home` exists AND names our launcher. A missing
+    file, or one that doesn't route through the launcher, is a broken state."""
+    try:
+        with open(os.path.join(home, _GM_DROPIN_REL), "r",
+                  encoding="utf-8", errors="replace") as fh:
+            return _GM_DROPIN_LAUNCHER_MARK in fh.read()
+    except FileNotFoundError:
+        return False
+    except Exception:
+        # Unreadable — treat as broken so the heal rewrites it.
+        return False
+
+
+def _systemctl_user_daemon_reload() -> bool:
+    """Best-effort `systemctl --user daemon-reload` in the REAL user's session, so
+    systemd re-reads the freshly-written drop-in without a full reboot. Decky runs
+    us as root in Game Mode, so when euid==0 we cross into the deck user's bus
+    (mirroring installer.install_via_setup); when already the real user, run it
+    directly. Returns True only on a clean exit — a failure is non-fatal: the
+    drop-in file still takes effect on the next Game Mode start."""
+    import subprocess
+    try:
+        if os.geteuid() == 0 and real_uid() != 0:
+            runtime = f"/run/user/{real_uid()}"
+            argv = [
+                "sudo", "-u", real_user(), "env",
+                f"HOME={real_home()}",
+                f"XDG_RUNTIME_DIR={runtime}",
+                f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
+                "systemctl", "--user", "daemon-reload",
+            ]
+        else:
+            argv = ["systemctl", "--user", "daemon-reload"]
+        return subprocess.run(argv, timeout=15,
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except Exception:
+        return False
+
+
+def heal_gamemode_dropin() -> dict:
+    """Self-heal the Game Mode systemd drop-in on plugin startup.
+
+    Repairs already-installed Decks whose steam-launcher.service drop-in was never
+    written or was lost. The historical bug: setup.sh ran from the LumaDeck Desktop
+    hand-off (an autostart konsole) before the user bus was up, so its
+    `have_user_systemd` guard skipped writing the drop-in entirely — Game Mode then
+    launched Steam un-injected and every component showed "Installed", never
+    "Active", while Desktop (which uses the .desktop/PATH path, not systemd) worked.
+    A Steam/SteamOS update wiping ~/.config/systemd has the same effect. This runs
+    as the deck user's session is reachable (Decky backend, Game Mode) and rewrites
+    the drop-in, exactly as setup.sh's install_gamemode_dropin would.
+
+    HARD GUARD: only writes the drop-in when the launcher it points at
+    (~/.local/share/SLSsteam/lumalinux-steam-launcher) actually exists. Pointing
+    steam-launcher.service's ExecStart at a missing binary would break the Game
+    Mode Steam launch outright — strictly worse than the un-injected state we heal.
+
+    Idempotent: no-ops when the drop-in already routes through our launcher, and
+    when lumalinux isn't installed (the launcher won't exist). Returns
+    {"healed": bool, "reason": str, "reloaded": bool}.
+    """
+    home = _REAL_HOME
+    launcher = os.path.join(home, _GM_LAUNCHER_REL)
+    dropin = os.path.join(home, _GM_DROPIN_REL)
+    dropin_dir = os.path.join(home, _GM_DROPIN_DIR_REL)
+
+    # Guard: never write a drop-in whose ExecStart target is missing — that would
+    # brick the Game Mode Steam launch. No launcher ⇒ setup.sh hasn't installed
+    # the Game Mode path here (or lumalinux isn't installed) ⇒ nothing to heal.
+    if not os.path.isfile(launcher):
+        return {"healed": False, "reason": "no_launcher", "reloaded": False}
+
+    # Already routed through us under the real-user home — nothing to do.
+    if _gm_dropin_routes_through_us(home):
+        return {"healed": False, "reason": "already_ok", "reloaded": False}
+
+    # Write the drop-in owned by the real user (Decky runs us as root; a
+    # root-owned file under the deck user's ~/.config/systemd is fragile). Same
+    # ownership discipline as desktop_handoff._write_as_deck.
+    try:
+        os.makedirs(dropin_dir, exist_ok=True)
+        with open(dropin, "w", encoding="utf-8") as fh:
+            fh.write(_GM_DROPIN_CONTENT)
+        os.chmod(dropin, 0o644)
+        try:
+            import pwd
+            pw = pwd.getpwnam(real_user())
+            os.chown(dropin_dir, pw.pw_uid, pw.pw_gid)
+            os.chown(dropin, pw.pw_uid, pw.pw_gid)
+        except Exception:
+            pass
+    except Exception as exc:
+        return {"healed": False, "reason": f"write_failed: {exc}", "reloaded": False}
+
+    reloaded = _systemctl_user_daemon_reload()
+    return {"healed": True, "reason": "written", "reloaded": reloaded}
 
 
 def _wrapper_coverage_present() -> bool:
