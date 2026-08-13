@@ -37,6 +37,15 @@ shows as `not_injected`. Fix: **Settings ▸ Components ▸ Install / Reinstall
 Components** — it re-runs `setup.sh`, which rewrites the wrapper and re-affirms
 coverage, then restarts. (`steam.sh` is left vanilla; nothing patches it.)
 
+### Components show *Installed* but never *Active* in Game Mode (Desktop works)
+The Game Mode systemd drop-in (`steam-launcher.service.d/lumalinux.conf`) that routes
+Game Mode through the injection wrapper went missing or wasn't loaded, so Game Mode
+launches Steam un-injected — even though Desktop (which uses the `.desktop`/PATH path)
+works. LumaDeck **self-heals** this on every plugin load: it rewrites the drop-in and
+`daemon-reload`s it (as the `deck` user). So **update/reload LumaDeck, then restart
+Steam once** and the components go Active. If it persists, run **Settings ▸ Components
+▸ Install / Reinstall Components** (re-runs `setup.sh`).
+
 ### Manifest fetch fails
 - Check your credentials in **Settings ▸ API Credentials** — an expired/invalid
   key or cookie is the usual cause ([Credentials](credentials.md)).

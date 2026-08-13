@@ -72,6 +72,12 @@ CloudRedirect adds two of its own:
 > `steam-launcher.service` drop-in) can be regenerated, so a launch stops routing
 > through the wrapper (the deployed `.so` survives). That surfaces as `not_injected`.
 > **Reinstall Components** re-runs `setup.sh` to restore coverage and restarts.
+>
+> LumaDeck also **self-heals** the Game Mode drop-in specifically: on every plugin
+> load it rewrites `steam-launcher.service.d/lumalinux.conf` if it went missing or
+> inert and `daemon-reload`s it — so a Game-Mode-only loss (components *Installed*,
+> never *Active*, while Desktop works) recovers on the next Steam restart without a
+> manual reinstall.
 
 ## What the QAM shows
 

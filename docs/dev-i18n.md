@@ -25,8 +25,8 @@ const strings: Record<Lang, Record<string, string>> = {
   t("pluginInstalled", version)   // "Installed: {0}"  -> "Installed: 1.2.3"
   ```
 - The active language is detected from the Steam/browser locale (anything
-  starting with `pt` → `pt-BR`, else `en`) and can be overridden in
-  **Settings ▸ System**. `useT` re-renders components on change.
+  starting with `pt` → `pt-BR`, else `en`) and can be overridden in the
+  **Language / Idioma** section of **Settings**. `useT` re-renders components on change.
 
 ## Adding a string
 
@@ -34,8 +34,9 @@ const strings: Record<Lang, Record<string, string>> = {
    Keep them next to related keys so the file stays navigable.
 2. Use it via `t("yourKey")` (with positional args if it has `{0}`…).
 
-> Add to **every** locale. A missing key falls back to the key name, which ships
-> as visible junk text.
+> Add to **every** locale — or at least `en`. A missing non-English key falls back
+> to the **English** string; a key missing from `en` too falls back to the raw key
+> name (visible junk text).
 
 ## Adding a language
 

@@ -81,10 +81,13 @@ Principles are **derived** from these entries as patterns emerge (see
 
 ### 2. Quick Install (onboarding) — *conditional* — ✅ verified
 
-- **What:** the first-run setup entry. Renders **only** when SLSsteam **and**
-  CloudRedirect **and** lumalinux are all `not_installed` and headcrab is
-  compatible — i.e. a fresh, unconfigured install. It self-hides the moment any
-  component is installed (repair/reinstall then lives in Settings).
+- **What:** the first-run setup entry. Renders when SLSsteam **and**
+  CloudRedirect **and** lumalinux are all `not_installed` — i.e. a fresh,
+  unconfigured install. (Since v0.3.61 it **no longer** also requires
+  `headcrab.compatible`; Quick Install is the action that *makes* you compatible,
+  so gating it on compatibility was backwards — see "Off-pin onboarding" below.)
+  It self-hides the moment any component is installed (repair/reinstall then
+  lives in Settings).
 - **How shown:** `PanelSection title` (i18n) with three rows: an intro text
   `<div>`, a `ButtonItem` (two-click confirm), and a progress text `<div>`
   shown while installing.
