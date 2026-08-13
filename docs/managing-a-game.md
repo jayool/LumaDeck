@@ -101,8 +101,9 @@ prerequisite is the .NET 9 runtime, installed on demand on first use.
 
 ## Achievements
 
-**Generate Achievements** creates achievement files for the game via SLScheevo.
-See [Achievements](achievements.md) for setup and the bulk "sync all" option.
+Achievements work **natively** for games LumaDeck adds — SLSsteam handles them, so
+there's no per-game step here. (The old **Generate Achievements** generator is hidden
+behind a flag; see [Achievements](achievements.md).)
 
 ## Advanced options
 

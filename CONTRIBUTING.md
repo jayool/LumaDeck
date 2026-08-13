@@ -1,4 +1,4 @@
-# Contributing to DeckTools
+# Contributing to LumaDeck
 
 Contributions are welcome! Bug fixes, new features, translations, documentation improvements — all appreciated.
 
@@ -40,7 +40,7 @@ Edit `deploy.sh` with your Deck's IP, then:
 bash deploy.sh
 ```
 
-This copies the plugin to `/home/deck/homebrew/plugins/DeckTools/` and restarts Decky Loader.
+This copies the plugin to `/home/deck/homebrew/plugins/LumaDeck/` and restarts Decky Loader.
 
 ---
 
@@ -48,15 +48,17 @@ This copies the plugin to `/home/deck/homebrew/plugins/DeckTools/` and restarts 
 
 ```
 backend/          Python (async) — all plugin logic
-  paths.py        Steam/SLSsteam path detection and injection
+  paths.py        Steam/SLSsteam path & identity detection, wrapper coverage
   downloads.py    Manifest download, depot handling, ACF repair
   slssteam_ops.py SLSsteam configuration (tokens, DLCs, FakeAppId)
-  installer.py    Dependency installer (headcrab: SLSsteam + CloudRedirect)
+  installer.py    Runs lumalinux setup.sh (wrapper model): SLSsteam + CR + lumalinux + .NET
+  desktop_handoff.py  Desktop hand-off (Steam downgrade / re-inject)
+  components.py   Per-component health + update status (Components panel)
   steam_utils.py  VDF parser, library detection, game path resolution
   fixes.py        Community fix download/apply/remove
-  workshop.py     Workshop content downloads
   api_manifest.py API manifest management
   utils.py        File I/O helpers
+  ...             (full list in docs/dev-backend-reference.md)
 
 src/              TypeScript + React — Decky frontend
   pages/
@@ -80,7 +82,7 @@ main.py           Plugin entry point — exposes async methods to frontend
 
 ## Submitting a PR
 
-1. Fork the repo and create a branch from `master`
+1. Fork the repo and create a branch from `main`
 2. Make your changes
 3. Test on a real Deck or Bazzite
 4. Open a Pull Request referencing the related Issue

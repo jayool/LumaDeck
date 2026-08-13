@@ -57,19 +57,18 @@ LumaDeck/
 │   ├── slssteam_config.py           # config.yaml read/write (flat keys)
 │   ├── slssteam_ops.py              # AdditionalApps / tokens / DLC entries /
 │   │                                # uninstall_game_full / Headcrab repair
-│   ├── achievements.py              # SLScheevo integration
+│   ├── achievements.py              # Achievement schema via Steam Web API
+│   │                                # (UI hidden; SLSsteam does it natively)
 │   ├── fixes.py                     # Community fixes (online-fix etc.)
 │   ├── goldberg.py                  # Goldberg emulator toggle (uses the
 │   │                                # bundled backend/deps/Goldberg DLLs)
 │   ├── steamless.py                 # Steam DRM remover (runs the bundled
 │   │                                # backend/deps/Steamless .NET CLI)
-│   ├── workshop.py                  # Workshop downloader via DDM (its own
-│   │                                # self-contained binary lookup)
 │   ├── paths.py                     # Steam/SLSsteam/ACCELA/lumalinux/
-│   │                                # CloudRedirect path detection; SLSsteam
-│   │                                # auto-injection via /usr/bin/steam
-│   ├── installer.py                 # check_dependencies + headcrab
-│   │                                # bootstrap (SLSsteam + CloudRedirect)
+│   │                                # CloudRedirect path detection; wrapper
+│   │                                # coverage + Game Mode drop-in self-heal
+│   ├── installer.py                 # runs lumalinux setup.sh (wrapper model):
+│   │                                # SLSsteam + CloudRedirect + lumalinux + .NET
 │   ├── http_client.py               # urllib-backed async client (no httpx
 │   │                                # runtime dep)
 │   ├── utils.py                     # File / JSON helpers
@@ -193,9 +192,7 @@ The legacy DDL pipeline (DepotDownloaderMod extraction/execution, `.acf`
 writing, and the Bifrost launcher-path config) has been **removed** from
 `downloads.py` — it was unreachable from the Steam-native flow. The two
 helpers that `slssteam_ops` still reuses (`_fetch_installdir_from_api`
-and `_parse_lua_depots`) were kept as live utilities. The Workshop
-downloader (`workshop.py`) is a separate, self-contained use of
-DepotDownloaderMod and is unaffected.
+and `_parse_lua_depots`) were kept as live utilities.
 
 ### 4. Progress Tracking
 
@@ -250,9 +247,8 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 - Access token management in SLSsteam `config.yaml`.
 - DLC management (Steam Web API → DlcData in SLSsteam).
 - Community fixes (online-fix etc.) applied directly to the install dir.
-- Workshop downloader via DepotDownloaderMod (kept; the user supplies
-  the binary path in Settings or copies it into `backend/`).
-- SLScheevo achievements generation.
+- Achievements: schema generation via the Steam Web API (code present but
+  UI hidden — SLSsteam handles achievements natively).
 - Steamless DRM remover.
 - Goldberg emulator toggle.
 - Full game removal (uninstall_game_full): folder, ACF, depot manifests,
@@ -268,12 +264,15 @@ which detects the stuck `.acf` directly rather than diffing manifests.
   Bearer header at request time so it never lands in logs.
 - Language switcher (EN / PT-BR) with `lumadeck_lang` localStorage key.
 - Auto-detection of SLSsteam, lumalinux, CloudRedirect, ACCELA,
-  SLScheevo, .NET runtime, dotnet path. Reported in
-  Settings → Dependencies.
-- Auto-injection of SLSsteam into `/usr/bin/steam` (Steam Deck
-  read-only rootfs handled with `steamos-readonly disable/enable`).
-- Headcrab repair flow for when SLSsteam's hash check rejects an
-  updated `steamclient.so`.
+  .NET runtime, dotnet path. Reported in Settings → Dependencies.
+- Injection via lumalinux's launch **wrapper**
+  (`~/.local/share/SLSsteam/path/steam`), reached by patched `.desktop`
+  (Desktop), a PATH drop-in (terminals) and a systemd drop-in on
+  `steam-launcher.service` (Game Mode). `steam.sh` / `/usr/bin/steam`
+  stay vanilla.
+- Break-recovery downgrade (`downgrade.sh`, Desktop-only) for when a
+  Steam update outpaces the hooks; then `setup.sh` re-establishes the
+  wrapper.
 
 ## Key Paths (Linux / SteamOS)
 
@@ -291,12 +290,14 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 | CloudRedirect library    | `~/.local/share/CloudRedirect/cloud_redirect.so`                     |
 | ACCELA root              | `~/.local/share/ACCELA/`                                             |
 | ACCELA `.depot` tracker  | `~/.local/share/ACCELA/depots/<appid>.depot`                         |
-| SLScheevo binary         | `~/.local/share/SLScheevo/SLScheevo/SLScheevo`                       |
+| Injection wrapper        | `~/.local/share/SLSsteam/path/steam`                                |
+| Game Mode launcher       | `~/.local/share/SLSsteam/lumalinux-steam-launcher`                  |
+| Game Mode drop-in        | `~/.config/systemd/user/steam-launcher.service.d/lumalinux.conf`    |
 | Ryuu cookie              | `{plugin_dir}/backend/data/ryuu_cookie.txt`                          |
 | Free API manifest        | `{plugin_dir}/backend/data/api.json`                                 |
 | Plugin's own depot cache | `{plugin_dir}/backend/data/depots/<appid>.json` (TODO: migrate to    |
 |                          | reading the ACCELA `.depot` directly)                                |
-| Steam launcher target    | `/usr/bin/steam`                                                     |
+| Real Steam (left vanilla)| `/usr/bin/steam` · `steam.sh` (not patched)                         |
 
 ## UI Design
 
@@ -311,25 +312,26 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 
 - AppID, manifest status, install path.
 - Actions: Download / Update, manage DLCs / FakeAppId / token, fixes,
-  Goldberg, Steamless, achievements, Workshop, Repair ACF, full
-  uninstall.
+  Goldberg, Steamless, Repair ACF, full uninstall.
 
 ### Settings
 
 - API credentials (Ryuu cookie + Hubcap API key, masked input).
-- SLSsteam toggles (PlayNotOwnedGames + verify injection +
-  Headcrab repair when needed) + manual Restart Steam.
+- SLSsteam toggles (PlayNotOwnedGames + verify injection) + manual
+  Restart Steam.
 - Dependency status: SLSsteam, CloudRedirect, .NET, lumalinux
   (CloudRedirect + lumalinux added when the plugin was forked).
-- Reinstall dependencies via headcrab (covers SLSsteam + CloudRedirect
-  + .NET in one run; lumalinux is installed as Quick Install's second step).
+- Reinstall components via lumalinux `setup.sh` — one wrapper-model run
+  installs SLSsteam + CloudRedirect + netsock + lumalinux + .NET.
 - Language switcher (EN / PT-BR).
 
 ## Assumptions
 
 - The Deck runs SLSsteam + lumalinux (and ideally CloudRedirect).
-- `/usr/bin/steam` is the canonical Steam launcher (so SLSsteam +
-  lumalinux + CloudRedirect can be added via LD_AUDIT + LD_PRELOAD).
+- Steam is launched through lumalinux's wrapper
+  (`~/.local/share/SLSsteam/path/steam`), which exports LD_AUDIT (SLSsteam)
+  + LD_PRELOAD (CloudRedirect + lumalinux) and execs the real Steam;
+  `steam.sh` / `/usr/bin/steam` stay vanilla.
 - `steamidra_lite.py` lives under `~/.local/share/lumalinux/tools/`
   alongside `liblumalinux.so`.
 - SteamOS' system `python3` is enough — the script does its own VDF
@@ -339,8 +341,7 @@ which detects the stuck `.acf` directly rather than diffing manifests.
   kept current.
 - Steamless and Goldberg binaries ship bundled inside the plugin
   (`backend/deps/Steamless`, `backend/deps/Goldberg`); only .NET 9 is
-  fetched on demand. The Workshop feature still needs a
-  DepotDownloaderMod binary the user supplies.
+  fetched on demand.
 
 ## Decision Log
 
@@ -349,7 +350,7 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 | 1   | Flow: buy in store → list in plugin → install                             | Manual AppID; external list                        | Natural UX, integrates with SLSsteam (inherited from DeckTools)        |
 | 2   | Advanced options (depot, manifest, fixes)                                 | Simple install-only button                         | Feature parity with LuaToolsLinux (inherited from DeckTools)           |
 | 3   | Same API matrix as upstream (Hubcap, Ryuu, Sushi, Spinoza)                | Hubcap only; custom API                            | Already proven, dropping any of them shrinks the catalog               |
-| 4   | Auto-install SLSsteam + CloudRedirect + .NET via headcrab                 | Require pre-install                                | One headcrab run installs SLSsteam + CloudRedirect + the Steam downgrade; .NET via dotnet.py; lumalinux runs as Quick Install's second step |
+| 4   | Auto-install the whole stack via lumalinux `setup.sh` (wrapper model)     | Require pre-install; headcrab               | One idempotent `setup.sh` run installs SLSsteam + CloudRedirect + netsock + lumalinux + .NET and writes the injection wrapper — no headcrab, no `steam.sh` patch, no per-step ordering |
 | 5   | Hierarchical menu (list → detail)                                         | Single screen; tabs                                | Best use of QAM space                                                  |
 | 6   | **Steam native install via lumalinux hooks** instead of DDL               | Keep DDL; offer both as a toggle                   | Disk layout identical to a normal install; updates handled by Steam; progress shown in Steam library |
 | 7   | Port DeckTools' backend instead of writing the plugin from scratch        | Rewrite; shell wrapper                             | DeckTools' frontend / SLSsteam ops / fixes / achievements are exactly what we want; only the download engine needed changing |

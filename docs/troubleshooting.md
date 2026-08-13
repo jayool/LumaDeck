@@ -30,9 +30,12 @@ Some installs/repairs need a real desktop session. The panel shows the exact
 command — switch to **Desktop mode**, run it, then return to Game Mode.
 
 ### After a SteamOS / Steam client update
-Headcrab regenerates `steam.sh` and erases lumalinux's `LD_PRELOAD` block (the
-deployed `.so` and `keys.txt` survive). This shows as `not_injected`. Fix:
-**Settings ▸ Components ▸ Repair** (re-injects `steam.sh`, then restarts).
+A Steam self-update can regenerate its launcher `.desktop` (or a DE change drops the
+Game Mode `steam-launcher.service` drop-in), so a launch no longer routes through
+lumalinux's injection **wrapper** (the deployed `.so` and `keys.txt` survive). This
+shows as `not_injected`. Fix: **Settings ▸ Components ▸ Install / Reinstall
+Components** — it re-runs `setup.sh`, which rewrites the wrapper and re-affirms
+coverage, then restarts. (`steam.sh` is left vanilla; nothing patches it.)
 
 ### Manifest fetch fails
 - Check your credentials in **Settings ▸ API Credentials** — an expired/invalid

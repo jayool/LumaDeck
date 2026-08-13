@@ -75,7 +75,7 @@ DeckTools downloads game files via **DepotDownloaderMod** (a .NET CLI) running o
 | External dependencies      | .NET 9 runtime, ACCELA       | lumalinux artifact, SLSsteam  |
 | Sensitive to Steam updates | No (DDL is independent)      | Yes (hooks may need new patterns) |
 
-Everything else (SLSsteam config management, Goldberg, SLScheevo achievements, community fixes, Workshop, auto-detect AppID, search) is **kept from DeckTools** and continues to work the same way.
+Everything else (SLSsteam config management, Goldberg, community fixes, auto-detect AppID, search) is **kept from DeckTools** and continues to work the same way. (Achievements are now handled natively by SLSsteam; the old generator UI is hidden behind a flag.)
 
 ## Why fork instead of contributing to DeckTools
 

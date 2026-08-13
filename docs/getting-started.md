@@ -26,23 +26,18 @@ correct order in a single tap — the recommended path for a fresh setup. (It on
 appears while none of the components are installed; once any is present it's
 replaced by the individual controls in Settings.)
 
-To install them **individually** (or to reinstall later), open
-**Settings ▸ Components** and run them **in this order**:
+To reinstall later (or repair a single component), open **Settings ▸ Components**.
+**Install / Reinstall Components** runs lumalinux's
+[`setup.sh`](https://github.com/jayool/lumalinux/blob/main/setup.sh) — one idempotent
+pass that installs the whole stack (**SLSsteam + CloudRedirect + netsock + lumalinux**
+plus the **.NET 9 runtime**), applies SLSsteam's config flags, and wires injection
+through a **launch wrapper**: patched `.desktop` files for Desktop, a PATH drop-in for
+terminals, and a systemd drop-in on `steam-launcher.service` for Game Mode. Your
+`steam.sh` stays **vanilla**, so there's no install order to get right and nothing to
+reapply "last" — every component maps to that same single `setup.sh` run. CloudRedirect
+installs but stays inert until you sign into a provider (see [Cloud saves](cloud-saves.md)).
 
-1. **Install / Reinstall Components** runs [headcrab.sh](https://github.com/Deadboy666/h3adcr-b)
-   in the background: installs **SLSsteam + CloudRedirect** in one pass, plus the
-   **.NET 9 runtime** (via Microsoft's official installer script), and patches
-   Steam. CloudRedirect ships with the base install but stays inert until you
-   sign into a provider (for cloud saves see [Cloud saves](cloud-saves.md)).
-2. **Install / Reapply lumalinux**, **always do this last.** Runs
-   [lumalinux's `install.sh`](https://github.com/jayool/lumalinux/blob/main/install.sh):
-   deploys `liblumalinux.so` plus the `tools/` scripts and patches Steam's
-   `steam.sh` with the `LD_PRELOAD` block. The earlier steps regenerate
-   `steam.sh` and wipe that block, so lumalinux has to go in *after* them, or
-   nothing downloads. (Same reason: reapply it whenever you re-run the other
-   installers.)
-
-Each step ends with a single, intentional Steam restart. The panel shows a
+Each run ends with a single, intentional Steam restart. The panel shows a
 live green/red state for every component — see [Components & health](components-and-health.md).
 
 > Some actions are blocked in Game Mode and must be run from Desktop (the panel

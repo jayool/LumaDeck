@@ -17,7 +17,7 @@ turns Steam itself into the download engine for manifests, backed by the
 | [Credentials](credentials.md) | Hubcap API key, Ryuu cookie (incl. one-tap auto-import), and the expiry warnings. |
 | [Adding & updating games](adding-and-updating-games.md) | AppID auto-detect, search by name, DRM/launcher notices, library picker, updates. |
 | [Managing a game](managing-a-game.md) | The per-game page: auto-update pin, FakeAppId/Token/DLCs, Goldberg, fixes, DRM removal, uninstall. |
-| [Achievements](achievements.md) | Generating achievements with SLScheevo. |
+| [Achievements](achievements.md) | Native via SLSsteam; the old generator is hidden behind a flag. |
 | [Components & health](components-and-health.md) | What SLSsteam / lumalinux / CloudRedirect are, and what each health state means. |
 | [Cloud saves](cloud-saves.md) | Signing into a cloud provider for CloudRedirect (installed with the base dependencies). |
 | [Updating LumaDeck](updating-lumadeck.md) | In-plugin self-update and component update notices. |

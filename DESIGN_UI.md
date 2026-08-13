@@ -128,46 +128,37 @@ Principles are **derived** from these entries as patterns emerge (see
   unactionable alert is a `Field` (info + instructions), not a fake button. The
   exact actionable/not split per state is the table below.
 
-### 3b. Repair architecture — the shared `steam.sh` cascade — ⚠️ correctness
+### 3b. Repair architecture — one idempotent `setup.sh` run — ✅
 
-`steam.sh` is **shared**: SLSsteam, CloudRedirect and lumalinux each inject a
-block into it. `install_dependencies` runs **headcrab**, which installs and
-re-injects **both SLSsteam and CloudRedirect in one pass** and **regenerates
-`steam.sh` from scratch** — wiping any *other* component's block.
-`install_lumalinux` is the exception: it only *patches* (idempotent), so it
-never wipes the others, and it must run **last** so its block survives the
-headcrab regeneration.
+There is **no shared `steam.sh` cascade** anymore. `steam.sh` is left **vanilla**;
+injection comes from a launch **wrapper** (`~/.local/share/SLSsteam/path/steam`)
+that lumalinux's `setup.sh` interposes, reached by patched `.desktop` (Desktop), a
+PATH drop-in (terminals) and a systemd drop-in on `steam-launcher.service` (Game
+Mode).
 
-Consequence — a per-component repair that runs headcrab **silently breaks the
-others**:
+Because **one** `setup.sh` run installs and re-establishes the *whole* stack
+(SLSsteam + CloudRedirect + netsock + lumalinux + .NET) and rewrites the wrapper +
+coverage, there is no per-component ordering to get right and no "repairing one
+component wipes another's block" hazard. Every install/repair path collapses to
+that single run:
 
-- SLSsteam `injection_missing` or CloudRedirect `broken` repaired with
-  `install_dependencies` alone → re-injects SLSsteam + CloudRedirect (one
-  headcrab) but **wipes lumalinux**.
+- `install_via_setup()` — the core install/repair, running
+  `jayool/lumalinux/main/setup.sh`.
+- `reinject_installed()` and `apply_component(id)` — both re-run `setup.sh`; a
+  per-component id just maps onto the same idempotent run. setup.sh reconciles the
+  full stack, so it re-establishes coverage for everything present without a
+  hand-ordered sequence.
 
-**Rule:** any repair that runs headcrab must **re-inject every *installed*
-component, in order `SLSsteam + CloudRedirect → lumalinux`** — not a bare
-`install_dependencies`. This is a dedicated routine, `reinject_installed()`
-(gated on `check_*_installed()`; never installs a component the user doesn't
-have). Wire SLSsteam `injection_missing` and CloudRedirect `broken` to it.
-`restart` (no `steam.sh` change) and `install_lumalinux` (patch-only) are safe
-standalone and stay as-is.
+**Rule:** a `not_injected` / "coverage lost" repair re-runs `setup.sh` (rewrites
+the wrapper and re-affirms `.desktop`/Game-Mode coverage), then restarts Steam. A
+`not_loaded` fix is a plain **Restart Steam** — coverage is fine, the stack just
+isn't live this session. The break-recovery **Steam downgrade** (`downgrade.sh`,
+Desktop-only) is a separate escape-hatch — see §3c.
 
-**What `injection_missing`'s repair does, concretely** — `reinject_installed()`:
-re-runs `install_dependencies` (SLSsteam + CloudRedirect, one headcrab) **if
-either is installed**, then lumalinux (`install_lumalinux`) **if installed**, in
-that order — rebuilding a correct shared `steam.sh`. Each step is gated on
-`check_*_installed()`, so it only ever re-injects what the user already had; it
-never installs a new component.
-
-**`steam.sh` ordering has two reasons, not one.** lumalinux's `install.sh`
-*preserves* CloudRedirect's `LD_PRELOAD` (it appends `cloud_redirect.so` rather
-than clobbering it) — but only if CR's block is already in `steam.sh` when
-lumalinux runs. It **preserves, it does not resurrect** a wiped CR block. So
-lumalinux must run after CloudRedirect both (a) so headcrab's regeneration
-doesn't wipe lumalinux, and (b) so lumalinux can chain onto CR's freshly
-re-added `LD_PRELOAD` (`sls:cr:lumalinux`). The backend's CR detection and the
-lumalinux script's preservation work together via this order.
+> Startup self-heal (v0.7.2): on every plugin load `paths.heal_gamemode_dropin()`
+> re-writes the Game Mode `steam-launcher.service` drop-in if it went missing/inert
+> and `daemon-reload`s it (via `runuser`), so a Deck whose Game Mode coverage was
+> lost recovers on the next Steam restart without a manual repair.
 
 ### 3c. Health text spec (normalized, beginner-friendly) — ✅ final
 
@@ -179,13 +170,13 @@ component, because they share one cause and one fix.
 lumalinux `hash_blocked`/`hooks_failed` and CloudRedirect `broken` all mean the
 same thing to the user — *Steam updated past what this component supports*. The
 fix is the same: **run the Steam downgrade in Desktop** ("Fix in Desktop"),
-which (via headcrab) downgrades Steam to the blessed stable build `1782257239`
-(2026-06-10). Verified
-that build is supported by all three: CloudRedirect lists it explicitly
-(`SUPPORTED_STEAM_VERSIONS`), it is SLSsteam's headcrab target by definition,
-and lumalinux's current hash set covers that era (shared `steamclient.so` hashes
-with SLSsteam). It downgrades to an *older stable* build, so even a slightly
-lagging component still supports it.
+which downgrades Steam via `downgrade.sh` (Desktop-only) to the **headcrab-pinned
+stable build** the stack supports. The target build is fetched **dynamically**
+(`HeadcrabCompatibleClientVer`, read by `headcrab_compat.py`), not a fixed
+constant. It's an *older stable* build supported by all three components
+(CloudRedirect lists supported builds explicitly in `SUPPORTED_STEAM_VERSIONS`;
+lumalinux shares `steamclient.so` hashes with SLSsteam for that era), so even a
+slightly lagging component still supports it.
 
 **Render:** each row is `icon` ⚠ (`#ff8c00`) + `label` = *"[Component] —
 [impact]"* + `description` = the text below + the control. The component
@@ -204,7 +195,7 @@ lagging component still supports it.
 | State (backend) | description | control |
 |---|---|---|
 | `not_active` | "Not active." | 🔘 **Restart Steam** |
-| `injection_missing` | "Not correctly installed." | 🔘 **Repair** → `install_lumalinux` (patch-only, safe alone) |
+| `injection_missing` | "Not correctly installed." | 🔘 **Repair** → `reinjectInstalled` (re-runs `setup.sh`) |
 | `unsupported` (= `hash_blocked` / `hooks_failed`) | "Unsupported Steam version. Run the Steam downgrade in Desktop." | 📄 Field |
 
 **CloudRedirect** — impact: *"cloud saves off"*
@@ -217,10 +208,9 @@ lagging component still supports it.
 
 **Wiring notes:**
 - **Restart Steam** → `restart_steam` (clean `steam -shutdown`, GM auto-restarts).
-- **Repair** → SLSsteam: `reinjectInstalled` (its headcrab wipes the others, so
-  re-inject the whole installed set in order). lumalinux: `install_lumalinux`
-  alone (patch-only — restores its block, preserves the others; no need to touch
-  SLSsteam/CR).
+- **Repair** → `reinjectInstalled`, which re-runs `setup.sh` (the wrapper-model
+  installer) to re-establish the whole installed stack in one idempotent pass —
+  no per-component ordering, and `steam.sh` is left vanilla.
 - **Field** rows are display-only (no button); the instruction is in the
   `description`. `unsupported` and `not_authed` are Desktop-only.
 - Text drops jargon (`steam.sh`, hooks, patterns, hash, SafeMode) and the
@@ -854,8 +844,8 @@ the people who need it**. Fixed:
 > **3** one fetch + `SystemStatus` renderer (5-action collapse + update track),
 > old builders/banners deleted ✅ · **4** Stuck into the renderer ✅ (folded into
 > step 3) · **5** Desktop autostart for the downgrade ✅ (v0.3.50 — the "Fix in
-> Desktop" row arms a one-shot autostart that runs headcrab + lumalinux
-> re-inject in Desktop and auto-returns to Game Mode) · **6** i18n cleanup ✅
+> Desktop" row arms a one-shot autostart that runs `downgrade.sh` (Steam client downgrade
+> + pin) then `setup.sh` re-inject in Desktop and auto-returns to Game Mode) · **6** i18n cleanup ✅
 > (v0.4.8 — swept 87 unreferenced keys, incl. the now-dead per-component update
 > strings, from both `en` and `pt-BR`; verified none appear anywhere in `src/`
 > outside `i18n.ts`, so the `|| key` fallback can never surface).
@@ -890,23 +880,25 @@ kind of thing** — a *managed component* — so we unify them.
   plugin:     { installed, latest, available },
 }
 ```
-New real check: `check_slssteam_update` + a CR check, both **via h3adcr-b**
-(see Updates). `headcrabCompat` goes back to being *only* the compat gate — the
+New real check: `check_slssteam_update` (vs **AceSLS/SLSsteam** releases) + a CR hash
+check (vs the **Selectively11/h3adcr-b** `linux-test` asset) (see Updates).
+`headcrabCompat` goes back to being *only* the compat gate — the
 fake "SLSsteam update derived from `!compatible`" is deleted.
 
 **2. `apply_component(id, op)` — one cascade-safe action.** `op ∈ {install,
-repair, update}`. Does the op, then **always** runs `reinject_installed()` (which
-already re-injects every *installed* component in order SLSsteam → CloudRedirect →
-lumalinux). The UI never knows the `steam.sh` ordering. `reinject_installed`
-already exists and already gates on `check_*_installed()`.
+repair, update}`. Does the op, then **always** runs `reinject_installed()`, which
+re-runs `setup.sh` to re-establish the whole installed stack in one idempotent pass.
+There is no `steam.sh` ordering for the UI to know — setup.sh reconciles everything
+and leaves `steam.sh` vanilla.
 
 ### Compatibility contract (how updates stay safe)
-The whole set is anchored to **h3adcr-b's pinned Steam build**
-(`HeadcrabCompatibleClientVer`). Deadboy666 curates the bundle (Steam pin +
-SLSsteam `latest` + CloudRedirect `linux-test` `.so`) to be mutually compatible
-at the **weakest-link** Steam build, so headcrab never lands you on a Steam that
-breaks SLSsteam or CR. **lumalinux is outside headcrab** and self-validates via
-its `steamclient.so` hash check (`hash_blocked`). Three safety layers:
+The compat anchor is still **headcrab's pinned Steam build**
+(`HeadcrabCompatibleClientVer`, read by `headcrab_compat.py`) — a build chosen to be
+mutually compatible at the **weakest-link**, so the break-recovery downgrade never
+lands you on a Steam that breaks SLSsteam or CR. The components themselves are
+installed by `setup.sh` from their own upstreams (SLSsteam from AceSLS, CloudRedirect
+from Selectively11), not from a headcrab bundle. lumalinux self-validates via its
+`steamclient.so` hash/RVA check (`hash_blocked`). Three safety layers:
 1. Updates are **gated on `headcrab.compatible === true`** (Steam at the pin).
 2. lumalinux's hash check refuses silently-incompatible builds (`hash_blocked`).
 3. After `apply_component`, re-fetch status to confirm all healthy.
@@ -961,20 +953,20 @@ not as a ⚠ fix.
 
 | Component | Update check | Apply | Weight |
 |---|---|---|---|
-| **lumalinux** | latest release of its repo vs installed | `install_lumalinux` + reinject | light |
-| **SLSsteam** | hash of the `latest` asset (**via h3adcr-b**) vs installed `.so` | re-run headcrab + reinject | heavy |
-| **CloudRedirect** | hash/ETag of `linux-test/cloud_redirect.so` (**via h3adcr-b**) vs installed `.so` | re-run headcrab + reinject | heavy |
+| **lumalinux** | latest release of its repo vs installed | re-run `setup.sh` | light |
+| **SLSsteam** | release tag of the `latest` asset (**via AceSLS/SLSsteam**) vs recorded `.slssteam.version` | re-run `setup.sh` | heavy |
+| **CloudRedirect** | hash/ETag of `linux-test/cloud_redirect.so` (**via Selectively11/h3adcr-b**) vs installed `.so` | re-run `setup.sh` | heavy |
 | **LumaDeck** | latest plugin release | download zip → message "Decky ▸ Developer ▸ Install from ZIP, then restart Steam" | manual |
 
 Rules:
 - **CR has no semver of its own** — its "version" *is* which `linux-test` `.so`
-  you have, so the check is a **hash/ETag compare against the exact asset headcrab
+  you have, so the check is a **hash/ETag compare against the exact asset `setup.sh`
   installs** (the current `checkCloudredirectUpdate` semver check is wrong and is
   removed).
 - **All updates gated on `headcrab.compatible`**; the set updates **together**
   (one reinject at the end); re-check health after.
-- SLSsteam/CR "update" = re-running the headcrab install, which is **safe in Game
-  Mode when Steam is already at the pin** (no downgrade happens).
+- SLSsteam/CR "update" = re-running `setup.sh` (the wrapper-model installer), which
+  is **safe in Game Mode when Steam is already at the pin** (no downgrade happens).
 
 ---
 

@@ -14,9 +14,11 @@ actions map onto them.
 | **CloudRedirect** | Redirects Steam Cloud saves to a third-party provider. See [Cloud saves](cloud-saves.md). Ships with the base install. |
 | **.NET 9 runtime** | Runtime for the bundled Steamless CLI used by [DRM removal](managing-a-game.md#remove-drm-steamless). Installed on demand via Microsoft's official installer. |
 
-Headcrab is the SLSsteam launcher wrapper. It is not a row in the panel, but the
-panel checks that its build ID matches the current Steam client. For who wrote
-what, see the root [README → Credits](../README.md#credits--notes).
+Headcrab is not a component and not the launcher wrapper — LumaDeck only reads its
+published **compat pin** (the Steam build it supports) to check whether the current
+Steam client is one the stack can hook, and to drive the break-recovery downgrade. The
+injection wrapper itself is installed by lumalinux's `setup.sh`. For who wrote what,
+see the root [README → Credits](../README.md#credits--notes).
 
 ## The status chip
 
@@ -35,10 +37,10 @@ purpose. That is not an error.
 
 However a component breaks, from your side there are only ever two fixes:
 
-- **Restart Steam** (in place). The component is installed and its `steam.sh`
-  injection is fine, it just isn't live in this session. A restart reloads it.
-  The button may read **Restart Steam** or **Repair** (Repair also re-patches
-  `steam.sh` first, then restarts).
+- **Restart Steam** (in place). The component is installed and injection coverage is
+  fine, it just isn't live in this session. A restart reloads it. The button may read
+  **Restart Steam** or **Repair** (Repair re-runs `setup.sh` first — rewriting the
+  wrapper and re-affirming `.desktop`/Game-Mode coverage — then restarts).
 - **Fix in Desktop**. A Steam update outpaced the hooks, so they can't attach to
   the current build. This repair needs a real desktop session (it downgrades
   Steam to a build the hooks know), so it can't run in Game Mode. The button
@@ -56,7 +58,7 @@ The three components share one state vocabulary, keyed by cause and solution.
 | `healthy` | Working. | Nothing. |
 | `not_installed` | The component isn't on disk. | Install from Components. |
 | `not_loaded` | Installed and injected, just not live this session. | Restart Steam. |
-| `not_injected` | Installed, but `steam.sh` lost its injection line (usually after a Headcrab/SLSsteam update regenerates `steam.sh`). | Repair (re-injects `steam.sh`, then restarts). |
+| `not_injected` | Installed, but the wrapper's launch coverage was lost (e.g. a Steam update regenerated its `.desktop`, or the Game Mode `steam-launcher.service` drop-in was dropped). | Reinstall Components (re-runs `setup.sh` to rewrite the wrapper + coverage, then restarts). |
 | `not_supported` | Steam updated past a build the hooks support. Cause `version` = the binary hash isn't recognised; cause `hooks` = a specific hook couldn't attach. | Fix in Desktop. |
 
 CloudRedirect adds two of its own:
@@ -66,9 +68,10 @@ CloudRedirect adds two of its own:
 | `not_authed` | Hooks are fine, but no cloud provider is signed in. | Sign in from the CloudRedirect app in Desktop. |
 | `disabled` | You turned CloudRedirect off (`~/.config/CloudRedirect/disable`). | Nothing. Re-enable in Desktop if you want it back. |
 
-> After a **Headcrab/SLSsteam update**, Headcrab regenerates `steam.sh` and
-> drops lumalinux's injection block (the deployed `.so` survives). That surfaces
-> as `not_injected`. **Repair** puts the line back and restarts.
+> After a **Steam client update**, the launcher `.desktop` (or the Game Mode
+> `steam-launcher.service` drop-in) can be regenerated, so a launch stops routing
+> through the wrapper (the deployed `.so` survives). That surfaces as `not_injected`.
+> **Reinstall Components** re-runs `setup.sh` to restore coverage and restarts.
 
 ## What the QAM shows
 
