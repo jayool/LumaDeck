@@ -264,7 +264,7 @@ which detects the stuck `.acf` directly rather than diffing manifests.
   Bearer header at request time so it never lands in logs.
 - Language switcher (EN / PT-BR) with `lumadeck_lang` localStorage key.
 - Auto-detection of SLSsteam, lumalinux, CloudRedirect, ACCELA,
-  .NET runtime, dotnet path. Reported in Settings → Dependencies.
+  .NET runtime, dotnet path. Reported in Settings → Components.
 - Injection via lumalinux's launch **wrapper**
   (`~/.local/share/SLSsteam/path/steam`), reached by patched `.desktop`
   (Desktop), a PATH drop-in (terminals) and a systemd drop-in on

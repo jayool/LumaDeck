@@ -54,7 +54,7 @@ reach for them to fix a game whose config drifted.
 ## Goldberg
 
 **Apply / Remove Goldberg** swaps the game's `steam_api` libraries for the
-[Goldberg Steam Emulator](https://gitlab.com/nichelimux/goldberg_emulator) and
+[Goldberg emulator (gbe_fork)](https://github.com/Detanup01/gbe_fork) and
 back. Use this for titles that expect an emulator rather than SLSsteam's
 ownership layer. *Apply* replaces the DLLs; *Remove* restores the originals.
 

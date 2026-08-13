@@ -12,7 +12,7 @@ Decky Loader plugin for Steam Deck — game library and configuration manager wi
 
 3. **Install the components from the QAM.** Open LumaDeck in the QAM. On a fresh setup (nothing installed yet) it shows a **Quick Install** button that installs and configures everything — SLSsteam + CloudRedirect, the .NET 9 runtime, and lumalinux — in the correct order in one tap. This is the recommended path.
 
-   To install or reapply components **individually** (or after a Steam update), use **Settings → Dependencies**. The wiki documents each one and the order they go in: see [Getting started](docs/getting-started.md#2-install-the-components) and [Components & health](docs/components-and-health.md).
+   To install or reapply components **individually** (or after a Steam update), use **Settings → Components**. The wiki documents each one: see [Getting started](docs/getting-started.md#2-install-the-components) and [Components & health](docs/components-and-health.md).
 
 4. **(Optional) Sign into your cloud provider.**
 
@@ -20,7 +20,7 @@ Decky Loader plugin for Steam Deck — game library and configuration manager wi
 
 ### After a Steam update
 
-Injection comes from a wrapper at `~/.local/share/SLSsteam/path/steam` (installed by lumalinux's `setup.sh`); `steam.sh` is left vanilla. A systemd `--user` guardian re-affirms the wrapper coverage after Steam self-updates, and a crash-loop fail-safe boots vanilla instead of bricking if a bad update breaks the byte patterns. If injection ever stops, or to pull fresh `.so`s, fix it from the plugin: tap **Install / Reapply lumalinux** in Settings → Dependencies.
+Injection comes from a wrapper at `~/.local/share/SLSsteam/path/steam` (installed by lumalinux's `setup.sh`); `steam.sh` is left vanilla. A systemd `--user` guardian re-affirms the wrapper coverage after Steam self-updates, and a crash-loop fail-safe boots vanilla instead of bricking if a bad update breaks the byte patterns. If injection ever stops, or to pull fresh `.so`s, fix it from the plugin: tap **Install / Reinstall Components** in Settings → Components.
 
 ### Tested platforms
 
@@ -101,7 +101,7 @@ LumaDeck is a fork of [DeckTools](https://github.com/lopesleo/DeckTools) by **lo
 | [lumalinux](https://github.com/jayool/lumalinux)                           | jayool            | Native depot-key / manifest hooks for `steamclient.so` (Linux i386)           |
 | [SLScheevo](https://github.com/xamionex/SLScheevo)                         | xamionex          | Achievement file generator for SLSsteam-managed games                         |
 | [ACCELA](https://github.com/nichelimux/ACCELA)                             | nichelimux        | Standalone desktop app — not a dependency; LumaDeck writes interop markers so it recognises LumaDeck-installed games |
-| [Goldberg Steam Emulator](https://gitlab.com/nichelimux/goldberg_emulator) | nichelimux        | Steam API emulator                                                            |
+| [Goldberg (gbe_fork)](https://github.com/Detanup01/gbe_fork)               | Detanup01         | Steam API emulator (bundled from `Detanup01/gbe_fork`)                        |
 | [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)          | SteamDeckHomebrew | Plugin platform                                                               |
 | [Hubcap](https://hubcapmanifest.com)                                       | Hubcap            | Manifest API (formerly Morrenus)                                              |
 | [Headcrab / h3adcr-b](https://github.com/Deadboy666/h3adcr-b)              | Deadboy666        | Steam client-downgrade data (compat pin + sources) used by the break-recovery escape-hatch |

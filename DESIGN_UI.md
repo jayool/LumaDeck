@@ -978,7 +978,7 @@ Rules:
 - **"Something's new" (info):** the update track.
 
 Normally the user sees **nothing, or one row**. The full per-component breakdown
-(versions, individual install/repair/update) lives in **Settings ▸ Dependencies**
+(versions, individual install/repair/update) lives in **Settings ▸ Components**
 for the advanced 1%.
 
 ### What gets deleted

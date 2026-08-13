@@ -120,8 +120,8 @@ inert where unneeded** (it patches a steamclient cert function SNS games hit and
 fails gracefully with `"pattern not found"` otherwise), so **480 + netsock are
 applied together** as the native route.
 
-**netsock** = `yesyes0649/steamnetsock-patch`. headcrab already downloads it on
-every dependency install to `~/.config/SLSsteam/tools/netsock/netsock.so`; we do
+**netsock** = `yesyes0649/steamnetsock-patch`. `setup.sh` installs it on every run
+to `~/.config/SLSsteam/tools/netsock/netsock.so`; we do
 not bundle it. Launch option (per its README): `LD_AUDIT="$HOME/.config/SLSsteam/tools/netsock/netsock.so" %command%`.
 
 ### How each is applied, and the gate that decides
