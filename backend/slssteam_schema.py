@@ -4,9 +4,11 @@ Why this exists
 ---------------
 SLSsteam writes its FULL default config only when the file is ABSENT (its
 ``createFile()`` is create-if-missing; it never migrates or rewrites an existing
-file). It DOES, however, validate on load and toast
-``"Issues during config loading encountered! Missing key(s)"`` when the on-disk
-config lacks keys the running SLSsteam expects.
+file). It DOES, however, validate on load and toast the keys it is missing when
+the on-disk config lacks keys the running SLSsteam expects. Since SLSsteam
+``1250950`` (2026-07-26) that toast enumerates them one per line
+(``"Config loading errors:\nMissing CDKeys\nMissing LogLevels"``); before that it
+was the single ``"Issues during config loading encountered! Missing key(s)"``.
 
 So a config that predates newer SLSsteam keys — or one that some tool seeded
 partial before SLSsteam's first run — stays incomplete forever and toasts on
@@ -42,7 +44,7 @@ except ImportError:
 
 
 # Raw config_default.hpp URL (the authoritative default SLSsteam compiles in).
-_CONFIG_DEFAULT_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/master/src/config_default.hpp"
+_CONFIG_DEFAULT_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/main/src/config_default.hpp"
 _CACHE_DIR = os.path.join(real_home(), ".cache/lumadeck")
 _CACHE_FILE = os.path.join(_CACHE_DIR, "slssteam_config_default.yaml")
 _FETCH_TIMEOUT = 8.0
@@ -96,12 +98,19 @@ DlcData:
 #Used to retrieve ProductInfo from Steam servers for some games
 AppTokens:
 
+#Legacy CD keys required by some games
+#Unless explicitly specified SLSsteam will generate a random 4 * 4 key using A-Z + 0-9 seeded by your accountId + appId
+#If you want to delete injected CD keys delete cdk_[number] from your localconfig.vdf
+CDKeys:
+
 #Fake Steam being offline for specified AppIds. Same format as AppIds
 FakeOffline:
 
 #Change AppIds of games to enable networking features
 #Use 0 as a key to set for all unowned Apps
-#Keeps track of the proper AppIds via game launches, so please do not start multiple FakeAppId enabled games simultaneously
+#Do not run multiple apps under the same AppId simultaneously! It's possible but
+#will most likely cause undefined behaviour
+#Requires access to /proc to read processes' real AppId from their environment (most distros allow this by default)
 FakeAppIds:
 
 #Override Depot manifest IDs
@@ -142,9 +151,6 @@ MaxSchemaTries: 10
 #You should enable this if you're planing to use SLSsteam with Steam Deck's gamemode
 SafeMode: no
 
-#Toggles notifications via notify-send
-Notifications: yes
-
 #Warn user via notification when steamclient.so hash differs from known safe hash
 #Mostly useful for development so I don't accidentally miss an update
 WarnHashMissmatch: no
@@ -173,14 +179,20 @@ FakeEmail: ""
 FakeWalletBalance: 0
 
 #Log levels:
-#Once = 0
-#Debug = 1
-#Info = 2
-#NotifyShort = 3
-#NotifyLong = 4
-#Warn = 5
-#None = 6
-LogLevel: 2
+#Trace = 0x1 #Tracing
+#Once = 0x2 #Only log once
+#Debug = 0x4 #Debugging statements
+#Warn = 0x8 #Something went wrong but it's not terrible
+#Error = 0x10 #Something went wrong and it's terrible/can't be recovered from. Function failed
+#Info = 0x20 #Log for users/external tools
+#NotifyShort = 0x40
+#NotifyLong = 0x80
+#LogLevels below Warn are stripped from release versions
+#If you want to use them use a debug version
+#LogLevels are bitwise flags, so for example to only
+#show Long Notifications & Errors use 0x90 (calculated via 0x80 or 0x10)
+#Default enables everything
+LogLevels: 0xff
 
 #Dump all used IClientInterfaceMaps
 DumpClientInterfaces: no
