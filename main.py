@@ -438,23 +438,6 @@ class Plugin:
         return _j({"success": True, "libraries": get_steam_libraries()})
 
     # ==========================================================================
-    # SLSsteam Config (read/write)
-    # ==========================================================================
-
-    async def read_sls_config(self) -> str:
-        from slssteam_config import read_config
-        return _j({"success": True, "config": read_config()})
-
-    async def get_sls_value(self, key: str) -> str:
-        from slssteam_config import get_value
-        return _j({"success": True, "value": get_value(key)})
-
-    async def set_sls_value(self, key: str, value) -> str:
-        from slssteam_config import set_value
-        set_value(key, value)
-        return _j({"success": True})
-
-    # ==========================================================================
     # SLSsteam Operations (FakeAppId, Token, DLC, Play, Uninstall)
     # ==========================================================================
 

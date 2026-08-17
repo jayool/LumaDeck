@@ -1,103 +1,31 @@
 """
-SLSsteam ``config.yaml`` management.
+SLSsteam version lookup.
 
-Provides helpers to read, update, and query the SLSsteam configuration
-stored at ``~/.config/SLSsteam/config.yaml``.
+Reads the SLSsteam release tag that ``setup.sh`` records on disk. Nothing here
+touches ``config.yaml``: every edit to that file goes through the append-only /
+line-based helpers in ``slssteam_ops.py`` (per-key edits) and
+``slssteam_schema.py`` (schema completion), which never rewrite the file wholesale.
+
+Historical note — do not reintroduce a dict round-trip. This module used to also
+expose ``read_config`` / ``get_value`` / ``set_value`` on top of a flat
+``key: value`` parser. That parser stripped each line before parsing, so it
+dropped every nested block (``AdditionalApps`` list items, ``FakeAppIds`` /
+``DlcData`` / ``ManifestIds`` / ``CDKeys`` / ``DenuvoGames`` map entries) and
+promoted nested entries to top-level keys. Reading was therefore misleading and
+writing was destructive: a single ``set_value`` would have rewritten config.yaml
+as flat lines, emptying ``AdditionalApps`` and silently un-owning every game the
+plugin had added. Nothing ever called them (no ``api.ts`` wrapper, no page), so
+they were removed rather than repaired. If a generic config setter is ever
+needed, build it on the in-place regex edit + atomic replace + hot-reload poke
+pattern used by ``installer.py``'s flag helpers, and make it refuse nested keys.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import Optional
 
-from paths import get_slssteam_config_dir, get_slssteam_config_path
-
-try:
-    import decky  # type: ignore
-    logger = decky.logger
-except ImportError:
-    import logging
-    logger = logging.getLogger("lumadeck")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _read_yaml(path: str) -> Dict[str, Any]:
-    """Minimal YAML-ish reader for SLSsteam's flat key:value config."""
-    data: Dict[str, Any] = {}
-    if not os.path.isfile(path):
-        return data
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if ":" not in line:
-                    continue
-                key, _, raw_value = line.partition(":")
-                key = key.strip()
-                raw_value = raw_value.strip()
-                if raw_value.lower() in ("yes", "true"):
-                    data[key] = True
-                elif raw_value.lower() in ("no", "false"):
-                    data[key] = False
-                else:
-                    try:
-                        data[key] = int(raw_value)
-                    except ValueError:
-                        data[key] = raw_value
-    except Exception as exc:
-        logger.warning(f"SLSsteam: failed to read config at {path}: {exc}")
-    return data
-
-
-def _write_yaml(path: str, data: Dict[str, Any]) -> None:
-    """Write a flat dict back to the SLSsteam config format."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    lines = []
-    for key, value in data.items():
-        if isinstance(value, bool):
-            lines.append(f"{key}: {'yes' if value else 'no'}")
-        else:
-            lines.append(f"{key}: {value}")
-    try:
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
-    except Exception as exc:
-        logger.warning(f"SLSsteam: failed to write config at {path}: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def read_config() -> Dict[str, Any]:
-    return _read_yaml(get_slssteam_config_path())
-
-
-def write_config(data: Dict[str, Any]) -> None:
-    _write_yaml(get_slssteam_config_path(), data)
-
-
-def get_value(key: str, default: Any = None) -> Any:
-    return read_config().get(key, default)
-
-
-def set_value(key: str, value: Any) -> None:
-    cfg = read_config()
-    cfg[key] = value
-    write_config(cfg)
-
-
-# ---------------------------------------------------------------------------
-# Convenience accessors
-# ---------------------------------------------------------------------------
-
-def config_exists() -> bool:
-    return os.path.isfile(get_slssteam_config_path())
+from paths import get_slssteam_config_dir
 
 
 def get_sls_version() -> Optional[str]:
