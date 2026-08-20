@@ -251,7 +251,7 @@ const strings: Record<Lang, Record<string, string>> = {
     statusSupported: "Supported",
     statusNotSupported: "Not supported",
     // SLSsteam update available (Dependencies sub-row, info blue)
-    slssUpdateAvailableSub: "Steam update available ({0} → {1})",
+    steamUpdateAvailableSub: "Steam update available ({0} → {1})",
     // System status (unified component model) — jargon-free, outcome-led
     sysSteamTooNew: "Steam is too new",
     sysLumalinuxNotReady: "Adding games unavailable",
@@ -286,6 +286,7 @@ const strings: Record<Lang, Record<string, string>> = {
     sysHandoffManual: "Ready. Switch to Desktop Mode now to roll Steam back",
     sysWorking: "Working...",
     // CloudRedirect — Updates (info, blue)
+    slssteamUpdateAvailableSub: "Update available ({0} → {1})",
     crUpdateAvailableSub: "Update available (v{0} → v{1})",
     llUpdateAvailableSub: "Update available (v{0} → v{1})",
     stuckUpdateTitle: "Update stuck",
@@ -584,7 +585,7 @@ const strings: Record<Lang, Record<string, string>> = {
     statusDisabled: "Desabilitado",
     statusSupported: "Suportado",
     statusNotSupported: "Não suportado",
-    slssUpdateAvailableSub: "Atualização disponível (build da Steam {0} → {1})",
+    steamUpdateAvailableSub: "Atualização disponível (build da Steam {0} → {1})",
     // System status (modelo unificado de componentes)
     sysSteamTooNew: "A Steam atualizou demais",
     sysLumalinuxNotReady: "Adicionar jogos indisponível",
@@ -616,6 +617,7 @@ const strings: Record<Lang, Record<string, string>> = {
     sysHandoffSwitching: "Indo para o Desktop para reverter a Steam. Você volta aqui automaticamente.",
     sysHandoffManual: "Pronto. Vá para o Modo Desktop agora para reverter a Steam; ele te traz de volta ao terminar.",
     sysWorking: "Trabalhando...",
+    slssteamUpdateAvailableSub: "Atualização disponível ({0} → {1})",
     crUpdateAvailableSub: "Atualização disponível (v{0} → v{1})",
     llUpdateAvailableSub: "Atualização disponível (v{0} → v{1})",
     stuckUpdateTitle: "Atualização travada",

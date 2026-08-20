@@ -580,12 +580,28 @@ export function Settings() {
   const llPresent = !!lumalinuxHealth?.state && lumalinuxHealth.state !== "not_installed";
   const crPresent = !!crHealth?.state && crHealth.state !== "not_installed";
 
+  // SLSsteam's version is a build timestamp (20260820085507), not a semver, so it
+  // is shown as the date it encodes. The raw 14 digits are unreadable, and the
+  // date is what they mean.
+  const slssteamBuildDate = (v: string | null | undefined) =>
+    v && /^\d{14}$/.test(v) ? `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}` : (v ?? "?");
+
+  // Unlike lumalinux and CloudRedirect, SLSsteam has no dedicated per-component
+  // update endpoint — its check only exists inside the unified payload, which is
+  // also what the QAM reads. Taking it from there is what makes the two surfaces
+  // agree by construction rather than by two code paths staying in step (#36).
+  const slssteamUpdate = componentsStatus?.components?.find((c) => c.id === "slssteam")?.update;
+
   const slssHealthDesc = () => {
     const h = slssteamHealth;
     if (!slssPresent) return undefined;
     if (h && h.state !== "healthy") return warnDesc(healthLine(h.state));
-    // Steam's own build status now lives in the dedicated "Steam" component row
-    // below, not smuggled into SLSsteam's subtext.
+    // Healthy → update available in the same subtext slot as the other two.
+    // Steam's own build status is NOT smuggled in here; it has its own row below.
+    if (slssteamUpdate?.available)
+      return warnDesc(t("slssteamUpdateAvailableSub",
+                        slssteamBuildDate(slssteamUpdate.installed),
+                        slssteamBuildDate(slssteamUpdate.latest)), "info");
     return undefined;
   };
 
@@ -1033,7 +1049,7 @@ export function Settings() {
           const desc = unsupported
             ? warnDesc(t("steamBuildMismatch", b, tgt ?? "?"), "warn")
             : updateReady
-              ? warnDesc(t("slssUpdateAvailableSub", b, tgt ?? "?"), "info")
+              ? warnDesc(t("steamUpdateAvailableSub", b, tgt ?? "?"), "info")
               : undefined;
           return (
             <PanelSectionRow>
