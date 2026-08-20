@@ -14,7 +14,7 @@ through thin wrappers in `main.py` — see [Architecture](dev-architecture.md).
 | `desktop_handoff.py` | Arms a one-shot Desktop autostart (Steam downgrade via `downgrade.sh` + re-inject via `setup.sh`, or a full Quick Install) and switches to Desktop, returning to Game Mode on success. |
 | `steam_freeze.py` | Reads the Steam auto-update freeze/pin (`steam.cfg`) and lifts it during break-recovery catch-up (origin-based, `# lumalinux`-signed). |
 | `slssteam_ops.py` | SLSsteam config operations: FakeAppId, GameToken, DLCs, PlayStatus, Uninstall. |
-| `slssteam_config.py` | Read/write helpers for SLSsteam's config file. |
+| `slssteam_version.py` | Which SLSsteam release is installed: the tag setup.sh recorded, else a lower bound scanned out of the binary. |
 | `slssteam_schema.py` | SLSsteam config-schema reference (best-effort refresh) used for config completion. |
 | `headcrab_compat.py` | Reads Headcrab's compat pin (the Steam build it supports) to gate Steam-update offers and the break-recovery downgrade. |
 | `fixes.py` | Community game-fix lookup, application and removal (async). |

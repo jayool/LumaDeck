@@ -62,13 +62,25 @@ _FETCH_TIMEOUT = 20.0
 
 async def check_slssteam_update(force: bool = False) -> dict:
     """SLSsteam update = a newer release at AceSLS/SLSsteam — the repo setup.sh
-    installs `latest` from. Compares the version setup.sh recorded at install
-    (`.slssteam.version`, a build timestamp like '20260801163409') against the
-    latest release tag (same timestamp format). has_update's semver compare works
-    on timestamps unchanged (bigger = newer). None recorded → no update, the safe
-    default. force=True bypasses the release cache for a manual refresh."""
-    from slssteam_config import get_sls_version
-    return await has_update("AceSLS", "SLSsteam", get_sls_version(), force=force)
+    installs `latest` from.
+
+    Nothing SLSsteam puts on disk states its version, so the installed side comes
+    from slssteam_version.resolve_installed_version(): the tag setup.sh recorded
+    at install, or — for installs predating that — a proven lower bound derived
+    from the binary. Both are release tags (build timestamps like
+    '20260820085507'), which has_update's compare orders correctly as-is, bigger
+    being newer. An unknown version yields no update, the safe default.
+
+    force=True bypasses the release cache for a manual refresh."""
+    from slssteam_version import SOURCE_UNKNOWN, resolve_installed_version
+    installed, source = await resolve_installed_version()
+    result = await has_update("AceSLS", "SLSsteam", installed, force=force)
+    # Tells "no update" apart from "no idea" in the log — the two are the same
+    # answer to the user, and only this line distinguishes them in a bug report.
+    result["version_source"] = source
+    if source == SOURCE_UNKNOWN:
+        result["has_update"] = False
+    return result
 
 
 # --- CloudRedirect update (content hash, via h3adcr-b's asset) ---------------

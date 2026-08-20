@@ -54,7 +54,8 @@ LumaDeck/
 │   │                                # install_lua (Steam-native install flow)
 │   ├── steam_utils.py               # libraryfolders/.acf parsing, install
 │   │                                # path resolution, compat tool override
-│   ├── slssteam_config.py           # config.yaml read/write (flat keys)
+│   ├── slssteam_version.py          # which SLSsteam release is installed
+│   │                                # (recorded tag, else derived floor)
 │   ├── slssteam_ops.py              # AdditionalApps / tokens / DLC entries /
 │   │                                # uninstall_game_full / Headcrab repair
 │   ├── achievements.py              # Achievement schema via Steam Web API
