@@ -139,7 +139,7 @@ def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
         return False, f"Cannot read SLSsteam config: {exc}"
 
     new_content, n = re.subn(
-        r"^(\s*DisableCloud\s*:\s*)yes\s*$",
+        r"^(DisableCloud\s*:\s*)yes\s*$",
         r"\1no",
         content,
         flags=re.MULTILINE,
@@ -155,7 +155,7 @@ def _set_disablecloud_no(config_path: str) -> tuple[bool, str]:
         except Exception as exc:
             return False, f"Cannot write SLSsteam config: {exc}"
 
-    if re.search(r"^\s*DisableCloud\s*:\s*no\s*$", content, flags=re.MULTILINE):
+    if re.search(r"^DisableCloud\s*:\s*no\s*$", content, flags=re.MULTILINE):
         return True, "DisableCloud already set to no"
 
     return False, "DisableCloud line missing from SLSsteam config — reinstall dependencies"
@@ -191,7 +191,7 @@ def _set_safemode_no(config_path: str) -> tuple[bool, str]:
         return False, f"Cannot read SLSsteam config: {exc}"
 
     new_content, n = re.subn(
-        r"^(\s*SafeMode\s*:\s*)yes\s*$",
+        r"^(SafeMode\s*:\s*)yes\s*$",
         r"\1no",
         content,
         flags=re.MULTILINE,
@@ -207,7 +207,7 @@ def _set_safemode_no(config_path: str) -> tuple[bool, str]:
         except Exception as exc:
             return False, f"Cannot write SLSsteam config: {exc}"
 
-    if re.search(r"^\s*SafeMode\s*:\s*no\s*$", content, flags=re.MULTILINE):
+    if re.search(r"^SafeMode\s*:\s*no\s*$", content, flags=re.MULTILINE):
         return True, "SafeMode already set to no"
 
     return False, "SafeMode line missing from SLSsteam config — reinstall dependencies"
@@ -236,14 +236,14 @@ def _set_disableupdates_no(config_path: str) -> tuple[bool, str]:
         return False, f"Cannot read SLSsteam config: {exc}"
 
     new_content, n = re.subn(
-        r"^(\s*DisableUpdates\s*:\s*)yes\s*$",
+        r"^(DisableUpdates\s*:\s*)yes\s*$",
         r"\1no",
         content,
         flags=re.MULTILINE,
     )
     appended = False
     if n == 0:
-        if re.search(r"^\s*DisableUpdates\s*:\s*no\s*$", content, flags=re.MULTILINE):
+        if re.search(r"^DisableUpdates\s*:\s*no\s*$", content, flags=re.MULTILINE):
             return True, "DisableUpdates already set to no"
         # Key absent (config predates it) — append it.
         new_content = content + ("" if content.endswith("\n") else "\n") + "DisableUpdates: no\n"
