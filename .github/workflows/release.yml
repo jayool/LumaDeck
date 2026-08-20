@@ -26,6 +26,41 @@ jobs:
         with:
           version: 9
 
+      # The tag is the single source of truth for the plugin's version.
+      #
+      # The plugin reports its own version from the package.json inside the zip
+      # (self_update._installed_version), and check_plugin_update() compares that
+      # against this release's tag. Two sources for one number is a trap: tag
+      # v0.7.3 without remembering to bump package.json and every install keeps
+      # reporting 0.7.2, so "update available" can never be cleared BY UPDATING —
+      # each update reinstalls the same number. lumalinux hit exactly this at
+      # v0.16.19 and fixed it the same way (LUMALINUX_VERSION_OVERRIDE in its
+      # build workflow).
+      #
+      # Stamping here rather than validating means the bump cannot be forgotten,
+      # because there is nothing to forget. Only the release artifact is affected:
+      # the checkout is ephemeral and nothing is pushed back, so package.json on
+      # the branch keeps whatever it says (it is not the source of truth any more).
+      # Placed before the install: --frozen-lockfile only checks dependencies, not
+      # the root version, so everything downstream sees one consistent value.
+      - name: Stamp the version from the tag
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::Tag '${GITHUB_REF_NAME}' is not vMAJOR.MINOR.PATCH"; exit 1 ;;
+          esac
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = process.argv[1];
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+          ' "$version"
+          stamped="$(node -p "require(\"./package.json\").version")"
+          [ "$stamped" = "$version" ] || { echo "::error::stamp failed ($stamped != $version)"; exit 1; }
+          echo "package.json version -> $stamped"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
