@@ -11,15 +11,11 @@ step — this module can ship without changing anything visible.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
-import time
+import re
 from typing import Optional
 
-from http_client import ensure_http_client
-from paths import real_home
-from update_checks import has_update
+from update_checks import get_latest_release_with_asset, has_update, has_update_from
 
 try:
     import decky  # type: ignore
@@ -29,36 +25,7 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 
-# The exact asset h3adcr-b installs for CloudRedirect: a rolling `linux-test`
-# tag whose cloud_redirect.so is replaced in place (no semver). The only honest
-# "is there an update" check is a content-hash compare against this file.
-#
-# Fork note (looks like a mismatch but isn't — see #30): the Steam-pin fork is
-# Deadboy666/h3adcr-b (headcrab_compat._HEADCRAB_URL), but the CloudRedirect asset
-# lives under Selectively11/h3adcr-b. That's correct and aligned: Deadboy666's
-# headcrab.sh — the one `curl headcrab.pages.dev | bash` actually runs — fetches
-# CloudRedirect FROM this Selectively11 linux-test asset in its crinstall()
-# (CloudRedirectLib="…/Selectively11/h3adcr-b/…/linux-test/cloud_redirect.so"). So
-# hashing against this URL matches exactly what's installed. Don't "fix" it to
-# Deadboy666 — CR simply doesn't live there.
-#
-# Upstream note (no staleness, verified 2026-08): Selectively11 also authors
-# CloudRedirect itself (github.com/Selectively11/CloudRedirect). The h3adcr-b
-# linux-test asset we hash here is a BYTE-IDENTICAL mirror of that upstream release
-# (same content, verified sha256 013f99a6…74d1d9, same date), so tracking this asset
-# also tracks CloudRedirect upstream — the two are kept in sync by the same author.
-# We deliberately hash the h3adcr-b asset (not the CloudRedirect repo) because it's
-# the exact file headcrab installs; if they ever diverge, "what's installed" wins.
-_CR_LINUX_TEST_SO = (
-    "https://github.com/Selectively11/h3adcr-b/releases/download/"
-    "linux-test/cloud_redirect.so"
-)
-_CR_HASH_CACHE = os.path.join(real_home(), ".cache/lumadeck/releases/cr_linux_test.json")
-_CR_CACHE_TTL = 6 * 60 * 60  # 6 h, same TTL as the GitHub release checks
-_FETCH_TIMEOUT = 20.0
-
-
-# --- SLSsteam update (via h3adcr-b's source repo) ---------------------------
+# --- SLSsteam update ---------------------------------------------------------
 
 async def check_slssteam_update(force: bool = False) -> dict:
     """SLSsteam update = a newer release at AceSLS/SLSsteam — the repo setup.sh
@@ -83,79 +50,87 @@ async def check_slssteam_update(force: bool = False) -> dict:
     return result
 
 
-# --- CloudRedirect update (content hash, via h3adcr-b's asset) ---------------
+# --- CloudRedirect update ----------------------------------------------------
 
-def _sha256_file(path: str) -> Optional[str]:
+# CloudRedirect ships its Linux build as a `cloud_redirect.so` asset on its own
+# semver releases (alongside the Windows .exe/.dll and the flatpak). That is the
+# channel we track. Two things about it are easy to get wrong:
+#
+#  * Not every release has a Linux build. v2.1.9, v2.2.4, v2.5.3, v2.6.1 and
+#    v2.6.2 are Windows-only, so /releases/latest regularly names a version that
+#    does not exist for Linux — hence get_latest_release_with_asset().
+#  * Selectively11/h3adcr-b's `linux-test` tag mirrors the same .so (it is what
+#    headcrab's crinstall() wgets, and what LumaDeck used to hash). It is a
+#    rolling tag on a fork whose script has been frozen since May: the file is
+#    replaced in place, carries no version, and has lagged the real releases. It
+#    is not a version channel and is not used here.
+_CR_SO_ASSET = "cloud_redirect.so"
+
+# The .so states its own version. This is deliberate upstream, not incidental log
+# text: CloudRedirect's CMakeLists reads <ReleaseVersion> out of Version.props,
+# appends the git sha, compiles it in as CR_VERSION_STRING, and exports
+# CR_GetVersion() (src/platform/linux/init.cpp). It reaches the binary's string
+# table as e.g. "version=2.6.5+870afdb-dirty", so it can be read without running
+# anything.
+#
+# We read it rather than calling CR_GetVersion because the Decky backend is
+# 64-bit Python and the .so is 32-bit (it has to be, it is loaded into Steam), so
+# it cannot be dlopen'd from here. cloud_redirect_cli exists for exactly that
+# reason but has no `version` command.
+#
+# Only the X.Y.Z is captured; everything after it is build metadata that varies
+# between rebuilds of the same version ("+870afdb-dirty" on recent builds,
+# "+unknown" on ones built without git) and must not affect the compare. The
+# suffix can also precede the "+" ("2.5.0-Final+unknown"), which this ignores
+# too. Verified present on every release that ships a Linux .so, from the first
+# one (v2.0.3) to v2.6.5.
+_CR_VERSION_RE = re.compile(rb"version=(\d+\.\d+\.\d+)")
+
+# The .so is ~2 MB and the components panel re-checks on every mount; memoise on
+# (path, mtime, size) so a reinstall re-reads and repeat calls do not.
+_cr_version_cache: dict = {}
+
+
+def read_cloudredirect_version(so_path: str) -> Optional[str]:
+    """The version compiled into a cloud_redirect.so, or None."""
     try:
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1 << 16), b""):
-                h.update(chunk)
-        return h.hexdigest()
-    except Exception:
+        stat = os.stat(so_path)
+    except OSError:
         return None
-
-
-def _read_cr_cache() -> Optional[str]:
+    key = (so_path, stat.st_mtime_ns, stat.st_size)
+    if key in _cr_version_cache:
+        return _cr_version_cache[key]
     try:
-        with open(_CR_HASH_CACHE, "r", encoding="utf-8") as f:
-            entry = json.load(f)
-        if time.time() - entry.get("_cached_at", 0) > _CR_CACHE_TTL:
-            return None
-        return entry.get("hash")
-    except Exception:
+        with open(so_path, "rb") as fh:
+            blob = fh.read()
+    except Exception as exc:
+        logger.info(f"components: cannot read {so_path} ({exc})")
         return None
-
-
-def _write_cr_cache(remote_hash: str) -> None:
-    try:
-        os.makedirs(os.path.dirname(_CR_HASH_CACHE), exist_ok=True)
-        with open(_CR_HASH_CACHE, "w", encoding="utf-8") as f:
-            json.dump({"hash": remote_hash, "_cached_at": time.time()}, f)
-    except Exception as exc:
-        logger.warning(f"components: failed to write CR hash cache: {exc}")
-
-
-async def _remote_cr_hash(force: bool = False) -> Optional[str]:
-    """sha256 of the current linux-test cloud_redirect.so, cached 6 h. None on
-    network failure (caller then reports no-update, the safe default).
-    force=True bypasses the cache so a manual refresh always re-fetches."""
-    cached = None if force else _read_cr_cache()
-    if cached:
-        return cached
-    try:
-        client = await ensure_http_client(context="cr_update")
-        resp = await client.get(_CR_LINUX_TEST_SO, timeout=_FETCH_TIMEOUT)
-        if resp.status_code == 200 and resp.content:
-            remote = hashlib.sha256(resp.content).hexdigest()
-            _write_cr_cache(remote)
-            return remote
-        logger.info(f"components: CR asset HTTP {resp.status_code}")
-    except Exception as exc:
-        logger.info(f"components: CR hash fetch failed ({exc})")
-    return None
+    match = _CR_VERSION_RE.search(blob)
+    result = match.group(1).decode("ascii") if match else None
+    if result is None:
+        logger.info(f"components: no version string in {so_path}")
+    _cr_version_cache[key] = result
+    return result
 
 
 async def check_cloudredirect_update(force: bool = False) -> dict:
-    """CloudRedirect has no semver of its own — its "version" is which build of
-    the linux-test cloud_redirect.so is on disk. has_update = installed .so
-    differs from the current linux-test asset. Returns the has_update shape with
-    short hashes in installed/latest for display/debug. force=True bypasses the
-    remote-hash cache."""
+    """CloudRedirect update = a newer Linux release than the .so on disk.
+
+    Both sides are semver, so this is the same comparison lumalinux gets: the
+    version compiled into the installed .so against the tag of the newest release
+    that ships one.
+
+    This replaced a plain content-hash diff against the rolling `linux-test`
+    asset. That fired on any byte difference, so every upstream rebuild of an
+    unchanged version announced an update that installing could not clear.
+    Unknown on either side means no update, the safe default."""
     from paths import get_cloudredirect_so_path
     local_path = get_cloudredirect_so_path()
-    local = _sha256_file(local_path) if local_path else None
-    if not local:
-        return {"installed": None, "latest": None, "has_update": False, "url": None}
-    remote = await _remote_cr_hash(force=force)
-    if not remote:
-        return {"installed": local[:12], "latest": None, "has_update": False, "url": None}
-    return {
-        "installed": local[:12],
-        "latest": remote[:12],
-        "has_update": local != remote,
-        "url": None,
-    }
+    installed = read_cloudredirect_version(local_path) if local_path else None
+    latest = await get_latest_release_with_asset(
+        "Selectively11", "CloudRedirect", _CR_SO_ASSET, force=force)
+    return await has_update_from(installed, latest)
 
 
 # --- The aggregate -----------------------------------------------------------
