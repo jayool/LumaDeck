@@ -151,6 +151,21 @@ async def headcrab_target() -> int | None:
     return _load_cache()
 
 
+def _looks_like_feed(text: str) -> bool:
+    """Is this actually res/updates.yaml, or a 200 carrying something else?
+
+    An HTTP 200 says the transfer worked, not that the file arrived — GitHub has
+    served lumalinux's C++ side an unrelated body under a 200, which is what
+    src/update.cpp's looksLikeFeed() guards against; this is the same guard on the
+    Python side, and the two must agree on what counts as the feed.
+
+    Anchored to the start of a line on purpose: res/updates.yaml opens with a
+    header comment that itself contains the word `SafeModeHashes`, so a bare
+    substring test would accept an error page that merely quoted it.
+    """
+    return any(line.startswith("SafeModeHashes:") for line in text.splitlines())
+
+
 async def _lumalinux_updates_text() -> str | None:
     """Fetch lumalinux's res/updates.yaml (main), cached to disk. None if
     unreachable and no cache. main is the right source for the per-group BUILD
@@ -160,7 +175,7 @@ async def _lumalinux_updates_text() -> str | None:
     try:
         client = await ensure_http_client(context="headcrab_compat")
         resp = await client.get(_LUMALINUX_UPDATES_URL, timeout=_FETCH_TIMEOUT)
-        if resp.status_code == 200:
+        if resp.status_code == 200 and _looks_like_feed(resp.text):
             text = resp.text
             try:
                 os.makedirs(_CACHE_DIR, exist_ok=True)
@@ -168,6 +183,11 @@ async def _lumalinux_updates_text() -> str | None:
                     f.write(text)
             except Exception as exc:
                 logger.warning(f"headcrab_compat: failed to cache lumalinux updates: {exc}")
+        elif resp.status_code == 200:
+            logger.info(
+                f"headcrab_compat: lumalinux updates returned 200 but the body is "
+                f"not the feed ({len(resp.text)} bytes), trying cache"
+            )
         else:
             logger.info(f"headcrab_compat: HTTP {resp.status_code} for lumalinux updates, trying cache")
     except Exception as exc:
@@ -176,9 +196,15 @@ async def _lumalinux_updates_text() -> str | None:
     if text is None:
         try:
             with open(_LL_CACHE_FILE, "r", encoding="utf-8") as f:
-                text = f.read()
+                cached = f.read()
         except Exception:
             return None
+        # A cache written before the guard above existed can hold a 200-with-garbage
+        # body; re-check rather than trust its provenance.
+        if not _looks_like_feed(cached):
+            logger.info("headcrab_compat: cached lumalinux updates is not the feed, discarding")
+            return None
+        text = cached
     return text
 
 
