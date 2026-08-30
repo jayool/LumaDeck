@@ -1577,6 +1577,30 @@ def get_installed_lua_scripts() -> dict:
         if not os.path.exists(target_dir):
             return {"success": True, "scripts": _with_fakes([])}
 
+        # Every library's steamapps/, resolved ONCE — the loop below runs per
+        # .lua and get_steam_libraries() re-parses libraryfolders.vdf and stats
+        # each drive. A game installed to a second library (SD card, external
+        # partition) has its .acf THERE, not under the Steam root, so checking
+        # only base_path renders it as not-installed (greyed out in the grid).
+        from steam_utils import get_steam_libraries
+        libs = get_steam_libraries() or [{"path": base_path}]
+        steamapps_dirs, _seen = [], set()
+        for _lib in libs:
+            _lp = _lib.get("path") if isinstance(_lib, dict) else str(_lib)
+            if not _lp:
+                continue
+            _d = os.path.join(_lp, "steamapps")
+            _key = os.path.realpath(_d)
+            if _key not in _seen:
+                _seen.add(_key)
+                steamapps_dirs.append(_d)
+        # The root is always in libraryfolders.vdf as entry "0", but include it
+        # unconditionally so a malformed vdf can only ADD libraries, never drop
+        # the default one.
+        _root_sa = os.path.join(base_path, "steamapps")
+        if os.path.realpath(_root_sa) not in _seen:
+            steamapps_dirs.append(_root_sa)
+
         installed_scripts = []
         for filename in os.listdir(target_dir):
             if filename.endswith(".lua") or filename.endswith(".lua.disabled"):
@@ -1605,8 +1629,10 @@ def get_installed_lua_scripts() -> dict:
                         "fileSize": file_stat.st_size,
                         "modifiedDate": modified_time.strftime("%Y-%m-%d %H:%M:%S"),
                         "path": file_path,
-                        "hasGameFiles": os.path.exists(
-                            os.path.join(base_path, "steamapps", f"appmanifest_{appid}.acf")
+                        "hasGameFiles": any(
+                            os.path.exists(
+                                os.path.join(d, f"appmanifest_{appid}.acf"))
+                            for d in steamapps_dirs
                         ),
                     })
                 except ValueError:

@@ -126,7 +126,7 @@ and `config/stplug-in/` from it (`:1393-1394`, `:1551,1558`, `:852`). The `.acf`
 used only there. `sff/gui/bridges/download_bridge.py:977` `_find_app_manifest_acf`
 is the reference shape.
 
-### D2 — `hasGameFiles` is computed against the default root only
+### D2 — `hasGameFiles` is computed against the default root only — **FIXED**
 
 `backend/downloads.py:1676`
 ```python
@@ -142,8 +142,15 @@ greyed out.** This is the symptom the #41 reporter describes in his comment.
 
 **Evidence: reproduced.** See §6, Test B.
 
-**Fix:** `any()` over `get_steam_libraries()`, resolving the library paths once
-outside the per-script loop.
+**Fixed.** `any()` over every library's `steamapps/`, resolved **once** before the
+per-`.lua` loop (`get_steam_libraries()` re-parses the vdf and stats each drive, so
+doing it per game would multiply that work). Paths deduped by `realpath`; the Steam
+root is appended unconditionally so a malformed `libraryfolders.vdf` can only add
+libraries, never drop the default one. No frontend change.
+
+Note it does **not** distinguish our own orphan stub from a real manifest — a stub
+alone still reads as installed, exactly as it does today in the root. That is D4's
+job, not this one.
 
 ### D3 — the ACCELA marker path is dead code — **FIXED**
 
@@ -328,9 +335,15 @@ game installed nowhere (control)      -> stub created in the root               
 **Test B — D2, reproduced.** Same fixture against the real `get_installed_lua_scripts()`.
 
 ```
-.acf in the secondary library -> hasGameFiles=False  -> CARD GREYED OUT   <- FAILS
+.acf in the secondary library -> hasGameFiles=False  -> CARD GREYED OUT   <- FAILED
 .acf in the root (control)    -> hasGameFiles=True   -> normal            OK
 ```
+
+Now fixed and green, with the fix verified **sensitive**: reverting only
+`downloads.py` and re-running turns the second-library case red again, so the test
+measures the fix rather than agreeing with it. Two further cases pin the
+no-`libraryfolders.vdf` fallback in both directions (the root survives; the second
+library is unknowable and reads as not installed — a choice, not a surprise).
 
 Both scripts live in the session scratchpad and are candidates for
 `lumalinux/tools/` and `LumaDeck/tests/` respectively. **When D1 and D2 are fixed,
@@ -362,12 +375,12 @@ Steam overwrites our stub on install and leaves no trace.
 | | Change | Repo | Blocked by | Acceptance |
 |---|---|---|---|---|
 | ~~P1~~ | ~~Remove the ACCELA marker path — D3~~ | LumaDeck | — | **DONE** — 110 tests pass, no subprocess per refresh |
-| **P2** | `hasGameFiles` across all libraries — D2 | LumaDeck | P1 (simplifies it) | Test B flips to OK |
+| ~~P2~~ | ~~`hasGameFiles` across all libraries — D2~~ | LumaDeck | — | **DONE** — test flips to OK; 112 tests pass |
 | **P3** | Narrow `_ACF_ERROR_FIELDS`; absent ≠ changed — D5 | lumalinux | — | patch returns `"clean"` on a healthy manifest; the two fields survive |
 | **P4** | Library-aware create-vs-patch — D1 | lumalinux | — | Test A flips to OK |
 | **P5** | Reconciliation — D4 | LumaDeck | **Q2** | a reproduced broken state self-heals on refresh |
 
-P2–P4 need no Steam and are independently shippable and revertible. P5 is the one
+P3 and P4 need no Steam and are independently shippable and revertible. P5 is the one
 that deletes files Steam owns and is the only one gated on a measurement.
 
 Ordering note: P4 prevents an *avoidable* orphan; P5 removes the *unavoidable* one.

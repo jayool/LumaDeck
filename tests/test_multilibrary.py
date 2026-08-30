@@ -64,7 +64,7 @@ class MultiLibraryGameList(unittest.TestCase):
          downloads._preload_app_names_cache) = self._orig
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _build(self, acf_in):
+    def _build(self, acf_in, with_vdf=True):
         root = os.path.join(self.tmp, "Steam")
         lib2 = os.path.join(self.tmp, "sdcard")
         os.makedirs(os.path.join(root, "steamapps"))
@@ -73,11 +73,12 @@ class MultiLibraryGameList(unittest.TestCase):
         with open(os.path.join(root, "config", "stplug-in", "%d.lua" % APPID),
                   "w", encoding="utf-8") as fh:
             fh.write("addappid(%d)\n" % APPID)
-        with open(os.path.join(root, "config", "libraryfolders.vdf"),
-                  "w", encoding="utf-8") as fh:
-            fh.write('"libraryfolders"\n{\n'
-                     '\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n'
-                     '\t"1"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n}\n' % (root, lib2))
+        if with_vdf:
+            with open(os.path.join(root, "config", "libraryfolders.vdf"),
+                      "w", encoding="utf-8") as fh:
+                fh.write('"libraryfolders"\n{\n'
+                         '\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n'
+                         '\t"1"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n}\n' % (root, lib2))
         target = {"root": root, "lib2": lib2}[acf_in]
         with open(os.path.join(target, "steamapps",
                                "appmanifest_%d.acf" % APPID), "w",
@@ -89,8 +90,8 @@ class MultiLibraryGameList(unittest.TestCase):
         downloads._preload_app_names_cache = lambda: None
         return root, lib2
 
-    def _has_game_files(self, acf_in):
-        self._build(acf_in)
+    def _has_game_files(self, acf_in, with_vdf=True):
+        self._build(acf_in, with_vdf)
         res = downloads.get_installed_lua_scripts()
         self.assertTrue(res.get("success"), res)
         entry = next((s for s in res.get("scripts", [])
@@ -98,14 +99,24 @@ class MultiLibraryGameList(unittest.TestCase):
         self.assertIsNotNone(entry, "the game is missing from the list entirely")
         return entry["hasGameFiles"]
 
-    @unittest.expectedFailure
     def test_game_in_second_library_is_seen_as_installed(self):
-        """D2: a game on the SD card / second partition must not render greyed out."""
+        """A game on the SD card / second partition must not render greyed out."""
         self.assertTrue(self._has_game_files("lib2"))
 
     def test_game_in_root_library_is_seen_as_installed(self):
         """Control: the single-library case works today."""
         self.assertTrue(self._has_game_files("root"))
+
+    def test_root_library_still_works_without_libraryfolders_vdf(self):
+        """Fallback: an unreadable/missing libraryfolders.vdf must degrade to the
+        Steam root, not lose it — get_steam_libraries() returns [] there."""
+        self.assertTrue(self._has_game_files("root", with_vdf=False))
+
+    def test_second_library_is_invisible_without_libraryfolders_vdf(self):
+        """The flip side of the fallback, pinned so it is a choice, not a
+        surprise: with no vdf there is no way to know the second library
+        exists, so the game reads as not installed."""
+        self.assertFalse(self._has_game_files("lib2", with_vdf=False))
 
 
 if __name__ == "__main__":
