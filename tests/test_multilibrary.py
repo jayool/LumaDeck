@@ -56,13 +56,11 @@ class MultiLibraryGameList(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="lumadeck_multilib_")
         self._orig = (downloads.detect_steam_install_path,
                       steam_utils.detect_steam_install_path,
-                      downloads._ensure_accela_mark,
                       downloads._preload_app_names_cache)
 
     def tearDown(self):
         (downloads.detect_steam_install_path,
          steam_utils.detect_steam_install_path,
-         downloads._ensure_accela_mark,
          downloads._preload_app_names_cache) = self._orig
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -88,7 +86,6 @@ class MultiLibraryGameList(unittest.TestCase):
 
         downloads.detect_steam_install_path = lambda: root
         steam_utils.detect_steam_install_path = lambda: root
-        downloads._ensure_accela_mark = lambda *a, **k: None   # no subprocesses
         downloads._preload_app_names_cache = lambda: None
         return root, lib2
 

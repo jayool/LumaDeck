@@ -257,17 +257,6 @@ def check_accela_installed() -> bool:
     return find_accela_root() is not None
 
 
-def get_accela_run_script() -> Optional[str]:
-    accela_dir = find_accela_root()
-    if not accela_dir:
-        return None
-    for name in ("launch_debug.sh", "run.sh"):
-        script = os.path.join(accela_dir, name)
-        if os.path.isfile(script):
-            return script
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Steam appcache
 # ---------------------------------------------------------------------------

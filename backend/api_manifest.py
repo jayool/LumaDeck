@@ -286,7 +286,7 @@ def update_hubcap_key(key_content: str) -> dict:
 
         if not found:
             api_list.insert(0, {
-                "name": "Hubcap (Official ACCELA)",
+                "name": "Hubcap",
                 "url": new_url,
                 "success_code": 200,
                 "unavailable_code": 404,

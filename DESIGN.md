@@ -119,9 +119,6 @@ Backend scans:
 
 Per-game state: `installed`, `manifest available`, `pending`.
 
-The library-refresh entry point (`get_installed_lua_scripts`) doubles as the
-ACCELA marker self-heal trigger — see §3 (`_ensure_accela_mark`).
-
 ### 2. Manifest Auto-Discovery
 
 ```
@@ -174,20 +171,6 @@ plugin._download_zip_for_app(appid)
         On relaunch the lumalinux hooks read the fresh keys.txt and
         Steam's native download flow takes over.
 ```
-
-**ACCELA marker self-heal (post-download).** Because the install flow runs
-before Steam downloads the game, the in-game `.DepotDownloader` marker can't
-be placed authoritatively at install time. Instead, `get_installed_lua_scripts`
-(library refresh) calls `_ensure_accela_mark` for each installed game: if the
-game folder now has real content but no `.DepotDownloader`, it re-runs
-`steamidra_lite --accela-mark <appid> --steam-root <path>` (HOME=/home/deck so
-the marker + the `<accela>/depots/<appid>.depot` tracker land in the deck
-user's tree). Idempotent and non-blocking. Requires lumalinux **v0.13.0+**:
-`--accela-mark` itself landed in v0.11.0, but the install flow this self-heal
-relies on (Steam actually downloading the game) only works once the package-0
-finder is on by default, which happened in v0.13.0. Against an older
-`steamidra_lite` the spawn no-ops (argparse error to a discarded stderr).
-
 
 The legacy DDL pipeline (DepotDownloaderMod extraction/execution, `.acf`
 writing, and the Bifrost launcher-path config) has been **removed** from

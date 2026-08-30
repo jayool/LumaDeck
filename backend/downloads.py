@@ -1551,73 +1551,6 @@ def delete_luatools_for_app(appid: int) -> dict:
     return {"success": True, "deleted": deleted, "count": len(deleted)}
 
 
-def _dir_has_real_content(game_dir: str) -> bool:
-    """True if the game folder has any entry that isn't an ACCELA marker / OS
-    metadata / dotfile — i.e. Steam has actually finished downloading the game.
-    Mirrors ASSella game_manager._has_game_content."""
-    ignore = {".accela", ".depotdownloader", "desktop.ini", "thumbs.db"}
-    try:
-        for entry in os.scandir(game_dir):
-            name = entry.name
-            if name.lower() in ignore or name.startswith("."):
-                continue
-            return True
-    except OSError:
-        return False
-    return False
-
-
-def _ensure_accela_mark(appid: int, base_path: str) -> None:
-    """Best-effort: (re)create the ACCELA marker for a game that's fully
-    installed but not yet marked, by running `steamidra_lite --accela-mark`.
-
-    Why here (on library refresh): the download flow sets up Steam's config
-    BEFORE Steam downloads the game, so at that point the game folder is empty
-    and the in-game `.DepotDownloader` marker can't take effect (ACCELA only
-    lists folders with real content). Doing it on refresh means it fires once
-    the game has actually been installed. Idempotent, non-blocking, and a no-op
-    unless a marker is genuinely missing on a downloaded game.
-
-    Passes --steam-root and HOME=<real home> explicitly so the marker and the
-    ~/.local/share/ACCELA/depots tracker land in the real user's tree (on SteamOS
-    the deck user; the plugin runs as root, where ~ would otherwise be /root).
-
-    Requires lumalinux v0.13.0+. --accela-mark itself landed in v0.11.0, but
-    the install flow this self-heal feeds off (Steam actually downloading the
-    game) only works once the package-0 finder is on by default, which
-    happened in v0.13.0. Against an older script the spawn just no-ops
-    (argparse error to a discarded stderr)."""
-    try:
-        import subprocess
-        from subprocess_env import clean_env
-
-        acf = os.path.join(base_path, "steamapps", f"appmanifest_{appid}.acf")
-        if not os.path.exists(acf):
-            return
-        with open(acf, "r", encoding="utf-8", errors="ignore") as fh:
-            m = re.search(r'"installdir"\s+"([^"]+)"', fh.read())
-        if not m:
-            return
-        installdir = m.group(1)
-        game_dir = os.path.join(base_path, "steamapps", "common", installdir)
-        if os.path.exists(os.path.join(game_dir, ".DepotDownloader")):
-            return  # already marked, nothing to do
-        if not _dir_has_real_content(game_dir):
-            return  # Steam hasn't finished downloading yet
-        script = _find_steamidra_lite_script()
-        if not script:
-            return
-        subprocess.Popen(
-            [_LUMALINUX_PYTHON, script, "--accela-mark", str(appid), "--steam-root", base_path],
-            env=clean_env(HOME=real_home()),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        logger.info(f"LumaDeck: self-heal ACCELA mark for {appid} (installdir='{installdir}')")
-    except Exception as exc:
-        logger.debug(f"LumaDeck: _ensure_accela_mark({appid}) skipped: {exc}")
-
-
 def get_installed_lua_scripts() -> dict:
     """Get list of all installed Lua scripts from stplug-in directory."""
     # Dev-only: synthetic library entries (Settings ▸ Dev ▸ Fake games) so the
@@ -1681,17 +1614,8 @@ def get_installed_lua_scripts() -> dict:
                 except Exception:
                     continue
 
-        # Best-effort self-heal: ensure ACCELA markers for games that are fully
-        # installed. The download flow can't do this (Steam downloads the game
-        # AFTER our setup runs), so we do it here, on library refresh. Idempotent
-        # and non-blocking — only spawns steamidra_lite when a marker is missing.
-        for s in installed_scripts:
-            if s.get("hasGameFiles"):
-                _ensure_accela_mark(int(s["appid"]), base_path)
-
         installed_scripts.sort(key=lambda x: x["appid"])
-        # Fakes appended AFTER the ACCELA loop + sort so they never spawn
-        # steamidra_lite and stay grouped at the end.
+        # Fakes appended AFTER the sort so they stay grouped at the end.
         return {"success": True, "scripts": _with_fakes(installed_scripts)}
     except Exception as exc:
         return {"success": False, "error": str(exc)}

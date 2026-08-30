@@ -145,7 +145,7 @@ greyed out.** This is the symptom the #41 reporter describes in his comment.
 **Fix:** `any()` over `get_steam_libraries()`, resolving the library paths once
 outside the per-script loop.
 
-### D3 — the ACCELA marker path is dead code
+### D3 — the ACCELA marker path is dead code — **FIXED**
 
 - `backend/paths.py:260` `get_accela_run_script()` — **no callers**.
 - `check_accela_installed()` / `find_accela_root()` — consumed only by a diagnostics
@@ -160,8 +160,18 @@ refresh, without checking whether ACCELA is installed at all**.
 
 **Evidence: read.** No callers, no consumers.
 
-**Fix:** remove it, or gate on `check_accela_installed()`. Removing is preferred —
-it also simplifies D2 (we then only need *whether* a game is installed, not *where*).
+**Fixed** by removing `_ensure_accela_mark`, its refresh loop, `_dir_has_real_content`
+(its only caller) and `get_accela_run_script`, plus the DESIGN.md/README sections that
+described the self-heal. The library refresh no longer spawns a subprocess per game, and
+D2's fix is now simpler: it only needs *whether* a game is installed, not *where*.
+
+Deliberately kept: the uninstall path still removes ACCELA markers and the `.depot`
+tracker (`downloads.py:919, 1013, 1334`) — cleaning up markers that exist stays correct
+for users who have them. `check_accela_installed()` / `find_accela_root()` stay too;
+they only feed a diagnostics dict.
+
+Still open, in lumalinux and decided separately: `steamidra_lite` writes the marker once
+at add time (`:1607-1613`). That is a cheap one-shot, not a loop.
 
 ### D4 — the orphan stub after installing to another library (this is #41)
 
@@ -351,13 +361,13 @@ Steam overwrites our stub on install and leaves no trace.
 
 | | Change | Repo | Blocked by | Acceptance |
 |---|---|---|---|---|
-| **P1** | Remove (or gate) the ACCELA marker path — D3 | LumaDeck | — | existing tests still pass; no subprocess per refresh |
+| ~~P1~~ | ~~Remove the ACCELA marker path — D3~~ | LumaDeck | — | **DONE** — 110 tests pass, no subprocess per refresh |
 | **P2** | `hasGameFiles` across all libraries — D2 | LumaDeck | P1 (simplifies it) | Test B flips to OK |
 | **P3** | Narrow `_ACF_ERROR_FIELDS`; absent ≠ changed — D5 | lumalinux | — | patch returns `"clean"` on a healthy manifest; the two fields survive |
 | **P4** | Library-aware create-vs-patch — D1 | lumalinux | — | Test A flips to OK |
 | **P5** | Reconciliation — D4 | LumaDeck | **Q2** | a reproduced broken state self-heals on refresh |
 
-P1–P4 need no Steam and are independently shippable and revertible. P5 is the one
+P2–P4 need no Steam and are independently shippable and revertible. P5 is the one
 that deletes files Steam owns and is the only one gated on a measurement.
 
 Ordering note: P4 prevents an *avoidable* orphan; P5 removes the *unavoidable* one.
