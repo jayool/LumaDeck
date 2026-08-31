@@ -480,7 +480,14 @@ P4 needs no Steam and is independently shippable and revertible. P5 deletes
 files Steam owns; it is no longer gated on a measurement — both the defect and the
 cure are reproduced above.
 
-**P6 — remove the seed — is done** (lumalinux). It re-scoped the rest:
+**P6 — remove the seed — is done** (lumalinux `8260b12`) and verified on the rig
+with the shipped code, not the experiment patch: adding Jump King logs
+`none (no .acf yet — Steam writes it on Install)`, writes nothing, and after the
+install Steam's own manifest is there with `StateFlags=4` and the real size. The
+two-library half of the claim is the Undertale run above — no seed, installed to
+the second library, exactly one manifest, still installed after a restart.
+
+It re-scoped the rest:
 
 - **P5** is no longer a permanent mechanism: a one-off migration for users already
   carrying a stub. Same five rules, run once.
