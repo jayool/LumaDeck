@@ -101,7 +101,7 @@ questions, hardcoding `steam_root`. **The defect is ours, not inherited.**
 
 ## 3. The five defects
 
-### D1 — `write_or_patch_acf` decides create-vs-patch from one library
+### D1 — the `.acf` error-state patch only looked in one library — **FIXED**
 
 `lumalinux/tools/steamidra_lite.py:743`
 ```python
@@ -119,12 +119,15 @@ game — today the LuaTools version-downgrade slot (`backend/luatools_auth.py:38
 and re-adding a game. **Not** the path #41 reports (that reporter added before
 installing).
 
-**Constraint on the fix:** `--steam-root` cannot be repurposed as "the library" —
-`steamidra_lite` also derives `depotcache/`, `config/depotcache/`, `config/config.vdf`
-and `config/stplug-in/` from it (`:1393-1394`, `:1551,1558`, `:852`). The `.acf` at
-`:743` is the *only* per-library path. The fix needs a separate library concept,
-used only there. `sff/gui/bridges/download_bridge.py:977` `_find_app_manifest_acf`
-is the reference shape.
+**Fixed** (lumalinux `2c2cc7c`) with `_all_library_paths()` — the separate list
+`steam_root` cannot be, since the install root holds `config.vdf`, `stplug-in` and
+`depotcache` and there is exactly one of it. It reads **both** copies of
+`libraryfolders.vdf` and unions them: Steam loads the `steamapps/` one and keeps
+`config/` in sync, and a union means a stale or missing copy cannot hide a library.
+A dead entry surviving in one copy is harmless — all we do with a path is look for a
+manifest under it. The root is checked first.
+
+The create half of this defect went with P6; only the patch half remained.
 
 ### D2 — `hasGameFiles` is computed against the default root only — **FIXED**
 
@@ -519,12 +522,13 @@ Steam overwrites our stub on install and leaves no trace.
 | ~~P1~~ | ~~Remove the ACCELA marker path — D3~~ | LumaDeck | — | **DONE** — 110 tests pass, no subprocess per refresh |
 | ~~P2~~ | ~~`hasGameFiles` across all libraries — D2~~ | LumaDeck | — | **DONE** — test flips to OK; 112 tests pass |
 | ~~P3~~ | ~~Narrow `_ACF_ERROR_FIELDS`; absent ≠ changed — D5~~ | lumalinux | — | **DONE** — `6dc36a0` |
-| **P4** | Library-aware create-vs-patch — D1 | lumalinux | — | Test A flips to OK |
+| ~~P4~~ | ~~The patch finds the manifest across libraries — D1~~ | lumalinux | — | **DONE** — `2c2cc7c` |
 | **P5** | Reconciliation — D4 | LumaDeck | — (Q2 answered) | a reproduced broken state self-heals on refresh |
 
-P4 needs no Steam and is independently shippable and revertible. P5 deletes
-files Steam owns; it is no longer gated on a measurement — both the defect and the
-cure are reproduced above.
+P5 is all that is left. It deletes files Steam owns, and is not gated on a
+measurement — both the defect and the cure are reproduced above — but it is now a
+one-off migration rather than a permanent mechanism, since P6 stopped producing the
+orphans in the first place.
 
 **P6 — remove the seed — is done** (lumalinux `8260b12`) and verified on the rig
 with the shipped code, not the experiment patch: adding Jump King logs
