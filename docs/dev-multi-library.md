@@ -312,10 +312,11 @@ himself at his step 8.
 
 ## 5. Open questions
 
-- **Q1 — is the stub still needed?** Comment out the call at `steamidra_lite.py:1577`,
-  add a clean game, and read the button: **Install** or **Update**. If Install, the
-  stub is dead weight and D1 and D4 lose their object. GUI-only; no file records the
-  verb.
+- ~~**Q1 — is the stub still needed?**~~ **ANSWERED: the CREATE branch is not.**
+  See §6. With the seed disabled, the button still reads **Install**, the game
+  survives a Steam restart un-installed, installs to the second library, and leaves
+  exactly one manifest — so #41 cannot occur. The PATCH branch is untouched by this
+  and remains justified (RESEARCH.md §12.6).
 - ~~**Q2 — does Steam rewrite a deleted `.acf`?**~~ **ANSWERED: no.** Deleted with
   Steam running, restarted, not regenerated — observed twice. Safety rule 4 can
   relax: the cleanup may run on library refresh with Steam up; it takes effect on
@@ -404,6 +405,35 @@ The deleted file matched safety rule 2's fingerprint exactly (`StateFlags 1`, no
 by Steam did **not** — so the rule would have acted in exactly one of the two cases,
 which is the intended behaviour.
 
+**Field run — is the stub needed? The create branch is not.**
+Same rig, with the seed call (`steamidra_lite.py:1577`) replaced by a literal so
+`write_or_patch_acf` never runs. Log line confirms it (`appmanifest_1055540.acf:
+SKIPPED`). Four observations:
+
+| | with the stub | without it |
+|---|---|---|
+| button before installing | Install | **Install** |
+| survives a Steam restart while un-installed | not measured | **yes, still Install** |
+| installing to the second library | **two manifests** | **one manifest** |
+| after the next Steam restart | **NOT INSTALLED** | **installed** |
+
+A Short Hike (1055540) installed to the root, Undertale (391540) to the second
+library. Both produced a correct Steam-written manifest with the canonical
+`installdir` and no orphan anywhere.
+
+This removes the create branch's documented justification. The comment at
+`steamidra_lite.py:776-788` warns that a non-canonical `installdir` makes Steam
+offer "Update" instead of "Install" and re-download on a later regeneration — but
+with no stub there is no `installdir` of ours to be non-canonical: Steam takes its
+own from appinfo, and the verb is Install.
+
+**Limits of this result.** It disables the whole call, so it says nothing about the
+patch branch, which acts on an `.acf` Steam already wrote and is corroborated
+independently (`RESEARCH.md` §12.6, the `UpdateResult=8` residue). It also does not
+cover a failed or interrupted install — the "NO INTERNET CONNECTION" case the stub
+was inherited to prevent — nor a game whose store name diverges from its official
+`installdir`. One Steam build, one environment.
+
 **Field measurements — D5.** Author's SteamOS Deck (9 manifests, one library) and
 Windows install (4 manifests, one library):
 
@@ -438,6 +468,17 @@ P3 and P4 need no Steam and are independently shippable and revertible. P5 delet
 files Steam owns; it is no longer gated on a measurement — both the defect and the
 cure are reproduced above.
 
-Ordering note: P4 prevents an *avoidable* orphan; P5 removes the *unavoidable* one.
-Both are needed, and **P5 is what closes #41** — P4 fixes a sibling defect with a
-different entry point.
+**The plan above predates the stub result and needs re-scoping.** If the create
+branch goes:
+
+- The orphan is never produced, so **P5 stops being a permanent mechanism** and
+  becomes a one-off migration for users already carrying a stub from earlier
+  versions — still worth doing, much smaller, and the same five safety rules apply.
+- **P4 halves**: there is no seed to place in the wrong library. What remains is
+  finding the existing `.acf` across libraries so the patch branch acts on the right
+  one (the D1 scenario: a game already installed elsewhere).
+- **P3 is unaffected.**
+
+Removing the seed is a behaviour change on every user's install path, so it wants a
+deliberate rollout rather than a quiet deletion — and the patch branch must survive
+it. Decide before writing code.
