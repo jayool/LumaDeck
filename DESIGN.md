@@ -154,12 +154,8 @@ plugin._download_zip_for_app(appid)
             → adds the AppID to SLSsteam's AdditionalApps
             → resets the .acf error state (only if Steam already wrote one)
             → copies the .lua to stplug-in/
-            → drops ACCELA-compatible markers (.DepotDownloader dir +
-              <accela>/depots/<appid>.depot tracker) — BEST-EFFORT here:
-              at this point Steam has not downloaded the game yet, so the
-              in-game .DepotDownloader marker can't take effect (ACCELA only
-              lists folders that have real content). The authoritative
-              marking happens later, on library refresh (see below).
+        It does NOT write an appmanifest. Steam creates that when the user
+        presses Install, in whichever library they pick — see decision 17.
   → optional: add_game_dlcs (Steam Web API)
   → optional: set_compat_tool_for_app (force Proton if no Linux depot)
   → _restart_steam_delayed(delay=5)
@@ -273,14 +269,14 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 | `steamidra_lite.py`      | `~/.local/share/lumalinux/tools/steamidra_lite.py`                   |
 | CloudRedirect library    | `~/.local/share/CloudRedirect/cloud_redirect.so`                     |
 | ACCELA root              | `~/.local/share/ACCELA/`                                             |
-| ACCELA `.depot` tracker  | `~/.local/share/ACCELA/depots/<appid>.depot`                         |
+| ACCELA `.depot` tracker  | `~/.local/share/ACCELA/depots/<appid>.depot` — READ-ONLY to us now;  |
+|                          | we stopped writing it with the `.acf` stub (decision 17)            |
 | Injection wrapper        | `~/.local/share/SLSsteam/path/steam`                                |
 | Game Mode launcher       | `~/.local/share/SLSsteam/lumalinux-steam-launcher`                  |
 | Game Mode drop-in        | `~/.config/systemd/user/steam-launcher.service.d/lumalinux.conf`    |
 | Ryuu cookie              | `{plugin_dir}/backend/data/ryuu_cookie.txt`                          |
 | Free API manifest        | `{plugin_dir}/backend/data/api.json`                                 |
-| Plugin's own depot cache | `{plugin_dir}/backend/data/depots/<appid>.json` (TODO: migrate to    |
-|                          | reading the ACCELA `.depot` directly)                                |
+| Plugin's own depot cache | `{plugin_dir}/backend/data/depots/<appid>.json`                      |
 | Real Steam (left vanilla)| `/usr/bin/steam` · `steam.sh` (not patched)                         |
 
 ## UI Design
@@ -347,4 +343,4 @@ which detects the stuck `.acf` directly rather than diffing manifests.
 | 14  | Frontend routes moved from `/decktools/*` to `/lumadeck/*`                | Keep `/decktools/*`                                | Avoids router-namespace collision if both forks are installed side by side |
 | 15  | Identity strings + i18n keys renamed (DeckTools → LumaDeck, Morrenus → Hubcap, addedViaDeckTools → addedViaLumaDeck) | Leave legacy names                                 | Eliminates confusion in QAM, logs, localStorage key, badges; matches the upstream API rename |
 | 16  | `steam -shutdown` runs as the `deck` user (`runuser`), not root            | Call `steam -shutdown` directly (the old way)      | The plugin runs as root; `steam -shutdown` uses a per-user IPC, so as root it never reached the deck-user Steam and the restart silently no-op'd (v0.3.0 fix) |
-| 17  | ACCELA `.DepotDownloader` marker created via self-heal on library refresh, not at install time | Mark at install time only                          | At install time Steam hasn't downloaded the game yet, so an in-game marker can't take effect; refresh runs `steamidra_lite --accela-mark` once content exists (v0.3.0) |
+| 17  | Adding a game writes no `appmanifest` and no ACCELA markers — Steam writes the manifest on Install | Seed a stub `.acf` (and mark for ACCELA off it) | The stub was inherited from the DepotDownloaderMod era, where WE placed the files. With native downloads Steam writes its own manifest in the library the user picks, so ours became an ORPHAN in the root that made Steam show an installed game as NOT INSTALLED (issue #41). Measured both ways on a clean SteamOS: with the stub and without it the button reads "Install" either way, so it bought nothing. The ACCELA markers were derived from that stub's `installdir` and went with it — nothing calls `--accela-mark` any more (v0.7.4) |
