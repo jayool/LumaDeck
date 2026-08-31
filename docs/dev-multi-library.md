@@ -207,7 +207,7 @@ cause and the fix are the same.
 
 **Fix:** reconciliation — see §4.
 
-### D5 — the patch cancels Steam's own scheduled work
+### D5 — the patch cancels Steam's own scheduled work — **FIXED**
 
 `_ACF_ERROR_FIELDS` (`steamidra_lite.py:609-618`) treats eight fields as "error
 residue" and zeroes all of them. Two of them are not error residue:
@@ -228,10 +228,16 @@ taken before the needed-check).
 
 **Evidence: measured.** See §6.
 
-**Fix, two rules:**
-1. Drop `ScheduledAutoUpdate` and `FullValidateAfterNextUpdate` from the list.
-2. Do not count an **absent** key as a change — only correct keys that are present
-   and wrong. This also removes the always-rewrite.
+**Fixed** (lumalinux `6dc36a0`), three changes:
+1. `ScheduledAutoUpdate` and `FullValidateAfterNextUpdate` dropped from the list.
+2. An **absent** key is no longer treated as wrong — only keys that are present and
+   wrong get corrected. This is what removes the always-rewrite.
+3. The `.acf.bak` is taken only when we actually write, not unconditionally.
+
+Real residue is still cleared: `UpdateResult`, the `Bytes*` counters and the
+Update-Required bit. `tools/test_acf_error_patch.py` pins all three properties and
+was verified sensitive — stashing only `steamidra_lite.py` fails 6 of its 11 checks,
+while the 5 covering legitimate residue-clearing pass either way.
 
 Inherited honestly: in SFF the list applied to a manifest SFF had just written
 itself for a game DepotDownloader had just downloaded, where every counter was zero
@@ -460,11 +466,11 @@ Steam overwrites our stub on install and leaves no trace.
 |---|---|---|---|---|
 | ~~P1~~ | ~~Remove the ACCELA marker path — D3~~ | LumaDeck | — | **DONE** — 110 tests pass, no subprocess per refresh |
 | ~~P2~~ | ~~`hasGameFiles` across all libraries — D2~~ | LumaDeck | — | **DONE** — test flips to OK; 112 tests pass |
-| **P3** | Narrow `_ACF_ERROR_FIELDS`; absent ≠ changed — D5 | lumalinux | — | patch returns `"clean"` on a healthy manifest; the two fields survive |
+| ~~P3~~ | ~~Narrow `_ACF_ERROR_FIELDS`; absent ≠ changed — D5~~ | lumalinux | — | **DONE** — `6dc36a0` |
 | **P4** | Library-aware create-vs-patch — D1 | lumalinux | — | Test A flips to OK |
 | **P5** | Reconciliation — D4 | LumaDeck | — (Q2 answered) | a reproduced broken state self-heals on refresh |
 
-P3 and P4 need no Steam and are independently shippable and revertible. P5 deletes
+P4 needs no Steam and is independently shippable and revertible. P5 deletes
 files Steam owns; it is no longer gated on a measurement — both the defect and the
 cure are reproduced above.
 
