@@ -275,6 +275,15 @@ def disconnect_luatools() -> dict:
             os.remove(p)
     except Exception:
         pass
+    # Drop the settings-store mirror too. _save_session mirrors on every save,
+    # and restore_credentials_from_settings now reads that mirror back on every
+    # plugin load — so deleting only the file left the logout to be undone on the
+    # next Steam restart, handing the user back the session they just discarded.
+    try:
+        from api_manifest import _forget_cred
+        _forget_cred("luatools_session")
+    except Exception as exc:
+        logger.warning(f"LuaTools: could not clear the session mirror: {exc}")
     # Also clear the LIVE CEF cookie. Deleting the on-disk store (or our session
     # file) doesn't drop CEF's in-memory copy, so without this the browser stays
     # logged in and lua.tools shows the account as signed in on the next login.
