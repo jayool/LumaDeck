@@ -99,7 +99,7 @@ LumaDeck is a fork of [DeckTools](https://github.com/lopesleo/DeckTools) by **lo
 | [SLSsteam](https://github.com/AceSLS/SLSsteam)                             | AceSLS            | Steam ownership / licensing layer                                             |
 | [lumalinux](https://github.com/jayool/lumalinux)                           | jayool            | Native depot-key / manifest hooks for `steamclient.so` (Linux i386)           |
 | [SLScheevo](https://github.com/xamionex/SLScheevo)                         | xamionex          | Achievement file generator for SLSsteam-managed games                         |
-| [ACCELA](https://github.com/nichelimux/ACCELA)                             | nichelimux        | Standalone desktop app — not a dependency; LumaDeck writes interop markers so it recognises LumaDeck-installed games |
+| [ACCELA](https://github.com/nichelimux/ACCELA)                             | nichelimux        | Standalone desktop app — not a dependency, and no longer interoperated with (the marker writing was dropped with the `.acf` stub) |
 | [Goldberg (gbe_fork)](https://github.com/Detanup01/gbe_fork)               | Detanup01         | Steam API emulator (bundled from `Detanup01/gbe_fork`)                        |
 | [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)          | SteamDeckHomebrew | Plugin platform                                                               |
 | [Hubcap](https://hubcapmanifest.com)                                       | Hubcap            | Manifest API (formerly Morrenus)                                              |

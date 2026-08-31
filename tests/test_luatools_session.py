@@ -205,6 +205,71 @@ class RestoreWiringTest(unittest.TestCase):
         restore.assert_called_once_with('{"access_token": "x"}')
 
 
+class DisconnectTest(SessionTestBase):
+    """Logging out has to STAY logged out.
+
+    _save_session mirrors into the settings store on every save, and
+    restore_credentials_from_settings reads that mirror back on every plugin
+    load. disconnect_luatools deleted only the session file, so the very next
+    Steam restart restored the session the user had just discarded — a
+    regression introduced by adding LuaTools to the restore list.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Give api_manifest a store of its own under the temp dir, and let the
+        # real _mirror_cred / _forget_cred run against it.
+        import api_manifest
+        self.store = os.path.join(self.tmp, "credentials.json")
+        patcher = mock.patch.object(api_manifest, "_cred_store_path",
+                                    lambda: self.store)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # SessionTestBase stubs _mirror_cred out; here we want the real one.
+        mock.patch.stopall()
+        mock.patch.object(luatools_auth, "data_path",
+                          lambda name: os.path.join(self.tmp, name)).start()
+        mock.patch.object(api_manifest, "_cred_store_path",
+                          lambda: self.store).start()
+        self.addCleanup(mock.patch.stopall)
+        # cef_cdp is only reachable on a real Deck.
+        mock.patch("cef_cdp.delete_cookies_matching", return_value=0).start()
+
+    def reload_plugin(self):
+        """What main._main does on every plugin load."""
+        import api_manifest
+        api_manifest.restore_credentials_from_settings()
+
+    def test_logout_survives_a_plugin_reload(self):
+        self.write_session()
+        self.assertIsNotNone(self.read_session())
+        luatools_auth.disconnect_luatools()
+        self.assertIsNone(self.read_session())
+        self.reload_plugin()
+        self.assertIsNone(self.read_session(), "the logout was undone")
+        self.assertFalse(self.status()["connected"])
+
+    def test_logout_clears_the_mirror_and_leaves_other_credentials(self):
+        import api_manifest
+        api_manifest._mirror_cred(hubcap_key="keep-me")
+        self.write_session()
+        with open(self.store) as fh:
+            self.assertIn("luatools_session", json.load(fh))
+        luatools_auth.disconnect_luatools()
+        with open(self.store) as fh:
+            store = json.load(fh)
+        self.assertNotIn("luatools_session", store)
+        self.assertEqual(store.get("hubcap_key"), "keep-me")
+
+    def test_restore_still_works_when_the_user_did_not_log_out(self):
+        """The #42 fix must survive: an update wipes backend/data/, and the
+        session has to come back."""
+        self.write_session(access_token="mine")
+        os.remove(os.path.join(self.tmp, "luatools_session.json"))
+        self.reload_plugin()
+        self.assertEqual(self.read_session()["access_token"], "mine")
+
+
 class HarvestRobustnessTest(unittest.TestCase):
     """`/json` answering an object instead of a list raised "'str' object has no
     attribute 'get'" out of _pick_target, which escaped get_cookies too and killed

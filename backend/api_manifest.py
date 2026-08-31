@@ -73,6 +73,29 @@ def _mirror_cred(**values: str) -> None:
         pass
 
 
+def _forget_cred(*names: str) -> None:
+    """Drop credentials from the settings-dir store.
+
+    _mirror_cred only merges NON-EMPTY values, so there is no way to clear one
+    through it. Without this, deleting a credential's own file was undone on the
+    next plugin load: restore_credentials_from_settings would find the mirror
+    still there and put it back. That is exactly what happened to a LuaTools
+    logout once the session joined the restore list.
+    """
+    try:
+        store = _read_cred_store()
+        if not any(n in store for n in names):
+            return
+        for n in names:
+            store.pop(n, None)
+        p = _cred_store_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(store, f, indent=2)
+    except Exception:
+        pass
+
+
 def restore_credentials_from_settings() -> None:
     """Re-apply credentials saved in the settings dir when the plugin-dir copies
     are missing (e.g. right after a reinstall wiped backend/data/). Idempotent,
