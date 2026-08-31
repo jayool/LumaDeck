@@ -544,6 +544,14 @@ GC entirely.
   diverge, LumaDeck loses a library, and that affects the nine library-aware
   functions, not just the sweep. Aligning it is a small change with a wide blast
   radius; worth doing deliberately.
+- ~~**A library that isn't there is still listed.**~~ **Fixed.**
+  `get_steam_libraries` appended every entry in `libraryfolders.vdf` whether or
+  not the drive was present: `statvfs` failed, the exception was swallowed, and
+  the entry rode through with `freeBytes`/`totalBytes` at 0. That painted a
+  phantom drive in LumaDeck's own Settings ▸ Steam Libraries list and sent all
+  nine library-aware lookups hunting in a path that does not exist. It now skips
+  an entry with no `steamapps/` under it — the path alone proves nothing, since a
+  popped SD card leaves its mount point behind as an empty directory.
 - **A lone stub still makes the grid lie.** `hasGameFiles` counts any manifest,
   including a stub-shaped one, so a game added but never installed shows as
   installed. The sweep deliberately does not delete it. The safer fix is on the read

@@ -360,6 +360,16 @@ def get_steam_libraries() -> list:
             continue
         folder_path = folder_path.replace("\\\\", "\\")
 
+        # Skip a library that isn't there. libraryfolders.vdf can outlive the
+        # drive it names — an SD card popped out leaves its mount point behind as
+        # an empty directory, so the PATH existing proves nothing; steamapps/ is
+        # what makes it a library. Without this the entry rides through with
+        # freeBytes/totalBytes at 0 (statvfs fails and is swallowed below), which
+        # paints a phantom drive in Settings and sends every library-aware lookup
+        # hunting for games somewhere that doesn't exist.
+        if not os.path.isdir(os.path.join(folder_path, "steamapps")):
+            continue
+
         apps = folder_data.get("apps", {})
         game_count = len(apps) if isinstance(apps, dict) else 0
 
