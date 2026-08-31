@@ -1551,6 +1551,149 @@ def delete_luatools_for_app(appid: int) -> dict:
     return {"success": True, "deleted": deleted, "count": len(deleted)}
 
 
+def _acf_sweep_enabled() -> bool:
+    """Manual kill-switch for the orphan-stub sweep: env LUMA_NO_ACF_SWEEP or the
+    marker ~/.config/lumalinux/no_acf_sweep. DEFAULT ON. Deliberately its own
+    switch and not coupled to the reconcile one — unrelated machinery."""
+    if os.environ.get("LUMA_NO_ACF_SWEEP"):
+        return False
+    return not os.path.exists(
+        os.path.join(real_home(), ".config", "lumalinux", "no_acf_sweep"))
+
+
+def _classify_manifest(app_state: dict) -> str:
+    """'stub' | 'real' | 'other', from a parsed AppState.
+
+    'stub' is the exact shape lumalinux used to seed before it stopped
+    (StateFlags=1, no InstalledDepots, nothing on disk, never updated). 'real' is
+    a manifest Steam wrote for content it actually has. Anything else — a queued
+    or half-finished install, a shape we don't recognise — is 'other' and is
+    never touched."""
+    def _i(key: str) -> int:
+        try:
+            return int(str(app_state.get(key, "0")).strip() or "0")
+        except (TypeError, ValueError):
+            return -1
+
+    depots = app_state.get("InstalledDepots") or {}
+    n_depots = len(depots) if isinstance(depots, dict) else 0
+    if n_depots or _i("SizeOnDisk") > 0:
+        return "real"
+    if (_i("StateFlags") == 1 and n_depots == 0
+            and _i("SizeOnDisk") == 0 and _i("LastUpdated") == 0):
+        return "stub"
+    return "other"
+
+
+def sweep_orphan_stubs() -> dict:
+    """One-off migration: remove .acf stubs lumalinux seeded before it stopped,
+    but ONLY where the game is really installed in a different library.
+
+    Background (docs/dev-multi-library.md, defect D4 / issue #41). The seed went
+    into the default library before the user picked a drive. Install anywhere
+    else and it is orphaned: after the next Steam restart Steam honours the
+    orphan, reports the game as not installed, and re-downloads the whole thing
+    into the root. Nothing produces these any more, so this is a migration for
+    users still carrying one — it runs once per plugin load, not on a timer.
+
+    Safety, in force order:
+      1. Nothing is removed unless a REAL manifest for the same appid exists in a
+         DIFFERENT library (resolved paths, not strings — libraryfolders.vdf
+         lists the root too and SD mount points vary). That condition is what
+         makes the deletion harmless: what goes is redundant by construction.
+      2. The stub shape is read from the file at the moment of deletion, never
+         from bookkeeping — so this also repairs users whose plugin was updated,
+         and cannot act on a stale record.
+      3. Any doubt, nothing: fewer than two libraries, an unreadable directory, a
+         manifest we can't parse, an appid present in only one place, no real
+         manifest elsewhere, or a download in flight for that appid.
+      4. Every removal is logged with the manifest that justified it.
+
+    A stub with no real manifest anywhere is deliberately LEFT ALONE: it is only
+    cosmetic (the grid reads it as installed) and there is no way to prove it is
+    ours rather than, say, an install Steam has queued.
+
+    Returns {"success", "removed": [...], "checked": <n libraries>, "reason"?}.
+    """
+    if not _acf_sweep_enabled():
+        return {"success": True, "removed": [], "reason": "disabled"}
+    try:
+        from steam_utils import (get_steam_libraries, detect_steam_install_path,
+                                 _parse_vdf_simple)
+
+        libs = get_steam_libraries() or [{"path": detect_steam_install_path() or ""}]
+        steamapps, seen = [], set()
+        for lib in libs:
+            lib_path = lib.get("path") if isinstance(lib, dict) else str(lib)
+            if not lib_path:
+                continue
+            d = os.path.join(lib_path, "steamapps")
+            key = os.path.realpath(d)
+            if key not in seen:
+                seen.add(key)
+                steamapps.append((key, d))
+        if len(steamapps) < 2:
+            # One library: the seed was overwritten in place by Steam on install
+            # and never orphaned. Nothing to do, and nothing we could compare.
+            return {"success": True, "removed": [], "checked": len(steamapps),
+                    "reason": "single_library"}
+
+        # appid -> [(resolved_library, path, kind)]
+        found: Dict[int, list] = {}
+        for key, d in steamapps:
+            try:
+                names = os.listdir(d)
+            except OSError:
+                continue  # unmounted SD, permissions — skip the library, not the sweep
+            for name in names:
+                m = re.fullmatch(r"appmanifest_(\d+)\.acf", name)
+                if not m:
+                    continue
+                path = os.path.join(d, name)
+                try:
+                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                        st = _parse_vdf_simple(fh.read()).get("AppState", {}) or {}
+                except Exception:
+                    continue  # unparseable: never act on what we can't read
+                if not isinstance(st, dict):
+                    continue
+                found.setdefault(int(m.group(1)), []).append(
+                    (key, path, _classify_manifest(st)))
+
+        removed = []
+        for appid, entries in found.items():
+            if len(entries) < 2:
+                continue
+            if appid in DOWNLOAD_TASKS and not DOWNLOAD_TASKS[appid].done():
+                continue  # mid-flight: leave the state alone
+            real_libs = {k for k, _, kind in entries if kind == "real"}
+            if not real_libs:
+                continue
+            for key, path, kind in entries:
+                if kind != "stub" or key in real_libs:
+                    continue
+                # A legacy DDL-era write could have left it read-only.
+                try:
+                    os.chmod(path, 0o644)
+                except OSError:
+                    pass
+                try:
+                    os.remove(path)
+                except OSError as exc:
+                    logger.warning("LumaDeck: could not remove orphan stub %s: %s",
+                                   path, exc)
+                    continue
+                removed.append(path)
+                logger.info(
+                    "LumaDeck: removed orphan .acf stub %s for app %d — the game "
+                    "is really installed in %s. Takes effect on the next Steam "
+                    "start.", path, appid, sorted(real_libs)[0])
+        return {"success": True, "removed": removed, "checked": len(steamapps)}
+    except Exception as exc:
+        logger.warning("LumaDeck: orphan-stub sweep failed: %s", exc)
+        return {"success": False, "error": str(exc), "removed": []}
+
+
 def get_installed_lua_scripts() -> dict:
     """Get list of all installed Lua scripts from stplug-in directory."""
     # Dev-only: synthetic library entries (Settings ▸ Dev ▸ Fake games) so the

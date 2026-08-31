@@ -94,6 +94,28 @@ class Plugin:
             except Exception as exc:
                 logger.warning(f"LumaDeck: Game Mode drop-in self-heal failed: {exc}")
 
+            # One-off migration (#41): remove .acf stubs an older lumalinux
+            # seeded into the default library for games that really live in
+            # another one. Steam honours the orphan after a restart and reports
+            # the game as not installed. Nothing produces these any more, so this
+            # only has to run once per load; it is a no-op with one library, and
+            # only ever removes a stub-shaped manifest whose game is provably
+            # installed elsewhere. See docs/dev-multi-library.md.
+            try:
+                from downloads import sweep_orphan_stubs
+                sweep = sweep_orphan_stubs()
+                if sweep.get("removed"):
+                    logger.info(
+                        "LumaDeck: orphan .acf sweep removed %d stub(s): %s. "
+                        "Restart Steam for it to take effect.",
+                        len(sweep["removed"]), sweep["removed"],
+                    )
+                else:
+                    logger.info("LumaDeck: orphan .acf sweep: nothing to do (%s)",
+                                sweep.get("reason") or "no orphans")
+            except Exception as exc:
+                logger.warning(f"LumaDeck: orphan .acf sweep failed: {exc}")
+
             summary = get_platform_summary()
             logger.info(f"LumaDeck: Platform summary: {json.dumps(summary)}")
 
