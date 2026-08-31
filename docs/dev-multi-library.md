@@ -322,6 +322,52 @@ himself at his step 8.
 
 ---
 
+## 4b. "NO INTERNET CONNECTION" — what it actually is
+
+The comment our `.acf` code inherited (*"this is what causes 'NO INTERNET
+CONNECTION'"*, `sff/lua/writer.py:113`) has been quoted in five places across our
+repos and never verified. Two things now bound it.
+
+**SFF has three measures against that popup, and we inherited two.**
+`sff/lua/writer.py:272-278` is explicit about the mechanism, and it is not the
+game's manifest:
+
+> *"Steam runs a Workshop update after validating the game. If the workshop ACF has
+> `NeedsDownload=1` the update will try to fetch workshop manifests the account
+> can't access → 'NO INTERNET CONNECTION'. Clear the flag when no workshop content
+> is actually installed (SizeOnDisk=0)."*
+
+| Measure | SFF | us |
+|---|---|---|
+| Clear `appworkshop_<appid>.acf` `NeedsDownload` | yes | **no** |
+| Seed manifests into `depotcache` before Steam starts | yes | yes |
+| Clear the game manifest's error state | yes | yes |
+
+The one with the clearest causal story is the one we never had — which explains why
+the third has never visibly done anything for us.
+
+**It does not apply here, and that is checked, not assumed.** No
+`steamapps/workshop/appworkshop_*.acf` exists on the author's rig, and LumaDeck
+does not implement Workshop downloads at all. Steam only writes that file for a
+game with subscribed Workshop items. Recorded so it is not rediscovered as a
+"missing feature": it is a deliberate non-gap.
+
+**`UpdateResult=8` is a decryption failure, on two independent observations.**
+Valve publishes no enum for the field (SteamKit's `enums.steamd` has no
+`EAppUpdateError`), so this is empirical:
+
+- Ours: Formula Legends, `RESEARCH.md` §12.6 — `Missing decryption key` in
+  `content_log.txt`, `UpdateResult=8` left in the manifest, `StateFlags` still 4.
+  Our own note calls it benign: *"it doesn't block Play"*.
+- A stranger's, different game (2111550), reported on Discord: *"content still
+  encrypted"* on launch, fixed by editing `StateFlags 36 → 4` and
+  `UpdateResult 8 → 0`. (36 = 4 Fully Installed + 32 Update Paused.)
+
+That second one is the first evidence we have that **clearing the field fixes
+something real**, rather than merely tidying it. It is second-hand and changed two
+fields at once, so it is a strong lead, not proof. It does raise P4's value: the
+field does get stuck, and unsticking it appears to help.
+
 ## 5. Open questions
 
 - ~~**Q1 — is the stub still needed?**~~ **ANSWERED: the CREATE branch is not.**
