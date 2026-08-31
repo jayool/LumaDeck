@@ -15,7 +15,7 @@ turns Steam itself into the download engine for manifests, backed by the
 | --- | --- |
 | [Getting started](getting-started.md) | First run in three steps: credentials → install components → add your first game. |
 | [Credentials](credentials.md) | Hubcap API key, Ryuu cookie (incl. one-tap auto-import), the LuaTools account that fixes need, and the expiry warnings. |
-| [Adding & updating games](adding-and-updating-games.md) | AppID auto-detect, search by name, DRM/launcher notices, library picker, updates. |
+| [Adding & updating games](adding-and-updating-games.md) | AppID auto-detect, search by name, DRM/launcher notices, which drive it installs to, updates. |
 | [Managing a game](managing-a-game.md) | The per-game page: auto-update pin, FakeAppId/Token/DLCs, Goldberg, fixes, DRM removal, uninstall. |
 | [Achievements](achievements.md) | Native via SLSsteam; the old generator is hidden behind a flag. |
 | [Components & health](components-and-health.md) | What SLSsteam / lumalinux / CloudRedirect are, and what each health state means. |
@@ -30,6 +30,7 @@ turns Steam itself into the download engine for manifests, backed by the
 | [Architecture](dev-architecture.md) | The frontend ⇄ backend bridge and the module layout. |
 | [Backend reference](dev-backend-reference.md) | One-line purpose of every `backend/` module. |
 | [Translations (i18n)](dev-i18n.md) | Adding a string or a new language. |
+| [Multi-library behaviour](dev-multi-library.md) | Why a game on a second drive used to break: the install root vs a library, the `.acf` stub we stopped writing, and the five defects it caused (issue #41). |
 
 ---
 
