@@ -52,8 +52,8 @@ APP_NAME_CACHE: Dict[int, str] = {}
 # LumaDeck replaces the DDL-based install flow with a delegation to
 # tools/steamidra_lite.py from the jayool/lumalinux project. The script does
 # everything DDL used to do plus the SLSsteam config edits the plugin used to
-# do separately (config.yaml AdditionalApps, depot keys into config.vdf, .acf
-# stub, ACCELA markers, etc.). After invoking it we just shut Steam down so
+# do separately (config.yaml AdditionalApps, depot keys into config.vdf, the
+# .lua into stplug-in, etc.). After invoking it we just shut Steam down so
 # SteamOS Game Mode auto-relaunches it with the hooks reading the fresh
 # config — Steam itself handles the actual game download natively.
 #
@@ -914,9 +914,10 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
            - keys.txt for lumalinux
            - DecryptionKey entries into config.vdf
            - AdditionalApps entry in SLSsteam config.yaml
-           - clean .acf stub
            - .lua copied to stplug-in (interop with the rest of the ecosystem)
-           - ACCELA / ASSella markers (.DepotDownloader/, <accela>/depots/*.depot)
+         NOT an appmanifest: Steam writes that on Install, in the library the
+         user picks (issue #41). The ACCELA markers went with it — they were
+         derived from the stub's installdir.
       4. Steam itself does the actual download once Game Mode relaunches it
          (handled outside this function, in _download_zip_for_app).
 
@@ -1008,9 +1009,9 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
                 manifests_dir = cand.parent
                 break
 
-        # Run steamidra_lite. It handles everything: depotcache,
-        # keys.txt, config.vdf, config.yaml, .acf stub, stplug-in lua,
-        # ACCELA markers, .depot tracker.
+        # Run steamidra_lite. It handles everything: depotcache, keys.txt,
+        # config.vdf, config.yaml, stplug-in lua. No appmanifest — Steam writes
+        # that on Install.
         _set_download_state(appid, {"status": "installing"})
         # Resolve the canonical name (local applist cache first, store API
         # fallback) so steamidra writes it as the .acf installdir. Empty on a
@@ -1330,9 +1331,8 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                 # Process and install via steamidra_lite (LumaDeck flow).
                 # The script writes everything we used to do across the
                 # plugin: depotcache, keys.txt, config.vdf DecryptionKeys,
-                # AdditionalApps in SLSsteam config.yaml, the .acf stub, the
-                # .lua copy into stplug-in, ACCELA markers, and the .depot
-                # update tracker. After that, we trigger `steam -shutdown` so
+                # AdditionalApps in SLSsteam config.yaml, and the .lua copy
+                # into stplug-in. After that, we trigger `steam -shutdown` so
                 # SteamOS Game Mode relaunches Steam with the hooks reading
                 # the fresh config; Steam itself downloads the game natively.
                 try:

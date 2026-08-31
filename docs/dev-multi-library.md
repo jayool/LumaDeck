@@ -44,7 +44,11 @@ not: the user chooses, and we simply never find out.
 
 ---
 
-## 2. What the `.acf` is, and why we write one
+## 2. What the `.acf` is, and why we USED TO write one
+
+> Past tense throughout this section: P6 removed the create branch, and
+> `write_or_patch_acf` is now `patch_acf_error_state`. What survives is the patch,
+> which only ever runs on a manifest Steam itself wrote.
 
 `appmanifest_<appid>.acf` is Steam's per-library, per-game install record:
 installed or not, which build, size on disk, the folder name, and whether the last
@@ -386,9 +390,15 @@ field does get stuck, and unsticking it appears to help.
   (`steamidra_lite.py:274-286`) writes to both on inherited SteaMidra rationale;
   moon's startup copy implies it does not.
 
-Q1 still needs real Steam with a real login. Two environments:
-`lumalinux/.devcontainer/steamos` (Steam in gamepadui, noVNC on 6080, Decky and
-LumaDeck pre-deployed — needs a second library added by hand), or a Deck.
+Q3 is the only one still open, and it is not blocking anything: writing to both
+depotcache directories is harmless whichever way it falls.
+
+Q1 and Q2 were answered on `lumalinux/.devcontainer/steamos` (Steam in gamepadui,
+noVNC on 6080, Decky and LumaDeck pre-deployed) with a second library on a real
+ext4 partition — see §6. That environment is the one to reach for if any of this
+needs re-testing; three non-obvious things about it are recorded in the evidence
+log, including that Steam loads `steamapps/libraryfolders.vdf` and that
+`pgrep -x steam` does not see Steam in Game Mode.
 
 ---
 

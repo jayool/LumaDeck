@@ -32,8 +32,6 @@ also surfaces:
 - **Game notices** — DRM (e.g. Denuvo) or required third-party launchers.
 - **Credential warnings** — if your Hubcap key or Ryuu cookie is expired or
   missing (see [Credentials](credentials.md#expiry-warnings)).
-- **Library picker** — if you have more than one Steam library, you choose
-  where it installs.
 
 ### What happens when you tap Download Manifest
 
@@ -43,6 +41,22 @@ Steam restart** (restart only if it doesn't show up — some Steam builds don't
 support the live refresh). Then press **Install** on it in Steam — it downloads natively,
 like any owned title, and **its download progress shows in the Steam library,
 not in the plugin.**
+
+### Which drive it installs to
+
+**Steam asks you, not LumaDeck.** If you have more than one library, Steam's own
+Install dialog offers the drive picker, exactly as it does for a game you own.
+
+LumaDeck writes nothing into any library when you add a game — no manifest, no
+placeholder. Steam creates the manifest when you press Install, in whichever
+library you picked, with its own name for the folder.
+
+That is deliberate and it is recent. Until v0.7.4 LumaDeck wrote a placeholder
+into the default library at *add* time, before you had chosen anything — which
+stranded the game if you then installed it elsewhere (issue #41). There was also
+a library picker in the add flow at one point; it was removed because the backend
+ignored whatever you chose. Choosing the drive has always been Steam's job, and
+now nothing pretends otherwise.
 
 The full end-to-end breakdown is in the root
 [README → How a game install works](../README.md#how-a-game-install-works).
