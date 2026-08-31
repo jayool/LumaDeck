@@ -537,13 +537,15 @@ GC entirely.
   regenerate it), but that was mid-session. The startup window is narrower and
   untested. The effect we want lands on the next Steam start either way, so a delay
   would cost nothing if this ever looks suspect.
-- **The two repos now disagree on where to read `libraryfolders.vdf`.** lumalinux's
-  `_all_library_paths` (P4) reads `steamapps/` and `config/` and unions them;
-  LumaDeck's `get_steam_libraries` reads `config/` only. Steam keeps them in sync
-  and loads the `steamapps/` one, so today it makes no difference — but if they ever
-  diverge, LumaDeck loses a library, and that affects the nine library-aware
-  functions, not just the sweep. Aligning it is a small change with a wide blast
-  radius; worth doing deliberately.
+- ~~**The two repos disagree on where to read `libraryfolders.vdf`.**~~ **Fixed.**
+  Both now read `steamapps/` and `config/` and union them, so neither copy can hide
+  a library. On the LumaDeck side that meant collapsing three independent parses of
+  the file (`get_game_install_path_response`, `get_installed_games`,
+  `get_steam_libraries`) into one `_library_entries()` helper — the union, the
+  dedupe by resolved path, the drop of libraries with no `steamapps/`, and the
+  merge of `apps` blocks all live in one place now. The root is hoisted to the
+  front, since Settings labels entry 0 as the default library and after a union
+  file order no longer guarantees which one that is.
 - ~~**A library that isn't there is still listed.**~~ **Fixed.**
   `get_steam_libraries` appended every entry in `libraryfolders.vdf` whether or
   not the drive was present: `statvfs` failed, the exception was swallowed, and

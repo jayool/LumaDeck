@@ -168,32 +168,16 @@ def get_game_install_path_response(appid: int) -> Dict[str, any]:
     if not steam_path:
         return {"success": False, "error": "Could not find Steam installation path"}
 
-    library_vdf_path = os.path.join(steam_path, "config", "libraryfolders.vdf")
-    if not os.path.exists(library_vdf_path):
+    entries = _library_entries()
+    if not entries:
         return {"success": False, "error": "Could not find libraryfolders.vdf"}
 
-    try:
-        with open(library_vdf_path, "r", encoding="utf-8") as handle:
-            vdf_content = handle.read()
-        library_data = _parse_vdf_simple(vdf_content)
-    except Exception as exc:
-        return {"success": False, "error": "Failed to parse libraryfolders.vdf"}
-
-    library_folders = library_data.get("libraryfolders", {})
-    library_path = None
     appid_str = str(appid)
-    all_library_paths = []
-
-    for folder_data in library_folders.values():
-        if isinstance(folder_data, dict):
-            folder_path = folder_data.get("path", "")
-            if folder_path:
-                folder_path = folder_path.replace("\\\\", "\\")
-                all_library_paths.append(folder_path)
-            apps = folder_data.get("apps", {})
-            if isinstance(apps, dict) and appid_str in apps:
-                library_path = folder_path
-                break
+    all_library_paths = [e["path"] for e in entries]
+    # Steam records which library holds each app; trust that first, then fall
+    # back to looking for the manifest in each one.
+    library_path = next(
+        (e["path"] for e in entries if appid_str in e["apps"]), None)
 
     appmanifest_path = None
     if not library_path:
@@ -241,28 +225,7 @@ def get_game_install_path_response(appid: int) -> Dict[str, any]:
 
 def get_installed_games() -> list:
     """Scan all Steam library folders for installed games (appmanifest_*.acf files)."""
-    steam_path = detect_steam_install_path()
-    if not steam_path:
-        return []
-
-    library_vdf_path = os.path.join(steam_path, "config", "libraryfolders.vdf")
-    if not os.path.exists(library_vdf_path):
-        return []
-
-    try:
-        with open(library_vdf_path, "r", encoding="utf-8") as handle:
-            vdf_content = handle.read()
-        library_data = _parse_vdf_simple(vdf_content)
-    except Exception:
-        return []
-
-    library_folders = library_data.get("libraryfolders", {})
-    all_library_paths = []
-    for folder_data in library_folders.values():
-        if isinstance(folder_data, dict):
-            folder_path = folder_data.get("path", "")
-            if folder_path:
-                all_library_paths.append(folder_path.replace("\\\\", "\\"))
+    all_library_paths = [e["path"] for e in _library_entries()]
 
     games = []
     seen_appids = set()
@@ -329,50 +292,73 @@ def check_stuck_updates() -> dict:
     return {"success": True, "stuck": stuck}
 
 
-def get_steam_libraries() -> list:
-    """Return all Steam library folders with free space info.
+def _library_entries() -> list:
+    """Every real Steam library, as [{"path": str, "apps": dict}], root first.
 
-    Each entry: {"path": str, "freeBytes": int, "totalBytes": int, "gameCount": int}
+    Steam keeps TWO copies of libraryfolders.vdf and loads the one under
+    steamapps/ — its own content_log says so ("Loaded Steam library folders
+    configuration: .../steamapps/libraryfolders.vdf"), and only falls back to
+    config/. Both are written together and stay identical, but we read both and
+    union them so neither copy can hide a library from us. lumalinux's
+    _all_library_paths does the same; this is the LumaDeck half of that.
+
+    A dead entry surviving in one copy is harmless because entries without a
+    steamapps/ under them are dropped: libraryfolders.vdf outlives the drive it
+    names, and a popped SD card leaves its mount point behind as an empty
+    directory, so the path existing proves nothing.
+
+    The root is hoisted to the front — Settings labels the first entry as the
+    default library, and after a union the file order alone no longer guarantees
+    it. `apps` blocks are merged when a library appears in both copies.
     """
     steam_path = detect_steam_install_path()
     if not steam_path:
         return []
 
-    library_vdf_path = os.path.join(steam_path, "config", "libraryfolders.vdf")
-    if not os.path.exists(library_vdf_path):
-        return []
+    by_key, order = {}, []
+    for vdf_path in (os.path.join(steam_path, "steamapps", "libraryfolders.vdf"),
+                     os.path.join(steam_path, "config", "libraryfolders.vdf")):
+        if not os.path.exists(vdf_path):
+            continue
+        try:
+            with open(vdf_path, "r", encoding="utf-8") as handle:
+                folders = _parse_vdf_simple(handle.read()).get("libraryfolders", {})
+        except Exception:
+            continue
+        if not isinstance(folders, dict):
+            continue
+        for folder_data in folders.values():
+            if not isinstance(folder_data, dict):
+                continue
+            folder_path = folder_data.get("path", "")
+            if not folder_path:
+                continue
+            folder_path = folder_path.replace("\\\\", "\\")
+            if not os.path.isdir(os.path.join(folder_path, "steamapps")):
+                continue
+            apps = folder_data.get("apps", {})
+            apps = dict(apps) if isinstance(apps, dict) else {}
+            key = os.path.realpath(folder_path)
+            if key in by_key:
+                by_key[key]["apps"].update(apps)   # union across both copies
+                continue
+            by_key[key] = {"path": folder_path, "apps": apps}
+            order.append(key)
 
-    try:
-        with open(library_vdf_path, "r", encoding="utf-8") as handle:
-            vdf_content = handle.read()
-        library_data = _parse_vdf_simple(vdf_content)
-    except Exception:
-        return []
+    root_key = os.path.realpath(steam_path)
+    if root_key in by_key:
+        order = [root_key] + [k for k in order if k != root_key]
+    return [by_key[k] for k in order]
 
-    library_folders = library_data.get("libraryfolders", {})
+
+def get_steam_libraries() -> list:
+    """Return all Steam library folders with free space info.
+
+    Each entry: {"path": str, "freeBytes": int, "totalBytes": int, "gameCount": int}
+    """
     libraries = []
-
-    for folder_data in library_folders.values():
-        if not isinstance(folder_data, dict):
-            continue
-        folder_path = folder_data.get("path", "")
-        if not folder_path:
-            continue
-        folder_path = folder_path.replace("\\\\", "\\")
-
-        # Skip a library that isn't there. libraryfolders.vdf can outlive the
-        # drive it names — an SD card popped out leaves its mount point behind as
-        # an empty directory, so the PATH existing proves nothing; steamapps/ is
-        # what makes it a library. Without this the entry rides through with
-        # freeBytes/totalBytes at 0 (statvfs fails and is swallowed below), which
-        # paints a phantom drive in Settings and sends every library-aware lookup
-        # hunting for games somewhere that doesn't exist.
-        if not os.path.isdir(os.path.join(folder_path, "steamapps")):
-            continue
-
-        apps = folder_data.get("apps", {})
-        game_count = len(apps) if isinstance(apps, dict) else 0
-
+    for entry in _library_entries():
+        folder_path = entry["path"]
         free_bytes = 0
         total_bytes = 0
         try:
@@ -386,7 +372,7 @@ def get_steam_libraries() -> list:
             "path": folder_path,
             "freeBytes": free_bytes,
             "totalBytes": total_bytes,
-            "gameCount": game_count,
+            "gameCount": len(entry["apps"]),
         })
 
     return libraries
