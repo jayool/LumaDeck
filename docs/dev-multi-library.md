@@ -523,12 +523,38 @@ Steam overwrites our stub on install and leaves no trace.
 | ~~P2~~ | ~~`hasGameFiles` across all libraries — D2~~ | LumaDeck | — | **DONE** — test flips to OK; 112 tests pass |
 | ~~P3~~ | ~~Narrow `_ACF_ERROR_FIELDS`; absent ≠ changed — D5~~ | lumalinux | — | **DONE** — `6dc36a0` |
 | ~~P4~~ | ~~The patch finds the manifest across libraries — D1~~ | lumalinux | — | **DONE** — `2c2cc7c` |
-| **P5** | Reconciliation — D4 | LumaDeck | — (Q2 answered) | a reproduced broken state self-heals on refresh |
+| ~~P5~~ | ~~Sweep the stubs already seeded — D4~~ | LumaDeck | — | **DONE** — `c96e2db` |
 
-P5 is all that is left. It deletes files Steam owns, and is not gated on a
-measurement — both the defect and the cure are reproduced above — but it is now a
-one-off migration rather than a permanent mechanism, since P6 stopped producing the
-orphans in the first place.
+All six are done. P5 shipped as a one-off sweep at plugin load rather than the
+permanent mechanism the original design assumed: since P6 stopped producing
+orphans, the set is static, which removed the persistent record, the expiry and the
+GC entirely.
+
+### Loose ends, recorded rather than fixed
+
+- **The sweep runs at plugin load, which is around Steam's own startup.** Deleting
+  a manifest with Steam already running was measured safe (twice — Steam does not
+  regenerate it), but that was mid-session. The startup window is narrower and
+  untested. The effect we want lands on the next Steam start either way, so a delay
+  would cost nothing if this ever looks suspect.
+- **The two repos now disagree on where to read `libraryfolders.vdf`.** lumalinux's
+  `_all_library_paths` (P4) reads `steamapps/` and `config/` and unions them;
+  LumaDeck's `get_steam_libraries` reads `config/` only. Steam keeps them in sync
+  and loads the `steamapps/` one, so today it makes no difference — but if they ever
+  diverge, LumaDeck loses a library, and that affects the nine library-aware
+  functions, not just the sweep. Aligning it is a small change with a wide blast
+  radius; worth doing deliberately.
+- **A lone stub still makes the grid lie.** `hasGameFiles` counts any manifest,
+  including a stub-shaped one, so a game added but never installed shows as
+  installed. The sweep deliberately does not delete it. The safer fix is on the read
+  side: have `hasGameFiles` ignore a manifest matching the stub fingerprint. No file
+  is touched and the grid becomes honest.
+- **Game files orphaned in the root are not cleaned.** If a download was cancelled
+  after writing into `steamapps/common/`, removing the stub leaves those files with
+  nothing referencing them. They were already orphaned relative to a manifest saying
+  "not installed", so this does not make it worse — but nothing reclaims them.
+- **`.acf.bak` litter.** The pre-P3 patch branch wrote one backup per game per add.
+  They are ours, harmless, and never cleaned up.
 
 **P6 — remove the seed — is done** (lumalinux `8260b12`) and verified on the rig
 with the shipped code, not the experiment patch: adding Jump King logs
