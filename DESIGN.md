@@ -152,7 +152,7 @@ plugin._download_zip_for_app(appid)
             → injects DecryptionKey entries into config.vdf (inline VDF
               text editing, no vdf module dependency)
             → adds the AppID to SLSsteam's AdditionalApps
-            → writes a clean .acf stub
+            → resets the .acf error state (only if Steam already wrote one)
             → copies the .lua to stplug-in/
             → drops ACCELA-compatible markers (.DepotDownloader dir +
               <accela>/depots/<appid>.depot tracker) — BEST-EFFORT here:

@@ -16,7 +16,7 @@ The **Status** line reflects what's on disk:
 
 **Download Manifest** (shown as **Re-download Manifest** once the game has a
 `.lua`) re-runs the manifest fetch and processing — it rewrites the config
-(`keys.txt`, `config.vdf`, the `.acf` stub, …). The game files themselves are
+(`keys.txt`, `config.vdf`, the SLSsteam entry, …). The game files themselves are
 always downloaded by Steam natively afterwards, never by the plugin. Use it
 after a failed or partial install.
 

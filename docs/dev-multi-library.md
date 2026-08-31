@@ -180,7 +180,7 @@ they only feed a diagnostics dict.
 Still open, in lumalinux and decided separately: `steamidra_lite` writes the marker once
 at add time (`:1607-1613`). That is a cheap one-shot, not a loop.
 
-### D4 — the orphan stub after installing to another library (this is #41) — **REPRODUCED**
+### D4 — the orphan stub after installing to another library (this is #41) — **FIXED AT SOURCE**
 
 The stub is seeded in the root because at that moment the game is installed
 nowhere and there is no correct library to choose. Steam then writes its real
@@ -205,7 +205,13 @@ reporter's "can't move storage" is presumably specific to his setup; the harm we
 actually reproduce is a wasted full re-download plus dead disk usage. Either way the
 cause and the fix are the same.
 
-**Fix:** reconciliation — see §4.
+**Fixed at source** (lumalinux): the seed is gone. `write_or_patch_acf` is now
+`patch_acf_error_state` — it clears the error state of a manifest Steam already
+wrote and never creates one. With nothing seeded there is no orphan to strip, so
+#41 cannot occur on a new install.
+
+What remains is the **migration**: users already carrying a stub from an earlier
+version. See §4 — the same five rules, but run once rather than forever.
 
 ### D5 — the patch cancels Steam's own scheduled work — **FIXED**
 
@@ -474,17 +480,38 @@ P4 needs no Steam and is independently shippable and revertible. P5 deletes
 files Steam owns; it is no longer gated on a measurement — both the defect and the
 cure are reproduced above.
 
-**The plan above predates the stub result and needs re-scoping.** If the create
-branch goes:
+**P6 — remove the seed — is done** (lumalinux). It re-scoped the rest:
 
-- The orphan is never produced, so **P5 stops being a permanent mechanism** and
-  becomes a one-off migration for users already carrying a stub from earlier
-  versions — still worth doing, much smaller, and the same five safety rules apply.
-- **P4 halves**: there is no seed to place in the wrong library. What remains is
-  finding the existing `.acf` across libraries so the patch branch acts on the right
-  one (the D1 scenario: a game already installed elsewhere).
-- **P3 is unaffected.**
+- **P5** is no longer a permanent mechanism: a one-off migration for users already
+  carrying a stub. Same five rules, run once.
+- **P4** halved. There is no seed to misplace; what remains is that the patch must
+  find the existing `.acf` **across libraries**, for the D1 scenario (a game already
+  installed elsewhere getting a LuaTools downgrade or a re-add).
+- **P3** was unaffected and is done.
 
-Removing the seed is a behaviour change on every user's install path, so it wants a
-deliberate rollout rather than a quiet deletion — and the patch branch must survive
-it. Decide before writing code.
+Carried by P6, each verified rather than assumed:
+
+- `--name` stays accepted and **ignored**. LumaDeck probes `--help` for it once per
+  session and caches the answer (`downloads.py:78`), so removing the flag would
+  break an add if lumalinux is updated without restarting the plugin. Delete it
+  once nothing sends it.
+- The ACCELA in-game marker is **skipped** when no `.acf` exists instead of falling
+  back to `str(app_id)`, which would have created an empty
+  `steamapps/common/<appid>/` nobody reads. `--accela-mark` after install still
+  places it.
+- `_fetch_game_name` and `_sanitize_installdir` lost their only caller and are gone.
+- The post-install guard in `downloads.py:1031` checks `keys.txt`, not the `.acf`,
+  so it is unaffected.
+
+**UI consequence, and it is a fix rather than a regression.** `GameCard.tsx:32-38`
+documents two states: installed → full colour; *"only staged (manifest written but
+Steam hasn't downloaded it yet)"* → dimmed with a download-cloud badge. The stub
+made `hasGameFiles` true the moment a game was added, so the staged state was
+effectively unreachable and a just-added game looked identical to one you had
+played. Without the seed the grid does what its own comment says.
+
+`GameDetail` was never fooled: `gameInstalled = !!installPath && gameSize > 0`, and
+the stub's size is 0. The LuaTools *manifest* slot needs no install path by design
+(`GameDetail.tsx:504`, `canInstallVersion = luatoolsConnected`), so downgrading to a
+fix's build before downloading the game keeps working; only *Apply fix*, which drops
+DLLs into the game dir, requires an installed game — as it should.
