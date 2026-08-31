@@ -5,8 +5,11 @@ import { connectLuatools, disconnectLuatools, getLuatoolsStatus } from "../api";
 import { closeLoginBrowser } from "../browserLogin";
 import {
   getLuatoolsConnected,
+  getLuatoolsExpired,
   setLuatoolsConnected,
+  setLuatoolsExpired,
   subscribeLuatoolsConnected,
+  subscribeLuatoolsExpired,
 } from "../luatoolsConnection";
 
 type Toast = (title: string, body?: string, duration?: number) => void;
@@ -29,14 +32,20 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
   const [connected, setConnectedLocal] = useState<boolean | null>(
     getLuatoolsConnected(),
   );
+  const [expired, setExpiredLocal] = useState<boolean>(getLuatoolsExpired());
   const [connecting, setConnecting] = useState(false);
 
   useEffect(() => subscribeLuatoolsConnected(setConnectedLocal), []);
+  useEffect(() => subscribeLuatoolsExpired(setExpiredLocal), []);
 
+  // The backend no longer answers "does a session file exist" — it answers "do I
+  // hold a usable token", refreshing first if the current one is stale. So this
+  // is what tells an expired user they're logged out BEFORE they press Apply fix.
   const refresh = useCallback(async () => {
     const r = await getLuatoolsStatus();
     const c = !!(r?.success && r.connected);
     setLuatoolsConnected(c); // → notifies every subscribed instance
+    setLuatoolsExpired(!!(r?.success && r.expired));
     return c;
   }, []);
 
@@ -52,6 +61,7 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
       if (res?.success) {
         closeLoginBrowser(); // pop /externalweb off the main window's backstack
         setLuatoolsConnected(true);
+        setLuatoolsExpired(false); // a fresh login clears any expiry notice
         toast("LuaTools connected ✓"); // TODO i18n
         return true;
       } else if (!res?.cancelled) {
@@ -68,15 +78,18 @@ export function useLuatoolsConnect(toast: Toast, t: Translate) {
   const disconnect = useCallback(async () => {
     await disconnectLuatools();
     setLuatoolsConnected(false);
+    setLuatoolsExpired(false); // logging out on purpose isn't an expiry
     toast("LuaTools disconnected"); // TODO i18n
   }, [toast]);
 
   return {
     connected,
+    expired,
     connecting,
     connect,
     disconnect,
     refresh,
     setConnected: setLuatoolsConnected,
+    setExpired: setLuatoolsExpired,
   };
 }

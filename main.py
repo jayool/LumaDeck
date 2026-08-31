@@ -574,7 +574,7 @@ class Plugin:
 
     async def get_luatools_status(self) -> str:
         from luatools_auth import get_luatools_status
-        return _j(get_luatools_status())
+        return _j(await get_luatools_status())
 
     async def cancel_connect_luatools(self) -> str:
         from luatools_auth import cancel_connect_luatools

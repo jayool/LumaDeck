@@ -98,6 +98,58 @@ def _load_session() -> dict | None:
         return None
 
 
+# A 401 (or a definitively rejected refresh) marks the session REJECTED rather
+# than deleting it: a single 401 can be Cloudflare having a bad minute, and
+# throwing the session away would also throw away the refresh token that might
+# still work. The mark lives inside the session file so it survives a restart,
+# and any call that succeeds clears it.
+_REJECTED_KEY = "_lumadeck_rejected"
+
+
+def _mark_session_rejected() -> None:
+    session = _load_session()
+    if session is None or session.get(_REJECTED_KEY):
+        return
+    session[_REJECTED_KEY] = True
+    _save_session(session)
+    logger.info("LuaTools: session marked as expired (server rejected the token)")
+
+
+def _clear_session_rejected() -> None:
+    session = _load_session()
+    if session is None or not session.get(_REJECTED_KEY):
+        return
+    session.pop(_REJECTED_KEY, None)
+    _save_session(session)
+    logger.info("LuaTools: session works again; cleared the expired mark")
+
+
+def restore_session(raw: str) -> bool:
+    """Re-apply a session mirrored into the settings credential store, after a
+    reinstall or update wiped backend/data/. Returns True if it was written.
+
+    _save_session has mirrored the session on every save since it was written,
+    but restore_credentials_from_settings never read that mirror back — Hubcap
+    and Ryuu were restored, LuaTools was not. So every LumaDeck update logged the
+    user out of LuaTools.
+
+    Only writes when there is NO current session: a live one is always newer than
+    the mirror (a refresh rotates the token and saves, and the mirror is only as
+    fresh as the last save that reached it), so restoring over it could hand back
+    a spent refresh token.
+    """
+    if _load_session() is not None:
+        return False
+    try:
+        session = json.loads(raw)
+    except Exception:
+        return False
+    if not isinstance(session, dict) or not session.get("access_token"):
+        return False
+    write_text(data_path(_SESSION_FILE), json.dumps(session))
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Cookie harvest → Supabase session
 # ---------------------------------------------------------------------------
@@ -183,9 +235,32 @@ async def connect_luatools(timeout_s: int = 180) -> dict:
     return {"success": False, "error": "timeout"}
 
 
-def get_luatools_status() -> dict:
+async def get_luatools_status() -> dict:
+    """Whether we hold a USABLE LuaTools session — not merely a session file.
+
+    This used to answer `_load_session() is not None`, i.e. "does the file
+    exist". The file exists whether the token is alive or three weeks dead, so
+    Settings said "Connected" to users whose session had expired and the truth
+    only surfaced as a raw `session_expired` at the moment they applied a fix.
+
+    Now it asks for a real token, which is exactly what applying a fix does: a
+    live token returns instantly without touching the network, and an expired one
+    goes through the refresh first. `expired` is only reported when we KNOW the
+    session is dead (the server rejected it), never on a network wobble — an
+    offline Deck keeps showing the last known state instead of nagging for a
+    re-login it can't complete.
+    """
+    session = _load_session()
+    if session is None:
+        return {"success": True, "status": _connect_state.get("status", "idle"),
+                "connected": False, "expired": False}
+    token = await _access_token()
+    # Re-read: _access_token may have refreshed (clearing nothing) or marked the
+    # session rejected, so the copy loaded above can be stale by now.
+    after = _load_session() or {}
+    expired = bool(after.get(_REJECTED_KEY))
     return {"success": True, "status": _connect_state.get("status", "idle"),
-            "connected": _load_session() is not None}
+            "connected": bool(token) and not expired, "expired": expired}
 
 
 def cancel_connect_luatools() -> dict:
@@ -247,8 +322,22 @@ async def _access_token() -> str | None:
             )
             if resp.status_code == 200:
                 new_session = resp.json()
+                # Supabase returns `expires_in`; `expires_at` is added by its JS
+                # client, not the endpoint. Without it the check above reads the
+                # brand-new session as already stale and we'd refresh on EVERY
+                # call, so derive it when the server didn't send one.
+                if not new_session.get("expires_at"):
+                    try:
+                        new_session["expires_at"] = int(time.time()) + int(new_session.get("expires_in") or 3600)
+                    except (TypeError, ValueError):
+                        new_session["expires_at"] = int(time.time()) + 3600
                 _save_session(new_session)
                 return new_session.get("access_token")
+            # 4xx = the refresh token itself is dead (spent, revoked, expired):
+            # no retry will fix it, so record it and let the UI offer a re-login.
+            # 5xx / network errors are transient — keep quiet and try again later.
+            if 400 <= resp.status_code < 500:
+                _mark_session_rejected()
             logger.warning(f"LuaTools: token refresh failed ({resp.status_code}); using existing token")
         except Exception as exc:
             logger.warning(f"LuaTools: token refresh error: {exc}; using existing token")
@@ -349,9 +438,11 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
             headers=_auth_headers(token), timeout=30,
         )
         if resp.status_code == 401:
+            _mark_session_rejected()
             return {"success": False, "error": "session_expired"}
         if resp.status_code != 200:
             return {"success": False, "error": f"api_error_{resp.status_code}"}
+        _clear_session_rejected()
         signed_url = (resp.json() or {}).get("url")
         if not signed_url:
             return {"success": False, "error": "The download link was empty — try again."}

@@ -493,6 +493,7 @@ export function Settings() {
   // the same "connect" without duplicating the browser-login dance.
   const {
     connected: luatoolsConnected,
+    expired: luatoolsExpired,
     connecting: luatoolsConnecting,
     connect: handleConnectLuatools,
     disconnect: handleDisconnectLuatools,
@@ -802,6 +803,12 @@ export function Settings() {
             description={
               luatoolsConnected
                 ? "Connected. Fixes appear on each game details page"
+                : luatoolsExpired
+                // Third state, added with #42: the session file is still there but
+                // the server rejected the token. This row used to read the file's
+                // mere existence, so it said "Connected" to users who were in fact
+                // logged out — they only found out when a fix failed.
+                ? t("luatoolsExpiredSettings")
                 : "Log in with Discord to apply fixes on each game details page"
             }
           >

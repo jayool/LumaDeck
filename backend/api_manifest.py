@@ -100,6 +100,17 @@ def restore_credentials_from_settings() -> None:
             save_ryu_cookie_expiry(expiry)
         except Exception:
             pass
+    # LuaTools was mirrored on every save but never restored here, so each update
+    # silently logged the user out of LuaTools. Imported locally: luatools_auth
+    # imports _mirror_cred from this module, so a top-level import would cycle.
+    session = store.get("luatools_session")
+    if session:
+        try:
+            from luatools_auth import restore_session
+            if restore_session(session):
+                logger.info("LumaDeck: restored LuaTools session from settings store")
+        except Exception:
+            pass
 
 
 

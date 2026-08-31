@@ -42,7 +42,16 @@ def _pick_target(port: int) -> str | None:
         data = json.load(urlopen(f"http://127.0.0.1:{port}/json", timeout=3))
     except Exception:
         return None
-    targets = [t for t in data if t.get("webSocketDebuggerUrl")]
+    # /json normally answers a LIST of target objects, but not always: while CEF
+    # is starting (or if something else is on 8080) it can answer an object, and
+    # iterating that yields its KEYS — strings, which have no .get. That raised
+    # "'str' object has no attribute 'get'" outside the try above, so it escaped
+    # _pick_target AND get_cookies and blew up the whole harvest poll, skipping
+    # the on-disk fallback that would have found the session anyway.
+    if not isinstance(data, list):
+        return None
+    targets = [t for t in data
+               if isinstance(t, dict) and t.get("webSocketDebuggerUrl")]
     if not targets:
         return None
     page = next((t for t in targets if t.get("type") == "page"), None)
@@ -135,10 +144,15 @@ def get_cookies(port: int = DEBUG_PORT):
     if not ws:
         return None
     try:
-        return _call(ws, "Storage.getCookies", {}).get("cookies", [])
+        cookies = _call(ws, "Storage.getCookies", {}).get("cookies", [])
     except Exception as exc:
         logger.info(f"CDP get_cookies failed: {exc}")
         return None
+    # Keep the documented contract (a list of dicts) so callers can .get() every
+    # entry without guarding — see the note in _pick_target.
+    if not isinstance(cookies, list):
+        return None
+    return [c for c in cookies if isinstance(c, dict)]
 
 
 def delete_cookies_matching(name_prefix: str, host_substr: str,

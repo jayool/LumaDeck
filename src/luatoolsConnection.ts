@@ -13,6 +13,13 @@
 let connected: boolean | null = null;
 const listeners = new Set<(v: boolean | null) => void>();
 
+// "We had a session and the server rejected it" — distinct from "never connected".
+// Both render the same login gate, but the wording differs: a user who has been
+// logged out by an expiry needs to be told that's what happened, not invited to
+// log in as if for the first time.
+let expired = false;
+const expiredListeners = new Set<(v: boolean) => void>();
+
 export const getLuatoolsConnected = (): boolean | null => connected;
 
 export const setLuatoolsConnected = (v: boolean | null): void => {
@@ -27,5 +34,22 @@ export const subscribeLuatoolsConnected = (
   listeners.add(l);
   return () => {
     listeners.delete(l);
+  };
+};
+
+export const getLuatoolsExpired = (): boolean => expired;
+
+export const setLuatoolsExpired = (v: boolean): void => {
+  if (expired === v) return;
+  expired = v;
+  expiredListeners.forEach((l) => l(expired));
+};
+
+export const subscribeLuatoolsExpired = (
+  l: (v: boolean) => void,
+): (() => void) => {
+  expiredListeners.add(l);
+  return () => {
+    expiredListeners.delete(l);
   };
 };
