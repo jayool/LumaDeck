@@ -120,8 +120,9 @@ class Plugin:
             logger.info(f"LumaDeck: Platform summary: {json.dumps(summary)}")
 
             await init_apis()
-            # Restore Hubcap key / Ryuu cookie from the settings-dir store if a
-            # reinstall wiped backend/data/ (Decky replaces the whole plugin dir).
+            # Restore Hubcap key / Ryuu cookie / LuaTools session from the
+            # settings-dir store if a reinstall wiped backend/data/ (Decky
+            # replaces the whole plugin dir).
             try:
                 from api_manifest import restore_credentials_from_settings
                 restore_credentials_from_settings()
@@ -574,7 +575,7 @@ class Plugin:
 
     async def get_luatools_status(self) -> str:
         from luatools_auth import get_luatools_status
-        return _j(get_luatools_status())
+        return _j(await get_luatools_status())
 
     async def cancel_connect_luatools(self) -> str:
         from luatools_auth import cancel_connect_luatools

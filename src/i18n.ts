@@ -328,6 +328,13 @@ const strings: Record<Lang, Record<string, string>> = {
     // AppPageButton (library badge)
     addedViaLumaDeck: "Added via LumaDeck",
 
+    // LuaTools session / backend error codes (see errorText() below)
+    luatoolsSessionExpired: "LuaTools session expired — log in again below",
+    apiErrorCode: "LuaTools returned an error ({0}) — try again in a moment",
+    luatoolsExpiredSettings: "Session expired. Log in again to apply fixes",
+    luatoolsExpiredGate: "Your LuaTools session expired. Log in again to apply fixes",
+    luatoolsLoginGate: "Log in with Discord to install versions and apply fixes",
+
     // Toasts
     toastSuccess: "Success",
     toastError: "Error",
@@ -658,6 +665,13 @@ const strings: Record<Lang, Record<string, string>> = {
     // AppPageButton (library badge)
     addedViaLumaDeck: "Adicionado via LumaDeck",
 
+    // LuaTools session / backend error codes (see errorText() below)
+    luatoolsSessionExpired: "Sessão do LuaTools expirou — entre novamente abaixo",
+    apiErrorCode: "LuaTools retornou um erro ({0}) — tente novamente em instantes",
+    luatoolsExpiredSettings: "Sessão expirada. Entre novamente para aplicar fixes",
+    luatoolsExpiredGate: "Sua sessão do LuaTools expirou. Entre novamente para aplicar fixes",
+    luatoolsLoginGate: "Entre com o Discord para instalar versões e aplicar fixes",
+
     // Toasts
     toastSuccess: "Sucesso",
     toastError: "Erro",
@@ -758,4 +772,25 @@ export function useT(): (key: string, ...args: (string | number)[]) => string {
     };
   }, []);
   return translate;
+}
+
+/**
+ * Backend error codes → text a person can act on.
+ *
+ * The backend answers machine-readable codes (`session_expired`,
+ * `api_error_502`, ...) and the fix call sites used to drop `result.error`
+ * straight into the toast body — so a user whose LuaTools session had died read
+ * the literal string "session_expired" (issue #42). Anything unmapped falls
+ * through unchanged, so a plain-English error from the backend still shows.
+ */
+export function errorText(
+  code: unknown,
+  t: (key: string, ...args: (string | number)[]) => string,
+): string {
+  const raw = String(code ?? "").trim();
+  if (!raw) return "";
+  if (raw === "session_expired") return t("luatoolsSessionExpired");
+  const api = /^api_error_(\d{3})$/.exec(raw);
+  if (api) return t("apiErrorCode", api[1]);
+  return raw;
 }

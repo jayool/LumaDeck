@@ -17,6 +17,10 @@ from typing import Any, AsyncIterator, Dict, Optional
 
 from config import HTTP_TIMEOUT_SECONDS, USER_AGENT
 
+# post() takes a `json=` kwarg (httpx parity) which shadows the module inside
+# that method; keep an alias so it can still serialise.
+_json = json
+
 
 def _apply_params(url: str, params: Dict[str, Any] | None) -> str:
     """Merge a params dict into a URL's query string (httpx-parity). The native
@@ -259,6 +263,39 @@ class NativeAsyncClient:
             None, self._sync_request, "HEAD", url, t, follow_redirects, {},
         )
 
+    # -- POST ---------------------------------------------------------------
+
+    async def post(
+        self, url: str, *, timeout: float | None = None,
+        headers: Dict[str, str] | None = None,
+        params: Dict[str, Any] | None = None,
+        json: Any = None, data: bytes | str | None = None,
+        **_: Any,
+    ) -> NativeResponse:
+        """POST with an httpx-compatible signature (`json=` / `data=`).
+
+        This existed in the httpx client this module replaced, but was never
+        ported — so the one caller (the LuaTools token refresh) raised
+        AttributeError on every attempt, was swallowed by its `except
+        Exception`, and silently fell back to the expired token. Net effect:
+        the LuaTools session never refreshed for anyone and died after its
+        1-hour lifetime. See issue #42.
+        """
+        t = timeout if timeout is not None else self._timeout
+        url = _apply_params(url, params)
+        hdrs = dict(headers or {})
+        if json is not None:
+            body = _json.dumps(json).encode()
+            hdrs.setdefault("Content-Type", "application/json")
+        elif isinstance(data, str):
+            body = data.encode()
+        else:
+            body = data or b""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self._sync_request, "POST", url, t, True, hdrs, body,
+        )
+
     # -- STREAM -------------------------------------------------------------
 
     def stream(
@@ -281,8 +318,9 @@ class NativeAsyncClient:
     def _sync_request(
         self, method: str, url: str, timeout: float,
         follow_redirects: bool, headers: Dict[str, str],
+        body: bytes | None = None,
     ) -> NativeResponse:
-        req = urllib.request.Request(url, method=method)
+        req = urllib.request.Request(url, data=body, method=method)
         req.add_header("User-Agent", USER_AGENT)
         for k, v in headers.items():
             req.add_header(k, v)

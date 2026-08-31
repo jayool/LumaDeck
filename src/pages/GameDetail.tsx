@@ -60,7 +60,7 @@ import {
   runSteamless,
   getSteamlessStatus,
 } from "../api";
-import { useT } from "../i18n";
+import { errorText, useT } from "../i18n";
 
 interface GameDetailProps {
   appid: number;
@@ -153,10 +153,25 @@ export function GameDetail({ appid }: GameDetailProps) {
   // here and grey out the fix buttons until connected.
   const {
     connected: luatoolsConnected,
+    expired: luatoolsExpired,
     connecting: luatoolsConnecting,
     connect: handleConnectLuatools,
     refresh: refreshLuatoolsStatus,
+    setConnected: setLuatoolsConnected,
+    setExpired: setLuatoolsExpired,
   } = useLuatoolsConnect(toast, t);
+
+  // A rejected session must flip the gate as well as raise the toast: the login
+  // prompt the Fixes tab already renders for a never-connected user is exactly
+  // what an expired one needs, so surface it in place instead of leaving them
+  // with an error and nowhere to go.
+  const noteLuatoolsError = (err: unknown) => {
+    if (String(err ?? "") === "session_expired") {
+      setLuatoolsConnected(false);
+      setLuatoolsExpired(true);
+    }
+    toast(t("toastError"), errorText(err, t), 5000);
+  };
 
   // "Actually downloaded" — a game can be ADDED (path reserved in the .acf)
   // without content on disk; the fix extracts INTO the game folder, so gate on
@@ -413,7 +428,17 @@ export function GameDetail({ appid }: GameDetailProps) {
   const handleCheckFixes = async () => {
     setBusy("fixes");
     setLuatoolsError("");
-    refreshLuatoolsStatus(); // in case the account was connected from Settings meanwhile
+    // Awaited: this is what tells an expired user they're logged out BEFORE the
+    // list (and its Apply buttons) renders. It also catches an account connected
+    // from Settings meanwhile. Capped at 6s because the backend may go out to
+    // renew the token, and a Deck with no network would otherwise stall the fix
+    // list behind that request's own 15s timeout — the listing below is public
+    // and works fine without a session, so it's better to show it and let the
+    // status land late than to make everyone wait on it.
+    await Promise.race([
+      refreshLuatoolsStatus(),
+      new Promise((resolve) => setTimeout(resolve, 6000)),
+    ]);
     // The LuaTools catalogue is the only fix source now. Its listing is public
     // (no login needed) — the same data the lua.tools/fixes/<appid> web page shows;
     // a connected account is only needed to actually apply/download a fix.
@@ -496,7 +521,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       // neither. Nothing to do here; the existing syncFixLaunchOptions on "done"
       // emits the LD_AUDIT if the backend set the marker.
     } else {
-      toast(t("toastError"), result.error || "", 5000);
+      noteLuatoolsError(result.error);
     }
   };
 
@@ -511,7 +536,7 @@ export function GameDetail({ appid }: GameDetailProps) {
     if (r?.success) {
       toast("Compatible version set", "Restart Steam, re-download the game, then apply the fix.", 6000);
     } else {
-      toast(t("toastError"), r?.error || "", 5000);
+      noteLuatoolsError(r?.error);
     }
   };
 
@@ -810,7 +835,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 <Field description={
                   <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                     <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
-                    Log in with Discord to install versions and apply fixes
+                    {luatoolsExpired ? t("luatoolsExpiredGate") : t("luatoolsLoginGate")}
                   </span>
                 } />
               </PanelSectionRow>
