@@ -25,6 +25,38 @@ Healthy components stay silent — no banner means nothing to do.
 - If it shows `not_supported`, Steam updated past the hooks. Use **Fix in
   Desktop** (see below).
 
+### A game on a second drive or SD card shows as Not Installed
+The game downloaded fine, but after a Steam restart it's back to **Install** —
+and pressing it re-downloads everything into the internal drive.
+
+This was issue #41, fixed in v0.7.4. Older versions wrote a placeholder manifest
+into the default library when you *added* a game, before you had chosen a drive.
+Install anywhere else and Steam finds that placeholder, believes the game isn't
+installed, and starts over.
+
+Nothing creates them any more, and LumaDeck **removes the ones already on your
+Deck by itself** — see [the leftover-manifest sweep](managing-a-game.md#the-leftover-manifest-sweep-automatic),
+which also explains how to turn it off. Update, restart Steam once, and the game
+should come back as installed with no re-download.
+
+The same fix covers a related symptom: games on a second library showing **greyed
+out** in LumaDeck's own list even though they were installed. LumaDeck used to
+look for game files in the default library only.
+
+### LuaTools says "Session expired"
+Your lua.tools login has run out and couldn't be renewed. Tap **Log in with
+Discord** — in **Settings ▸ LuaTools fixes**, or on the game's Fixes tab where the
+same button appears next to the greyed-out fix buttons.
+
+You shouldn't see this often: the session renews itself in the background. Before
+v0.7.4 that renewal never worked at all, so every session died one hour after
+logging in (issue #42) — if you're on an older build, updating is the fix.
+
+If it comes back immediately after logging in, check that your Deck has a working
+connection: LumaDeck only reports "expired" when the server actually rejects the
+session, but it can't renew one with no network either. See
+[Credentials](credentials.md#luatools-account).
+
 ### "Reapply blocked in Game Mode"
 Some installs/repairs need a real desktop session. The panel shows the exact
 command — switch to **Desktop mode**, run it, then return to Game Mode.

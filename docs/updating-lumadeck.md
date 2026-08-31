@@ -19,6 +19,17 @@ manual action.
 
 > Your installed and latest versions are shown at the top of the About panel.
 
+### Your credentials survive it
+
+Updating replaces the whole plugin directory, which wipes the files LumaDeck
+keeps there — including your Hubcap key, Ryuu cookie and LuaTools session. They
+come back: each one is mirrored into the plugin's *settings* directory, which
+Decky leaves alone, and restored on the next load.
+
+The LuaTools session only joined that list in v0.7.4. Before it, every single
+update quietly signed you out of LuaTools and you had to log in again. See
+[Credentials](credentials.md#where-the-values-live).
+
 ## The components
 
 The bundled components (SLSsteam, lumalinux, CloudRedirect) update

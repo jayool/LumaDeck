@@ -116,6 +116,44 @@ behind a flag; see [Achievements](achievements.md).)
   of an installed game. (It doesn't rebuild the `.acf` by hand or restart Steam
   — pair it with **Restart Steam** when you're ready.)
 
+## The leftover-manifest sweep (automatic)
+
+There is one thing LumaDeck does to your `.acf` files **without being asked**, so
+it's documented here rather than hidden: on every plugin load it looks for
+leftover manifests from a bug it used to have, and removes them.
+
+**Where they came from.** Older versions wrote a placeholder `.acf` into the
+default library the moment you *added* a game — before you had chosen where to
+install it. Pick any other drive and that placeholder is stranded: Steam reads it,
+concludes the game isn't installed, and re-downloads the whole thing into the
+default library (issue #41). Nothing creates these any more, but a Deck that added
+games under an older version may still be carrying some.
+
+**What it will and won't remove.** A leftover only goes if a **real** manifest for
+the same game exists in a **different** library — that is, if it is provably
+redundant. Everything else is left alone, deliberately:
+
+- fewer than two libraries (nothing to compare, and the placeholder was
+  overwritten in place anyway)
+- a manifest LumaDeck can't parse, or a library it can't read (an unmounted SD
+  card, say)
+- a download in flight for that game
+- anything that isn't exactly placeholder-shaped — a queued install, a
+  half-finished one, anything unfamiliar
+- a lone placeholder with no real manifest anywhere: it only makes the grid say
+  "installed" when it isn't, and there's no way to prove it's ours rather than
+  something Steam has queued
+
+The shape is read from the file at the moment of deletion, never from a saved
+record, so it can't act on stale bookkeeping.
+
+**Seeing it.** Every removal is written to the Decky log with the manifest that
+justified it. It takes effect on the next Steam start.
+
+**Turning it off.** Create the file `~/.config/lumalinux/no_acf_sweep`, or set
+`LUMA_NO_ACF_SWEEP` in the environment. It's on by default and has its own switch,
+unrelated to any other.
+
 ## Danger zone
 
 - **Full Uninstall** — removes the game and all of LumaDeck's config for it
