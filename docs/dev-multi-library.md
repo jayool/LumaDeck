@@ -180,7 +180,7 @@ they only feed a diagnostics dict.
 Still open, in lumalinux and decided separately: `steamidra_lite` writes the marker once
 at add time (`:1607-1613`). That is a cheap one-shot, not a loop.
 
-### D4 — the orphan stub after installing to another library (this is #41)
+### D4 — the orphan stub after installing to another library (this is #41) — **REPRODUCED**
 
 The stub is seeded in the root because at that moment the game is installed
 nowhere and there is no correct library to choose. Steam then writes its real
@@ -188,13 +188,22 @@ manifest wherever the user chose. Two `.acf` exist; after a restart Steam honour
 the root one and reports the game as uninstalled; pressing Install sends Steam
 down its *move-content* path → **"can't move storage"**.
 
-**Evidence: field report** (issue #41, reproduction steps 1–8). Not reproduced
-locally — a second library is required and neither the author's Deck nor his
-Windows install currently has one (§6).
+**Evidence: reproduced end-to-end**, twice, on the SteamOS devcontainer with a
+second library. See §6. The cure — deleting only the orphan stub — was validated in
+the same run.
 
 Bounded by the reporter's own steps 2–3 (*"Install onto separate btrfs partition
 / Game is fine"*): **the stub does not block or bias the user's choice.** It only
-becomes harmful after the restart, once both records exist.
+becomes harmful after the restart, once both records exist. Confirmed in the field
+run: the install dialog offered the second drive and the download completed normally.
+
+**Correction to the symptom.** Pressing Install on the mis-reported game did NOT
+produce "can't move storage" here — Steam simply **re-downloaded the entire game
+into the root library**, leaving two copies on disk (273 MB each for Brotato) and,
+once the root manifest is cleaned, an orphaned copy Steam will never reclaim. The
+reporter's "can't move storage" is presumably specific to his setup; the harm we can
+actually reproduce is a wasted full re-download plus dead disk usage. Either way the
+cause and the fix are the same.
 
 **Fix:** reconciliation — see §4.
 
@@ -307,13 +316,15 @@ himself at his step 8.
   add a clean game, and read the button: **Install** or **Update**. If Install, the
   stub is dead weight and D1 and D4 lose their object. GUI-only; no file records the
   verb.
-- **Q2 — does Steam rewrite a deleted `.acf`?** Delete it with Steam running, close
-  Steam, look again. Decides whether rule 4 can relax.
+- ~~**Q2 — does Steam rewrite a deleted `.acf`?**~~ **ANSWERED: no.** Deleted with
+  Steam running, restarted, not regenerated — observed twice. Safety rule 4 can
+  relax: the cleanup may run on library refresh with Steam up; it takes effect on
+  the next Steam start.
 - **Q3 — does Steam read `config/depotcache`?** Long-standing. `_write_manifest_both`
   (`steamidra_lite.py:274-286`) writes to both on inherited SteaMidra rationale;
   moon's startup copy implies it does not.
 
-Q1 and Q2 need real Steam with a real login. Two environments:
+Q1 still needs real Steam with a real login. Two environments:
 `lumalinux/.devcontainer/steamos` (Steam in gamepadui, noVNC on 6080, Decky and
 LumaDeck pre-deployed — needs a second library added by hand), or a Deck.
 
@@ -350,6 +361,49 @@ Both scripts live in the session scratchpad and are candidates for
 both flip from FAIL to OK with no change to the tests** — they are the acceptance
 criteria, written before the fix.
 
+**Field run — D4 reproduced and the cure validated.** SteamOS devcontainer, Steam
+with a real login, two libraries (the Steam root plus `/tmp/steamlib`, a real ext4
+volume on a separate device).
+
+Getting a second library registered by hand took four attempts; the three failures
+are worth recording because they are not obvious:
+
+1. **Steam loads `steamapps/libraryfolders.vdf`, not `config/libraryfolders.vdf`.**
+   Its own `content_log.txt` says so (`Loaded Steam library folders configuration:
+   .../steamapps/libraryfolders.vdf`). Both files exist, are byte-identical and are
+   kept in sync by Steam, so LumaDeck reading `config/` is fine — but a hand edit
+   must touch both, or Steam reloads from `steamapps/` and rewrites `config/` from
+   memory.
+2. **Steam must be genuinely dead**, and `pgrep -x steam` does not detect it in Game
+   Mode. Editing under a live Steam is silently discarded on exit.
+3. **The devcontainer's supervisor relaunches Steam whenever it dies** (it emulates
+   gamescope-session). Stop it with `echo stop > /tmp/lumadev-session` first.
+
+Neither the filesystem type nor the `contentid` mattered; a tmpfs was rejected only
+because of the above.
+
+Run 1 (Brotato, 1942280) — reproduced, then contaminated by pressing Install:
+
+```
+add                 root: StateFlags 1, SizeOnDisk 0     lib2: -
+install to lib2     root: StateFlags 1, SizeOnDisk 0     lib2: StateFlags 4, 286 MB
+restart Steam       -> Steam reports NOT INSTALLED
+press Install       -> re-downloads the whole game into the ROOT (273 MB duplicate)
+```
+
+Run 2 (Vampire Survivors, 1794680) — clean, no Install pressed:
+
+```
+add + install to lib2   root: StateFlags 1, SizeOnDisk 0   lib2: StateFlags 4, 1.2 GB
+restart Steam           -> NOT INSTALLED                       <- the defect
+rm the root stub only   -> restart -> INSTALLED                <- the cure
+```
+
+The deleted file matched safety rule 2's fingerprint exactly (`StateFlags 1`, no
+`InstalledDepots`, `SizeOnDisk 0`), and in run 1 the file that had been overwritten
+by Steam did **not** — so the rule would have acted in exactly one of the two cases,
+which is the intended behaviour.
+
 **Field measurements — D5.** Author's SteamOS Deck (9 manifests, one library) and
 Windows install (4 manifests, one library):
 
@@ -378,10 +432,11 @@ Steam overwrites our stub on install and leaves no trace.
 | ~~P2~~ | ~~`hasGameFiles` across all libraries — D2~~ | LumaDeck | — | **DONE** — test flips to OK; 112 tests pass |
 | **P3** | Narrow `_ACF_ERROR_FIELDS`; absent ≠ changed — D5 | lumalinux | — | patch returns `"clean"` on a healthy manifest; the two fields survive |
 | **P4** | Library-aware create-vs-patch — D1 | lumalinux | — | Test A flips to OK |
-| **P5** | Reconciliation — D4 | LumaDeck | **Q2** | a reproduced broken state self-heals on refresh |
+| **P5** | Reconciliation — D4 | LumaDeck | — (Q2 answered) | a reproduced broken state self-heals on refresh |
 
-P3 and P4 need no Steam and are independently shippable and revertible. P5 is the one
-that deletes files Steam owns and is the only one gated on a measurement.
+P3 and P4 need no Steam and are independently shippable and revertible. P5 deletes
+files Steam owns; it is no longer gated on a measurement — both the defect and the
+cure are reproduced above.
 
 Ordering note: P4 prevents an *avoidable* orphan; P5 removes the *unavoidable* one.
 Both are needed, and **P5 is what closes #41** — P4 fixes a sibling defect with a
