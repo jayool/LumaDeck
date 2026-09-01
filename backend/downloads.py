@@ -122,11 +122,12 @@ async def _invoke_steamidra_lite(
     # version-manifest install; the normal game install stays no-pin (latest).
     if pin:
         cmd.append("--pin")
-    # Pass the canonical name so steamidra writes it as the .acf installdir
-    # instead of falling back to the appid (which makes Steam re-download the
-    # whole game if the .acf is later regenerated — e.g. by Repair appmanifest).
-    # Gated on the deployed steamidra supporting --name (older lumalinux would
-    # argparse-error on it and fail the install).
+    # --name is ACCEPTED AND IGNORED by steamidra since the .acf stub went away
+    # (#41): it fed that stub's installdir, and Steam now writes the manifest
+    # itself on Install, picking its own. We keep passing it, and keep gating it
+    # on the deployed steamidra advertising the flag, only because a Deck can be
+    # running a lumalinux old enough to predate --name — there argparse errors
+    # out (exit 2) and fails the install. Droppable once that floor is moot.
     if game_name and await _steamidra_supports_name(python, script):
         cmd.extend(["--name", game_name])
 
@@ -1014,8 +1015,9 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
         # that on Install.
         _set_download_state(appid, {"status": "installing"})
         # Resolve the canonical name (local applist cache first, store API
-        # fallback) so steamidra writes it as the .acf installdir. Empty on a
-        # miss — steamidra then does its own lookup / appid fallback.
+        # fallback) for --name. steamidra ignores it now (see the note in
+        # _invoke_steamidra_lite); this lookup outlives its purpose and is kept
+        # only to feed the flag we still pass for older deployed lumalinux.
         game_name = await fetch_app_name(appid)
         ok, output = await _invoke_steamidra_lite(
             str(lua_path),
