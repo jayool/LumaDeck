@@ -12,7 +12,7 @@ Decky Loader plugin for Steam Deck — game library and configuration manager wi
 
 3. **Install the components from the QAM.** Open LumaDeck in the QAM. On a fresh setup (nothing installed yet) it shows a **Quick Install** button that installs and configures everything — SLSsteam + CloudRedirect, the .NET 9 runtime, and lumalinux — in the correct order in one tap. This is the recommended path.
 
-   To install or reapply components **individually** (or after a Steam update), use **Settings → Components**. The wiki documents each one: see [Getting started](docs/getting-started.md#2-install-the-components) and [Components & health](docs/components-and-health.md).
+   To install or reapply components **individually**, use **Settings → Components**. You do **not** need to do this after a Steam update — launch coverage self-heals (see [After a Steam update](#after-a-steam-update)), and Settings → Components tells you when something genuinely needs a reinstall. The wiki documents each one: see [Getting started](docs/getting-started.md#2-install-the-components) and [Components & health](docs/components-and-health.md).
 
 4. **(Optional) Sign into your cloud provider.**
 
