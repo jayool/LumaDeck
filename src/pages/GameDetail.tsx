@@ -20,7 +20,7 @@ import {
   FaUsers,
 } from "react-icons/fa";
 import { toaster } from "@decky/api";
-import { listLuatoolsFixes, downloadLuatoolsFix, selfHealAcfBuild } from "../api";
+import { listLuatoolsFixes, downloadLuatoolsFix } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { ActionButton } from "../components/ActionButton";
 import { ROUTE_SETTINGS, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
@@ -120,9 +120,6 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [hasLua, setHasLua] = useState(false);
   const [installPath, setInstallPath] = useState("");
   const [gameSize, setGameSize] = useState(0);
-  // Steam build id of what's on disk (0 = unknown). Compared against a fix's
-  // required build tag to warn about a Denuvo build mismatch.
-  const [installedBuild, setInstalledBuild] = useState(0);
   const [downloadState, setDownloadState] = useState<any>(null);
   // Native online (netsock): { enabled, netsockInstalled, hasAntiCheat }. null = not loaded.
   const [nativeOnline, setNativeOnline] = useState<any>(null);
@@ -237,7 +234,6 @@ export function GameDetail({ appid }: GameDetailProps) {
       if (pathResult.success) {
         setInstallPath(pathResult.installPath || "");
         if (pathResult.sizeOnDisk) setGameSize(pathResult.sizeOnDisk);
-        if (pathResult.buildid) setInstalledBuild(pathResult.buildid);
 
         if (pathResult.installPath) {
           const gbResult = await checkGoldbergStatus(pathResult.installPath);
@@ -452,28 +448,13 @@ export function GameDetail({ appid }: GameDetailProps) {
       ]);
       if (r?.success) {
         const list = r.fixes || [];
+        // Each manifest fix carries `onRequiredBuild` from the backend: true when
+        // every depot gid the fix's lua pins matches the .acf's InstalledDepots
+        // (the build that is really on disk), false when not, null when it could
+        // not be checked (no LuaTools session to fetch the lua). The .acf buildid
+        // is NOT used: Steam stamps it with Valve's latest even on a pinned older
+        // build, which is what the old self-heal tried to paper over.
         setLuatoolsFixes(list);
-        // Self-heal: after a manifest-fix downgrade Steam re-stamps the .acf
-        // buildid to the LATEST build even though the content is the older fix
-        // build (the manifest is the true signal, the buildid lies). If the game
-        // is pinned to an UNAMBIGUOUS single manifest build, ask the backend to
-        // fix the buildid — it only writes when the installed depot manifest
-        // matches the pin, so it never labels the game a build it isn't on.
-        try {
-          const mBuilds = new Set(
-            list
-              .filter((f: any) => f?.hasManifest)
-              .map((f: any) => luaFixBuildTag(f))
-              .filter(Boolean),
-          );
-          if (mBuilds.size === 1) {
-            const y = Number([...mBuilds][0]);
-            const heal: any = await selfHealAcfBuild(appid, y);
-            if (heal?.success && heal?.healed) setInstalledBuild(y);
-          }
-        } catch {
-          /* best-effort; never block the fix listing */
-        }
         toast(list.length ? t("toastFixesFound") : t("toastNoFixes"), gameName);
       } else {
         setLuatoolsFixes([]);
@@ -525,13 +506,16 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
-  const handleInstallManifest = async (fixId: string) => {
-    // slot="manifest" needs no install path — it pins the build via SLSsteam
-    // ManifestIds and Steam (re)downloads it, so it works whether the game is
-    // already installed (a downgrade) or not (a fresh install at that build).
-    // The user must restart Steam MANUALLY; we never auto-restart.
+  const handleInstallManifest = async (fixId: string, buildTag: string = "") => {
+    // slot="manifest" needs no install path — the backend fetches the manifests
+    // of every depot the fix's lua pins (depotcache, archive, GitHub repo, Hubcap)
+    // and only then pins the build via SLSsteam ManifestIds; if any manifest is
+    // missing nothing is written and the error names it. Steam (re)downloads on
+    // its next start, so it works whether the game is already installed (a
+    // downgrade) or not. The user must restart Steam MANUALLY; we never
+    // auto-restart. `buildTag` only feeds the error message.
     setBusy("manifest");
-    const r: any = await downloadLuatoolsFix(appid, fixId, installPath, "manifest");
+    const r: any = await downloadLuatoolsFix(appid, fixId, installPath, "manifest", buildTag);
     setBusy("");
     if (r?.success) {
       toast("Compatible version set", "Restart Steam, re-download the game, then apply the fix.", 6000);
@@ -763,17 +747,18 @@ export function GameDetail({ appid }: GameDetailProps) {
     const canInstallVersion = luatoolsConnected;
     const busyManifest = busy === "manifest";
     const buildTag = luaFixBuildTag(f);
-    const onRequiredBuild = !!buildTag && String(installedBuild) === buildTag;
+    const onRequiredBuild = f?.onRequiredBuild === true;
+    const offRequiredBuild = f?.onRequiredBuild === false && gameInstalled;
     const rawTitle = String(f?.title ?? "").trim();
     const fTags = luaFixTagList(f);
     const fixName = /^\d{6,}$/.test(rawTitle) ? `Build ${rawTitle}` : (rawTitle || fTags[0] || "Fix");
     const tagsSub = (rawTitle ? fTags : fTags.slice(1)).join(" · ");
     const buildNote = buildTag
-      ? (installedBuild
-          ? (onRequiredBuild
-              ? `You're already on the build this fix needs (${buildTag})`
-              : `⚠ This fix needs build ${buildTag}, you have ${installedBuild}. Install the compatible version first`)
-          : `Needs build ${buildTag}`)
+      ? (onRequiredBuild
+          ? `You're already on the build this fix needs (${buildTag})`
+          : offRequiredBuild
+            ? `⚠ This fix needs build ${buildTag}. Install the compatible version first`
+            : `Needs build ${buildTag}`)
       : "";
     const manifestDesc = onRequiredBuild
       ? buildNote
@@ -791,7 +776,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           <ActionButton
             label={busyManifest ? "Installing version…" : "Install the game version this fix needs"}
             description={manifestDesc}
-            onClick={() => handleInstallManifest(String(f.id))}
+            onClick={() => handleInstallManifest(String(f.id), buildTag)}
             disabled={!canInstallVersion || busyManifest || !!isFixInProgress || onRequiredBuild}
           />
         )}

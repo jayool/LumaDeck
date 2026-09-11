@@ -24,11 +24,12 @@ import asyncio
 import base64
 import json
 import os
+import re
 import time
 from urllib.parse import quote
 
 from http_client import ensure_http_client
-from paths import data_path
+from paths import data_path, real_home
 from utils import read_text, write_text
 
 try:
@@ -360,6 +361,128 @@ def _auth_headers(token: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Fix files: signed download, cached copy, required gids
+# ---------------------------------------------------------------------------
+_FIX_CACHE_DIR = os.path.join(real_home(), ".cache", "lumadeck", "luatools")
+
+
+def _fix_cache_path(fix_id: str, slot: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(fix_id))
+    return os.path.join(_FIX_CACHE_DIR, f"{safe}.{slot}")
+
+
+async def _fetch_fix_bytes(fix_id: str, slot: str, *, use_cache: bool) -> tuple[bytes | None, str]:
+    """Bytes of a catalogue fix's file for `slot` ("manifest" or "fix"), via the
+    signed URL. Manifest-slot files are tiny and immutable per fix id, so they
+    are cached under ~/.cache/lumadeck/luatools/. Returns (bytes, "") or
+    (None, error)."""
+    path = _fix_cache_path(fix_id, slot)
+    if use_cache and os.path.isfile(path):
+        try:
+            with open(path, "rb") as f:
+                return f.read(), ""
+        except OSError:
+            pass
+    token = await _access_token()
+    if not token:
+        return None, "Connect your LuaTools account first (Settings → Connect LuaTools)."
+    try:
+        client = await ensure_http_client("LuaToolsFixDL")
+        resp = await client.get(
+            f"https://lua.tools/api/denuvo/download?fix={quote(str(fix_id))}"
+            f"&slot={quote(str(slot))}",
+            headers=_auth_headers(token), timeout=30,
+        )
+        if resp.status_code == 401:
+            _mark_session_rejected()
+            return None, "session_expired"
+        if resp.status_code != 200:
+            return None, f"api_error_{resp.status_code}"
+        _clear_session_rejected()
+        signed_url = (resp.json() or {}).get("url")
+        if not signed_url:
+            return None, "The download link was empty — try again."
+        r = await client.get(signed_url, follow_redirects=True, timeout=60)
+        if r.status_code != 200:
+            return None, f"download_error_{r.status_code}"
+        data = r.content
+    except Exception as exc:
+        return None, str(exc)
+    if use_cache:
+        try:
+            from manifests import _write_atomic
+            _write_atomic(path, data)
+        except Exception:
+            pass
+    return data, ""
+
+
+def _lua_text_from_bytes(data: bytes) -> str | None:
+    """The .lua inside a fix file: a zip carrying one, or a bare lua."""
+    import io
+    import zipfile
+    if zipfile.is_zipfile(io.BytesIO(data)):
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for member in zf.namelist():
+                    if member.lower().endswith(".lua"):
+                        return zf.read(member).decode("utf-8", errors="replace")
+        except Exception:
+            return None
+        return None
+    text = data.decode("utf-8", errors="replace")
+    return text if re.search(r"\b(?:addappid|setManifestid)\s*\(", text) else None
+
+
+def parse_required_gids(lua_text: str) -> dict[int, int]:
+    """{depot: gid} from every setManifestid line (commented ones included)."""
+    out: dict[int, int] = {}
+    for m in re.finditer(r'(?:--\s*)?setManifestid\(\s*(\d+)\s*,\s*"?(\d+)"?', lua_text):
+        out[int(m.group(1))] = int(m.group(2))
+    return out
+
+
+async def fix_required_gids(fix_id: str) -> dict[int, int] | None:
+    """Depot gids a manifest fix pins, from its cached lua. None when it can't
+    be fetched (no session, network) — callers treat that as "unknown"."""
+    data, err = await _fetch_fix_bytes(fix_id, "manifest", use_cache=True)
+    if data is None:
+        logger.info(f"LuaTools: required gids for fix {fix_id} unavailable: {err}")
+        return None
+    text = _lua_text_from_bytes(data)
+    if not text:
+        return None
+    gids = parse_required_gids(text)
+    return gids or None
+
+
+def _annotate_manifest_fixes_sync(appid: int, fixes: list, gids_by_fix: dict) -> None:
+    """Attach `requiredGids` and `onRequiredBuild` to each manifest fix.
+    onRequiredBuild: True when every pinned depot's gid equals the .acf's
+    InstalledDepots (the build really on disk), False when the game is
+    installed on another build, None when unknown (gids unavailable or the
+    game is not installed)."""
+    try:
+        import pins
+        installed = pins.installed_depots(appid)
+    except Exception:
+        installed = {}
+    for f in fixes:
+        if not isinstance(f, dict) or not f.get("hasManifest"):
+            continue
+        gids = gids_by_fix.get(str(f.get("id")))
+        if not gids:
+            f["requiredGids"] = None
+            f["onRequiredBuild"] = None
+            continue
+        f["requiredGids"] = {str(d): str(g) for d, g in gids.items()}
+        if not installed:
+            f["onRequiredBuild"] = None
+        else:
+            f["onRequiredBuild"] = all(installed.get(d) == g for d, g in gids.items())
+
+
+# ---------------------------------------------------------------------------
 # Fix catalogue (authenticated)
 # ---------------------------------------------------------------------------
 async def list_luatools_fixes(appid: int) -> dict:
@@ -404,6 +527,20 @@ async def list_luatools_fixes(appid: int) -> dict:
                     f"LuaTools: fixes list for {appid} -> {len(fixes)} fix(es)"
                     + ("" if attempt == 0 else f" (attempt {attempt + 1})")
                 )
+                # Manifest fixes: fetch (cached) the lua each one ships and
+                # compare its gids with what is installed, so the card can say
+                # whether the game is already on the fix's build. Needs a
+                # session for the signed download; without one they stay
+                # "unknown". Never fails the listing.
+                try:
+                    gids_by_fix: dict = {}
+                    manifest_fixes = [f for f in fixes if isinstance(f, dict) and f.get("hasManifest")]
+                    if manifest_fixes and await _access_token():
+                        for f in manifest_fixes:
+                            gids_by_fix[str(f.get("id"))] = await fix_required_gids(str(f.get("id")))
+                    _annotate_manifest_fixes_sync(appid, fixes, gids_by_fix)
+                except Exception as exc:
+                    logger.info(f"LuaTools: build check for {appid} skipped: {exc}")
                 return {"success": True, "fixes": fixes, "raw": data}
             if resp.status_code == 404:
                 # No catalogue entry (same as the web page lua.tools/fixes/<appid>).
@@ -430,11 +567,72 @@ async def list_luatools_fixes(appid: int) -> dict:
     return {"success": False, "error": last_err or "request_failed"}
 
 
+async def _install_fix_version(appid: int, fix_id: str, build_tag: str = "") -> dict:
+    """Pin `appid` to the build a manifest fix needs. See download_luatools_fix."""
+    import shutil
+    import tempfile
+    import zipfile
+    from manifests import manifest_name, resolve_all, steamcmd_app_info
+
+    data, err = await _fetch_fix_bytes(fix_id, "manifest", use_cache=True)
+    if data is None:
+        return {"success": False, "error": err}
+    lua_text = _lua_text_from_bytes(data)
+    if not lua_text:
+        return {"success": False,
+                "error": "The version file is neither a zip nor a Lua manifest (the link likely returned an error page)."}
+    gids = parse_required_gids(lua_text)
+    if not gids:
+        return {"success": False, "error": "The version file pins no depot (no setManifestid lines)."}
+
+    # Valve's current gids decide whether Hubcap can help (it only serves the
+    # current build); an old build must come from the archive or the repo.
+    info = await steamcmd_app_info(appid)
+    current = {d: v["gid"] for d, v in (info or {}).get("depots", {}).items()}
+    found, missing = await resolve_all(appid, gids, allow_hubcap=True, current_gids=current)
+    if missing:
+        depot = sorted(missing)[0]
+        what = f"build {build_tag}" if str(build_tag).strip() else f"gid {gids[depot]}"
+        logger.info(f"LuaTools: version for {appid} fix {fix_id} not available: {missing}")
+        return {"success": False,
+                "error": f"Version not available: no source has the manifest for depot {depot} ({what})."}
+
+    # Hand steamidra a zip with the lua and the manifests it pins (sizes come
+    # from the files), through the same pinned install path as a game zip.
+    tmp_dir = tempfile.mkdtemp(prefix=f"luatools_version_{appid}_")
+    zip_path = os.path.join(tmp_dir, f"{appid}.zip")
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{appid}.lua", lua_text)
+            for d, path in found.items():
+                zf.write(path, manifest_name(d, gids[d]))
+        from downloads import _process_and_install_lua
+        await _process_and_install_lua(appid, zip_path, pin=True)
+        import pins
+        pins.set_frozen(appid, True, str(fix_id))
+        logger.info(f"LuaTools: {appid} pinned to fix {fix_id} build ({sorted(gids.items())}) and frozen")
+        return {"success": True, "needsRestart": True}
+    except Exception as exc:
+        logger.warning(f"LuaTools: version install failed for {appid}: {exc}")
+        return {"success": False, "error": str(exc)}
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
                                 slot: str = "", title: str = "",
                                 online: bool = False) -> dict:
     """Resolve the signed download URL for a catalogue fix and hand it to the
-    existing fix pipeline (download → extract → Proton launch-option wiring)."""
+    existing fix pipeline (download → extract → Proton launch-option wiring).
+
+    slot="manifest" is the version install: the fix's lua names the depot gids
+    of the build it needs; every one of those manifests is sourced first
+    (depotcache, LumaDeck's archive, the GitHub repo, Hubcap if current) and
+    only when ALL are present is the game pinned to that build and frozen so
+    the update job leaves it there. If any is missing nothing is written."""
+    if slot == "manifest":
+        return await _install_fix_version(appid, fix_id, title)
+
     token = await _access_token()
     if not token:
         return {"success": False,
@@ -457,36 +655,6 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
             return {"success": False, "error": "The download link was empty — try again."}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
-
-    if slot == "manifest":
-        # A version manifest (not a crack): a .lua/zip whose setManifestid pins the
-        # game to the build this fix targets. Install it via steamidra_lite --pin,
-        # which re-homes those gids onto SLSsteam's ManifestIds → Steam re-plans the
-        # depots to that (usually older) build. This is a downgrade, so the caller
-        # must restart Steam for it to take effect; nothing is dropped into the game
-        # dir here (that's the fix slot's job).
-        import tempfile
-        tmp_dir = tempfile.mkdtemp(prefix=f"luatools_manifest_{appid}_")
-        zip_path = os.path.join(tmp_dir, f"{appid}_manifest.zip")
-        try:
-            client = await ensure_http_client("LuaToolsManifestDL")
-            async with client.stream("GET", signed_url, follow_redirects=True,
-                                      timeout=60) as r:
-                if r.status_code != 200:
-                    return {"success": False, "error": f"download_error_{r.status_code}"}
-                with open(zip_path, "wb") as fh:
-                    async for chunk in r.aiter_bytes():
-                        fh.write(chunk)
-            from downloads import _process_and_install_lua
-            await _process_and_install_lua(appid, zip_path, pin=True)
-            logger.info(f"LuaTools: version manifest installed + pinned for {appid}")
-            return {"success": True, "needsRestart": True}
-        except Exception as exc:
-            logger.warning(f"LuaTools: manifest install failed for {appid}: {exc}")
-            return {"success": False, "error": str(exc)}
-        finally:
-            import shutil
-            shutil.rmtree(tmp_dir, ignore_errors=True)
 
     # slot="fix" (default): reuse the existing apply pipeline — it streams the
     # (signed) URL, extracts into the game dir with zip-slip protection, logs the

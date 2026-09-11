@@ -379,10 +379,6 @@ class Plugin:
         from downloads import get_pin_status
         return _j(await get_pin_status(appid))
 
-    async def self_heal_acf_build(self, appid: int, target_build: int) -> str:
-        from downloads import self_heal_acf_build
-        return _j(await self_heal_acf_build(appid, target_build))
-
     # ==========================================================================
     # Downloads
     # ==========================================================================
