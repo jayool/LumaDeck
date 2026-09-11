@@ -271,7 +271,8 @@ async def set_pin(appid: int, gids: Dict[int, int]) -> bool:
 async def ensure_pinned(appid: int) -> Dict[int, int]:
     """Pin any unpinned content depot to what the game already has, and put
     back pinned manifests missing from depotcache/. Returns the pin."""
-    from manifests import archive_dir, archived_manifests, manifest_name, place_in_depotcache, validate_manifest
+    from manifests import (archive_dir, archive_manifest, archived_manifests, manifest_name,
+                           place_in_depotcache, validate_manifest)
 
     keyed = keyed_depots(appid)
     if not keyed:
@@ -303,7 +304,19 @@ async def ensure_pinned(appid: int) -> Dict[int, int]:
     dc = get_depotcache_dir()
     if dc:
         for d, g in pin.items():
-            if os.path.isfile(os.path.join(dc, manifest_name(d, g))):
+            present = os.path.join(dc, manifest_name(d, g))
+            if os.path.isfile(present):
+                # Keep our own copy of what Steam has, so a later purge (Steam
+                # uninstall, post-commit, re-plan) can be healed offline. This
+                # is also how games installed before the archive existed get one.
+                if not os.path.isfile(os.path.join(archive_dir(appid), manifest_name(d, g))):
+                    try:
+                        with open(present, "rb") as f:
+                            data = f.read()
+                        if validate_manifest(data, d, g) is not None:
+                            archive_manifest(appid, d, g, data)
+                    except Exception as exc:
+                        logger.warning(f"LumaDeck: could not archive {manifest_name(d, g)}: {exc}")
                 continue
             src = os.path.join(archive_dir(appid), manifest_name(d, g))
             if not os.path.isfile(src):
