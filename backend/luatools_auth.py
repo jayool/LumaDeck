@@ -456,12 +456,16 @@ async def fix_required_gids(fix_id: str) -> dict[int, int] | None:
     return gids or None
 
 
-def _annotate_manifest_fixes_sync(appid: int, fixes: list, gids_by_fix: dict) -> None:
+def _annotate_manifest_fixes_sync(appid: int, fixes: list, gids_by_fix: dict,
+                                  shared: set | None = None) -> None:
     """Attach `requiredGids` and `onRequiredBuild` to each manifest fix.
     onRequiredBuild: True when every pinned depot's gid equals the .acf's
     InstalledDepots (the build really on disk), False when the game is
     installed on another build, None when unknown (gids unavailable or the
-    game is not installed)."""
+    game is not installed). Depots borrowed from another app (`shared`, e.g.
+    a launcher) are ignored: their gid moves with that app, not with the
+    build the fix targets."""
+    shared = shared or set()
     try:
         import pins
         installed = pins.installed_depots(appid)
@@ -476,10 +480,11 @@ def _annotate_manifest_fixes_sync(appid: int, fixes: list, gids_by_fix: dict) ->
             f["onRequiredBuild"] = None
             continue
         f["requiredGids"] = {str(d): str(g) for d, g in gids.items()}
+        own = {d: g for d, g in gids.items() if d not in shared} or gids
         if not installed:
             f["onRequiredBuild"] = None
         else:
-            f["onRequiredBuild"] = all(installed.get(d) == g for d, g in gids.items())
+            f["onRequiredBuild"] = all(installed.get(d) == g for d, g in own.items())
 
 
 # ---------------------------------------------------------------------------
@@ -534,11 +539,16 @@ async def list_luatools_fixes(appid: int) -> dict:
                 # "unknown". Never fails the listing.
                 try:
                     gids_by_fix: dict = {}
+                    shared: set = set()
                     manifest_fixes = [f for f in fixes if isinstance(f, dict) and f.get("hasManifest")]
                     if manifest_fixes and await _access_token():
                         for f in manifest_fixes:
                             gids_by_fix[str(f.get("id"))] = await fix_required_gids(str(f.get("id")))
-                    _annotate_manifest_fixes_sync(appid, fixes, gids_by_fix)
+                        if any(gids_by_fix.values()):
+                            from manifests import steamcmd_app_info
+                            info = await steamcmd_app_info(appid)
+                            shared = {d for d, v in (info or {}).get("depots", {}).items() if v.get("fromapp")}
+                    _annotate_manifest_fixes_sync(appid, fixes, gids_by_fix, shared)
                 except Exception as exc:
                     logger.info(f"LuaTools: build check for {appid} skipped: {exc}")
                 return {"success": True, "fixes": fixes, "raw": data}
@@ -572,7 +582,7 @@ async def _install_fix_version(appid: int, fix_id: str, build_tag: str = "") -> 
     import shutil
     import tempfile
     import zipfile
-    from manifests import manifest_name, resolve_all, steamcmd_app_info
+    from manifests import archive_dir, depotcache_path, manifest_name, resolve_all, steamcmd_app_info
 
     data, err = await _fetch_fix_bytes(fix_id, "manifest", use_cache=True)
     if data is None:
@@ -588,7 +598,30 @@ async def _install_fix_version(appid: int, fix_id: str, build_tag: str = "") -> 
     # Valve's current gids decide whether Hubcap can help (it only serves the
     # current build); an old build must come from the archive or the repo.
     info = await steamcmd_app_info(appid)
-    current = {d: v["gid"] for d, v in (info or {}).get("depots", {}).items()}
+    valve = (info or {}).get("depots", {})
+    current = {d: v["gid"] for d, v in valve.items()}
+
+    # Depots borrowed from another app (a launcher such as Ubisoft Connect, a
+    # common runtime: `depotfromapp`) are not part of the build the fix
+    # targets; the lua just carries whatever gid that app had when the fix was
+    # generated. Use the current gid for those unless the fix's one is already
+    # on hand, so an old launcher gid can't block a fix for the CURRENT game
+    # build (Scott Pilgrim, 2026-09-11).
+    substituted = {}
+    for d, g in list(gids.items()):
+        if valve.get(d, {}).get("fromapp") and current.get(d) and current[d] != g:
+            have = (depotcache_path(d, g) and os.path.isfile(depotcache_path(d, g))) or \
+                   os.path.isfile(os.path.join(archive_dir(appid), manifest_name(d, g)))
+            if not have:
+                substituted[d] = (g, current[d])
+                gids[d] = current[d]
+    if substituted:
+        logger.info(f"LuaTools: {appid} fix {fix_id}: shared depots taken at their current gid "
+                    f"instead of the fix's: {substituted}")
+        for d, (old, new) in substituted.items():
+            lua_text = re.sub(r'(setManifestid\(\s*%d\s*,\s*"?)%d("?)' % (d, old),
+                              lambda m: m.group(1) + str(new) + m.group(2), lua_text)
+
     found, missing = await resolve_all(appid, gids, allow_hubcap=True, current_gids=current)
     if missing:
         depot = sorted(missing)[0]

@@ -499,8 +499,9 @@ async def resolve_all(
 
 async def steamcmd_app_info(appid: int) -> Optional[dict]:
     """{"buildid": int|None, "depots": {depot: {"gid": int, "oslist": str,
-    "osarch": str, "dlcappid": int|None, "sharedinstall": bool}},
-    "listofdlc": [int]} for the public branch, or None on any failure."""
+    "osarch": str, "dlcappid": int|None, "sharedinstall": bool,
+    "fromapp": int|None}}, "listofdlc": [int]} for the public branch, or
+    None on any failure."""
     client = await ensure_http_client("manifests")
     try:
         resp = await client.get(STEAMCMD_INFO.format(appid=int(appid)), timeout=25)
@@ -524,12 +525,17 @@ async def steamcmd_app_info(appid: int) -> Optional[dict]:
             continue
         cfg = dep.get("config") or {}
         dlc = dep.get("dlcappid")
+        fromapp = dep.get("depotfromapp")
         depots[int(did)] = {
             "gid": int(gid),
             "oslist": str(cfg.get("oslist", "")),
             "osarch": str(cfg.get("osarch", "")),
             "dlcappid": int(dlc) if str(dlc or "").isdigit() else None,
             "sharedinstall": str(dep.get("sharedinstall", "0")) == "1",
+            # A depot borrowed from another app (a launcher such as Ubisoft
+            # Connect, a common runtime). Its gid moves with THAT app, not
+            # with this game's build.
+            "fromapp": int(fromapp) if str(fromapp or "").isdigit() else None,
         }
     build = ((depots_raw.get("branches") or {}).get("public") or {}).get("buildid")
     dlcs = (app.get("extended") or {}).get("listofdlc", "")
