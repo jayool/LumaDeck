@@ -162,6 +162,16 @@ class Plugin:
                 except Exception as exc:
                     logger.warning(f"LumaDeck: ensure SLSsteam flags failed: {exc}")
             asyncio.create_task(_ensure_sls_flags())
+
+            # Pins: keep every managed game frozen to a build whose manifests
+            # we hold, heal depotcache, and move the pin when a newer build is
+            # available from a hub (pins.py). Replaces "follow Valve", which
+            # stopped working when the request-code providers died.
+            try:
+                import pins
+                pins.start()
+            except Exception as exc:
+                logger.warning(f"LumaDeck: pins job failed to start: {exc}")
         except Exception as exc:
             logger.error(f"LumaDeck: _main init error: {exc}")
 
@@ -174,6 +184,11 @@ class Plugin:
             for task in DOWNLOAD_TASKS.values():
                 if not task.done():
                     task.cancel()
+            try:
+                import pins
+                pins.stop()
+            except Exception:
+                pass
             await close_http_client("unload")
         except Exception as exc:
             logger.error(f"LumaDeck: _unload error: {exc}")
@@ -363,10 +378,6 @@ class Plugin:
     async def get_pin_status(self, appid: int) -> str:
         from downloads import get_pin_status
         return _j(await get_pin_status(appid))
-
-    async def self_heal_acf_build(self, appid: int, target_build: int) -> str:
-        from downloads import self_heal_acf_build
-        return _j(await self_heal_acf_build(appid, target_build))
 
     # ==========================================================================
     # Downloads

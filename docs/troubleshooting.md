@@ -102,6 +102,18 @@ a Denuvo game you don't own **downloads but won't run** on this alone. You need
 either an **SLS ticket** from an owner or a **fix that strips Denuvo**. See the
 Denuvo note in [Managing a game](managing-a-game.md#fixes).
 
+## A game loops on "No internet connection" / stays on Update queued
+
+Steam wants a manifest it cannot get: Valve refuses the manifest request code
+for unowned content and the services that minted those codes are gone
+(2026-09-09). It happens when the manifest Steam plans is not in `depotcache/`
+— typically a game added before LumaDeck pinned games by default, or a manifest
+Steam purged. LumaDeck's background job pins unpinned games to their installed
+build and puts missing manifests back within a minute; Steam picks the file up
+on its next retry (~30 s) and the loop ends by itself. If it persists, open the
+game page and use **Fix Update** (re-fetches the Hubcap zip and re-pins), then
+restart Steam.
+
 ## Still stuck?
 
 - Component health logic and every state is documented in

@@ -47,21 +47,25 @@ For the full step-by-step of what the plugin does under the hood, see [How a gam
 This is what the plugin does end-to-end when you tap **Download Manifest** in the QAM:
 
 1. **Manifest fetch.** The backend queries the enabled APIs (Hubcap, Ryuu, etc.) listed in `api.json`, picks the first one that responds with a valid zip, and downloads it to a temp directory. Progress for *this* phase (a few MB) is shown in the plugin UI.
-2. **Process the zip.** The plugin extracts it, optionally enriches the `.lua` with a Linux depot from PICS (only if the corresponding `.manifest` is already in the extracted tree), and hands the result to `steamidra_lite.py` via subprocess. The script does the heavy lifting: extracts `.manifest` files into `depotcache/`, writes `keys.txt` for lumalinux, injects depot keys into `config.vdf`, adds the AppID to SLSsteam's `AdditionalApps`, and copies the `.lua` to `stplug-in/` for ecosystem interop. It does **not** write an `appmanifest` — Steam creates that when you press Install, in whichever library you choose.
+2. **Process the zip.** The plugin extracts it, optionally enriches the `.lua` with a Linux depot from PICS (only if the corresponding `.manifest` is already in the extracted tree), and hands the result to `steamidra_lite.py` via subprocess. The plugin first keeps a copy of the zip and of every `.manifest` it carries under `~/.local/share/lumadeck/` (the archive it heals `depotcache/` from later). The script does the heavy lifting: extracts `.manifest` files into `depotcache/`, writes `keys.txt` for lumalinux, injects depot keys into `config.vdf`, adds the AppID to SLSsteam's `AdditionalApps`, **pins the game to the zip's build** in SLSsteam's `ManifestIds`, and copies the `.lua` to `stplug-in/` for ecosystem interop. It does **not** write an `appmanifest` — Steam creates that when you press Install, in whichever library you choose.
 3. **Live refresh (no restart).** LumaDeck hot-reloads SLSsteam's config and lumalinux broadcasts a licence-reconcile so Steam re-reads ownership and appinfo **without a restart** — the game appears in your library right away. (Fallback: if lumalinux's reconcile hook isn't available on your Steam build, LumaDeck holds the game back and you **restart Steam manually** instead, which refreshes the config the slow way.)
-4. **Native download.** The game is in the library, ready to install. You press **Install** in Steam and it downloads like a normal owned title — the lumalinux hooks intercept depot-key and manifest-request calls so Steam can decrypt and fetch what it needs. **Progress for this phase (the GBs) is shown in the Steam library itself**, not in the plugin.
+4. **Native download.** The game is in the library, ready to install. You press **Install** in Steam and it downloads like a normal owned title — the manifests are already in `depotcache/`, so Steam never asks Valve for a manifest request code (the services that used to mint those died on 2026-09-09), and the lumalinux DepotKey hook serves the keys so Steam can decrypt. **Progress for this phase (the GBs) is shown in the Steam library itself**, not in the plugin.
 
 ## Update flow
 
-Games installed through LumaDeck are **normal owned games to Steam**, so they
-**auto-update natively** — just like any game you actually own. The per-game
-**auto-update** toggle can freeze a game at its installed version instead.
+Every game LumaDeck adds is **pinned** to the build whose manifests are on
+disk, and LumaDeck keeps that pin current: a background job checks Valve's
+current build every 30 minutes and, when a hub has the new manifests (the
+GitHub manifest repo, else Hubcap), it seeds them and moves the pin. Steam then
+applies the update the next time you launch the game or restart Steam — exactly
+like an update of a game you own. Nothing to press. The per-game
+**auto-update** toggle turns that off and freezes the game at its build.
 
 Occasionally an update gets stuck (a new depot needs a decryption key the game
 doesn't have yet). LumaDeck flags it and a **Fix Update** button re-deploys a
 fresh manifest to unblock it; your installed version keeps working meanwhile.
 
-Full mechanism (pinning, the BuildDep passthrough, stuck-update handling):
+Full mechanism (why pinning, how the pin moves, stuck-update handling):
 [Adding & updating games → Updating a game](docs/adding-and-updating-games.md#updating-a-game).
 
 ## What's different from DeckTools
