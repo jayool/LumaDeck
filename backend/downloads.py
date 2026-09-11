@@ -923,14 +923,16 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
          (handled outside this function, in _download_zip_for_app).
 
     Notes:
-      - This runs steamidra_lite in its default NO-PIN mode (no --pin flag): it
-        writes manifest_gid=0 to keys.txt and comments out the setManifestid
-        lines, so Steam pulls the latest manifest and the game auto-updates. The
-        depot AES keys are version-independent, so the download still decrypts.
-        Version pinning is opt-in per game (pin_game -> --pin-installed) and is
-        currently a no-op at the lumalinux layer: SLSsteam 20260714 owns
-        BuildDepotDependency, so lumalinux's BuildDep hook is disabled. Re-homing
-        the pin onto SLSsteam's ManifestIds is tracked separately.
+      - Every install now runs steamidra_lite with --pin: the zip's gids go
+        into SLSsteam's ManifestIds, so Steam never asks Valve for a manifest
+        request code (the providers that served those died on 2026-09-09; an
+        unpinned game would loop on "No internet connection" at the first
+        update). Keeping the game current is the job in pins.py: it moves the
+        pin when a newer build is available from a hub. `pin=False` is kept
+        for callers that explicitly want the legacy follow-Valve behaviour.
+      - The zip and every manifest it carries are archived under
+        ~/.local/share/lumadeck/ before steamidra sees them (manifests.py), so
+        a Steam-side uninstall/reinstall or a purge can be healed offline.
       - No ACCELA launcher integration. If the user wants ACCELA to handle
         the zip instead, they can run it manually from Desktop Mode.
     """
@@ -954,6 +956,15 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
         # into the work dir as <appid>.lua. Anything else (e.g. an HTML soft-404
         # the CDN returned) is neither → fail with a clear message.
         if zipfile.is_zipfile(zip_path):
+            # Keep our own copy of the zip and of its manifests first: Steam
+            # purges depotcache on uninstall, and the pin only works while the
+            # pinned manifest exists somewhere we can restore it from.
+            try:
+                from manifests import archive_zip
+                n_arch = archive_zip(appid, zip_path)
+                logger.info(f"LumaDeck: archived {n_arch} manifest(s) for {appid}")
+            except Exception as arch_exc:
+                logger.warning(f"LumaDeck: archive of zip for {appid} failed: {arch_exc}")
             with zipfile.ZipFile(zip_path, "r") as archive:
                 archive.extractall(tmp_dir)
         else:
@@ -1341,7 +1352,12 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     if _is_download_cancelled(appid):
                         raise RuntimeError("cancelled")
                     _set_download_state(appid, {"status": "processing"})
-                    await _process_and_install_lua(appid, dest_path)
+                    # Pinned: since the request-code providers died (2026-09-09)
+                    # Steam can only install what is already in depotcache, so
+                    # the game is frozen to the zip's build in SLSsteam's
+                    # ManifestIds. The background job (pins.py) moves the pin
+                    # forward when a newer build is available from a hub.
+                    await _process_and_install_lua(appid, dest_path, pin=True)
 
                     if _is_download_cancelled(appid):
                         raise RuntimeError("cancelled")
