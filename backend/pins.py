@@ -74,6 +74,7 @@ REDIST_DEPOTS = {
 }
 
 _MANIFEST_RE = re.compile(r"^(\d+)_(\d+)\.manifest$")
+_reported_unpinnable: set = set()
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +299,12 @@ async def ensure_pinned(appid: int) -> Dict[int, int]:
                             f"({'installed build' if inst else 'seeded manifests'})")
                 pin.update(target)
         left = [d for d in unpinned if d not in target]
-        if left:
-            logger.info(f"LumaDeck: {appid}: no build to pin depots {left} to yet")
+        if left and appid not in _reported_unpinnable:
+            # Usually the other platforms' depots (Windows/macOS on a native
+            # Linux install): keyed, never downloaded, nothing to pin to. The
+            # update pass only cares about the platform Steam runs the game as.
+            _reported_unpinnable.add(appid)
+            logger.info(f"LumaDeck: {appid}: no build to pin depots {left} to (not installed, no manifest)")
 
     dc = get_depotcache_dir()
     if dc:
@@ -381,19 +386,22 @@ async def check_update(appid: int) -> str:
     if not keyed:
         return "no keyed depots"
     pin = await ensure_pinned(appid)
-    if any(d not in pin for d in keyed):
-        return "not fully pinned yet"
 
     info = await steamcmd_app_info(appid)
     if not info:
         return "steamcmd.net unavailable"
     valve = info["depots"]
     platform = _platform_for(keyed, valve)
+    # The depots Steam would actually download for this game: its platform's
+    # (plus platform-neutral ones such as DLC data), never the shared redists.
     relevant = {
         d: v for d, v in valve.items()
         if d not in REDIST_DEPOTS and not v["sharedinstall"]
         and v["oslist"] in ("", platform) and v["osarch"] in ("", "64")
     }
+    unpinned = [d for d in keyed if d in relevant and d not in pin]
+    if unpinned:
+        return f"not fully pinned yet (depots {unpinned})"
     changed = {d: v["gid"] for d, v in relevant.items() if d in keyed and v["gid"] != pin.get(d)}
     new_depots = sorted(d for d in relevant if d not in keyed)
     if not changed and not new_depots:
