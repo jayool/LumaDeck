@@ -64,34 +64,62 @@ The full end-to-end breakdown is in the root
 ## Updating a game
 
 Games you install through LumaDeck are **normal owned games to Steam**, so
-**Steam updates them natively** — there's no "update" button in the plugin for
-the normal case.
+**Steam applies their updates natively** — there's no "update" button in the
+plugin for the normal case. What changed on 2026-09-09 is *where the update
+comes from*.
+
+### Why every game is pinned
+
+Steam only downloads a version whose **manifest** (the file list) it can get.
+For a game you don't own, Valve refuses the "manifest request code" that
+authorises fetching it, and the third-party services that used to mint those
+codes are gone. So the only manifests Steam can ever use are the ones LumaDeck
+puts into `depotcache/` — and a game that "followed Valve" would ask for the
+newest manifest, be refused, and loop on *No internet connection*.
+
+That is why every game LumaDeck adds is **pinned** to the build it has
+manifests for (SLSsteam's `ManifestIds`, written by `steamidra_lite --pin`).
+The pin is not a restriction, it is what makes install and update possible.
 
 ### Auto-update (default)
 
-By default a game is **unpinned**: `steamidra_lite` writes `gid=0` for its
-content depots in `keys.txt`, so nothing pins them and Steam follows Valve's
-current manifest. The game **auto-updates like a legitimate owner**, decrypting
-each depot with the keys already in `keys.txt`.
+LumaDeck moves the pin for you. A background job:
+
+- every **30 minutes** compares each game's pin with Valve's current build
+  (`api.steamcmd.net`);
+- when a build is newer, fetches its manifests from the hubs — the GitHub
+  manifest repo (`P-ToyStore/SteamManifestCache_Pro`, updated by a bot minutes
+  after Valve) first, Hubcap if the repo doesn't have it (at most once a day per
+  game, the API key has a daily quota);
+- only when it has **every** manifest, seeds them into `depotcache/` and moves
+  the pin. Steam sees the new build the next time you **launch the game or
+  restart Steam** and updates it like any owned game.
+
+If no hub has the build yet, nothing changes: the game keeps working on its
+current build and the job tries again on its next pass.
+
+A build that adds a **new depot** (a new DLC, a restructure) needs its
+decryption key too, which only a fresh Hubcap zip carries. The job fetches that
+zip (same daily limit) and installs it through the normal path; until then a
+keyless DLC is simply invisible to Steam — no error.
 
 The per-game **auto-update** toggle (on the [game page](managing-a-game.md#auto-update))
-controls this:
+controls the job:
 
-- **On (unpinned, default)** — follows the latest version.
-- **Off (pinned)** — `steamidra_lite --pin-installed` writes the installed GID
-  into SLSsteam's `ManifestIds`, and **SLSsteam** freezes that version; updates
-  are held back. **LumaDeck won't tell you a newer version exists for a pinned
-  game** — unpin it to pick updates back up.
+- **On (default)** — LumaDeck moves the pin whenever it can.
+- **Off (frozen)** — the pin stays where it is. Installing a LuaTools version
+  fix freezes the game automatically (see [Managing a game → Fixes](managing-a-game.md#fixes)).
+
+Every 60 seconds the job also puts back any pinned manifest that went missing
+from `depotcache/` (Steam deletes them on uninstall, and sometimes after an
+install commits) from LumaDeck's own copy under `~/.local/share/lumadeck/`, so
+a Steam-side uninstall/reinstall works offline.
 
 ### When an update gets stuck
 
-> ⚠️ This remediation is **expected behaviour, not yet verified end-to-end on a
-> Deck** (the auto-update path above is validated).
-
-An auto-update only stalls when a new build pulls in a **new or rotated depot**
-whose decryption key isn't in `keys.txt` yet — Steam can't decrypt it, so the
-update gets stuck and your **installed version keeps working**. LumaDeck's
-watchdog detects this and shows an **Update stuck** notice; tap **Fix Update**
-and the plugin re-fetches the manifest (bringing the new key), re-deploys
-`keys.txt`, and you restart Steam to finish. (Re-fetching needs a valid Hubcap
-key.)
+The **Update stuck** notice and **Fix Update** button remain as the manual way
+out: tap it and the plugin re-fetches the Hubcap zip (bringing any new key),
+re-deploys `keys.txt` and the manifests, and re-pins. With the job above this
+should be rare — it never moves a pin without every key and manifest in hand —
+but it covers an update Steam had already started, or anything unforeseen.
+(Re-fetching needs a valid Hubcap key.)

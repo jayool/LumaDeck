@@ -19,7 +19,7 @@ Steam's tree holds two things the code conflates:
 
 | | Where | How many |
 |---|---|---|
-| **Steam install root** | `config/config.vdf`, `config/stplug-in/`, `config/libraryfolders.vdf`, `depotcache/`, `config/depotcache/` | **One** per machine |
+| **Steam install root** | `config/config.vdf`, `config/stplug-in/`, `config/libraryfolders.vdf`, `depotcache/` | **One** per machine |
 | **Library** | `steamapps/appmanifest_<appid>.acf`, `steamapps/common/<installdir>/` | **N** |
 
 The root *is also* the first library. On a single-drive Deck the two coincide, so
@@ -386,12 +386,12 @@ field does get stuck, and unsticking it appears to help.
   Steam running, restarted, not regenerated — observed twice. Safety rule 4 can
   relax: the cleanup may run on library refresh with Steam up; it takes effect on
   the next Steam start.
-- **Q3 — does Steam read `config/depotcache`?** Long-standing. `_write_manifest_both`
-  (`steamidra_lite.py:274-286`) writes to both on inherited SteaMidra rationale;
-  moon's startup copy implies it does not.
-
-Q3 is the only one still open, and it is not blocking anything: writing to both
-depotcache directories is harmless whichever way it falls.
+- ~~**Q3 — does Steam read `config/depotcache`?**~~ **ANSWERED: no** (2026-09-11,
+  same devcontainer). A manifest present only in `config/depotcache/` left Steam
+  requesting the manifest code and failing; copying it into `depotcache/` made
+  the next retry succeed. steamidra_lite stopped writing the second copy
+  (lumalinux 0.20.1), and LumaDeck now keeps its own restorable copy under
+  `~/.local/share/lumadeck/manifests/` instead (lumalinux RESEARCH §19).
 
 Q1 and Q2 were answered on `lumalinux/.devcontainer/steamos` (Steam in gamepadui,
 noVNC on 6080, Decky and LumaDeck pre-deployed) with a second library on a real
