@@ -106,6 +106,10 @@ function luaFixTagList(f: any): string[] {
 // both also ~8 digits) for the build. The digit count stays open (\d{6,}) so a
 // future 9-digit build still matches; the label, not the length, is the guard.
 function luaFixBuildTag(f: any): string {
+  // The catalogue's Denuvo entries carry the build as a bare number in `title`
+  // (the same value renderFixEntry shows as "Build N"); accept that too.
+  const bare = String(f?.title ?? "").trim();
+  if (/^\d{6,}$/.test(bare)) return bare;
   const candidates = [f?.title, ...luaFixTagList(f)];
   for (const c of candidates) {
     const m = String(c ?? "").match(/\bBuild\s+(\d{6,})\b/i);
