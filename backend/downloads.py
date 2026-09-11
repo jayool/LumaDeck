@@ -187,43 +187,57 @@ async def _run_steamidra_mode(mode_args: list[str]) -> tuple[bool, str]:
     return proc.returncode == 0, raw.decode("utf-8", errors="replace").strip()
 
 
+# Every managed game is pinned in SLSsteam's ManifestIds now (pins.py keeps the
+# pin current). What the Auto-update toggle controls is whether the background
+# job may MOVE that pin: "pinned" here means frozen by the user or by a LuaTools
+# version fix. The ManifestIds depots are still reported for the UI/self-heal.
+
+
 async def pin_game(appid: int) -> dict:
-    """Freeze a game at its installed version (steamidra_lite --pin-installed)."""
-    ok, out = await _run_steamidra_mode(["--pin-installed", str(int(appid))])
-    if not ok:
-        return {"success": False, "error": out or "pin failed"}
-    return {"success": True, "pinned": True}
+    """Freeze a game: the update job leaves its pin alone."""
+    try:
+        import pins
+        await pins.ensure_pinned(int(appid))
+        pins.set_frozen(int(appid), True)
+        return {"success": True, "pinned": True}
+    except Exception as exc:
+        return {"success": False, "error": f"freeze failed: {exc}"}
 
 
 async def unpin_game(appid: int) -> dict:
-    """Return a game to auto-update (steamidra_lite --unpin)."""
-    ok, out = await _run_steamidra_mode(["--unpin", str(int(appid))])
-    if not ok:
-        return {"success": False, "error": out or "unpin failed"}
-    return {"success": True, "pinned": False}
+    """Unfreeze a game: the update job moves it to the newest build it can
+    source, on its next pass."""
+    try:
+        import pins
+        pins.set_frozen(int(appid), False)
+        return {"success": True, "pinned": False}
+    except Exception as exc:
+        return {"success": False, "error": f"unfreeze failed: {exc}"}
 
 
 async def get_pin_status(appid: int) -> dict:
-    """Return {"success", "pinned", "depots"} (steamidra_lite --pin-status)."""
+    """{"success", "pinned" (frozen), "depots" (ManifestIds depot->gid),
+    "fixId"}."""
     try:
         import dev
         if dev.is_fake_appid(appid):
-            return {"success": True, "pinned": False, "depots": []}
+            return {"success": True, "pinned": False, "depots": {}, "fixId": None}
     except Exception:
         pass
-    ok, out = await _run_steamidra_mode(["--pin-status", str(int(appid))])
-    if not ok:
-        return {"success": False, "error": out or "status failed", "pinned": False}
     try:
-        line = out.splitlines()[-1] if out else "{}"
-        data = json.loads(line)
+        import pins
+        info = pins.frozen_info(int(appid))
+        keyed = pins.keyed_depots(int(appid))
+        mids = pins.read_manifest_ids()
+        depots = {str(d): str(mids[d]) for d in sorted(keyed) if d in mids}
         return {
             "success": True,
-            "pinned": bool(data.get("pinned")),
-            "depots": data.get("depots", {}),
+            "pinned": bool(info.get("frozen")),
+            "depots": depots,
+            "fixId": info.get("fix_id"),
         }
-    except Exception:
-        return {"success": False, "error": f"could not parse: {out}", "pinned": False}
+    except Exception as exc:
+        return {"success": False, "error": f"status failed: {exc}", "pinned": False}
 
 
 async def self_heal_acf_build(appid: int, target_build) -> dict:
