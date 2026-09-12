@@ -89,8 +89,9 @@ LumaDeck moves the pin for you. A background job:
   (`api.steamcmd.net`);
 - when a build is newer, fetches its manifests from the hubs — the GitHub
   manifest repo (`P-ToyStore/SteamManifestCache_Pro`, updated by a bot minutes
-  after Valve) first, Hubcap if the repo doesn't have it (at most once a day per
-  game, the API key has a daily quota);
+  after Valve) first, then the `manifest.luastools.xyz` archive (filled by
+  BetterSteamTools users who own the game; no key, no quota), and Hubcap only if
+  neither has it (at most once a day per game, the API key has a daily quota);
 - only when it has **every** manifest, seeds them into `depotcache/` and moves
   the pin. Steam sees the new build the next time you **launch the game or
   restart Steam** and updates it like any owned game.
