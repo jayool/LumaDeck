@@ -19,7 +19,12 @@ looked up in this order, stopping at the first hit:
      `<depot>_<gid>.manifest`: the CURRENT public build, pushed by a bot on
      owning accounts within minutes of Valve. Fixed raw URL, no API, no key.
   4. Same repo, tag `<depot>_<gid>`: older builds the bot has seen (partial).
-  5. Hubcap: the whole game zip (lua + keys + manifests). Only when the gid
+  5. manifest.luastools.xyz/m/<depot>/<gid>: the archive BetterSteamTools
+     fills with request codes donated by owning accounts. No key, no quota,
+     edge-cached; the one source seen to carry builds published after
+     2026-09-09 (probed 2026-09-12: 17/17 current gids, 8/15 post-09-09 gids).
+     A 404 means "not archived yet" and falls through.
+  6. Hubcap: the whole game zip (lua + keys + manifests). Only when the gid
      asked for is Valve's current one (Hubcap serves the current build) and at
      most once per app per day, because the API key has a daily quota.
 
@@ -64,6 +69,7 @@ REPO_OWNER = "P-ToyStore"
 REPO_NAME = "SteamManifestCache_Pro"
 _REPO_RAW = "https://raw.githubusercontent.com/" + REPO_OWNER + "/" + REPO_NAME + "/{ref}/{name}"
 STEAMCMD_INFO = "https://api.steamcmd.net/v1/info/{appid}"
+LUASTOOLS_ARCHIVE = "https://manifest.luastools.xyz/m/{depot}/{gid}"
 
 MANIFEST_MAGIC = b"\xd0\x17\xf6\x71"          # depotcache payload header
 _PRO_HEADER = b"\x78\xda\x08\x00\x00\x00\x00\x00\x02\x03"
@@ -320,6 +326,27 @@ async def fetch_repo_manifest(appid: int, depot: int, gid: int) -> Optional[byte
     return None
 
 
+async def fetch_luastools_manifest(appid: int, depot: int, gid: int) -> Optional[bytes]:
+    """BetterSteamTools' donated-code archive: one GET per (depot, gid), plain
+    manifest bytes, 404 when nobody has donated a code for it yet. Returns
+    validated manifest bytes or None."""
+    client = await ensure_http_client("manifests")
+    url = LUASTOOLS_ARCHIVE.format(depot=int(depot), gid=int(gid))
+    try:
+        resp = await client.get(url, timeout=60)
+    except Exception as exc:
+        logger.info(f"LumaDeck: luastools fetch error {url}: {exc}")
+        return None
+    if resp.status_code != 200:
+        return None
+    plain = validate_manifest(resp.content, depot, gid)
+    if plain is None:
+        logger.warning(f"LumaDeck: luastools file for depot {depot} gid {gid} did not validate")
+        return None
+    logger.info(f"LumaDeck: manifest {manifest_name(depot, gid)} for {appid} from luastools archive")
+    return plain
+
+
 def _hubcap_attempts() -> Dict[str, float]:
     try:
         with open(_HUBCAP_ATTEMPTS, "r", encoding="utf-8") as f:
@@ -423,7 +450,7 @@ async def resolve_manifest(
     allow_hubcap: bool = True, current_gid: Optional[int] = None,
 ) -> Tuple[Optional[str], str]:
     """Make `<depot>_<gid>.manifest` exist in depotcache/. Returns
-    (path, source) with source in {"depotcache", "archive", "repo", "hubcap"},
+    (path, source) with source in {"depotcache", "archive", "repo", "luastools", "hubcap"},
     or (None, reason). Hubcap is only tried when `gid == current_gid`."""
     depot, gid = int(depot), int(gid)
     path = depotcache_path(depot, gid)
@@ -451,9 +478,15 @@ async def resolve_manifest(
         place_in_depotcache(depot, gid, data)
         return path, "repo"
 
+    data = await fetch_luastools_manifest(appid, depot, gid)
+    if data is not None:
+        archive_manifest(appid, depot, gid, data)
+        place_in_depotcache(depot, gid, data)
+        return path, "luastools"
+
     if allow_hubcap and current_gid is not None and gid == int(current_gid):
         if not hubcap_budget_ok(appid):
-            return None, "not in repo; Hubcap already tried today"
+            return None, "not in repo/luastools; Hubcap already tried today"
         zip_path = await fetch_game_zip(appid)
         if zip_path:
             try:
@@ -466,8 +499,8 @@ async def resolve_manifest(
                 place_in_depotcache(depot, gid, data)
                 return path, "hubcap"
             return None, "Hubcap zip did not carry this manifest"
-        return None, "not in repo; Hubcap did not return a zip"
-    return None, "not in repo" + ("" if current_gid is None or gid == int(current_gid)
+        return None, "not in repo/luastools; Hubcap did not return a zip"
+    return None, "not in repo/luastools" + ("" if current_gid is None or gid == int(current_gid)
                                   else " (old build, Hubcap only has the current one)")
 
 

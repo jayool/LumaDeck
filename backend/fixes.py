@@ -151,6 +151,33 @@ def _is_path_safe(base_dir: str, member_name: str) -> bool:
     return resolved.startswith(base_resolved + os.sep) or resolved == base_resolved
 
 
+def _existing_case_rel(install_path: str, rel: str) -> str:
+    """Resolve a zip member path against the on-disk spelling of the game dir.
+
+    Fix archives are usually built on Windows, where ``game.exe`` and
+    ``Game.exe`` are the same file. On Linux they are two: extracting with the
+    archive's spelling dropped the crack BESIDE the original, and the game kept
+    launching the untouched original. For every path component that does not
+    exist exactly, use the single case-insensitive match on disk when there is
+    exactly one; an ambiguous directory is left as the archive spelled it."""
+    parts = [part for part in rel.replace("\\", "/").split("/") if part not in ("", ".")]
+    resolved = []
+    current = install_path
+    for part in parts:
+        chosen = part
+        if not os.path.lexists(os.path.join(current, part)) and os.path.isdir(current):
+            try:
+                matches = [name for name in os.listdir(current)
+                           if name.casefold() == part.casefold()]
+            except OSError:
+                matches = []
+            if len(matches) == 1:
+                chosen = matches[0]
+        resolved.append(chosen)
+        current = os.path.join(current, chosen)
+    return "/".join(resolved)
+
+
 # ---------------------------------------------------------------------------
 # Original-file backups (so "unfix" can RESTORE, not just delete)
 # ---------------------------------------------------------------------------
@@ -286,6 +313,11 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
                     if not _is_path_safe(install_path, target_path):
                         logger.warning(f"Zip Slip blocked: {member}")
                         continue
+                    if not member.endswith("/"):
+                        target_path = _existing_case_rel(install_path, target_path)
+                        if not _is_path_safe(install_path, target_path):
+                            logger.warning(f"Zip Slip blocked: {member}")
+                            continue
                     source = archive.open(member)
                     target = os.path.join(install_path, target_path)
                     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -306,6 +338,10 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
                 rel = member.lstrip("/\\")
                 if not rel:
                     continue
+                if not _is_path_safe(install_path, rel):
+                    logger.warning(f"Zip Slip blocked: {member}")
+                    continue
+                rel = _existing_case_rel(install_path, rel)
                 if not _is_path_safe(install_path, rel):
                     logger.warning(f"Zip Slip blocked: {member}")
                     continue
