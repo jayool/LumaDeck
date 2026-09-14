@@ -338,6 +338,34 @@ async def ensure_pinned(appid: int) -> Dict[int, int]:
                 logger.info(f"LumaDeck: restored {manifest_name(d, g)} for {appid} from the archive")
             except Exception as exc:
                 logger.warning(f"LumaDeck: restore of {manifest_name(d, g)} failed: {exc}")
+
+        # The INSTALLED build's manifests too, when the pin already points at a
+        # newer one. Steam computes an update as the difference between the
+        # installed manifest and the target, so it asks for the installed one
+        # as well; without it the update dies on "Failed to get manifest request
+        # code, 'Access Denied'" and the game sits on "Update" (Balatro,
+        # 2026-09-13: old manifest removed -> stuck; put back -> the 30 s retry
+        # finished the update). Offline heal from the archive only; the update
+        # pass resolves them online before it moves a pin.
+        for d, g in installed_depots(appid).items():
+            if d not in keyed or pin.get(d) == g:
+                continue
+            if os.path.isfile(os.path.join(dc, manifest_name(d, g))):
+                continue
+            src = os.path.join(archive_dir(appid), manifest_name(d, g))
+            if not os.path.isfile(src):
+                continue
+            try:
+                with open(src, "rb") as f:
+                    data = f.read()
+                if validate_manifest(data, d, g) is None:
+                    os.remove(src)
+                    continue
+                place_in_depotcache(d, g, data)
+                logger.info(f"LumaDeck: restored installed-build {manifest_name(d, g)} for {appid} "
+                            f"from the archive (Steam needs it to compute the update)")
+            except Exception as exc:
+                logger.warning(f"LumaDeck: restore of {manifest_name(d, g)} failed: {exc}")
     return pin
 
 
@@ -434,6 +462,17 @@ async def check_update(appid: int) -> str:
     found, missing = await resolve_all(appid, changed, allow_hubcap=True, current_gids=current)
     if missing:
         return f"build {info.get('buildid')} not fully available: {missing}"
+    # Steam diffs the installed manifest against the new one, so the installed
+    # build's manifests must be on disk too (archive, then the online sources;
+    # never Hubcap, which only has the current build). Moving the pin without
+    # them leaves the game stuck on "Update" with 'Access Denied' on the old gid.
+    installed = {d: g for d, g in installed_depots(appid).items()
+                 if d in changed and g != changed[d]}
+    if installed:
+        _, old_missing = await resolve_all(appid, installed, allow_hubcap=False)
+        if old_missing:
+            return (f"build {info.get('buildid')} ready but the installed build's manifests "
+                    f"are missing ({old_missing}); Steam needs them to update, not moving the pin")
     new_pin = dict(pin)
     new_pin.update(changed)
     if await set_pin(appid, new_pin):
