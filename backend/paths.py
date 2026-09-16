@@ -334,6 +334,18 @@ def check_lumalinux_active() -> bool:
     return False
 
 
+def find_lumalinux_gmrc_path() -> Optional[str]:
+    """lumalinux's gmrc.json (v0.21.0+), written next to status.json after
+    every manifest-request-code lookup: {"providers": "up"|"down", "at": iso}.
+    Same candidate directories as status.json. None when absent (older
+    lumalinux, or Steam has not asked for a code this session)."""
+    status = find_lumalinux_status_path()
+    if not status:
+        return None
+    p = os.path.join(os.path.dirname(status), "gmrc.json")
+    return p if os.path.isfile(p) else None
+
+
 def find_lumalinux_status_path() -> Optional[str]:
     """Return the path to lumalinux's status.json if it exists.
 

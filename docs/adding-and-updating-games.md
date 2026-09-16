@@ -65,39 +65,34 @@ The full end-to-end breakdown is in the root
 
 Games you install through LumaDeck are **normal owned games to Steam**, so
 **Steam applies their updates natively** — there's no "update" button in the
-plugin for the normal case. What changed on 2026-09-09 is *where the update
-comes from*.
+plugin for the normal case.
 
-### Why every game is pinned
+### Native, with a safety net (0.9)
 
-Steam only downloads a version whose **manifest** (the file list) it can get.
-For a game you don't own, Valve refuses the "manifest request code" that
-authorises fetching it, and the third-party services that used to mint those
-codes are gone. So the only manifests Steam can ever use are the ones LumaDeck
-puts into `depotcache/` — and a game that "followed Valve" would ask for the
-newest manifest, be refused, and loop on *No internet connection*.
+Steam only downloads a version whose **manifest** (the file list) it can get,
+and for a game you don't own Valve only hands out the "manifest request code"
+that authorises fetching it to an account that owns the game. Since
+2026-09-15 there are again public services that mint those codes from owning
+accounts, and lumalinux (0.21.0+) uses them: when Steam needs a manifest it
+does not have, lumalinux asks a provider, **checks the code against Valve's
+CDN**, and hands it to Steam. So in the normal case a LumaDeck game carries
+**no pin**: Steam sees Valve's current build, downloads it, and updates it
+later exactly like an owned game. LumaDeck does nothing but keep a copy of
+the manifests Steam downloads.
 
-That is why every game LumaDeck adds is **pinned** to the build it has
-manifests for (SLSsteam's `ManifestIds`, written by `steamidra_lite --pin`).
-The pin is not a restriction, it is what makes install and update possible.
+The safety net is for the day no provider answers (they all died once, on
+2026-09-09). lumalinux reports it (`gmrc.json`), and within a minute LumaDeck
+**pins every game to its installed build** (SLSsteam's `ManifestIds`), whose
+manifests it holds, so Steam has nothing to ask for: installed games keep
+playing, a pending update is simply dropped. While that lasts, updates go the
+0.8 way: every **30 minutes** the job compares each pin with Valve's current
+build (`api.steamcmd.net`), fetches the new manifests from the
+`manifest.luastools.xyz` archive or Hubcap (once a day per game), and moves
+the pin only when it has **every** manifest. The job also probes a provider
+every 30 minutes and, when one serves valid codes again, releases the pins
+it set. Nothing is shown to the user in either direction.
 
-### Auto-update (default)
-
-LumaDeck moves the pin for you. A background job:
-
-- every **30 minutes** compares each game's pin with Valve's current build
-  (`api.steamcmd.net`);
-- when a build is newer, fetches its manifests from the hubs — the GitHub
-  manifest repo (`P-ToyStore/SteamManifestCache_Pro`, updated by a bot minutes
-  after Valve) first, then the `manifest.luastools.xyz` archive (filled by
-  BetterSteamTools users who own the game; no key, no quota), and Hubcap only if
-  neither has it (at most once a day per game, the API key has a daily quota);
-- only when it has **every** manifest, seeds them into `depotcache/` and moves
-  the pin. Steam sees the new build the next time you **launch the game or
-  restart Steam** and updates it like any owned game.
-
-If no hub has the build yet, nothing changes: the game keeps working on its
-current build and the job tries again on its next pass.
+With an older lumalinux (no `gmrc.json`) LumaDeck stays in the pinned model.
 
 A build that adds a **new depot** (a new DLC, a restructure) needs its
 decryption key too, which only a fresh Hubcap zip carries. The job fetches that
@@ -107,9 +102,11 @@ keyless DLC is simply invisible to Steam — no error.
 The per-game **auto-update** toggle (on the [game page](managing-a-game.md#auto-update))
 controls the job:
 
-- **On (default)** — LumaDeck moves the pin whenever it can.
-- **Off (frozen)** — the pin stays where it is. Installing a LuaTools version
-  fix freezes the game automatically (see [Managing a game → Fixes](managing-a-game.md#fixes)).
+- **On (default)** — no pin while a provider is up (Steam updates the game
+  itself); with none, LumaDeck moves the pin whenever it can.
+- **Off (frozen)** — the game is pinned to its installed build and nothing
+  moves it. Installing a LuaTools version fix freezes the game automatically
+  (see [Managing a game → Fixes](managing-a-game.md#fixes)).
 
 Every 60 seconds the job also puts back any pinned manifest that went missing
 from `depotcache/` (Steam deletes them on uninstall, and sometimes after an

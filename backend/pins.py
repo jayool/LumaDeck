@@ -1,40 +1,67 @@
-"""Pins: keep every lumalinux-managed game frozen to a build we have the
-manifests for, and move that pin forward when a newer build can be sourced.
+"""Pins: native updates while a request-code provider is alive, pins as the
+fallback when none is.
 
-Why. The manifest request-code providers died on 2026-09-09. Without a code
-Steam cannot fetch a manifest from Valve for a game the account doesn't own,
-so a game that "follows Valve" breaks at its first update ("No internet
-connection", retry every 30 s). Pinning the game in SLSsteam's `ManifestIds`
-(depot -> gid) makes Steam plan against gids whose manifests we have placed in
-depotcache/, which is the only thing that still works. Verified on the
+Two models, chosen by lumalinux's `gmrc.json` (v0.21.0+, written next to
+status.json after every manifest-request-code lookup):
+
+  "up"   — NATIVE. A managed game carries no pin: Steam sees Valve's current
+           build, asks for a manifest code, lumalinux's GMRC hook gets one from
+           a provider (checked against Valve's CDN first) and Steam installs or
+           updates exactly like an owned game. LumaDeck only archives the
+           manifests Steam downloads. Games the user froze (Auto-update off) or
+           a LuaTools version fix froze keep their pin.
+  "down" — no provider answered. Every unfrozen game is pinned to its INSTALLED
+           build (manifests archived, so Steam needs no code) and marked
+           `reason: "providers"` in pins.json; Steam sees "installed == target"
+           and clears any pending update. The window is one local pass (60 s)
+           for the games that happened to publish an update meanwhile.
+  absent — older lumalinux or no lookup yet this session: the pre-0.9 model,
+           every game pinned and moved by the update pass below.
+
+Release: `gmrc.json` only changes when Steam asks for a code, so while any game
+is frozen by us the 30-minute pass probes a provider itself (one code for one
+of our depots, validated against the CDN like tools/gmrc_probe.py) and, on
+success, unpins the games it froze. Detection of an outage is ~1 min;
+detection of the recovery is ≤ 30 min. Nothing is shown to the user.
+
+Why pins exist at all: the providers died on 2026-09-09. Without a code Steam
+cannot fetch a manifest for a game the account doesn't own, so a game that
+"follows Valve" breaks at its first update ("No internet connection", retry
+every 30 s). Pinning it in SLSsteam's `ManifestIds` (depot -> gid) makes Steam
+plan against gids whose manifests we placed in depotcache/. Verified on the
 devcontainer (2026-09-11): Steam re-reads the pin when the game is launched,
 when Steam starts, and on every retry while an update is pending; it does
-NOT re-read it while idle, and nothing we push from outside makes it.
+NOT re-read it while idle. Providers with licensed accounts came back on
+2026-09-15/16 (lumalinux RESEARCH §20), hence the native model.
 
 Two passes run from one background task started by main.py:
 
   local pass (every LOCAL_INTERVAL s, no network)
-    - a managed game with content depots missing from ManifestIds is pinned to
-      what it has: InstalledDepots from its .acf, else the single manifest in
-      depotcache/ (or our archive) for that depot;
+    - reads gmrc.json and applies the model above: "down" freezes unfrozen
+      games to their installed build, "up" releases the games we froze and any
+      leftover pin of an unfrozen game (the 0.8.x migration), absent pins any
+      unpinned game to what it has (InstalledDepots from its .acf, else the
+      single manifest in depotcache/ or our archive);
     - a pinned manifest missing from depotcache/ is put back from the archive
-      (Steam purges depotcache on uninstall, after commits and on re-plans).
+      (Steam purges depotcache on uninstall, after commits and on re-plans);
+      the installed build's manifests are archived and healed the same way.
 
   update pass (every UPDATE_INTERVAL s, network; skipped for frozen games)
     - Valve's current gids come from api.steamcmd.net;
-    - depots we hold keys for whose gid changed: manifests via manifests.py
-      (repo branch, then Hubcap if it's the current build); the pin moves only
-      once EVERY changed depot resolved;
     - depots Valve added that we have no key for (a new DLC, a restructure):
-      the repo has no keys, so the Hubcap zip is fetched (once a day per app)
-      and installed through the normal pinned install path, but only if the
-      zip's gids are Valve's current ones (a stale zip would downgrade).
-    Steam applies the new pin the next time the game is launched or Steam
-    restarts, exactly like a native update. Nothing is shown to the user.
+      keys only come in a Hubcap zip, so one is fetched (once a day per app)
+      and installed through the normal install path, but only if the zip's
+      gids are Valve's current ones (a stale zip would downgrade). Both models.
+    - pinned model only: depots we hold keys for whose gid changed get their
+      manifests via manifests.py (archive, luastools, Hubcap if current) and
+      the pin moves once EVERY changed depot resolved. Native games are left
+      to Steam.
+    - while any game is frozen by us: the provider probe described above.
 
 Frozen. `~/.config/lumadeck/pins.json` holds a per-app `frozen` flag (set by
-the Auto-update toggle, or by installing a LuaTools version fix, which records
-the fix id). A frozen game keeps its pin; the local pass still heals it.
+the Auto-update toggle, by installing a LuaTools version fix, which records
+the fix id, or by this module with `reason: "providers"`). A frozen game keeps
+its pin; the local pass still heals it.
 """
 
 from __future__ import annotations
@@ -61,6 +88,14 @@ except ImportError:
 
 LOCAL_INTERVAL = 60
 UPDATE_INTERVAL = 30 * 60
+
+# pins.json `reason` for a freeze this module applied because no provider
+# answered; the only freeze it will undo by itself.
+FREEZE_REASON_PROVIDERS = "providers"
+# Valve's CDN, for the recovery probe (same hosts lumalinux checks codes on).
+_CDN_HOSTS = ("https://steampipe.akamaized.net",
+              "https://fastly.cdn.steampipe.steamcontent.com")
+_PROBE_UA = "LumaDeck/pins"
 
 _STATE_PATH = os.path.join(real_home(), ".config", "lumadeck", "pins.json")
 
@@ -105,14 +140,134 @@ def frozen_info(appid: int) -> dict:
     return dict(_load_state()["apps"].get(str(int(appid)), {}))
 
 
-def set_frozen(appid: int, frozen: bool, fix_id: Optional[str] = None) -> None:
+def set_frozen(appid: int, frozen: bool, fix_id: Optional[str] = None,
+               reason: Optional[str] = None) -> None:
     data = _load_state()
     entry = data["apps"].get(str(int(appid)), {})
     entry["frozen"] = bool(frozen)
     entry["fix_id"] = fix_id if frozen else None
+    entry["reason"] = reason if frozen else None
     entry["updated_at"] = int(time.time())
     data["apps"][str(int(appid))] = entry
     _save_state(data)
+
+
+def frozen_by_providers(appid: int) -> bool:
+    info = frozen_info(appid)
+    return bool(info.get("frozen")) and info.get("reason") == FREEZE_REASON_PROVIDERS
+
+
+def user_frozen(appid: int) -> bool:
+    """Frozen by the user (Auto-update off) or by a version fix — never by us."""
+    info = frozen_info(appid)
+    return bool(info.get("frozen")) and info.get("reason") != FREEZE_REASON_PROVIDERS
+
+
+# ---------------------------------------------------------------------------
+# Provider state (lumalinux's gmrc.json + our own recovery probe)
+# ---------------------------------------------------------------------------
+
+_probe_ok_at = 0.0   # epoch of the last successful recovery probe
+
+
+def _read_gmrc_json() -> Optional[dict]:
+    from paths import find_lumalinux_gmrc_path
+    p = find_lumalinux_gmrc_path()
+    if not p:
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        if d.get("providers") in ("up", "down"):
+            return d
+    except Exception:
+        pass
+    return None
+
+
+def _iso_epoch(s: str) -> float:
+    try:
+        return time.mktime(time.strptime(s, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+    except Exception:
+        return 0.0
+
+
+def gmrc_state() -> Optional[str]:
+    """'up' | 'down' | None. lumalinux's word, unless our own probe succeeded
+    more recently than lumalinux last wrote (the file only changes when Steam
+    asks for a code, so a recovery would otherwise never be seen)."""
+    d = _read_gmrc_json()
+    if d is None:
+        return None
+    if d["providers"] == "down" and _probe_ok_at > _iso_epoch(str(d.get("at", ""))):
+        return "up"
+    return d["providers"]
+
+
+def pin_new_installs() -> bool:
+    """What Add Game passes as `pin`: no pin while a provider is up (Steam
+    installs the current build natively), a pin to the zip's build otherwise."""
+    return gmrc_state() != "up"
+
+
+async def probe_providers() -> bool:
+    """One request code for one of our depots (or the free redistributables),
+    validated against Valve's CDN with a one-byte fetch — the same test
+    tools/gmrc_probe.py runs. True = a provider is serving codes again."""
+    global _probe_ok_at
+    from manifests import steamcmd_app_info
+    from http_client import ensure_http_client
+    client = await ensure_http_client("manifests")
+
+    target = None  # (depot, gid)
+    for appid in managed_apps():
+        keyed = keyed_depots(appid)
+        if not keyed:
+            continue
+        info = await steamcmd_app_info(appid)
+        if not info:
+            continue
+        for d in sorted(keyed):
+            g = (info["depots"].get(d) or {}).get("gid")
+            if g:
+                target = (d, int(g))
+                break
+        if target:
+            break
+    if not target:
+        info = await steamcmd_app_info(228980)
+        g = ((info or {}).get("depots", {}).get(228989) or {}).get("gid")
+        if not g:
+            return False
+        target = (228989, int(g))
+    depot, gid = target
+
+    providers = (
+        (f"https://20770407.xyz/manifest/{depot}/{gid}", _PROBE_UA),
+        (f"https://manifest.manifestdex.com/{gid}", "ManifestDeX/1.0"),
+    )
+    for url, ua in providers:
+        try:
+            resp = await client.get(url, headers={"User-Agent": ua}, timeout=10)
+            body = (resp.text or "").strip()
+        except Exception:
+            continue
+        if resp.status_code != 200 or not body.isdigit() or body == "0":
+            continue
+        for host in _CDN_HOSTS:
+            try:
+                cdn = await client.get(f"{host}/depot/{depot}/manifest/{gid}/5/{body}",
+                                       headers={"User-Agent": _PROBE_UA, "Range": "bytes=0-0"},
+                                       timeout=10)
+            except Exception:
+                continue
+            if cdn.status_code in (200, 206):
+                _probe_ok_at = time.time()
+                logger.info(f"LumaDeck: provider probe ok ({url.split('/')[2]}, depot {depot})")
+                return True
+            break  # a definite answer from the CDN: this code is no good
+    logger.info("LumaDeck: provider probe: no provider served a valid code")
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -269,9 +424,21 @@ async def set_pin(appid: int, gids: Dict[int, int]) -> bool:
 # Local pass
 # ---------------------------------------------------------------------------
 
-async def ensure_pinned(appid: int) -> Dict[int, int]:
-    """Pin any unpinned content depot to what the game already has, and put
-    back pinned manifests missing from depotcache/. Returns the pin."""
+async def unpin_game_depots(appid: int) -> bool:
+    """steamidra_lite --unpin: drop the game's content depots from ManifestIds.
+    Manifests on disk are untouched (Steam needs the installed one to compute
+    an update). Steam follows Valve again on its next plan."""
+    from downloads import _run_steamidra_mode
+    ok, out = await _run_steamidra_mode(["--unpin", str(int(appid))])
+    if not ok:
+        logger.warning(f"LumaDeck: unpin failed for {appid}: {out[-600:]}")
+    return ok
+
+
+async def ensure_pinned(appid: int, allow_pin: bool = True) -> Dict[int, int]:
+    """Put back pinned manifests missing from depotcache/ and archive what
+    Steam downloaded; with allow_pin, also pin any unpinned content depot to
+    what the game already has. Returns the pin."""
     from manifests import (archive_dir, archive_manifest, archived_manifests, manifest_name,
                            place_in_depotcache, validate_manifest)
 
@@ -280,7 +447,7 @@ async def ensure_pinned(appid: int) -> Dict[int, int]:
         return {}
     mids = read_manifest_ids()
     pin = {d: mids[d] for d in keyed if d in mids}
-    unpinned = [d for d in keyed if d not in mids]
+    unpinned = [d for d in keyed if d not in mids] if allow_pin else []
 
     if unpinned:
         inst = installed_depots(appid)
@@ -339,6 +506,25 @@ async def ensure_pinned(appid: int) -> Dict[int, int]:
             except Exception as exc:
                 logger.warning(f"LumaDeck: restore of {manifest_name(d, g)} failed: {exc}")
 
+        # A native (unpinned) game: keep a copy of the installed build's manifest
+        # as Steam wrote it, so a later freeze has something to pin to and heal
+        # from. Nothing else to do for it here.
+        for d, g in installed_depots(appid).items():
+            if d not in keyed or d in pin:
+                continue
+            present = os.path.join(dc, manifest_name(d, g))
+            if not os.path.isfile(present):
+                continue
+            if os.path.isfile(os.path.join(archive_dir(appid), manifest_name(d, g))):
+                continue
+            try:
+                with open(present, "rb") as f:
+                    data = f.read()
+                if validate_manifest(data, d, g) is not None:
+                    archive_manifest(appid, d, g, data)
+            except Exception as exc:
+                logger.warning(f"LumaDeck: could not archive {manifest_name(d, g)}: {exc}")
+
         # The INSTALLED build's manifests too, when the pin already points at a
         # newer one. Steam computes an update as the difference between the
         # installed manifest and the target, so it asks for the installed one
@@ -370,13 +556,45 @@ async def ensure_pinned(appid: int) -> Dict[int, int]:
 
 
 async def local_pass() -> None:
+    state = gmrc_state()
     for appid in managed_apps():
         if _download_busy(appid):
             continue
         try:
-            await ensure_pinned(appid)
+            await _apply_model(appid, state)
         except Exception as exc:
             logger.warning(f"LumaDeck: local pin pass failed for {appid}: {exc}")
+
+
+async def _apply_model(appid: int, state: Optional[str]) -> None:
+    """One game, one local pass, per the module docstring."""
+    if user_frozen(appid):
+        await ensure_pinned(appid, allow_pin=True)      # theirs: keep and heal
+        return
+    if state == "down":
+        if not frozen_by_providers(appid):
+            pin = await ensure_pinned(appid, allow_pin=True)
+            if pin:
+                set_frozen(appid, True, reason=FREEZE_REASON_PROVIDERS)
+                logger.info(f"LumaDeck: no provider answers — {appid} frozen to its "
+                            f"installed build {sorted(pin.items())}")
+        else:
+            await ensure_pinned(appid, allow_pin=True)
+        return
+    if state == "up":
+        keyed = keyed_depots(appid)
+        mids = read_manifest_ids()
+        if any(d in mids for d in keyed):
+            # Ours (a providers freeze) or a leftover of the 0.8.x always-pin
+            # model: release, Steam follows Valve from here.
+            if await unpin_game_depots(appid):
+                if frozen_by_providers(appid):
+                    set_frozen(appid, False)
+                logger.info(f"LumaDeck: provider up — {appid} released to native updates")
+        await ensure_pinned(appid, allow_pin=False)     # archive/heal only
+        return
+    # No gmrc.json: the pre-0.9 model, everything pinned.
+    await ensure_pinned(appid, allow_pin=True)
 
 
 # ---------------------------------------------------------------------------
@@ -406,14 +624,16 @@ def _zip_gids(zip_path: str) -> Dict[int, int]:
     return out
 
 
-async def check_update(appid: int) -> str:
-    """One game, one update check. Returns a short outcome for the log."""
+async def check_update(appid: int, native: bool = False) -> str:
+    """One game, one update check. Returns a short outcome for the log.
+    `native`: the game carries no pin and Steam updates it itself; only the
+    new-depot (keys) part applies."""
     from manifests import fetch_game_zip, hubcap_budget_ok, resolve_all, steamcmd_app_info
 
     keyed = keyed_depots(appid)
     if not keyed:
         return "no keyed depots"
-    pin = await ensure_pinned(appid)
+    pin = await ensure_pinned(appid, allow_pin=not native)
 
     info = await steamcmd_app_info(appid)
     if not info:
@@ -427,13 +647,18 @@ async def check_update(appid: int) -> str:
         if d not in REDIST_DEPOTS and not v["sharedinstall"]
         and v["oslist"] in ("", platform) and v["osarch"] in ("", "64")
     }
-    unpinned = [d for d in keyed if d in relevant and d not in pin]
-    if unpinned:
-        return f"not fully pinned yet (depots {unpinned})"
-    changed = {d: v["gid"] for d, v in relevant.items() if d in keyed and v["gid"] != pin.get(d)}
     new_depots = sorted(d for d in relevant if d not in keyed)
-    if not changed and not new_depots:
-        return "up to date"
+    if native:
+        changed = {}
+        if not new_depots:
+            return "native (Steam updates it)"
+    else:
+        unpinned = [d for d in keyed if d in relevant and d not in pin]
+        if unpinned:
+            return f"not fully pinned yet (depots {unpinned})"
+        changed = {d: v["gid"] for d, v in relevant.items() if d in keyed and v["gid"] != pin.get(d)}
+        if not changed and not new_depots:
+            return "up to date"
 
     current = {d: v["gid"] for d, v in relevant.items()}
 
@@ -453,7 +678,7 @@ async def check_update(appid: int) -> str:
                 return (f"zip is stale or lacks the new depots (stale={stale}, "
                         f"has={sorted(zg)}); retry tomorrow")
             from downloads import DOWNLOAD_STATE, _process_and_install_lua
-            await _process_and_install_lua(appid, zip_path, pin=True)
+            await _process_and_install_lua(appid, zip_path, pin=not native)
             DOWNLOAD_STATE.pop(int(appid), None)
             return f"reinstalled from zip: new depots {new_depots}, build {info.get('buildid')}"
         finally:
@@ -481,13 +706,27 @@ async def check_update(appid: int) -> str:
 
 
 async def update_pass() -> None:
-    for appid in managed_apps():
+    apps = managed_apps()
+    state = gmrc_state()
+    # Recovery: lumalinux only rewrites gmrc.json when Steam asks for a code,
+    # so while we hold games frozen for lack of providers, ask one ourselves.
+    if state != "up" and any(frozen_by_providers(a) for a in apps):
+        try:
+            if await probe_providers():
+                state = "up"
+                for appid in apps:
+                    if not _download_busy(appid):
+                        await _apply_model(appid, state)
+        except Exception as exc:
+            logger.warning(f"LumaDeck: provider probe failed: {exc}")
+    native = (state == "up")
+    for appid in apps:
         if _download_busy(appid):
             continue
         if is_frozen(appid):
             continue
         try:
-            outcome = await check_update(appid)
+            outcome = await check_update(appid, native=native)
             logger.info(f"LumaDeck: update check {appid}: {outcome}")
         except Exception as exc:
             logger.warning(f"LumaDeck: update check failed for {appid}: {exc}")

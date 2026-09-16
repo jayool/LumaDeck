@@ -27,13 +27,13 @@ with a shortcut to fix it, instead of silently failing a re-download.
 
 A per-game toggle, **on by default**. It appears only for installed games.
 
-Every LumaDeck game is pinned to a build (see
-[Adding & updating games → Updating a game](adding-and-updating-games.md#updating-a-game));
-the toggle decides whether LumaDeck may move that pin.
+See [Adding & updating games → Updating a game](adding-and-updating-games.md#updating-a-game)
+for how updates reach a LumaDeck game.
 
-- **Auto-update (on)** — LumaDeck moves the game to each newer build as soon
-  as a hub has its manifests; Steam applies it at the next launch or restart.
-- **Off ("Stays on the installed version.")** — frozen; the pin is left alone.
+- **Auto-update (on)** — the game follows Valve: natively while a code
+  provider is up, through LumaDeck's pin otherwise.
+- **Off ("Stays on the installed version.")** — frozen to the installed build;
+  nothing moves it.
   Useful when a newer build breaks a fix or a mod. Installing the game version
   a LuaTools fix needs switches this off for you; turning it back on lets the
   job take the game to the current build again (which will undo the fix's

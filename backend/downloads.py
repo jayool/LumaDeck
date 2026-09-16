@@ -187,17 +187,20 @@ async def _run_steamidra_mode(mode_args: list[str]) -> tuple[bool, str]:
     return proc.returncode == 0, raw.decode("utf-8", errors="replace").strip()
 
 
-# Every managed game is pinned in SLSsteam's ManifestIds now (pins.py keeps the
-# pin current). What the Auto-update toggle controls is whether the background
-# job may MOVE that pin: "pinned" here means frozen by the user or by a LuaTools
-# version fix. The ManifestIds depots are still reported for the UI/self-heal.
+# The Auto-update toggle = "frozen by the user" in pins.json. Off: the game is
+# pinned to its installed build and nothing moves it. On: while a provider is
+# up the game carries no pin and Steam updates it natively; with no provider
+# pins.py pins it and moves the pin itself (see pins.py). A freeze pins.py
+# applied by itself (`reason: "providers"`) is NOT reported as pinned — the
+# user did not touch the toggle.
 
 
 async def pin_game(appid: int) -> dict:
-    """Freeze a game: the update job leaves its pin alone."""
+    """Freeze a game to its installed build: nothing moves it until the user
+    toggles Auto-update back on."""
     try:
         import pins
-        await pins.ensure_pinned(int(appid))
+        await pins.ensure_pinned(int(appid), allow_pin=True)
         pins.set_frozen(int(appid), True)
         return {"success": True, "pinned": True}
     except Exception as exc:
@@ -205,11 +208,14 @@ async def pin_game(appid: int) -> dict:
 
 
 async def unpin_game(appid: int) -> dict:
-    """Unfreeze a game: the update job moves it to the newest build it can
-    source, on its next pass."""
+    """Unfreeze a game. With a provider up its pin is dropped and Steam
+    follows Valve natively; otherwise the update job moves the pin to the
+    newest build it can source, on its next pass."""
     try:
         import pins
         pins.set_frozen(int(appid), False)
+        if pins.gmrc_state() == "up":
+            await pins.unpin_game_depots(int(appid))
         return {"success": True, "pinned": False}
     except Exception as exc:
         return {"success": False, "error": f"unfreeze failed: {exc}"}
@@ -232,7 +238,7 @@ async def get_pin_status(appid: int) -> dict:
         depots = {str(d): str(mids[d]) for d in sorted(keyed) if d in mids}
         return {
             "success": True,
-            "pinned": bool(info.get("frozen")),
+            "pinned": bool(info.get("frozen")) and info.get("reason") != pins.FREEZE_REASON_PROVIDERS,
             "depots": depots,
             "fixId": info.get("fix_id"),
         }
@@ -833,13 +839,12 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
          (handled outside this function, in _download_zip_for_app).
 
     Notes:
-      - Every install now runs steamidra_lite with --pin: the zip's gids go
-        into SLSsteam's ManifestIds, so Steam never asks Valve for a manifest
-        request code (the providers that served those died on 2026-09-09; an
-        unpinned game would loop on "No internet connection" at the first
-        update). Keeping the game current is the job in pins.py: it moves the
-        pin when a newer build is available from a hub. `pin=False` is kept
-        for callers that explicitly want the legacy follow-Valve behaviour.
+      - `pin` is decided by the caller from pins.pin_new_installs(): while a
+        request-code provider is up (lumalinux gmrc.json "up") the install is
+        NOT pinned — Steam installs Valve's current build natively, fetching
+        the manifest with a code, and updates it itself from then on. With no
+        provider the zip's gids go into SLSsteam's ManifestIds and pins.py
+        moves the pin when a newer build can be sourced (the 0.8.x model).
       - The zip and every manifest it carries are archived under
         ~/.local/share/lumadeck/ before steamidra sees them (manifests.py), so
         a Steam-side uninstall/reinstall or a purge can be healed offline.
@@ -1262,12 +1267,10 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     if _is_download_cancelled(appid):
                         raise RuntimeError("cancelled")
                     _set_download_state(appid, {"status": "processing"})
-                    # Pinned: since the request-code providers died (2026-09-09)
-                    # Steam can only install what is already in depotcache, so
-                    # the game is frozen to the zip's build in SLSsteam's
-                    # ManifestIds. The background job (pins.py) moves the pin
-                    # forward when a newer build is available from a hub.
-                    await _process_and_install_lua(appid, dest_path, pin=True)
+                    # Native while a provider is up (no pin, Steam fetches and
+                    # follows Valve), pinned to the zip's build otherwise.
+                    import pins as _pins
+                    await _process_and_install_lua(appid, dest_path, pin=_pins.pin_new_installs())
 
                     if _is_download_cancelled(appid):
                         raise RuntimeError("cancelled")
