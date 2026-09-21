@@ -91,19 +91,23 @@ def patchnotes_path(appid: int) -> str:
 # once the Patches tab is activated — in Steam's browser the URL alone does
 # not do it (measured: 8 build links before clicking the tab, 74 after). So
 # the reader clicks the tab, then waits for the rows to settle.
+# Installed in every document the hidden view loads, BEFORE the page's own
+# scripts: records each request the page makes (url, status, head of a
+# non-200 body). SteamDB fetches the builds table at load, so a hook added
+# afterwards sees nothing (measured: net=[] with a 403 already on screen).
+NET_RECORDER_JS = """(function(){try{
+  if(window.__lumadeck_net)return;
+  window.__lumadeck_net=[];
+  var rec=window.__lumadeck_net;
+  var of=window.fetch;
+  if(of){window.fetch=function(u,o){var url=(typeof u==='string')?u:(u&&u.url)||String(u);var e={kind:'fetch',url:url,status:0};rec.push(e);
+    return of.apply(this,arguments).then(function(r){e.status=r.status;if(r.status!==200){try{r.clone().text().then(function(t){e.body=t.slice(0,300);});}catch(x){}}return r;},function(x){e.status=-1;e.body=String(x);throw x;});};}
+  var oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open=function(m,u){this.__lm={kind:'xhr',url:String(u),status:0};rec.push(this.__lm);return oo.apply(this,arguments);};
+  XMLHttpRequest.prototype.send=function(){var x=this;x.addEventListener('loadend',function(){if(x.__lm){x.__lm.status=x.status;if(x.status!==200){try{x.__lm.body=String(x.responseText||'').slice(0,300);}catch(e){}}}});return os.apply(this,arguments);};
+}catch(e){}})();"""
+
 BUILDS_PREPARE_JS = """(function(){try{
-  // Record every request the page makes from here on (url, status), so a
-  // failed one can be read by navigation instead.
-  if(!window.__lumadeck_net){
-    window.__lumadeck_net=[];
-    var rec=window.__lumadeck_net;
-    var of=window.fetch;
-    if(of){window.fetch=function(u,o){var url=(typeof u==='string')?u:(u&&u.url)||String(u);var e={kind:'fetch',url:url,status:0};rec.push(e);
-      return of.apply(this,arguments).then(function(r){e.status=r.status;return r;},function(x){e.status=-1;throw x;});};}
-    var oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open=function(m,u){this.__lm={kind:'xhr',url:String(u),status:0};rec.push(this.__lm);return oo.apply(this,arguments);};
-    XMLHttpRequest.prototype.send=function(){var x=this;x.addEventListener('loadend',function(){if(x.__lm)x.__lm.status=x.status;});return os.apply(this,arguments);};
-  }
   var a=document.querySelector('a.tabnav-tab[href$="/patchnotes/"]')
        ||[].slice.call(document.querySelectorAll('a[role="tab"]')).filter(function(x){return /\\/patchnotes\\/?$/.test(x.getAttribute('href')||'');})[0];
   if(!a) return 'no tab';
@@ -285,6 +289,8 @@ class Reader:
         if err:
             self._view_err = f"error: {err}"
             return self._view_err
+        if hasattr(view, "add_init_script"):
+            view.add_init_script(NET_RECORDER_JS)
         st = view.wait_ready(20.0, expect_url=app_url(self.appid))
         self.view_state = dict(st)
         state = st.get("state")

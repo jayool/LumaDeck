@@ -369,6 +369,18 @@ class HiddenView:
             return last | {"state": "challenge"}
         return last | {"state": "error" if last.get("err") else "timeout"}
 
+    def add_init_script(self, js: str) -> bool:
+        """Run `js` in every document this view loads from now on, before
+        the page's own scripts (Page.addScriptToEvaluateOnNewDocument)."""
+        if not self.ws:
+            return False
+        try:
+            _call(self.ws, "Page.addScriptToEvaluateOnNewDocument", {"source": js}, timeout=5)
+            return True
+        except Exception as exc:
+            logger.info(f"CDP HiddenView init script: {exc}")
+            return False
+
     def navigate(self, url: str, wait_s: float = 20.0) -> dict:
         """Load `url` in the view (a real navigation, so a JS challenge can
         run and solve itself) and wait for it. Returns wait_ready()'s dict."""
