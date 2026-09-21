@@ -1123,11 +1123,6 @@ export function GameDetail({ appid }: GameDetailProps) {
                 <PanelSectionRow>
                   <DropdownItem
                     label={t("version")}
-                    layout="below"
-                    // Steam's popup menu sizes itself to its items; this native
-                    // option makes it at least as wide as the control, which with
-                    // layout="below" is the whole row.
-                    contextMenuPositionOptions={{ bGrowToElementWidth: true, bMatchWidth: true }}
                     description={selectedBuildDesc || undefined}
                     rgOptions={versionList.map((b: any) => ({ data: b.buildid, label: buildOptionLabel(b) }))}
                     selectedOption={selectedBuild}
