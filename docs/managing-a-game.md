@@ -39,6 +39,29 @@ for how updates reach a LumaDeck game.
   job take the game to the current build again (which will undo the fix's
   build).
 
+## Change version
+
+Under the Auto-update toggle, for installed games. **Change version** reads
+the game's build list from SteamDB (the last 10 public builds, ~1 s) and
+shows a dropdown: date, build id, `installed` on the current one, and
+`1 fix` / `2 fixes` when a LuaTools fix targets that build. The line under
+the dropdown shows the build's name from the studio, if it set one, and
+the fix tags. **Install build N** pins every depot the build changed to
+its exact manifest (from that build's page on SteamDB), freezes the game
+(Auto-update goes off) and marks it so Steam re-plans it at its next
+start. Then **restart Steam**: it downloads that build like any update.
+A depot the build did not touch keeps the manifest it has.
+
+The **Status** tab shows the result: `Build N · Latest` while Auto-update
+is on, `Build N · Frozen` with the build's date and name after a change.
+Turning Auto-update back on takes the game to the current build at the
+next Steam restart.
+
+If SteamDB answers with a Cloudflare browser check the tab says so, with an
+**Open SteamDB** button: open it, wait for the page, go back and press
+Change version again. If it keeps failing, wait a few minutes; SteamDB
+rate-limits by address.
+
 ## Game management (SLSsteam)
 
 These tell **SLSsteam** how to present the game to Steam. Each can be added or

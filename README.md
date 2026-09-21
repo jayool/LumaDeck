@@ -61,6 +61,11 @@ applies the update the next time you launch the game or restart Steam — exactl
 like an update of a game you own. Nothing to press. The per-game
 **auto-update** toggle turns that off and freezes the game at its build.
 
+**Change version** (game page → Updates) lists the game's last 10 builds from
+SteamDB, with date and build id, marked when a LuaTools fix targets one; pick
+one, install, restart Steam, and Steam downloads that exact build. The game
+stays frozen there until you turn auto-update back on.
+
 Occasionally an update gets stuck (a new depot needs a decryption key the game
 doesn't have yet). LumaDeck flags it and a **Fix Update** button re-deploys a
 fresh manifest to unblock it; your installed version keeps working meanwhile.
