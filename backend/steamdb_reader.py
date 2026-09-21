@@ -99,6 +99,22 @@ BUILDS_PREPARE_JS = """(function(){try{
 }catch(e){return 'error: '+String(e);}})()"""
 BUILDS_SETTLE_JS = "document.querySelectorAll('#js-builds tr').length"
 
+# When the table does not fill: what the page looks like, for the log.
+_UNFILLED_SNAPSHOT_JS = """(function(){try{
+  var q=function(s){return document.querySelector(s);};
+  var nav=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||{};
+  var pn=q('#js-patchnotes')||q('#patchnotes');
+  var tb=q('#js-builds');
+  var tab=q('a.tabnav-tab[href$="/patchnotes/"]');
+  return JSON.stringify({href:location.href,rs:document.readyState,size:document.documentElement.outerHTML.length,
+    navType:nav.type||'',cookies:document.cookie.split(';').map(function(c){return c.split('=')[0].trim();}),
+    tab:tab?(tab.className+' '+(tab.getAttribute('aria-selected')||'')):null,
+    paneActive:pn?(pn.closest('.tab-pane')||{}).className:null,
+    tbody:tb?tb.outerHTML.slice(0,400):null,
+    paneText:pn?pn.textContent.replace(/\\s+/g,' ').slice(0,600):null,
+    loaders:[].slice.call(document.querySelectorAll('.loader')).length});
+}catch(e){return JSON.stringify({err:String(e)});}})()"""
+
 
 
 def classify(status: int, text: str) -> str:
@@ -296,6 +312,13 @@ class Reader:
                 # it (an empty shell cached for an hour hid every retry).
                 f.outcome = "empty"
                 f.error = f"list did not fill (prepare={self.view_state.get('prepared')!r})"
+                try:
+                    import cef_cdp
+                    snap = cef_cdp.evaluate(self._view.ws, _UNFILLED_SNAPSHOT_JS, timeout=5, await_promise=False)
+                except Exception as exc:
+                    snap = f"snapshot failed: {exc}"
+                self.view_state["snapshot"] = snap
+                logger.info(f"SteamDB {path}: list did not fill; snapshot={snap}")
             if f.outcome == "challenge":
                 f.outcome = "needs_user"
                 self.challenge_url = BASE + path
