@@ -91,6 +91,16 @@ def patchnotes_path(appid: int) -> str:
 # <div class="history-container">. Count its build links.
 PATCHNOTES_SETTLE_JS = "document.querySelectorAll('.history-container a[href*=\"/patchnotes/\"]').length"
 
+_PATCHNOTES_SAMPLE_JS = """(function(){try{
+  var q=function(s){return document.querySelectorAll(s).length;};
+  var vis=function(s){var e=document.querySelector(s);return !!(e&&e.offsetParent!==null);};
+  var tabs=[].slice.call(document.querySelectorAll('.tab-pane')).map(function(e){return e.id+':'+(e.classList.contains('active')?'on':'off');});
+  return JSON.stringify({all:q('a[href*="/patchnotes/"]'),tbl:q('table a[href*="/patchnotes/"]'),hist:q('.history-container a[href*="/patchnotes/"]'),
+    loading:vis('#js-history-loading'),loadbtn:vis('#js-history-load'),signin:vis('#js-history-signin'),
+    builds_h:!!Array.prototype.find.call(document.querySelectorAll('h2,h3'),function(h){return /Builds/.test(h.textContent);}),
+    hash:location.hash,tabs:tabs.slice(0,12)});
+}catch(e){return JSON.stringify({err:String(e)});}})()"""
+
 
 def classify(status: int, text: str) -> str:
     """ok | challenge | http_error | empty — what an answer really is."""
@@ -332,6 +342,36 @@ class Reader:
                     f"{len(f.text)} chars {f.ms} ms{(' ' + f.error) if f.error else ''}")
         return f
 
+    def _sample_view(self, js: str, seconds: float, every: float) -> list:
+        """Dev: evaluate `js` (must return a JSON string) in the open view
+        every `every` s for `seconds` s; the list of parsed samples with
+        their offset. Used to see WHEN a page fills its lists."""
+        import cef_cdp
+        out = []
+        if self._view is None or not getattr(self._view, "ws", None):
+            return out
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < seconds:
+            try:
+                raw = cef_cdp.evaluate(self._view.ws, js, timeout=5, await_promise=False)
+                d = json.loads(raw) if isinstance(raw, str) else {"raw": raw}
+            except Exception as exc:
+                d = {"err": str(exc)}
+            d["t"] = round(time.monotonic() - t0, 1)
+            out.append(d)
+            time.sleep(every)
+        return out
+
+    async def sample_view(self, js: str, seconds: float = 20.0, every: float = 1.0) -> list:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._sample_view, js, seconds, every)
+
+    async def view_html(self) -> str:
+        if self._view is None:
+            return ""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._view.html)
+
     async def close(self) -> None:
         v, self._view = self._view, None
         if v is not None:
@@ -411,8 +451,18 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
         # feed's 10? Count its build links, the dates next to them, and any
         # sign of paging / lazy loading.
         page = await reader.get(patchnotes_path(appid), TTL_FEED, PATCHNOTES_SETTLE_JS)
+        if page.ok and page.transport == "browser":
+            # Watch the page for 20 s after load: where and when do build links
+            # appear, is a loader on screen, is there a button to press.
+            samples = await reader.sample_view(_PATCHNOTES_SAMPLE_JS, 20.0, 1.0)
+            out["patchnotes_timeline"] = samples
+            html_after = await reader.view_html()
+            if html_after:
+                page.text = html_after
         if page.ok:
             html = page.text
+            j = html.find("Patch Title")
+            out["builds_table_snippet"] = html[max(0, j - 1500):j + 1500] if j >= 0 else None
             i = html.find('class="history-container"')
             hist = html[i:] if i >= 0 else ""
             ids = []
