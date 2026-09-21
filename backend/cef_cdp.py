@@ -299,6 +299,7 @@ class HiddenView:
         self.port = port
         self.slot = f"LUMADECK_VIEW_{name}"
         self.ws: str | None = None
+        self.current_url: str | None = None   # last URL navigated to
 
     def _shared_ws(self) -> str | None:
         t = find_target(title="SharedJSContext", port=self.port)
@@ -340,6 +341,7 @@ class HiddenView:
         except Exception as exc:
             self.close()
             return f"Page.navigate failed: {exc}"
+        self.current_url = url
         return None
 
     def wait_ready(self, wait_s: float = 20.0, expect_url: str | None = None) -> dict:
@@ -390,6 +392,7 @@ class HiddenView:
             _call(self.ws, "Page.navigate", {"url": url, "transitionType": "address_bar"}, timeout=6)
         except Exception as exc:
             return {"state": "error", "err": f"Page.navigate failed: {exc}"}
+        self.current_url = url
         return self.wait_ready(wait_s, expect_url=url)
 
     def wait_settled(self, count_js: str, wait_s: float = 15.0) -> int:

@@ -261,7 +261,7 @@ class ReadOrder(unittest.TestCase):
             f = run(r.get(path, sr.TTL_FEED, "document.querySelectorAll('#js-builds tr').length", "(1)"))
             self.assertEqual((f.outcome, f.transport), ("empty", "browser"))
             self.assertIn("did not fill", f.error)
-            self.assertEqual(r.view_state.get("attempts"), [0, 0, 0, 0, 0])
+            self.assertEqual(r.view_state.get("attempts"), [0, 0])   # load + the one re-request
             self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
             run(r.close())
         finally:
@@ -283,7 +283,7 @@ class ReadOrder(unittest.TestCase):
                 '<td>Mon</td><td>18:21</td><td>t</td><td></td><td></td><td>17459173</td></tr></tbody>')
 
         class LateView(FakeView):
-            """The list is empty on load and fills only after the 2nd re-request."""
+            """The list is empty on load and fills after the one re-request."""
             def __init__(self, *a, **k):
                 super().__init__(*a, **k)
                 self.clicks = 0
@@ -291,7 +291,7 @@ class ReadOrder(unittest.TestCase):
 
             def wait_settled(self, count_js, wait_s=15.0):
                 self.polls += 1
-                return 1 if self.clicks >= 2 else 0
+                return 1 if self.clicks >= 1 else 0
 
         page = sr.patchnotes_path(1)
         view = LateView({page: ("ready", "<html>" + rows + "</html>")})
@@ -305,13 +305,32 @@ class ReadOrder(unittest.TestCase):
             r = sr.Reader(1, cache_dir=self.dir, use_direct=False, view_factory=lambda appid: view, now=self.now)
             f = run(r.builds_page())
             self.assertEqual((f.outcome, f.path), ("ok", page))
-            self.assertEqual(r.view_state.get("attempts"), [0, 0, 1])
-            self.assertEqual(view.clicks, 2)
+            self.assertEqual(r.view_state.get("attempts"), [0, 1])
+            self.assertEqual(view.clicks, 1)
             run(r.close())
         finally:
             cef_cdp.evaluate = keep
             sr.LIST_RETRY_SLEEP_S = keep_sleep
         del real_eval
+
+    def test_view_opens_straight_on_the_page_and_does_not_load_it_twice(self):
+        class Tracking(FakeView):
+            current_url = None
+
+            def open(self, url, wait_s=8.0):
+                self.current_url = url
+                state, payload = self.answers[url[len(sr.BASE):]]
+                self._current = payload if state == "ready" else ""
+                return super().open(url, wait_s)
+        path = sr.depot_path(2379781)
+        view = Tracking({path: ("ready", "<html><table><tr></tr></table></html>")})
+        r = sr.Reader(2379780, cache_dir=self.dir, use_direct=False,
+                      view_factory=lambda appid: view, now=self.now)
+        f = run(r.get(path, sr.TTL_DEPOT))
+        self.assertEqual(f.outcome, "ok")
+        self.assertEqual(view.opened, [sr.BASE + path])   # not the app page
+        self.assertEqual(view.navigated, [])               # and no second navigation
+        run(r.close())
 
     def test_page_timeout_is_an_error_not_cached(self):
         path = sr.depot_path(999)

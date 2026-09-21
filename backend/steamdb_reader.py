@@ -54,6 +54,7 @@ from paths import real_home
 BASE = "https://steamdb.info"
 CACHE_DIR = os.path.join(real_home(), ".cache/lumadeck/steamdb")
 TTL_FEED = 3600
+TTL_TABLE = 6 * 3600
 TTL_DEPOT = 6 * 3600
 TTL_BUILD = 24 * 3600
 DIRECT_BACKOFF_S = 3600
@@ -99,7 +100,10 @@ BUILDS_PREPARE_JS = """(function(){try{
   a.click(); return 'ok';
 }catch(e){return 'error: '+String(e);}})()"""
 BUILDS_SETTLE_JS = "document.querySelectorAll('#js-builds tr').length"
-LIST_RETRIES = 4          # re-requests of an empty list (tab clicks)
+# Every request counts against Cloudflare's per-IP rate limit (measured
+# 2026-09-21: an afternoon of retries ended in 403s on /api/ and then
+# challenges on every page). One re-request, then the feed.
+LIST_RETRIES = 1          # re-requests of an empty list (tab clicks)
 LIST_RETRY_SLEEP_S = 3.0  # pause before each, for Cloudflare's cookie
 LIST_WAIT_S = 6.0         # settle wait per attempt
 
@@ -302,9 +306,11 @@ class Reader:
             _direct_blocked_until = self._now() + DIRECT_BACKOFF_S
         return f
 
-    def _open_view(self) -> Optional[str]:
-        """Make sure a usable page on steamdb.info exists. Returns None when
-        ready, else the reason ('needs_user' when only the user can fix it)."""
+    def _open_view(self, first_url: Optional[str] = None) -> Optional[str]:
+        """Make sure a usable page on steamdb.info exists, opened straight on
+        `first_url` (the page about to be read — one load, not two; the app
+        page otherwise). Returns None when ready, else the reason
+        ('needs_user' when only the user can fix it)."""
         if self._view is not None:
             return None
         if self._view_err:
@@ -314,18 +320,19 @@ class Reader:
         except Exception as exc:
             self._view_err = f"error: {exc}"
             return self._view_err
-        err = view.open(app_url(self.appid))
+        url = first_url or app_url(self.appid)
+        err = view.open(url)
         if err:
             self._view_err = f"error: {err}"
             return self._view_err
-        st = view.wait_ready(20.0, expect_url=app_url(self.appid))
+        st = view.wait_ready(20.0, expect_url=url)
         self.view_state = dict(st)
         state = st.get("state")
         if state != "ready":
             view.close()
             if state == "challenge":
                 self._view_err = "needs_user"
-                self.challenge_url = app_url(self.appid)
+                self.challenge_url = url
             else:
                 self._view_err = f"error: page not ready ({state}: {st.get('title') or st.get('err') or st.get('href')})"
             return self._view_err
@@ -339,7 +346,11 @@ class Reader:
         the page is ready (e.g. click a tab); `settle_js` counts the rows a
         page fills by script after that, and the document is read once the
         count is stable."""
-        st = self._view.navigate(BASE + path, 20.0)
+        url = BASE + path
+        if getattr(self._view, "current_url", None) == url and self.view_state.get("state") == "ready":
+            st = dict(self.view_state)          # opened straight on it: no second load
+        else:
+            st = self._view.navigate(url, 20.0)
         self.view_state = dict(st)
         state = st.get("state")
         if state == "ready":
@@ -395,7 +406,8 @@ class Reader:
                        prepare_js: Optional[str] = None) -> Fetched:
         t0 = time.monotonic()
         f = Fetched(path=path, transport="browser")
-        why = self._open_view()
+        # The feed is fetch()ed from whatever page is open; a page is opened on itself.
+        why = self._open_view(None if path.startswith("/api/PatchnotesRSS/") else BASE + path)
         if why:
             f.outcome = "needs_user" if why == "needs_user" else "error"
             f.error = "" if why == "needs_user" else why
@@ -455,7 +467,7 @@ class Reader:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, v.close)
 
-    async def builds_page(self, ttl: float = TTL_FEED) -> Fetched:
+    async def builds_page(self, ttl: float = TTL_TABLE) -> Fetched:
         """The app's builds table: the app page, whose script requests
         /api/RenderAppSection/?section=patchnotes (public builds) into
         <tbody id="js-builds">; re-requested through the tab while empty.

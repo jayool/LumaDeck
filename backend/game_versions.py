@@ -2,9 +2,8 @@
 
 list_versions(appid): every public-branch build SteamDB knows for the app
 (its builds table — see versions.parse_builds_page — read through
-steamdb_reader), newest first, with date and the studio's label, and which
-one is installed. Builds whose time matches a depot row of another branch
-are dropped (betas), the rest kept.
+steamdb_reader; the feed's last 10 when the table is refused), newest
+first, with date and the studio's label, and which one is installed.
 
 install_version(appid, buildid): the build's page gives the gid of every
 depot it changed; depots it did not change get the newest public row before
@@ -119,11 +118,9 @@ async def list_versions(appid: int) -> dict:
             return _needs_user(reader)
         if not builds:
             return {"success": False, "error": "no_builds"}
-        history = await _histories(reader, depots)
-        if reader.needs_user:
-            return _needs_user(reader)
-        rows = [r for rs in history.values() for r in rs]
-        builds = public_builds(builds, rows)
+        # No depot histories here: both sources list public builds only
+        # (SteamDB's own JS asks all=true for its "view all" link, we never
+        # do) and every request counts against Cloudflare's rate limit.
         cur = current_build(appid)
         out = {
             "success": True,
@@ -165,7 +162,10 @@ async def install_version(appid: int, buildid: int) -> dict:
         if reader.needs_user:
             return _needs_user(reader)
         build_depots = versions.parse_build_depots(bpage.text) if bpage.ok else {}
-        history = await _histories(reader, depots)
+        # Histories only for depots the build's page does not list (rare:
+        # a depot the build did not change) — one request per such depot.
+        missing = [d for d in depots if d not in build_depots]
+        history = await _histories(reader, missing) if missing else {}
         res = versions.resolve_build(build, depots, history, build_depots)
         confirmed = versions.pins_from(res)
         unconfirmed = versions.unconfirmed(res)
