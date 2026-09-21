@@ -189,8 +189,12 @@ def cache_put(path: str, status: int, text: str, cache_dir: str = CACHE_DIR,
 async def _direct_get(url: str) -> Tuple[int, str]:
     from http_client import ensure_http_client
     client = await ensure_http_client("steamdb")
+    # A browser-like User-Agent: the plugin's own ("lumadeck-v0-decky") is
+    # what curl showed Cloudflare accepting for the RSS only when it looked
+    # like a browser (measured 2026-09-21: curl -A Mozilla → 200).
     resp = await client.get(url, timeout=15, headers={
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml,application/xml;q=0.9,text/html;q=0.8,*/*;q=0.5",
         "Accept-Language": "en-US,en;q=0.8",
     })
     data = getattr(resp, "data", b"") or b""
@@ -244,6 +248,9 @@ class Reader:
             # A challenge page or a bare block (SteamDB answers the backend
             # 403 with an empty body): don't pay this round trip again for an hour.
             _direct_blocked_until = self._now() + DIRECT_BACKOFF_S
+        if not f.ok:
+            logger.info(f"SteamDB direct {path}: {f.outcome} {f.status} {f.ms} ms {f.error}"
+                        f"{(' ' + repr(f.text[:120])) if f.text else ''}")
         return f
 
     def _open_view(self, first_url: Optional[str] = None) -> Optional[str]:
