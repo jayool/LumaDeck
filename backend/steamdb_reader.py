@@ -92,6 +92,18 @@ def patchnotes_path(appid: int) -> str:
 # not do it (measured: 8 build links before clicking the tab, 74 after). So
 # the reader clicks the tab, then waits for the rows to settle.
 BUILDS_PREPARE_JS = """(function(){try{
+  // Record every request the page makes from here on (url, status), so a
+  // failed one can be read by navigation instead.
+  if(!window.__lumadeck_net){
+    window.__lumadeck_net=[];
+    var rec=window.__lumadeck_net;
+    var of=window.fetch;
+    if(of){window.fetch=function(u,o){var url=(typeof u==='string')?u:(u&&u.url)||String(u);var e={kind:'fetch',url:url,status:0};rec.push(e);
+      return of.apply(this,arguments).then(function(r){e.status=r.status;return r;},function(x){e.status=-1;throw x;});};}
+    var oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open=function(m,u){this.__lm={kind:'xhr',url:String(u),status:0};rec.push(this.__lm);return oo.apply(this,arguments);};
+    XMLHttpRequest.prototype.send=function(){var x=this;x.addEventListener('loadend',function(){if(x.__lm)x.__lm.status=x.status;});return os.apply(this,arguments);};
+  }
   var a=document.querySelector('a.tabnav-tab[href$="/patchnotes/"]')
        ||[].slice.call(document.querySelectorAll('a[role="tab"]')).filter(function(x){return /\\/patchnotes\\/?$/.test(x.getAttribute('href')||'');})[0];
   if(!a) return 'no tab';
@@ -112,7 +124,8 @@ _UNFILLED_SNAPSHOT_JS = """(function(){try{
     paneActive:pn?(pn.closest('.tab-pane')||{}).className:null,
     tbody:tb?tb.outerHTML.slice(0,400):null,
     paneText:pn?pn.textContent.replace(/\\s+/g,' ').slice(0,600):null,
-    loaders:[].slice.call(document.querySelectorAll('.loader')).length});
+    loaders:[].slice.call(document.querySelectorAll('.loader')).length,
+    net:(window.__lumadeck_net||[]).slice(0,20)});
 }catch(e){return JSON.stringify({err:String(e)});}})()"""
 
 
@@ -319,6 +332,25 @@ class Reader:
                     snap = f"snapshot failed: {exc}"
                 self.view_state["snapshot"] = snap
                 logger.info(f"SteamDB {path}: list did not fill; snapshot={snap}")
+                # Diagnostic: read the failed request as a DOCUMENT (a
+                # navigation can pass Cloudflare where the page's own request
+                # got a 403) and log the head of what comes back.
+                try:
+                    net = (json.loads(snap) if isinstance(snap, str) else {}).get("net") or []
+                    bad = [n for n in net if isinstance(n, dict) and n.get("status") not in (200, 0, None)]
+                    if bad:
+                        url = bad[0]["url"]
+                        if url.startswith("/"):
+                            url = BASE + url
+                        st2 = self._view.navigate(url, 20.0)
+                        body = self._view.html() if st2.get("state") == "ready" else ""
+                        self.view_state["direct_nav"] = {"url": url, "state": st2.get("state"),
+                                                         "title": st2.get("title"), "cf": st2.get("cf"),
+                                                         "chars": len(body), "head": body[:1500]}
+                        logger.info(f"SteamDB {path}: direct navigation to {url}: "
+                                    f"{self.view_state['direct_nav']}")
+                except Exception as exc:
+                    logger.info(f"SteamDB {path}: direct navigation diagnostic failed: {exc}")
             if f.outcome == "challenge":
                 f.outcome = "needs_user"
                 self.challenge_url = BASE + path
