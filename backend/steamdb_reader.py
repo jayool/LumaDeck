@@ -197,8 +197,7 @@ async def _direct_get(url: str) -> Tuple[int, str]:
         "Accept": "application/rss+xml,application/xml;q=0.9,text/html;q=0.8,*/*;q=0.5",
         "Accept-Language": "en-US,en;q=0.8",
     })
-    data = getattr(resp, "data", b"") or b""
-    return int(resp.status_code), data.decode("utf-8", "replace")
+    return int(resp.status_code), resp.text
 
 
 def _default_view_factory(appid: int):

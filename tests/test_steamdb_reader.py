@@ -136,6 +136,30 @@ class FakeView:
         self.closed += 1
 
 
+class DirectGet(unittest.TestCase):
+    """_direct_get reads the body through the client's own NativeResponse
+    (it was read through a non-existent attribute and came back empty:
+    'SteamDB direct /api/PatchnotesRSS/: empty 200 182 ms', 2026-09-21)."""
+
+    def test_body_comes_from_the_response(self):
+        import http_client
+
+        class FakeClient:
+            async def get(self, url, **kw):
+                return http_client.NativeResponse(200, {}, RSS.encode("utf-8"), url)
+
+        async def fake_ensure(context=""):
+            return FakeClient()
+        keep = http_client.ensure_http_client
+        http_client.ensure_http_client = fake_ensure
+        try:
+            status, text = run(sr._direct_get(sr.BASE + sr.feed_path(1)))
+        finally:
+            http_client.ensure_http_client = keep
+        self.assertEqual(status, 200)
+        self.assertEqual(text, RSS)
+
+
 class ReadOrder(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
