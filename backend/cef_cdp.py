@@ -103,12 +103,12 @@ def _send_text(s: socket.socket, text: str) -> None:
     s.sendall(bytes(h) + bytes(b ^ mask[i % 4] for i, b in enumerate(p)))
 
 
-def _call(ws_url: str, method: str, params: dict) -> dict:
+def _call(ws_url: str, method: str, params: dict, timeout: float = _TIMEOUT) -> dict:
     u = urlparse(ws_url)
     path = u.path + (("?" + u.query) if u.query else "")
-    s = socket.create_connection((u.hostname, u.port or 80), timeout=_TIMEOUT)
+    s = socket.create_connection((u.hostname, u.port or 80), timeout=timeout)
     try:
-        s.settimeout(_TIMEOUT)
+        s.settimeout(timeout)
         key = base64.b64encode(os.urandom(16)).decode()
         s.sendall(
             (f"GET {path} HTTP/1.1\r\nHost: {u.hostname}:{u.port}\r\n"
@@ -135,6 +135,48 @@ def _call(ws_url: str, method: str, params: dict) -> dict:
                     return msg.get("result", {})
     finally:
         s.close()
+
+
+def list_targets(port: int = DEBUG_PORT) -> list:
+    """Every target /json lists with a debugger URL (dicts), [] when the port
+    isn't reachable or answers something that is not a list."""
+    try:
+        data = json.load(urlopen(f"http://127.0.0.1:{port}/json", timeout=3))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [t for t in data
+            if isinstance(t, dict) and t.get("webSocketDebuggerUrl")]
+
+
+def find_target(title: str | None = None, url: str | None = None,
+                port: int = DEBUG_PORT) -> dict | None:
+    """The first target whose title equals `title` and/or whose URL equals
+    `url` (both compared as listed by /json), or None."""
+    for t in list_targets(port):
+        if title is not None and str(t.get("title", "")) != title:
+            continue
+        if url is not None and str(t.get("url", "")) != url:
+            continue
+        return t
+    return None
+
+
+def evaluate(ws_url: str, expression: str, timeout: float = _TIMEOUT,
+             await_promise: bool = True):
+    """Runtime.evaluate `expression` in the target and return its value (as
+    returned by value). Raises RuntimeError when the expression throws or the
+    protocol answers an error, ConnectionError/socket.timeout on transport."""
+    res = _call(ws_url, "Runtime.evaluate",
+                {"expression": expression, "returnByValue": True,
+                 "awaitPromise": await_promise}, timeout=timeout)
+    exc = res.get("exceptionDetails")
+    if exc:
+        text = exc.get("text") or ""
+        e = exc.get("exception") or {}
+        raise RuntimeError(f"{text} {e.get('description') or e.get('value') or ''}".strip())
+    return (res.get("result") or {}).get("value")
 
 
 def get_cookies(port: int = DEBUG_PORT):
@@ -180,3 +222,184 @@ def delete_cookies_matching(name_prefix: str, host_substr: str,
             except Exception as exc:
                 logger.info(f"CDP delete {name}: {exc}")
     return deleted
+
+
+# --- off-screen BrowserView -------------------------------------------------
+
+_MAIN_WINDOW_JS = (
+    "((g.SteamUIStore&&g.SteamUIStore.WindowStore&&g.SteamUIStore.WindowStore.GamepadUIMainWindowInstance)"
+    "||(g.DFL&&g.DFL.Router&&g.DFL.Router.WindowStore&&g.DFL.Router.WindowStore.GamepadUIMainWindowInstance))"
+)
+
+_CREATE_VIEW_JS = """(function(){try{
+  var g=window;
+  if(g[%(slot)s]){try{g[%(slot)s].Destroy();}catch(e){} g[%(slot)s]=undefined;}
+  var main=%(main)s;
+  if(!main||typeof main.CreateBrowserView!=='function')return 'unavailable: GamepadUIMainWindowInstance.CreateBrowserView not found';
+  var view=main.CreateBrowserView(%(name)s);
+  g[%(slot)s]=view;
+  try{view.WIDTH=1280;view.HEIGHT=720;view.m_browserView.SetBounds(-10000,-10000,1280,720);view.m_browserView.SetVisible(true);}catch(e){}
+  view.m_browserView.LoadURL(%(placeholder)s);
+  return 'ok';
+}catch(e){return 'error: '+String(e);}})()"""
+
+_DESTROY_VIEW_JS = """(function(){try{
+  var g=window;var view=g[%(slot)s];
+  if(!view)return 'none';
+  try{view.Destroy();}catch(e){}
+  g[%(slot)s]=undefined;
+  return 'ok';
+}catch(e){return 'error: '+String(e);}})()"""
+
+# What the page looks like right now: ready state, title, URL and whether a
+# Cloudflare challenge is on screen (its title, its script host, its widget).
+_PAGE_STATE_JS = """(function(){try{
+  var h=String(document.documentElement&&document.documentElement.innerHTML||'').slice(0,40000);
+  var cf=/Just a moment|chl_page|_cf_chl_opt|cf-turnstile|challenge-running|challenge-error-text/i.test(h);
+  return JSON.stringify({rs:document.readyState,title:String(document.title||''),href:String(location.href||''),cf:cf});
+}catch(e){return JSON.stringify({rs:'',title:'',href:'',cf:false,err:String(e)});}})()"""
+
+_FETCH_JS = """fetch(%(path)s,{credentials:'include'}).then(function(r){
+  return r.text().then(function(t){return JSON.stringify({s:r.status,t:t});});
+})"""
+
+
+def find_target_containing(url_substr: str, port: int = DEBUG_PORT) -> dict | None:
+    """The first target whose listed URL contains `url_substr`, or None."""
+    for t in list_targets(port):
+        if url_substr in str(t.get("url", "")):
+            return t
+    return None
+
+
+class ExistingView:
+    """A page target that already exists (e.g. a tab the user opened). Same
+    fetch() as HiddenView; open/close are no-ops — it is not ours to destroy."""
+
+    def __init__(self, ws_url: str):
+        self.ws = ws_url
+
+    def open(self, url: str, wait_s: float = 8.0):
+        return None
+
+    def wait_ready(self, wait_s: float = 20.0) -> dict:
+        return page_state(self.ws) | {"state": "ready"}
+
+    def fetch(self, path: str, timeout: float = 25.0):
+        return fetch_in_page(self.ws, path, timeout)
+
+    def close(self) -> None:
+        pass
+
+
+def page_state(ws_url: str) -> dict:
+    raw = evaluate(ws_url, _PAGE_STATE_JS, timeout=5, await_promise=False)
+    try:
+        d = json.loads(raw) if isinstance(raw, str) else {}
+    except ValueError:
+        d = {}
+    return d if isinstance(d, dict) else {}
+
+
+def fetch_in_page(ws_url: str, path: str, timeout: float = 25.0):
+    """Run fetch(path) INSIDE the page (same origin, its cookies, its TLS —
+    i.e. as the browser, which is what gets past Cloudflare). Returns
+    (status, text). Raises on transport / JS errors."""
+    raw = evaluate(ws_url, _FETCH_JS % {"path": json.dumps(path)},
+                   timeout=timeout, await_promise=True)
+    d = json.loads(raw) if isinstance(raw, str) else {}
+    return int(d.get("s") or 0), str(d.get("t") or "")
+
+
+class HiddenView:
+    """An off-screen Steam BrowserView we create through SharedJSContext, find
+    on the debug port by a unique placeholder URL, navigate, and drive with
+    Runtime.evaluate. It never replaces what the user sees (a visible
+    NavigateToExternalWeb would pop the current page). Same mechanics SLSDeck
+    uses for SteamDB. Always close() it — it is a live CEF view."""
+
+    def __init__(self, name: str = "lumadeck_view", port: int = DEBUG_PORT):
+        self.name = name
+        self.port = port
+        self.slot = f"LUMADECK_VIEW_{name}"
+        self.ws: str | None = None
+
+    def _shared_ws(self) -> str | None:
+        t = find_target(title="SharedJSContext", port=self.port)
+        return t["webSocketDebuggerUrl"] if t else None
+
+    def open(self, url: str, wait_s: float = 8.0) -> str | None:
+        """Create the view and start loading `url`. Returns None on success or
+        the reason it could not (string)."""
+        import time as _time
+        shared = self._shared_ws()
+        if not shared:
+            return "SharedJSContext not found on the CEF debug port"
+        placeholder = f"data:text/plain,{self.name}_{int(_time.time() * 1000)}_{os.urandom(4).hex()}"
+        js = _CREATE_VIEW_JS % {"slot": json.dumps(self.slot), "main": _MAIN_WINDOW_JS,
+                                "name": json.dumps(self.name), "placeholder": json.dumps(placeholder)}
+        try:
+            r = evaluate(shared, js, timeout=6, await_promise=False)
+        except Exception as exc:
+            return f"CreateBrowserView failed: {exc}"
+        if r != "ok":
+            return f"CreateBrowserView: {r}"
+        deadline = _time.time() + wait_s
+        target = None
+        while _time.time() < deadline:
+            target = find_target(url=placeholder, port=self.port)
+            if target:
+                break
+            _time.sleep(0.2)
+        if not target:
+            self.close()
+            return "the new view never appeared on the debug port"
+        self.ws = target["webSocketDebuggerUrl"]
+        try:
+            _call(self.ws, "Page.setWebLifecycleState", {"state": "active"}, timeout=3)
+        except Exception:
+            pass
+        try:
+            _call(self.ws, "Page.navigate", {"url": url, "transitionType": "address_bar"}, timeout=6)
+        except Exception as exc:
+            self.close()
+            return f"Page.navigate failed: {exc}"
+        return None
+
+    def wait_ready(self, wait_s: float = 20.0) -> dict:
+        """Poll the page until it is loaded and not showing a Cloudflare
+        challenge. Returns page_state() plus "state": ready | challenge |
+        timeout | error. A JS challenge solves itself in ~5 s and the page
+        reloads; an interactive one (Turnstile) never does — that is
+        'challenge', and only a visible tab the user clicks through fixes it."""
+        import time as _time
+        deadline = _time.time() + wait_s
+        last: dict = {}
+        while _time.time() < deadline:
+            try:
+                st = page_state(self.ws or "")
+            except Exception as exc:
+                st = {"err": str(exc)}
+            last = st
+            if st.get("rs") == "complete" and not st.get("cf") and "steamdb.info" in str(st.get("href", "")):
+                return st | {"state": "ready"}
+            _time.sleep(0.5)
+        if last.get("cf"):
+            return last | {"state": "challenge"}
+        return last | {"state": "error" if last.get("err") else "timeout"}
+
+    def fetch(self, path: str, timeout: float = 25.0):
+        if not self.ws:
+            raise RuntimeError("view not open")
+        return fetch_in_page(self.ws, path, timeout)
+
+    def close(self) -> None:
+        shared = self._shared_ws()
+        self.ws = None
+        if not shared:
+            return
+        try:
+            evaluate(shared, _DESTROY_VIEW_JS % {"slot": json.dumps(self.slot)},
+                     timeout=4, await_promise=False)
+        except Exception as exc:
+            logger.info(f"CDP HiddenView close: {exc}")

@@ -43,7 +43,7 @@ import {
   removeFakeAppId,
 } from "../api";
 import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall, runDesktopHandoffReal } from "../api";
-import { getDevState, setDevState, clearDevState } from "../api";
+import { getDevState, setDevState, clearDevState, devProbeVersions } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { closeLoginBrowser } from "../browserLogin";
 import { requestRefresh } from "../refresh";
@@ -73,6 +73,11 @@ export function Settings() {
   const [confirmDesktop, setConfirmDesktop] = useState(false);
   const [platform, setPlatform] = useState<any>(null);
   const [devState, setDevStateLocal] = useState<Record<string, string>>({});
+  // Dev: SteamDB reader probe (backend/steamdb_reader.py). Appid to read,
+  // busy flag while the backend fetches, and the one-line result.
+  const [devProbeAppid, setDevProbeAppid] = useState("2379780");
+  const [devProbeBusy, setDevProbeBusy] = useState(false);
+  const [devProbeMsg, setDevProbeMsg] = useState("");
   // SLSsteam advanced config editors (AdditionalApps list + FakeAppIds map).
   const [addlApps, setAddlApps] = useState<string[]>([]);
   const [newAddlApp, setNewAddlApp] = useState("");
@@ -713,6 +718,35 @@ export function Settings() {
     setDevStateLocal({});
     await reloadAfterDev();
   };
+  const handleProbeVersions = async () => {
+    const appid = parseInt(devProbeAppid, 10);
+    if (!appid) { setDevProbeMsg("appid?"); return; }
+    setDevProbeBusy(true);
+    setDevProbeMsg("Leyendo SteamDB…");
+    try {
+      const r = await devProbeVersions(appid);
+      const fetches: any[] = Array.isArray(r?.fetches) ? r.fetches : [];
+      const byTransport = fetches.map((f) => `${f.transport}:${f.outcome}${f.status ? " " + f.status : ""} ${f.ms}ms`).join(" | ");
+      const depots = Object.entries(r?.depots || {}).map(([d, v]: [string, any]) => `${d}: ${v.public}/${v.rows} filas`).join(", ");
+      const sample = r?.sample
+        ? `build ${r.sample.buildid} (${String(r.sample.date).slice(0, 10)}): ${r.sample.confirmed}/${r.sample.of} confirmados`
+        : "sin muestra";
+      const head = r?.needs_user
+        ? "Cloudflare pide reto: abre SteamDB una vez y repite"
+        : r?.success ? `${r.builds} builds` : `error: ${r?.error || "?"}`;
+      const msg = `${head} · ${depots || "sin depots"} · ${sample} · ${r?.elapsed_ms} ms\n${byTransport}`;
+      setDevProbeMsg(msg);
+      toaster.toast({ title: "Lector SteamDB", body: head + " · " + sample });
+    } catch (e) {
+      setDevProbeMsg(`error: ${String(e)}`);
+    } finally {
+      setDevProbeBusy(false);
+    }
+  };
+  const handleOpenSteamdb = () => {
+    const appid = parseInt(devProbeAppid, 10) || 2379780;
+    Navigation.NavigateToExternalWeb(`https://steamdb.info/app/${appid}/`);
+  };
 
   const pages = [
     {
@@ -1300,6 +1334,38 @@ export function Settings() {
               Reset all to real
             </ButtonItem>
           </PanelSectionRow>
+          <PanelSectionRow>
+            <div style={{ fontSize: "12px", color: "#8b929e", lineHeight: 1.4, marginTop: "12px" }}>
+              Lector SteamDB: lee el feed de builds, el historial de cada depot
+              instalado y la página de la build más antigua, y pasa el traductor.
+              Resultado completo en el log del plugin y en
+              ~/.cache/lumadeck/steamdb/probe_&lt;appid&gt;.json.
+            </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <TextField
+              label="appid"
+              value={devProbeAppid}
+              onChange={(e: any) => setDevProbeAppid(e?.target?.value ?? "")}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" disabled={devProbeBusy} onClick={handleProbeVersions}>
+              {devProbeBusy ? "Leyendo SteamDB…" : "Probar lector SteamDB"}
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={handleOpenSteamdb}>
+              Abrir SteamDB (si pide el reto de Cloudflare)
+            </ButtonItem>
+          </PanelSectionRow>
+          {devProbeMsg && (
+            <PanelSectionRow>
+              <div style={{ fontSize: "12px", color: "#c7d5e0", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {devProbeMsg}
+              </div>
+            </PanelSectionRow>
+          )}
         </PanelSection>
       ),
     },

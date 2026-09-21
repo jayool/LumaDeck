@@ -112,6 +112,10 @@ export const setDevState = async (key: string, value: string) =>
   parseResult(await call<[string, string], string>("dev_set_state", key, value));
 export const clearDevState = async () =>
   parseResult(await call<[], string>("dev_clear_state"));
+// Dev: probe the SteamDB reader for an appid (backend/steamdb_reader.py).
+// Returns { success, builds, depots, sample, fetches[], needs_user, elapsed_ms }.
+export const devProbeVersions = async (appid: number) =>
+  parseResult(await call<[number], string>("dev_probe_versions", appid));
 
 // In-plugin self-update (#23). checkPluginUpdate → { has_update, installed,
 // latest, download_url }; updatePlugin downloads + applies the latest release.

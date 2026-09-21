@@ -367,6 +367,17 @@ class Plugin:
         dev.clear()
         return _j({"success": True, "overrides": {}})
 
+    async def dev_probe_versions(self, appid: int) -> str:
+        """Dev: read SteamDB (feed, depot histories, one build page) for appid
+        through the reader and run the translator on the oldest build. Reports
+        every fetch's transport / ms / outcome; see backend/steamdb_reader.py."""
+        try:
+            from steamdb_reader import probe
+            return _j(await probe(int(appid)))
+        except Exception as exc:
+            logger.warning(f"dev_probe_versions failed: {exc}")
+            return _j({"success": False, "error": str(exc)})
+
     async def pin_game(self, appid: int) -> str:
         from downloads import pin_game
         return _j(await pin_game(appid))
