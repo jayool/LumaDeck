@@ -103,6 +103,28 @@ LIST_RETRIES = 4          # re-requests of an empty list (tab clicks)
 LIST_RETRY_SLEEP_S = 3.0  # pause before each, for Cloudflare's cookie
 LIST_WAIT_S = 6.0         # settle wait per attempt
 
+# The section request the page makes, once more, with the answer's
+# Cloudflare headers: cf-cache-status (HIT = served from the edge cache
+# without reaching SteamDB), cf-mitigated (Cloudflare itself refused),
+# server, and the head of the body.
+_SECTION_PROBE_JS = """(function(appid){
+  var u='/api/RenderAppSection/?section=patchnotes&appid='+appid;
+  return fetch(u,{headers:{Accept:'text/html','X-Requested-With':'XMLHttpRequest'}}).then(function(r){
+    return r.text().then(function(t){return JSON.stringify({status:r.status,
+      cache:r.headers.get('cf-cache-status'),mitigated:r.headers.get('cf-mitigated'),server:r.headers.get('server'),
+      ray:r.headers.get('cf-ray'),type:r.headers.get('content-type'),chars:t.length,head:t.slice(0,300)});});
+  }).catch(function(e){return JSON.stringify({error:String(e)});});
+})(%d)"""
+
+
+def section_probe(view, appid: int) -> str:
+    import cef_cdp
+    try:
+        return cef_cdp.evaluate(view.ws, _SECTION_PROBE_JS % int(appid), timeout=20, await_promise=True)
+    except Exception as exc:
+        return f"probe failed: {exc}"
+
+
 # When the table does not fill: what the page looks like, for the log.
 _UNFILLED_SNAPSHOT_JS = """(function(){try{
   var q=function(s){return document.querySelector(s);};
@@ -359,11 +381,8 @@ class Reader:
                     snap = f"snapshot failed: {exc}"
                 self.view_state["snapshot"] = snap
                 logger.info(f"SteamDB {path}: list did not fill after {self.view_state.get('attempts')}; {snap}")
-                try:
-                    self.view_state["cookies"] = steamdb_cookies()
-                    logger.info(f"SteamDB cookies now: {self.view_state['cookies']}")
-                except Exception as exc:
-                    logger.info(f"SteamDB cookies: {exc}")
+                self.view_state["section"] = section_probe(self._view, self.appid)
+                logger.info(f"SteamDB section request for {self.appid}: {self.view_state['section']}")
         elif state == "challenge":
             f.outcome, f.status = "needs_user", 403
             f.error = str(st.get("title") or "")
@@ -524,6 +543,10 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
         # the build's time — the depot did not change, or it is off the
         # visible history).
         page = await reader.builds_page()
+        if reader._view is not None:
+            loop = asyncio.get_running_loop()
+            out["section_request"] = await loop.run_in_executor(None, section_probe, reader._view, appid)
+            logger.info(f"SteamDB section request for {appid}: {out['section_request']}")
         if page.ok:
             all_builds = versions.parse_builds_page(page.text)
             rows_all = [r for rows in history.values() for r in rows]
