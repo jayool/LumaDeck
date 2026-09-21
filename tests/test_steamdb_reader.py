@@ -86,21 +86,39 @@ class Cache(unittest.TestCase):
 
 
 class FakeView:
-    """Stands in for cef_cdp.HiddenView / ExistingView."""
+    """Stands in for cef_cdp.HiddenView. `answers` maps a path to
+    (status, text) for /api/ paths (read with fetch) and to ("ready", html)
+    / ("challenge", title) / ("timeout", "") for pages (read by navigation)."""
 
     def __init__(self, answers, state="ready"):
-        self.answers = answers          # path -> (status, text) or Exception
-        self.state = state
+        self.answers = answers
+        self.state = state              # what the first (app page) load ends in
         self.opened = []
+        self.navigated = []
         self.closed = 0
         self.fetched = []
+        self._current = None
 
     def open(self, url, wait_s=8.0):
         self.opened.append(url)
         return None
 
-    def wait_ready(self, wait_s=20.0):
-        return {"state": self.state, "title": "Just a moment..." if self.state == "challenge" else "SteamDB"}
+    def wait_ready(self, wait_s=20.0, expect_url=None):
+        return {"state": self.state, "title": "Just a moment..." if self.state == "challenge" else "SteamDB",
+                "href": expect_url or ""}
+
+    def navigate(self, url, wait_s=20.0):
+        self.navigated.append(url)
+        path = url[len(sr.BASE):]
+        a = self.answers[path]
+        if isinstance(a, Exception):
+            raise a
+        state, payload = a
+        self._current = payload if state == "ready" else ""
+        return {"state": state, "title": payload if state == "challenge" else "SteamDB", "href": url}
+
+    def html(self):
+        return self._current or ""
 
     def fetch(self, path, timeout=25.0):
         self.fetched.append(path)
@@ -134,7 +152,7 @@ class ReadOrder(unittest.TestCase):
 
     def reader(self, direct, view):
         return sr.Reader(2379780, cache_dir=self.dir, direct=direct,
-                         view_factory=lambda appid: (view, False), now=self.now)
+                         view_factory=lambda appid: view, now=self.now)
 
     def test_direct_ok_is_used_and_cached(self):
         view = FakeView({})
@@ -151,7 +169,7 @@ class ReadOrder(unittest.TestCase):
 
     def test_challenge_on_direct_falls_to_browser_and_backs_off(self):
         path = sr.feed_path(2379780)
-        view = FakeView({path: (200, RSS), sr.depot_path(2379781): (200, "<table><tr></tr></table>")})
+        view = FakeView({path: (200, RSS), sr.depot_path(2379781): ("ready", "<html><table><tr></tr></table></html>")})
         r = self.reader(self.direct(403, CHALLENGE_403), view)
         f = run(r.get(path, sr.TTL_FEED))
         self.assertEqual((f.outcome, f.transport), ("ok", "browser"))
@@ -163,8 +181,12 @@ class ReadOrder(unittest.TestCase):
         f2 = run(r.get(sr.depot_path(2379781), sr.TTL_DEPOT))
         self.assertEqual((f2.outcome, f2.transport), ("ok", "browser"))
         self.assertEqual(len(self.direct_calls), 1)
-        self.assertEqual(view.fetched, [path, sr.depot_path(2379781)])
+        # the feed is fetch()ed in-page; the depot page is a real navigation
+        self.assertEqual(view.fetched, [path])
+        self.assertEqual(view.navigated, [sr.BASE + sr.depot_path(2379781)])
+        self.assertEqual(f2.text, "<html><table><tr></tr></table></html>")
         self.assertFalse(r.needs_user)
+        self.assertIsNone(r.challenge_url)
         run(r.close())
         self.assertEqual(view.closed, 1)
         # and the good answers were cached
@@ -192,15 +214,40 @@ class ReadOrder(unittest.TestCase):
         r = self.reader(self.direct(403, CHALLENGE_403), view)
         f = run(r.get(path, sr.TTL_FEED))
         self.assertEqual(f.outcome, "needs_user")
+        self.assertEqual(r.challenge_url, sr.BASE + path)
         run(r.close())
 
-    def test_http_error_from_browser_is_reported_not_cached(self):
-        path = sr.depot_path(999)
-        view = FakeView({path: (404, "<html>nope</html>")})
-        r = sr.Reader(1, cache_dir=self.dir, use_direct=False,
-                      view_factory=lambda appid: (view, False), now=self.now)
+    def test_page_stuck_on_challenge_is_needs_user_with_its_url(self):
+        # the app page loads, the depot page does not: only THAT url helps the user
+        path = sr.depot_path(2379781)
+        view = FakeView({path: ("challenge", "Just a moment...")})
+        r = sr.Reader(2379780, cache_dir=self.dir, use_direct=False,
+                      view_factory=lambda appid: view, now=self.now)
         f = run(r.get(path, sr.TTL_DEPOT))
-        self.assertEqual((f.outcome, f.status, f.transport), ("http_error", 404, "browser"))
+        self.assertEqual((f.outcome, f.status, f.transport), ("needs_user", 403, "browser"))
+        self.assertEqual(r.challenge_url, "https://steamdb.info/depot/2379781/manifests/")
+        self.assertIsNone(sr.cache_get(path, sr.TTL_DEPOT, self.dir, self.now))
+        run(r.close())
+        self.assertEqual(view.closed, 1)
+
+    def test_bare_403_on_direct_backs_off_too(self):
+        path = sr.depot_path(2379781)
+        view = FakeView({path: ("ready", "<html><table></table></html>")})
+        r = self.reader(self.direct(403, ""), view)
+        run(r.get(path, sr.TTL_DEPOT))
+        run(r.get(sr.depot_path(2379781), sr.TTL_DEPOT))  # cache now, but direct must be blocked anyway
+        self.assertGreater(sr._direct_blocked_until, self.t)
+        self.assertEqual(len(self.direct_calls), 1)
+        run(r.close())
+
+    def test_page_timeout_is_an_error_not_cached(self):
+        path = sr.depot_path(999)
+        view = FakeView({path: ("timeout", "")})
+        r = sr.Reader(1, cache_dir=self.dir, use_direct=False,
+                      view_factory=lambda appid: view, now=self.now)
+        f = run(r.get(path, sr.TTL_DEPOT))
+        self.assertEqual((f.outcome, f.transport), ("error", "browser"))
+        self.assertIn("timeout", f.error)
         self.assertIsNone(sr.cache_get(path, sr.TTL_DEPOT, self.dir, self.now))
         run(r.close())
 
@@ -210,7 +257,7 @@ class ReadOrder(unittest.TestCase):
                 return "SharedJSContext not found on the CEF debug port"
         view = Broken({})
         r = sr.Reader(1, cache_dir=self.dir, use_direct=False,
-                      view_factory=lambda appid: (view, False), now=self.now)
+                      view_factory=lambda appid: view, now=self.now)
         f = run(r.get(sr.feed_path(1), sr.TTL_FEED))
         self.assertEqual(f.outcome, "error")
         self.assertIn("SharedJSContext", f.error)

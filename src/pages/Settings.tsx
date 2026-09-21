@@ -78,6 +78,7 @@ export function Settings() {
   const [devProbeAppid, setDevProbeAppid] = useState("2379780");
   const [devProbeBusy, setDevProbeBusy] = useState(false);
   const [devProbeMsg, setDevProbeMsg] = useState("");
+  const [devChallengeUrl, setDevChallengeUrl] = useState("");
   // SLSsteam advanced config editors (AdditionalApps list + FakeAppIds map).
   const [addlApps, setAddlApps] = useState<string[]>([]);
   const [newAddlApp, setNewAddlApp] = useState("");
@@ -736,6 +737,7 @@ export function Settings() {
         : r?.success ? `${r.builds} builds` : `error: ${r?.error || "?"}`;
       const msg = `${head} · ${depots || "sin depots"} · ${sample} · ${r?.elapsed_ms} ms\n${byTransport}`;
       setDevProbeMsg(msg);
+      setDevChallengeUrl(typeof r?.challenge_url === "string" ? r.challenge_url : "");
       toaster.toast({ title: "Lector SteamDB", body: head + " · " + sample });
     } catch (e) {
       setDevProbeMsg(`error: ${String(e)}`);
@@ -743,9 +745,12 @@ export function Settings() {
       setDevProbeBusy(false);
     }
   };
+  // Opens the page the hidden view could not get past (the probe says which);
+  // the app page otherwise. Cloudflare's clearance is per URL rule, so opening
+  // the app page does not help a depot page that is challenged.
   const handleOpenSteamdb = () => {
     const appid = parseInt(devProbeAppid, 10) || 2379780;
-    Navigation.NavigateToExternalWeb(`https://steamdb.info/app/${appid}/`);
+    Navigation.NavigateToExternalWeb(devChallengeUrl || `https://steamdb.info/app/${appid}/`);
   };
 
   const pages = [
@@ -1356,7 +1361,7 @@ export function Settings() {
           </PanelSectionRow>
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={handleOpenSteamdb}>
-              Abrir SteamDB (si pide el reto de Cloudflare)
+              {devChallengeUrl ? `Abrir ${devChallengeUrl.replace("https://steamdb.info", "")} en SteamDB` : "Abrir SteamDB (si pide el reto de Cloudflare)"}
             </ButtonItem>
           </PanelSectionRow>
           {devProbeMsg && (

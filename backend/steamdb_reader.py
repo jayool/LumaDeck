@@ -10,16 +10,22 @@ CEF browser is a real browser, so it passes. Reading order, per URL:
   2. direct  — one HTTP GET from the backend. Kept only so a probe can show
                whether it works; after one challenge it is skipped for an
                hour instead of costing every read a round trip.
-  3. browser — fetch() run INSIDE a page that is on steamdb.info, over the
-               CEF debug port (cef_cdp). If the user has a SteamDB tab open
-               we use it; otherwise an off-screen BrowserView is created,
-               navigated to the app's page, given time to pass the challenge
-               (a JS challenge solves itself in ~5 s), then used for every
-               fetch of this Reader and destroyed on close().
+  3. browser — an off-screen BrowserView (cef_cdp.HiddenView) is created
+               through SharedJSContext and NAVIGATED to the page; the HTML
+               is read from the loaded document. A real navigation is the
+               only thing that can pass a Cloudflare JS challenge: an in-page
+               fetch() of a challenged path just gets the 403 challenge page
+               back (measured 2026-09-21: the app page loads, fetch() of
+               /depot/…/manifests/ from it answers 403 + 10.9 KB of
+               challenge). The feed (/api/…) is XML, which a navigation would
+               render through the XML viewer, so it alone is read with
+               fetch() from a page already on steamdb.info. The view lives
+               for the Reader's life and is destroyed on close().
 
 If the hidden page is still on a challenge after 20 s it is an interactive
-one: the result says needs_user and the UI has to open SteamDB visibly once;
-its clearance cookie is shared with the hidden view on the next try.
+one: the result says needs_user and carries challenge_url — the UI has to
+open THAT url visibly once; the clearance cookie is shared with the hidden
+view on the next try.
 
 Nothing is guessed from a bad answer: a challenge page, an HTTP error or an
 empty body is reported as such and never cached.
@@ -168,13 +174,8 @@ async def _direct_get(url: str) -> Tuple[int, str]:
 
 
 def _default_view_factory(appid: int):
-    """A page on steamdb.info to run fetch() in: the user's own tab if one is
-    open, else a new off-screen view (opened lazily by Reader)."""
     import cef_cdp
-    t = cef_cdp.find_target_containing("steamdb.info")
-    if t:
-        return cef_cdp.ExistingView(t["webSocketDebuggerUrl"]), True
-    return cef_cdp.HiddenView("lumadeck_steamdb"), False
+    return cef_cdp.HiddenView("lumadeck_steamdb")
 
 
 class Reader:
@@ -192,8 +193,8 @@ class Reader:
         self._now = now
         self._view = None
         self._view_err: Optional[str] = None   # sticky: once the view failed, say so and stop trying
-        self._view_reused = False
-        self.view_state: dict = {}             # what wait_ready saw (for the probe)
+        self.view_state: dict = {}             # what wait_ready saw last (for the probe)
+        self.challenge_url: Optional[str] = None  # the page only the user can get past
         self.fetches: List[Fetched] = []
 
     # -- steps -------------------------------------------------------------
@@ -215,7 +216,9 @@ class Reader:
         except Exception as exc:
             f.outcome, f.error = "error", str(exc)
         f.ms = int((time.monotonic() - t0) * 1000)
-        if f.outcome == "challenge":
+        if f.outcome == "challenge" or f.status in (403, 429, 503):
+            # A challenge page or a bare block (SteamDB answers the backend
+            # 403 with an empty body): don't pay this round trip again for an hour.
             _direct_blocked_until = self._now() + DIRECT_BACKOFF_S
         return f
 
@@ -227,7 +230,7 @@ class Reader:
         if self._view_err:
             return self._view_err
         try:
-            view, reused = self._view_factory(self.appid)
+            view = self._view_factory(self.appid)
         except Exception as exc:
             self._view_err = f"error: {exc}"
             return self._view_err
@@ -235,18 +238,39 @@ class Reader:
         if err:
             self._view_err = f"error: {err}"
             return self._view_err
-        st = view.wait_ready(20.0)
-        self.view_state = dict(st, reused=reused)
+        st = view.wait_ready(20.0, expect_url=app_url(self.appid))
+        self.view_state = dict(st)
         state = st.get("state")
         if state != "ready":
             view.close()
             if state == "challenge":
                 self._view_err = "needs_user"
+                self.challenge_url = app_url(self.appid)
             else:
                 self._view_err = f"error: page not ready ({state}: {st.get('title') or st.get('err') or st.get('href')})"
             return self._view_err
-        self._view, self._view_reused = view, reused
+        self._view = view
         return None
+
+    def _read_by_navigation(self, path: str, f: Fetched) -> None:
+        """HTML pages: navigate the hidden view there and take the document.
+        needs_user when the page stays on a challenge."""
+        st = self._view.navigate(BASE + path, 20.0)
+        self.view_state = dict(st)
+        state = st.get("state")
+        if state == "ready":
+            f.status, f.text = 200, self._view.html()
+            f.outcome = classify(f.status, f.text)
+            if f.outcome == "challenge":
+                f.outcome = "needs_user"
+                self.challenge_url = BASE + path
+        elif state == "challenge":
+            f.outcome, f.status = "needs_user", 403
+            f.error = str(st.get("title") or "")
+            self.challenge_url = BASE + path
+        else:
+            f.outcome = "error"
+            f.error = f"page not ready ({state}: {st.get('title') or st.get('err') or st.get('href')})"
 
     def _browser_fetch(self, path: str) -> Fetched:
         t0 = time.monotonic()
@@ -257,11 +281,15 @@ class Reader:
             f.error = "" if why == "needs_user" else why
         else:
             try:
-                status, text = self._view.fetch(path)
-                f.status, f.text = status, text
-                f.outcome = classify(status, text)
-                if f.outcome == "challenge":
-                    f.outcome = "needs_user"
+                if path.startswith("/api/"):
+                    status, text = self._view.fetch(path)
+                    f.status, f.text = status, text
+                    f.outcome = classify(status, text)
+                    if f.outcome == "challenge":
+                        f.outcome = "needs_user"
+                        self.challenge_url = BASE + path
+                else:
+                    self._read_by_navigation(path, f)
             except Exception as exc:
                 f.outcome, f.error = "error", str(exc)
         f.ms = int((time.monotonic() - t0) * 1000)
@@ -371,6 +399,7 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
         await reader.close()
     out["fetches"] = [f.summary() for f in reader.fetches]
     out["view"] = reader.view_state
+    out["challenge_url"] = reader.challenge_url
     out["needs_user"] = reader.needs_user
     out["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
     logger.info(f"SteamDB probe {appid}: {json.dumps(out)}")

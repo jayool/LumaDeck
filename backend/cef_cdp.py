@@ -264,34 +264,6 @@ _FETCH_JS = """fetch(%(path)s,{credentials:'include'}).then(function(r){
 })"""
 
 
-def find_target_containing(url_substr: str, port: int = DEBUG_PORT) -> dict | None:
-    """The first target whose listed URL contains `url_substr`, or None."""
-    for t in list_targets(port):
-        if url_substr in str(t.get("url", "")):
-            return t
-    return None
-
-
-class ExistingView:
-    """A page target that already exists (e.g. a tab the user opened). Same
-    fetch() as HiddenView; open/close are no-ops — it is not ours to destroy."""
-
-    def __init__(self, ws_url: str):
-        self.ws = ws_url
-
-    def open(self, url: str, wait_s: float = 8.0):
-        return None
-
-    def wait_ready(self, wait_s: float = 20.0) -> dict:
-        return page_state(self.ws) | {"state": "ready"}
-
-    def fetch(self, path: str, timeout: float = 25.0):
-        return fetch_in_page(self.ws, path, timeout)
-
-    def close(self) -> None:
-        pass
-
-
 def page_state(ws_url: str) -> dict:
     raw = evaluate(ws_url, _PAGE_STATE_JS, timeout=5, await_promise=False)
     try:
@@ -309,6 +281,10 @@ def fetch_in_page(ws_url: str, path: str, timeout: float = 25.0):
                    timeout=timeout, await_promise=True)
     d = json.loads(raw) if isinstance(raw, str) else {}
     return int(d.get("s") or 0), str(d.get("t") or "")
+
+
+def _norm_url(u: str) -> str:
+    return (u or "").split("#", 1)[0].split("?", 1)[0].rstrip("/")
 
 
 class HiddenView:
@@ -366,27 +342,50 @@ class HiddenView:
             return f"Page.navigate failed: {exc}"
         return None
 
-    def wait_ready(self, wait_s: float = 20.0) -> dict:
-        """Poll the page until it is loaded and not showing a Cloudflare
-        challenge. Returns page_state() plus "state": ready | challenge |
-        timeout | error. A JS challenge solves itself in ~5 s and the page
-        reloads; an interactive one (Turnstile) never does — that is
-        'challenge', and only a visible tab the user clicks through fixes it."""
+    def wait_ready(self, wait_s: float = 20.0, expect_url: str | None = None) -> dict:
+        """Poll the page until it is loaded, on `expect_url` (path compared,
+        query ignored — a challenge bounces through the same URL with
+        __cf_chl_tk params) and not showing a Cloudflare challenge. Returns
+        page_state() plus "state": ready | challenge | timeout | error. A JS
+        challenge solves itself in ~5 s and the page reloads; an interactive
+        one (Turnstile) never does — that is 'challenge', and only a visible
+        tab the user clicks through fixes it."""
         import time as _time
         deadline = _time.time() + wait_s
         last: dict = {}
+        want = _norm_url(expect_url) if expect_url else None
         while _time.time() < deadline:
             try:
                 st = page_state(self.ws or "")
             except Exception as exc:
                 st = {"err": str(exc)}
             last = st
-            if st.get("rs") == "complete" and not st.get("cf") and "steamdb.info" in str(st.get("href", "")):
+            href = str(st.get("href", ""))
+            on_target = (_norm_url(href) == want) if want else ("steamdb.info" in href)
+            if st.get("rs") == "complete" and not st.get("cf") and on_target:
                 return st | {"state": "ready"}
             _time.sleep(0.5)
         if last.get("cf"):
             return last | {"state": "challenge"}
         return last | {"state": "error" if last.get("err") else "timeout"}
+
+    def navigate(self, url: str, wait_s: float = 20.0) -> dict:
+        """Load `url` in the view (a real navigation, so a JS challenge can
+        run and solve itself) and wait for it. Returns wait_ready()'s dict."""
+        if not self.ws:
+            return {"state": "error", "err": "view not open"}
+        try:
+            _call(self.ws, "Page.navigate", {"url": url, "transitionType": "address_bar"}, timeout=6)
+        except Exception as exc:
+            return {"state": "error", "err": f"Page.navigate failed: {exc}"}
+        return self.wait_ready(wait_s, expect_url=url)
+
+    def html(self) -> str:
+        """The current document's HTML, as the browser has it."""
+        if not self.ws:
+            raise RuntimeError("view not open")
+        v = evaluate(self.ws, "document.documentElement.outerHTML", timeout=15, await_promise=False)
+        return v if isinstance(v, str) else ""
 
     def fetch(self, path: str, timeout: float = 25.0):
         if not self.ws:
