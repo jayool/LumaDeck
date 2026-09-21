@@ -88,35 +88,10 @@ def patchnotes_path(appid: int) -> str:
     return f"/app/{int(appid)}/patchnotes/"
 
 
-def builds_section_path(appid: int) -> str:
-    """What the app page itself requests to fill its Patches tab (from
-    SteamDB's app.js: fetch('/api/RenderAppSection/?section=patchnotes&appid=')).
-    Public-branch builds only; the page adds all=true for its "view all"
-    link, which we never do. Answers the tab's HTML, <tbody id="js-builds">
-    included."""
-    return f"/api/RenderAppSection/?section=patchnotes&appid={int(appid)}"
-
-
 # The app's builds table (<tbody id="js-builds">) is filled by script only
 # once the Patches tab is activated — in Steam's browser the URL alone does
 # not do it (measured: 8 build links before clicking the tab, 74 after). So
 # the reader clicks the tab, then waits for the rows to settle.
-# Installed in every document the hidden view loads, BEFORE the page's own
-# scripts: records each request the page makes (url, status, head of a
-# non-200 body). SteamDB fetches the builds table at load, so a hook added
-# afterwards sees nothing (measured: net=[] with a 403 already on screen).
-NET_RECORDER_JS = """(function(){try{
-  if(window.__lumadeck_net)return;
-  window.__lumadeck_net=[];
-  var rec=window.__lumadeck_net;
-  var of=window.fetch;
-  if(of){window.fetch=function(u,o){var url=(typeof u==='string')?u:(u&&u.url)||String(u);var e={kind:'fetch',url:url,status:0};rec.push(e);
-    return of.apply(this,arguments).then(function(r){e.status=r.status;if(r.status!==200){try{r.clone().text().then(function(t){e.body=t.slice(0,300);});}catch(x){}}return r;},function(x){e.status=-1;e.body=String(x);throw x;});};}
-  var oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.open=function(m,u){this.__lm={kind:'xhr',url:String(u),status:0};rec.push(this.__lm);return oo.apply(this,arguments);};
-  XMLHttpRequest.prototype.send=function(){var x=this;x.addEventListener('loadend',function(){if(x.__lm){x.__lm.status=x.status;if(x.status!==200){try{x.__lm.body=String(x.responseText||'').slice(0,300);}catch(e){}}}});return os.apply(this,arguments);};
-}catch(e){}})();"""
-
 BUILDS_PREPARE_JS = """(function(){try{
   var a=document.querySelector('a.tabnav-tab[href$="/patchnotes/"]')
        ||[].slice.call(document.querySelectorAll('a[role="tab"]')).filter(function(x){return /\\/patchnotes\\/?$/.test(x.getAttribute('href')||'');})[0];
@@ -124,6 +99,9 @@ BUILDS_PREPARE_JS = """(function(){try{
   a.click(); return 'ok';
 }catch(e){return 'error: '+String(e);}})()"""
 BUILDS_SETTLE_JS = "document.querySelectorAll('#js-builds tr').length"
+LIST_RETRIES = 4          # re-requests of an empty list (tab clicks)
+LIST_RETRY_SLEEP_S = 3.0  # pause before each, for Cloudflare's cookie
+LIST_WAIT_S = 6.0         # settle wait per attempt
 
 # When the table does not fill: what the page looks like, for the log.
 _UNFILLED_SNAPSHOT_JS = """(function(){try{
@@ -139,20 +117,8 @@ _UNFILLED_SNAPSHOT_JS = """(function(){try{
     tbody:tb?tb.outerHTML.slice(0,400):null,
     paneText:pn?pn.textContent.replace(/\\s+/g,' ').slice(0,600):null,
     loaders:[].slice.call(document.querySelectorAll('.loader')).length,
-    net:(window.__lumadeck_net||[]).slice(0,20)});
+    });
 }catch(e){return JSON.stringify({err:String(e)});}})()"""
-
-# The page's own scripts: which API paths they call and the code around the
-# builds table / the "failed to load" message.
-_SCRIPT_SCAN_JS = """(function(){
-  var srcs=[].slice.call(document.scripts).map(function(s){return s.src;}).filter(function(u){return /app(_extension)?\\.js|global\\.js|tabnav\\.js/.test(u);});
-  return Promise.all(srcs.map(function(u){return fetch(u).then(function(r){return r.text();}).then(function(t){
-    var apis={};var m;var re=/["'](\\/api\\/[A-Za-z0-9_\\/?=&.-]*)["']/g;while((m=re.exec(t))){apis[m[1]]=(apis[m[1]]||0)+1;}
-    var ctx=[];['js-builds','failed to load','patchnotes'].forEach(function(k){var i=t.indexOf(k);if(i>=0)ctx.push(k+' @'+i+': '+t.slice(Math.max(0,i-300),i+300));});
-    return {src:u.replace('https://steamdb.info',''),len:t.length,apis:Object.keys(apis),ctx:ctx};
-  }).catch(function(e){return {src:u,err:String(e)};});})).then(function(r){return JSON.stringify(r);});
-})()"""
-
 
 
 def classify(status: int, text: str) -> str:
@@ -310,8 +276,6 @@ class Reader:
         if err:
             self._view_err = f"error: {err}"
             return self._view_err
-        if hasattr(view, "add_init_script"):
-            view.add_init_script(NET_RECORDER_JS)
         st = view.wait_ready(20.0, expect_url=app_url(self.appid))
         self.view_state = dict(st)
         state = st.get("state")
@@ -337,14 +301,30 @@ class Reader:
         self.view_state = dict(st)
         state = st.get("state")
         if state == "ready":
-            if prepare_js:
-                import cef_cdp
-                try:
-                    self.view_state["prepared"] = cef_cdp.evaluate(self._view.ws, prepare_js, timeout=5, await_promise=False)
-                except Exception as exc:
-                    self.view_state["prepared"] = f"error: {exc}"
             if settle_js:
-                self.view_state["settled"] = self._view.wait_settled(settle_js, 15.0)
+                # The page's own request for the list fires at load and gets
+                # a 403 from Cloudflare's bot check until the cookie its
+                # script sets a few seconds later exists (measured 2026-09-21:
+                # a tab click ~35 s after load filled the table at once, a
+                # click at load never did). So: let the load request run,
+                # and if the list is still empty re-request it (prepare_js,
+                # the tab click) every few seconds, a handful of times.
+                import cef_cdp
+                attempts = []
+                n = self._view.wait_settled(settle_js, LIST_WAIT_S)
+                attempts.append(n)
+                tries = 0
+                while n == 0 and prepare_js and tries < LIST_RETRIES:
+                    tries += 1
+                    time.sleep(LIST_RETRY_SLEEP_S)
+                    try:
+                        self.view_state["prepared"] = cef_cdp.evaluate(self._view.ws, prepare_js, timeout=5, await_promise=False)
+                    except Exception as exc:
+                        self.view_state["prepared"] = f"error: {exc}"
+                    n = self._view.wait_settled(settle_js, LIST_WAIT_S)
+                    attempts.append(n)
+                self.view_state["settled"] = n
+                self.view_state["attempts"] = attempts
             f.status, f.text = 200, self._view.html()
             f.outcome = classify(f.status, f.text)
             if settle_js and f.outcome == "ok" and not self.view_state.get("settled"):
@@ -358,36 +338,7 @@ class Reader:
                 except Exception as exc:
                     snap = f"snapshot failed: {exc}"
                 self.view_state["snapshot"] = snap
-                logger.info(f"SteamDB {path}: list did not fill; snapshot={snap}")
-                try:
-                    import cef_cdp
-                    scan = cef_cdp.evaluate(self._view.ws, _SCRIPT_SCAN_JS, timeout=20, await_promise=True)
-                except Exception as exc:
-                    scan = f"scan failed: {exc}"
-                self.view_state["scripts"] = scan
-                logger.info(f"SteamDB {path}: script scan={scan}")
-                # Diagnostic: read the failed request as a DOCUMENT (a
-                # navigation can pass Cloudflare where the page's own request
-                # got a 403) and log the head of what comes back.
-                try:
-                    net = (json.loads(snap) if isinstance(snap, str) else {}).get("net") or []
-                    bad = [n for n in net if isinstance(n, dict) and n.get("status") not in (200, 0, None)]
-                    if bad:
-                        url = bad[0]["url"]
-                        if url.startswith("/"):
-                            url = BASE + url
-                        st2 = self._view.navigate(url, 20.0)
-                        body = self._view.html() if st2.get("state") == "ready" else ""
-                        self.view_state["direct_nav"] = {"url": url, "state": st2.get("state"),
-                                                         "title": st2.get("title"), "cf": st2.get("cf"),
-                                                         "chars": len(body), "head": body[:1500]}
-                        logger.info(f"SteamDB {path}: direct navigation to {url}: "
-                                    f"{self.view_state['direct_nav']}")
-                except Exception as exc:
-                    logger.info(f"SteamDB {path}: direct navigation diagnostic failed: {exc}")
-            if f.outcome == "challenge":
-                f.outcome = "needs_user"
-                self.challenge_url = BASE + path
+                logger.info(f"SteamDB {path}: list did not fill after {self.view_state.get('attempts')}; {snap}")
         elif state == "challenge":
             f.outcome, f.status = "needs_user", 403
             f.error = str(st.get("title") or "")
@@ -461,19 +412,17 @@ class Reader:
             await loop.run_in_executor(None, v.close)
 
     async def builds_page(self, ttl: float = TTL_FEED) -> Fetched:
-        """The app's builds table: the section fragment the app page itself
-        requests, read by navigation (Cloudflare lets a document through
-        where it 403s the page's own fetch — measured on Child of Light and
-        Scott Pilgrim). Falls back to the app page + Patches tab if the
-        fragment does not come with rows."""
+        """The app's builds table: the app page, whose script requests
+        /api/RenderAppSection/?section=patchnotes (public builds) into
+        <tbody id="js-builds">; re-requested through the tab while empty.
+        (That fragment cannot be navigated to: SteamDB answers an "Error"
+        page — measured.)"""
         import versions
         has_rows = lambda text: bool(versions.parse_builds_page(text))  # noqa: E731
-        f = await self.get(builds_section_path(self.appid), ttl, validate=has_rows)
-        if f.ok or f.outcome == "needs_user":
-            return f
-        logger.info(f"SteamDB builds section for {self.appid}: {f.outcome} {f.error}; trying the app page")
-        return await self.get(patchnotes_path(self.appid), ttl, BUILDS_SETTLE_JS, BUILDS_PREPARE_JS,
-                              validate=has_rows)
+        f = await self.get(patchnotes_path(self.appid), ttl, BUILDS_SETTLE_JS, BUILDS_PREPARE_JS,
+                           validate=has_rows)
+        logger.info(f"SteamDB builds for {self.appid}: {f.outcome}; attempts={self.view_state.get('attempts')}")
+        return f
 
     @property
     def needs_user(self) -> bool:

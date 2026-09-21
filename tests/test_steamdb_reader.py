@@ -90,6 +90,8 @@ class FakeView:
     (status, text) for /api/ paths (read with fetch) and to ("ready", html)
     / ("challenge", title) / ("timeout", "") for pages (read by navigation)."""
 
+    ws = "ws://fake"
+
     def __init__(self, answers, state="ready"):
         self.answers = answers
         self.state = state              # what the first (app page) load ends in
@@ -249,16 +251,24 @@ class ReadOrder(unittest.TestCase):
                 return 0
         path = "/app/2215260/patchnotes/"
         view = Shell({path: ("ready", "<html><tbody id='js-builds'></tbody></html>")})
-        r = sr.Reader(2215260, cache_dir=self.dir, use_direct=False,
-                      view_factory=lambda appid: view, now=self.now)
-        f = run(r.get(path, sr.TTL_FEED, "document.querySelectorAll('#js-builds tr').length", "(1)"))
-        self.assertEqual((f.outcome, f.transport), ("empty", "browser"))
-        self.assertIn("did not fill", f.error)
-        self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
-        run(r.close())
+        import cef_cdp
+        keep, keep_sleep = cef_cdp.evaluate, sr.LIST_RETRY_SLEEP_S
+        cef_cdp.evaluate = lambda ws, js, **k: "ok"
+        sr.LIST_RETRY_SLEEP_S = 0.0
+        try:
+            r = sr.Reader(2215260, cache_dir=self.dir, use_direct=False,
+                          view_factory=lambda appid: view, now=self.now)
+            f = run(r.get(path, sr.TTL_FEED, "document.querySelectorAll('#js-builds tr').length", "(1)"))
+            self.assertEqual((f.outcome, f.transport), ("empty", "browser"))
+            self.assertIn("did not fill", f.error)
+            self.assertEqual(r.view_state.get("attempts"), [0, 0, 0, 0, 0])
+            self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
+            run(r.close())
+        finally:
+            cef_cdp.evaluate, sr.LIST_RETRY_SLEEP_S = keep, keep_sleep
 
     def test_validate_turns_a_200_into_empty_and_caches_nothing(self):
-        path = sr.builds_section_path(256290)
+        path = "/depot/1/manifests/"
         view = FakeView({path: ("ready", "<html><body>Access denied</body></html>")})
         r = sr.Reader(256290, cache_dir=self.dir, use_direct=False,
                       view_factory=lambda appid: view, now=self.now)
@@ -268,24 +278,40 @@ class ReadOrder(unittest.TestCase):
         self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
         run(r.close())
 
-    def test_builds_page_prefers_the_section_and_falls_back_to_the_app_page(self):
+    def test_builds_page_re_requests_the_list_until_it_fills(self):
         rows = ('<tbody id="js-builds"><tr data-date="1740421318"><td><a href="/patchnotes/17459173/">x</a></td>'
                 '<td>Mon</td><td>18:21</td><td>t</td><td></td><td></td><td>17459173</td></tr></tbody>')
-        sec, page = sr.builds_section_path(1), sr.patchnotes_path(1)
-        view = FakeView({sec: ("ready", "<html>" + rows + "</html>")})
-        r = sr.Reader(1, cache_dir=self.dir, use_direct=False, view_factory=lambda appid: view, now=self.now)
-        f = run(r.builds_page())
-        self.assertEqual((f.outcome, f.path), ("ok", sec))
-        self.assertEqual(view.navigated, [sr.BASE + sec])
-        run(r.close())
-        # section answers an error page → the app page is read instead
-        view2 = FakeView({sec: ("ready", "<html>403</html>"), page: ("ready", "<html>" + rows + "</html>")})
-        r2 = sr.Reader(1, cache_dir=os.path.join(self.dir, "b"), use_direct=False,
-                       view_factory=lambda appid: view2, now=self.now)
-        f2 = run(r2.builds_page())
-        self.assertEqual((f2.outcome, f2.path), ("ok", page))
-        self.assertEqual(view2.navigated, [sr.BASE + sec, sr.BASE + page])
-        run(r2.close())
+
+        class LateView(FakeView):
+            """The list is empty on load and fills only after the 2nd re-request."""
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                self.clicks = 0
+                self.polls = 0
+
+            def wait_settled(self, count_js, wait_s=15.0):
+                self.polls += 1
+                return 1 if self.clicks >= 2 else 0
+
+        page = sr.patchnotes_path(1)
+        view = LateView({page: ("ready", "<html>" + rows + "</html>")})
+        real_eval = sr.cef_cdp.evaluate if hasattr(sr, "cef_cdp") else None
+        import cef_cdp
+        keep = cef_cdp.evaluate
+        cef_cdp.evaluate = lambda ws, js, **k: (setattr(view, "clicks", view.clicks + 1), "ok")[1]
+        keep_sleep = sr.LIST_RETRY_SLEEP_S
+        sr.LIST_RETRY_SLEEP_S = 0.0
+        try:
+            r = sr.Reader(1, cache_dir=self.dir, use_direct=False, view_factory=lambda appid: view, now=self.now)
+            f = run(r.builds_page())
+            self.assertEqual((f.outcome, f.path), ("ok", page))
+            self.assertEqual(r.view_state.get("attempts"), [0, 0, 1])
+            self.assertEqual(view.clicks, 2)
+            run(r.close())
+        finally:
+            cef_cdp.evaluate = keep
+            sr.LIST_RETRY_SLEEP_S = keep_sleep
+        del real_eval
 
     def test_page_timeout_is_an_error_not_cached(self):
         path = sr.depot_path(999)
