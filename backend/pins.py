@@ -436,6 +436,21 @@ def find_acf(appid: int) -> Optional[str]:
     return None
 
 
+def installed_buildid(appid: int) -> Optional[int]:
+    """The .acf's `buildid`. Right for a game Steam updates itself (it stamps
+    it when an update completes); WRONG for a pinned game (Steam keeps
+    Valve's current build there) — use version_info() for those."""
+    path = find_acf(appid)
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            m = re.search(r'"buildid"\s+"(\d+)"', f.read())
+        return int(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
 def installed_depots(appid: int) -> Dict[int, int]:
     """{depot: gid} from the .acf's InstalledDepots block ({} if none)."""
     path = find_acf(appid)

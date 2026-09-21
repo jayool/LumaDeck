@@ -8,6 +8,7 @@ import {
   Navigation,
   SidebarNavigation,
   ProgressBarWithInfo,
+  DropdownItem,
 } from "@decky/ui";
 import {
   FaInfoCircle,
@@ -48,6 +49,8 @@ import {
   pinGame,
   unpinGame,
   getPinStatus,
+  listGameVersions,
+  installGameVersion,
   checkGoldbergStatus,
   applyGoldberg,
   removeGoldberg,
@@ -136,6 +139,17 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
+  // Game version (Status row + the Updates picker; backend/game_versions.py).
+  // pinVersion: the build we pinned the game to (pins.json: buildid/date/label,
+  // any may be null); acfBuildid: the .acf's buildid, right only while Steam
+  // updates the game itself (it keeps Valve's latest there on a pinned game).
+  const [pinVersion, setPinVersion] = useState<any>(null);
+  const [acfBuildid, setAcfBuildid] = useState<number | null>(null);
+  const [versionList, setVersionList] = useState<any[] | null>(null);
+  const [versionsState, setVersionsState] = useState<"idle" | "loading" | "needsUser" | "error">("idle");
+  const [versionsError, setVersionsError] = useState("");
+  const [challengeUrl, setChallengeUrl] = useState("");
+  const [selectedBuild, setSelectedBuild] = useState<number | null>(null);
   const [isStuck, setIsStuck] = useState(false);
   const [goldbergApplied, setGoldbergApplied] = useState(false);
   const [achievementStatus, setAchievementStatus] = useState("");
@@ -271,7 +285,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       }
 
       const pinResult = await getPinStatus(appid);
-      if (pinResult.success) setIsPinned(pinResult.pinned);
+      if (pinResult.success) applyPinStatus(pinResult);
 };
     load();
   }, [appid]);
@@ -571,15 +585,121 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
   };
 
+  const applyPinStatus = (r: any) => {
+    setIsPinned(!!r.pinned);
+    setPinVersion(r.version || null);
+    setAcfBuildid(typeof r.installedBuildid === "number" ? r.installedBuildid : null);
+  };
+
   const handleTogglePin = async () => {
     const result = isPinned ? await unpinGame(appid) : await pinGame(appid);
     if (result.success) {
       setIsPinned(!isPinned);
-      toast(isPinned ? t("toastUnpinned") : t("toastPinned"), gameName);
+      // Back to auto-update with the .acf flagged: Steam only moves to the
+      // latest build at its next start (same as a LuaTools version: no
+      // button, the toast says to restart).
+      const backToLatest = isPinned && result.needsRestart;
+      toast(isPinned ? (backToLatest ? t("toastUnpinnedRestart") : t("toastUnpinned")) : t("toastPinned"),
+            gameName, backToLatest ? 6000 : 3000);
+      const r = await getPinStatus(appid);
+      if (r.success) applyPinStatus(r);
+      if (versionList) setVersionList(versionList.map((b: any) => ({ ...b, installed: false })));
     } else {
       toast(t("toastError"), result.error || "", 4000);
     }
   };
+
+  // ── Version picker ──────────────────────────────────────────────────────
+  const handleLoadVersions = async () => {
+    setVersionsState("loading");
+    setVersionsError("");
+    try {
+      // The LuaTools catalogue is public; load it alongside if the user has
+      // not checked fixes yet, so builds a fix targets can be marked.
+      const [r, fixes]: any[] = await Promise.all([
+        listGameVersions(appid),
+        luatoolsFixes ? Promise.resolve(null) : listLuatoolsFixes(appid).catch(() => null),
+      ]);
+      if (fixes?.success && !luatoolsFixes) setLuatoolsFixes(fixes.fixes || []);
+      if (r?.success) {
+        const list: any[] = r.builds || [];
+        setVersionList(list);
+        const cur = list.find((b) => b.installed) || list[0];
+        setSelectedBuild(cur ? cur.buildid : null);
+        setVersionsState("idle");
+      } else if (r?.needsUser) {
+        setChallengeUrl(r.challengeUrl || "");
+        setVersionsState("needsUser");
+      } else {
+        setVersionsError(r?.error === "no_builds" ? t("noBuilds") : t("versionsError", r?.error || "?"));
+        setVersionsState("error");
+      }
+    } catch (e) {
+      setVersionsError(t("versionsError", String(e)));
+      setVersionsState("error");
+    }
+  };
+
+  const handleOpenSteamdb = () => {
+    Navigation.NavigateToExternalWeb(challengeUrl || `https://steamdb.info/app/${appid}/`);
+  };
+
+  const handleInstallVersion = async () => {
+    if (!selectedBuild) return;
+    setBusy("version");
+    const r: any = await installGameVersion(appid, selectedBuild);
+    setBusy("");
+    if (r?.success) {
+      toast(t("toastVersionSet", selectedBuild), gameName, 6000);
+      const p = await getPinStatus(appid);
+      if (p.success) applyPinStatus(p);
+      if (versionList) setVersionList(versionList.map((b: any) => ({ ...b, installed: b.buildid === selectedBuild })));
+    } else if (r?.needsUser) {
+      setChallengeUrl(r.challengeUrl || "");
+      setVersionsState("needsUser");
+    } else {
+      toast(t("toastError"), r?.error || "", 5000);
+    }
+  };
+
+  // Builds the LuaTools catalogue targets (by the build number in the fix's
+  // title/tags) → their tag names, for the picker's option and description.
+  const fixesByBuild: Record<string, string[]> = {};
+  for (const f of luatoolsFixes || []) {
+    const b = luaFixBuildTag(f);
+    if (!b) continue;
+    const names = luaFixTagList(f);
+    fixesByBuild[b] = [...(fixesByBuild[b] || []), ...(names.length ? names : [String(f?.title || "fix")])];
+  }
+  const fmtBuildDate = (iso: string) => {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  };
+  const buildOptionLabel = (b: any) => {
+    const n = (fixesByBuild[String(b.buildid)] || []).length;
+    const parts = [fmtBuildDate(b.date), String(b.buildid)];
+    if (b.installed) parts.push(t("buildInstalled"));
+    if (n) parts.push(n === 1 ? t("fixCount", n) : t("fixCountPlural", n));
+    return parts.filter(Boolean).join(" · ");
+  };
+  const selectedBuildInfo = versionList?.find((b: any) => b.buildid === selectedBuild) || null;
+  const selectedBuildDesc = selectedBuildInfo
+    ? [selectedBuildInfo.label, ...(fixesByBuild[String(selectedBuildInfo.buildid)] || [])].filter(Boolean).join(" · ")
+    : "";
+
+  // Status row: "Build N · Latest" / "Build N · Frozen" (+ date · label when
+  // we pinned it), or "Frozen on the installed version" when the pin carries
+  // no build number (an old pin, a LuaTools fix without one).
+  const versionRow = (() => {
+    if (isPinned) {
+      const bid = pinVersion?.buildid;
+      if (!bid) return { value: t("versionFrozenUnknown"), desc: "" };
+      const bits = [pinVersion?.date ? fmtBuildDate(pinVersion.date) : "", pinVersion?.label || ""].filter(Boolean);
+      return { value: `${t("versionBuild", bid)} · ${t("versionFrozen")}`, desc: bits.join(" · ") };
+    }
+    if (acfBuildid) return { value: `${t("versionBuild", acfBuildid)} · ${t("versionLatest")}`, desc: "" };
+    return null;
+  })();
 
   const handleToggleGoldberg = async () => {
     if (!installPath) {
@@ -912,6 +1032,13 @@ export function GameDetail({ appid }: GameDetailProps) {
             )}
           </Field>
         </PanelSectionRow>
+        {hasLua && installPath && versionRow && (
+          <PanelSectionRow>
+            <Field label={t("version")} description={versionRow.desc || undefined}>
+              <span>{versionRow.value}</span>
+            </Field>
+          </PanelSectionRow>
+        )}
       </PanelSection>
         </>
       ),
@@ -965,6 +1092,52 @@ export function GameDetail({ appid }: GameDetailProps) {
                 />
               </PanelSectionRow>
             ) : null}
+            {/* Version picker: SteamDB's public builds for the game (read through
+                Steam's own browser — Cloudflare), one native dropdown; the
+                selected build's studio label and LuaTools fix tags ride as the
+                description. Install = pin + freeze + flag the .acf; the user
+                restarts Steam (toast), never us. backend/game_versions.py. */}
+            {hasLua && installPath && !versionList && versionsState !== "needsUser" && (
+              <ActionButton
+                label={versionsState === "loading" ? t("readingSteamdb") : t("changeVersion")}
+                onClick={handleLoadVersions}
+                disabled={versionsState === "loading"}
+                description={versionsState === "error" ? versionsError : undefined}
+              />
+            )}
+            {hasLua && installPath && versionsState === "needsUser" && (
+              <>
+                <PanelSectionRow>
+                  <Field
+                    icon={<FaExclamationTriangle color="#ff8c00" />}
+                    label={t("steamdbNeedsCheck")}
+                    description={t("steamdbNeedsCheckDesc")}
+                  />
+                </PanelSectionRow>
+                <ActionButton label={t("openSteamdb")} onClick={handleOpenSteamdb} />
+                <ActionButton label={t("changeVersion")} onClick={handleLoadVersions} />
+              </>
+            )}
+            {hasLua && installPath && versionList && versionsState !== "needsUser" && (
+              <>
+                <PanelSectionRow>
+                  <DropdownItem
+                    label={t("version")}
+                    description={selectedBuildDesc || undefined}
+                    rgOptions={versionList.map((b: any) => ({ data: b.buildid, label: buildOptionLabel(b) }))}
+                    selectedOption={selectedBuild}
+                    onChange={(o: any) => setSelectedBuild(o.data)}
+                  />
+                </PanelSectionRow>
+                <ActionButton
+                  label={busy === "version"
+                    ? t("installingBuild", selectedBuild || 0)
+                    : t("installBuild", selectedBuild || 0)}
+                  onClick={handleInstallVersion}
+                  disabled={!selectedBuild || busy === "version" || !!selectedBuildInfo?.installed}
+                />
+              </>
+            )}
             {/* Stuck update → one native actionable row (warning icon + Fix
                 Update). No "open game" button: we're already in GameDetail. */}
             {isStuck && (

@@ -246,6 +246,11 @@ async def get_pin_status(appid: int) -> dict:
             "pinned": bool(info.get("frozen")) and info.get("reason") != pins.FREEZE_REASON_PROVIDERS,
             "depots": depots,
             "fixId": info.get("fix_id"),
+            # For the Status row: the build the game is on. `version` is what
+            # we pinned it to (buildid/date/label, may be partly None);
+            # `installedBuildid` is the .acf's, only trustworthy unpinned.
+            "version": pins.version_info(int(appid)),
+            "installedBuildid": pins.installed_buildid(int(appid)),
         }
     except Exception as exc:
         return {"success": False, "error": f"status failed: {exc}", "pinned": False}

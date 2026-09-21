@@ -143,6 +143,17 @@ export const unpinGame = async (appid: number) =>
 export const getPinStatus = async (appid: number) =>
   parseResult(await call<[number], string>("get_pin_status", appid));
 
+// Game versions (backend/game_versions.py). listGameVersions →
+//   { success, builds: [{buildid, date, label, installed}], installedBuild, frozen }
+//   or { success: false, error, needsUser?, challengeUrl? } when SteamDB wants
+//   the user to pass a Cloudflare check once (open challengeUrl visibly).
+// installGameVersion pins the build's gids, freezes the game and flags the
+// .acf; the user restarts Steam → { success, buildid, pinned, unconfirmed, needsRestart }.
+export const listGameVersions = async (appid: number) =>
+  parseResult(await call<[number], string>("list_game_versions", appid));
+export const installGameVersion = async (appid: number, buildid: number) =>
+  parseResult(await call<[number, number], string>("install_game_version", appid, buildid));
+
 // Downloads
 export const startDownload = async (appid: number, targetLibraryPath: string = "") =>
   parseResult(await call<[number, string], string>("start_download", appid, targetLibraryPath));

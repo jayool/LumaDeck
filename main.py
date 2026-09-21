@@ -390,6 +390,15 @@ class Plugin:
         from downloads import get_pin_status
         return _j(await get_pin_status(appid))
 
+    # ---- Game versions (SteamDB builds -> pinned gids; backend/game_versions.py) ----
+    async def list_game_versions(self, appid: int) -> str:
+        from game_versions import list_versions
+        return _j(await list_versions(int(appid)))
+
+    async def install_game_version(self, appid: int, buildid: int) -> str:
+        from game_versions import install_version
+        return _j(await install_version(int(appid), int(buildid)))
+
     # ==========================================================================
     # Downloads
     # ==========================================================================
