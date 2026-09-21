@@ -291,6 +291,11 @@ class Reader:
                 self.view_state["settled"] = self._view.wait_settled(settle_js, 15.0)
             f.status, f.text = 200, self._view.html()
             f.outcome = classify(f.status, f.text)
+            if settle_js and f.outcome == "ok" and not self.view_state.get("settled"):
+                # The list never filled: report it as empty and never cache
+                # it (an empty shell cached for an hour hid every retry).
+                f.outcome = "empty"
+                f.error = f"list did not fill (prepare={self.view_state.get('prepared')!r})"
             if f.outcome == "challenge":
                 f.outcome = "needs_user"
                 self.challenge_url = BASE + path

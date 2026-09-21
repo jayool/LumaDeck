@@ -96,9 +96,13 @@ async def list_versions(appid: int) -> dict:
         if reader.needs_user:
             return _needs_user(reader)
         if not page.ok:
-            return {"success": False, "error": f"steamdb: {page.outcome} {page.error}".strip()}
+            logger.info(f"Versions: {appid}: builds page {page.outcome} {page.error} view={reader.view_state}")
+            return {"success": False, "error": "no_builds" if page.outcome == "empty"
+                    else f"steamdb: {page.outcome} {page.error}".strip()}
         builds = versions.parse_builds_page(page.text)
         if not builds:
+            logger.info(f"Versions: {appid}: builds page read ({len(page.text)} chars, {page.transport}) "
+                        f"but no rows parsed; view={reader.view_state}")
             return {"success": False, "error": "no_builds"}
         history = await _histories(reader, depots)
         if reader.needs_user:

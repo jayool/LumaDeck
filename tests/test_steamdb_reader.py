@@ -117,6 +117,9 @@ class FakeView:
         self._current = payload if state == "ready" else ""
         return {"state": state, "title": payload if state == "challenge" else "SteamDB", "href": url}
 
+    def wait_settled(self, count_js, wait_s=15.0):
+        return 1
+
     def html(self):
         return self._current or ""
 
@@ -238,6 +241,20 @@ class ReadOrder(unittest.TestCase):
         run(r.get(sr.depot_path(2379781), sr.TTL_DEPOT))  # cache now, but direct must be blocked anyway
         self.assertGreater(sr._direct_blocked_until, self.t)
         self.assertEqual(len(self.direct_calls), 1)
+        run(r.close())
+
+    def test_list_that_never_fills_is_empty_and_not_cached(self):
+        class Shell(FakeView):
+            def wait_settled(self, count_js, wait_s=15.0):
+                return 0
+        path = "/app/2215260/patchnotes/"
+        view = Shell({path: ("ready", "<html><tbody id='js-builds'></tbody></html>")})
+        r = sr.Reader(2215260, cache_dir=self.dir, use_direct=False,
+                      view_factory=lambda appid: view, now=self.now)
+        f = run(r.get(path, sr.TTL_FEED, "document.querySelectorAll('#js-builds tr').length", "(1)"))
+        self.assertEqual((f.outcome, f.transport), ("empty", "browser"))
+        self.assertIn("did not fill", f.error)
+        self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
         run(r.close())
 
     def test_page_timeout_is_an_error_not_cached(self):
