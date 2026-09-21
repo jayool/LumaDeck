@@ -1123,6 +1123,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 <PanelSectionRow>
                   <DropdownItem
                     label={t("version")}
+                    layout="below"
                     description={selectedBuildDesc || undefined}
                     rgOptions={versionList.map((b: any) => ({ data: b.buildid, label: buildOptionLabel(b) }))}
                     selectedOption={selectedBuild}

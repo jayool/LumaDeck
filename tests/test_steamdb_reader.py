@@ -235,101 +235,25 @@ class ReadOrder(unittest.TestCase):
         run(r.close())
         self.assertEqual(view.closed, 1)
 
-    def test_bare_403_on_direct_backs_off_too(self):
+    def test_pages_are_never_requested_directly(self):
+        # Cloudflare refuses every page to a plain client: only the feed is
+        # worth a direct request; a page goes straight to the hidden view.
         path = sr.depot_path(2379781)
         view = FakeView({path: ("ready", "<html><table></table></html>")})
+        r = self.reader(self.direct(200, "<html>would have worked</html>"), view)
+        f = run(r.get(path, sr.TTL_DEPOT))
+        self.assertEqual((f.outcome, f.transport), ("ok", "browser"))
+        self.assertEqual(self.direct_calls, [])
+        run(r.close())
+
+    def test_bare_403_on_the_feed_backs_off_direct(self):
+        path = sr.feed_path(2379780)
+        view = FakeView({path: (200, RSS)})
         r = self.reader(self.direct(403, ""), view)
-        run(r.get(path, sr.TTL_DEPOT))
-        run(r.get(sr.depot_path(2379781), sr.TTL_DEPOT))  # cache now, but direct must be blocked anyway
+        f = run(r.get(path, sr.TTL_FEED))
+        self.assertEqual((f.outcome, f.transport), ("ok", "browser"))
         self.assertGreater(sr._direct_blocked_until, self.t)
         self.assertEqual(len(self.direct_calls), 1)
-        run(r.close())
-
-    def test_list_that_never_fills_is_empty_and_not_cached(self):
-        class Shell(FakeView):
-            def wait_settled(self, count_js, wait_s=15.0):
-                return 0
-        path = "/app/2215260/patchnotes/"
-        view = Shell({path: ("ready", "<html><tbody id='js-builds'></tbody></html>")})
-        import cef_cdp
-        keep, keep_sleep = cef_cdp.evaluate, sr.LIST_RETRY_SLEEP_S
-        cef_cdp.evaluate = lambda ws, js, **k: "ok"
-        sr.LIST_RETRY_SLEEP_S = 0.0
-        try:
-            r = sr.Reader(2215260, cache_dir=self.dir, use_direct=False,
-                          view_factory=lambda appid: view, now=self.now)
-            f = run(r.get(path, sr.TTL_FEED, "document.querySelectorAll('#js-builds tr').length", "(1)"))
-            self.assertEqual((f.outcome, f.transport), ("empty", "browser"))
-            self.assertIn("did not fill", f.error)
-            self.assertEqual(r.view_state.get("attempts"), [0, 0])   # load + the one re-request
-            self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
-            run(r.close())
-        finally:
-            cef_cdp.evaluate, sr.LIST_RETRY_SLEEP_S = keep, keep_sleep
-
-    def test_validate_turns_a_200_into_empty_and_caches_nothing(self):
-        path = "/depot/1/manifests/"
-        view = FakeView({path: ("ready", "<html><body>Access denied</body></html>")})
-        r = sr.Reader(256290, cache_dir=self.dir, use_direct=False,
-                      view_factory=lambda appid: view, now=self.now)
-        f = run(r.get(path, sr.TTL_FEED, validate=lambda t: "js-builds" in t))
-        self.assertEqual(f.outcome, "empty")
-        self.assertIn("Access denied", f.error)
-        self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
-        run(r.close())
-
-    def test_builds_page_re_requests_the_list_until_it_fills(self):
-        rows = ('<tbody id="js-builds"><tr data-date="1740421318"><td><a href="/patchnotes/17459173/">x</a></td>'
-                '<td>Mon</td><td>18:21</td><td>t</td><td></td><td></td><td>17459173</td></tr></tbody>')
-
-        class LateView(FakeView):
-            """The list is empty on load and fills after the one re-request."""
-            def __init__(self, *a, **k):
-                super().__init__(*a, **k)
-                self.clicks = 0
-                self.polls = 0
-
-            def wait_settled(self, count_js, wait_s=15.0):
-                self.polls += 1
-                return 1 if self.clicks >= 1 else 0
-
-        page = sr.patchnotes_path(1)
-        view = LateView({page: ("ready", "<html>" + rows + "</html>")})
-        real_eval = sr.cef_cdp.evaluate if hasattr(sr, "cef_cdp") else None
-        import cef_cdp
-        keep = cef_cdp.evaluate
-        cef_cdp.evaluate = lambda ws, js, **k: (setattr(view, "clicks", view.clicks + 1), "ok")[1]
-        keep_sleep = sr.LIST_RETRY_SLEEP_S
-        sr.LIST_RETRY_SLEEP_S = 0.0
-        try:
-            r = sr.Reader(1, cache_dir=self.dir, use_direct=False, view_factory=lambda appid: view, now=self.now)
-            f = run(r.builds_page())
-            self.assertEqual((f.outcome, f.path), ("ok", page))
-            self.assertEqual(r.view_state.get("attempts"), [0, 1])
-            self.assertEqual(view.clicks, 1)
-            run(r.close())
-        finally:
-            cef_cdp.evaluate = keep
-            sr.LIST_RETRY_SLEEP_S = keep_sleep
-        del real_eval
-
-    def test_view_opens_straight_on_the_page_and_does_not_load_it_twice(self):
-        class Tracking(FakeView):
-            current_url = None
-
-            def open(self, url, wait_s=8.0):
-                self.current_url = url
-                state, payload = self.answers[url[len(sr.BASE):]]
-                self._current = payload if state == "ready" else ""
-                return super().open(url, wait_s)
-        path = sr.depot_path(2379781)
-        view = Tracking({path: ("ready", "<html><table><tr></tr></table></html>")})
-        r = sr.Reader(2379780, cache_dir=self.dir, use_direct=False,
-                      view_factory=lambda appid: view, now=self.now)
-        f = run(r.get(path, sr.TTL_DEPOT))
-        self.assertEqual(f.outcome, "ok")
-        self.assertEqual(view.opened, [sr.BASE + path])   # not the app page
-        self.assertEqual(view.navigated, [])               # and no second navigation
         run(r.close())
 
     def test_page_timeout_is_an_error_not_cached(self):

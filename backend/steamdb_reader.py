@@ -7,9 +7,9 @@ CEF browser is a real browser, so it passes. Reading order, per URL:
   1. cache   — ~/.cache/lumadeck/steamdb/, one file per path, with a TTL
                (feed 1 h, depot history 6 h, build page 24 h: a build's
                depot list never changes).
-  2. direct  — one HTTP GET from the backend. Kept only so a probe can show
-               whether it works; after one challenge it is skipped for an
-               hour instead of costing every read a round trip.
+  2. direct  — one HTTP GET from the backend, for the feed only: Cloudflare
+               serves the RSS to a plain client (measured) and refuses every
+               page. After a refusal it is skipped for an hour.
   3. browser — an off-screen BrowserView (cef_cdp.HiddenView) is created
                through SharedJSContext and NAVIGATED to the page; the HTML
                is read from the loaded document. A real navigation is the
@@ -106,66 +106,6 @@ BUILDS_SETTLE_JS = "document.querySelectorAll('#js-builds tr').length"
 LIST_RETRIES = 1          # re-requests of an empty list (tab clicks)
 LIST_RETRY_SLEEP_S = 3.0  # pause before each, for Cloudflare's cookie
 LIST_WAIT_S = 6.0         # settle wait per attempt
-
-# The section request the page makes, once more, with the answer's
-# Cloudflare headers: cf-cache-status (HIT = served from the edge cache
-# without reaching SteamDB), cf-mitigated (Cloudflare itself refused),
-# server, and the head of the body.
-_SECTION_PROBE_JS = """(function(appid){
-  var u='/api/RenderAppSection/?section=patchnotes&appid='+appid;
-  return fetch(u,{headers:{Accept:'text/html','X-Requested-With':'XMLHttpRequest'}}).then(function(r){
-    return r.text().then(function(t){return JSON.stringify({status:r.status,
-      cache:r.headers.get('cf-cache-status'),mitigated:r.headers.get('cf-mitigated'),server:r.headers.get('server'),
-      ray:r.headers.get('cf-ray'),type:r.headers.get('content-type'),chars:t.length,head:t.slice(0,300)});});
-  }).catch(function(e){return JSON.stringify({error:String(e)});});
-})(%d)"""
-
-
-def section_probe(view, appid: int) -> str:
-    import cef_cdp
-    try:
-        return cef_cdp.evaluate(view.ws, _SECTION_PROBE_JS % int(appid), timeout=20, await_promise=True)
-    except Exception as exc:
-        return f"probe failed: {exc}"
-
-
-# When the table does not fill: what the page looks like, for the log.
-_UNFILLED_SNAPSHOT_JS = """(function(){try{
-  var q=function(s){return document.querySelector(s);};
-  var nav=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||{};
-  var pn=q('#js-patchnotes')||q('#patchnotes');
-  var tb=q('#js-builds');
-  var tab=q('a.tabnav-tab[href$="/patchnotes/"]');
-  return JSON.stringify({href:location.href,rs:document.readyState,size:document.documentElement.outerHTML.length,
-    navType:nav.type||'',cookies:document.cookie.split(';').map(function(c){return c.split('=')[0].trim();}),
-    tab:tab?(tab.className+' '+(tab.getAttribute('aria-selected')||'')):null,
-    paneActive:pn?(pn.closest('.tab-pane')||{}).className:null,
-    tbody:tb?tb.outerHTML.slice(0,400):null,
-    paneText:pn?pn.textContent.replace(/\\s+/g,' ').slice(0,600):null,
-    loaders:[].slice.call(document.querySelectorAll('.loader')).length,
-    });
-}catch(e){return JSON.stringify({err:String(e)});}})()"""
-
-
-def steamdb_cookies() -> list:
-    """SteamDB's cookies in Steam's browser (names, expiry, flags; never the
-    values), straight from CEF's live jar — HttpOnly ones included, which
-    document.cookie never shows. Which Cloudflare cookie exists, and for how
-    long, decides whether /api/ answers 200 or 403."""
-    import cef_cdp
-    out = []
-    for c in cef_cdp.get_cookies() or []:
-        if "steamdb.info" not in str(c.get("domain", "")):
-            continue
-        exp = c.get("expires")
-        out.append({
-            "name": c.get("name"), "domain": c.get("domain"), "path": c.get("path"),
-            "httpOnly": c.get("httpOnly"), "secure": c.get("secure"),
-            "expires": time.strftime("%H:%M:%S", time.gmtime(exp)) if isinstance(exp, (int, float)) and exp > 0 else "session",
-            "minutes_left": int((exp - time.time()) / 60) if isinstance(exp, (int, float)) and exp > 0 else None,
-        })
-    return out
-
 
 def classify(status: int, text: str) -> str:
     """ok | challenge | http_error | empty — what an answer really is."""
@@ -384,16 +324,7 @@ class Reader:
                 # The list never filled: report it as empty and never cache
                 # it (an empty shell cached for an hour hid every retry).
                 f.outcome = "empty"
-                f.error = f"list did not fill (prepare={self.view_state.get('prepared')!r})"
-                try:
-                    import cef_cdp
-                    snap = cef_cdp.evaluate(self._view.ws, _UNFILLED_SNAPSHOT_JS, timeout=5, await_promise=False)
-                except Exception as exc:
-                    snap = f"snapshot failed: {exc}"
-                self.view_state["snapshot"] = snap
-                logger.info(f"SteamDB {path}: list did not fill after {self.view_state.get('attempts')}; {snap}")
-                self.view_state["section"] = section_probe(self._view, self.appid)
-                logger.info(f"SteamDB section request for {self.appid}: {self.view_state['section']}")
+                f.error = f"list did not fill after {self.view_state.get('attempts')} (prepare={self.view_state.get('prepared')!r})"
         elif state == "challenge":
             f.outcome, f.status = "needs_user", 403
             f.error = str(st.get("title") or "")
@@ -444,7 +375,9 @@ class Reader:
         error page served with 200, or a fragment without the rows — never
         cached."""
         f = self._from_cache(path, ttl)
-        if f is None and not (settle_js or prepare_js) and self._use_direct and self._now() >= _direct_blocked_until:
+        # Only the feed is worth a direct request: Cloudflare serves the RSS
+        # to a plain client and refuses every page (403, empty body).
+        if f is None and path.startswith("/api/PatchnotesRSS/") and self._use_direct and self._now() >= _direct_blocked_until:
             f = await self._via_direct(path)
             if not f.ok:
                 self.fetches.append(f)
@@ -504,7 +437,6 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
                  "depots": {}, "sample": None, "needs_user": False, "notes": []}
     reader = Reader(appid)
     try:
-        out["cookies_before"] = steamdb_cookies()
         feed = await reader.get(feed_path(appid), TTL_FEED)
         builds = versions.parse_builds_feed(feed.text) if feed.ok else []
         out["builds"] = len(builds)
@@ -550,37 +482,6 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
                 "confirmed": len(versions.pins_from(res)), "of": len(depots),
             }
 
-        # The full builds table (all of them, all branches), classified by
-        # branch against the depot rows: public / other / unknown (no row at
-        # the build's time — the depot did not change, or it is off the
-        # visible history).
-        page = await reader.builds_page()
-        if reader._view is not None:
-            loop = asyncio.get_running_loop()
-            out["section_request"] = await loop.run_in_executor(None, section_probe, reader._view, appid)
-            logger.info(f"SteamDB section request for {appid}: {out['section_request']}")
-        if page.ok:
-            all_builds = versions.parse_builds_page(page.text)
-            rows_all = [r for rows in history.values() for r in rows]
-            by_branch: Dict[str, int] = {}
-            for b in all_builds:
-                br = versions.build_branch(b.time, rows_all) or "unknown"
-                by_branch[br] = by_branch.get(br, 0) + 1
-            feed_ids = {b.buildid for b in builds}
-            out["builds_page"] = {
-                "settled": reader.view_state.get("settled"), "prepared": reader.view_state.get("prepared"),
-                "builds": len(all_builds), "with_label": sum(1 for b in all_builds if b.label),
-                "newest": {"buildid": all_builds[0].buildid, "date": all_builds[0].time.isoformat(), "label": all_builds[0].label} if all_builds else None,
-                "oldest": {"buildid": all_builds[-1].buildid, "date": all_builds[-1].time.isoformat(), "label": all_builds[-1].label} if all_builds else None,
-                "in_feed": sum(1 for b in all_builds if b.buildid in feed_ids),
-                "by_branch": by_branch,
-                "first_rows": [{"buildid": b.buildid, "date": b.time.isoformat(), "title": b.title, "label": b.label} for b in all_builds[:4]],
-            }
-            if not all_builds:
-                j = page.text.find('id="js-builds"')
-                out["builds_page"]["snippet"] = page.text[j:j + 1500] if j >= 0 else "(no js-builds tbody)"
-        else:
-            out["builds_page"] = {"outcome": page.outcome, "error": page.error}
     except Exception as exc:
         out["success"] = False
         out["error"] = f"{type(exc).__name__}: {exc}"
@@ -589,7 +490,6 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
         await reader.close()
     out["fetches"] = [f.summary() for f in reader.fetches]
     out["view"] = reader.view_state
-    out["cookies_after"] = steamdb_cookies()
     out["challenge_url"] = reader.challenge_url
     out["needs_user"] = reader.needs_user
     out["elapsed_ms"] = int((time.monotonic() - t0) * 1000)

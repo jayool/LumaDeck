@@ -1,9 +1,9 @@
 """Game versions for the UI: list the builds a game can be set to, and set one.
 
-list_versions(appid): every public-branch build SteamDB knows for the app
-(its builds table — see versions.parse_builds_page — read through
-steamdb_reader; the feed's last 10 when the table is refused), newest
-first, with date and the studio's label, and which one is installed.
+list_versions(appid): the last 10 public-branch builds SteamDB lists for
+the app (its RSS feed, see versions.parse_builds_feed, fetched by the
+backend through steamdb_reader), newest first, with date and the studio's
+label, and which one is installed.
 
 install_version(appid, buildid): the build's page gives the gid of every
 depot it changed; depots it did not change get the newest public row before
@@ -76,20 +76,15 @@ async def _histories(reader, depots: List[int]) -> Dict[int, List[ManifestRow]]:
 
 
 async def _all_builds(reader):
-    """(builds, source). The app's full builds table when SteamDB serves it;
-    the feed's last 10 public builds when it does not (the table's request,
-    /api/RenderAppSection/, is refused by Cloudflare for this client at
-    times — for hours on 2026-09-21 — while the feed and the pages still
-    answer). Both newest first."""
+    """(builds, source): the feed's last 10 public builds, newest first,
+    with build id, date and the studio's label. Fetched by the backend
+    directly (Cloudflare serves the RSS to a plain client — measured; the
+    depot and build PAGES it does not), the hidden view only as fallback.
+    The full builds table and the depot histories exist in steamdb_reader /
+    versions and stay unused here: they cost page loads and API calls that
+    Cloudflare rate-limits per IP (2026-09-21), for builds older than 10
+    that nobody has asked for yet."""
     from steamdb_reader import TTL_FEED, feed_path
-    page = await reader.builds_page()
-    if page.ok:
-        builds = versions.parse_builds_page(page.text)
-        if builds:
-            return builds, "table"
-    if reader.needs_user:
-        return [], "none"
-    logger.info(f"Versions: {reader.appid}: builds table {page.outcome} {page.error}; using the feed")
     feed = await reader.get(feed_path(reader.appid), TTL_FEED)
     if feed.ok:
         return versions.parse_builds_feed(feed.text), "feed"
@@ -118,9 +113,8 @@ async def list_versions(appid: int) -> dict:
             return _needs_user(reader)
         if not builds:
             return {"success": False, "error": "no_builds"}
-        # No depot histories here: both sources list public builds only
-        # (SteamDB's own JS asks all=true for its "view all" link, we never
-        # do) and every request counts against Cloudflare's rate limit.
+        # No depot histories here: the feed lists public builds only, and
+        # every page load counts against Cloudflare's per-IP rate limit.
         cur = current_build(appid)
         out = {
             "success": True,
