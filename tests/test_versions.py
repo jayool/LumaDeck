@@ -150,5 +150,38 @@ class Join(unittest.TestCase):
         self.assertIsNone(V.build_branch(_t("2026-06-01T00:00:00"), self.rows))
 
 
+class Rfc2822AndEntities(unittest.TestCase):
+    """versions.py must not import xml/email/html: Decky's bundled Python
+    lacks them (probe failed with "No module named 'xml.etree'")."""
+
+    def test_no_forbidden_imports(self):
+        import versions as v
+        src = open(v.__file__, encoding="utf-8").read()
+        for mod in ("xml", "email", "html"):
+            self.assertNotRegex(src, rf"^\s*(import|from)\s+{mod}\b", msg=mod)
+
+    def test_pubdate_variants(self):
+        from datetime import datetime, timezone
+        import versions as v
+        want = datetime(2026, 9, 8, 12, 53, 52, tzinfo=timezone.utc)
+        self.assertEqual(v.parse_rfc2822("Tue, 08 Sep 2026 12:53:52 +0000"), want)
+        self.assertEqual(v.parse_rfc2822("08 Sep 2026 14:53:52 +0200"), want)
+        self.assertEqual(v.parse_rfc2822("Tue, 08 Sep 2026 12:53:52 GMT"), want)
+        self.assertIsNone(v.parse_rfc2822("2026-09-08"))
+        self.assertIsNone(v.parse_rfc2822(""))
+
+    def test_entities_and_cdata(self):
+        import versions as v
+        feed = ("<rss><channel><item><title><![CDATA[Game update & more]]></title>"
+                "<link>https://steamdb.info/patchnotes/5/</link>"
+                "<description>V 1.0 &amp; &quot;hotfix&quot; &#x27;x&#39; (SteamDB Build 5)</description>"
+                "<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate></item></channel></rss>")
+        b = v.parse_builds_feed(feed)
+        self.assertEqual(len(b), 1)
+        self.assertEqual(b[0].title, "Game update & more")
+        self.assertEqual(b[0].label, "V 1.0 & \"hotfix\" 'x'")
+        self.assertEqual(v.parse_builds_feed("not xml"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -29,14 +29,11 @@ second (the 10th was cut from the capture).
 
 from __future__ import annotations
 
-import html as _html
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional
-from xml.etree import ElementTree as ET
 
 # A build's publish time and its depot rows differ by ~1 s in the captures.
 MATCH_WINDOW_S = 3.0
@@ -46,6 +43,19 @@ _BUILD_LINK_RE = re.compile(r"/patchnotes/(\d+)/?")
 _BUILD_TITLE_RE = re.compile(r"\bBuild\s+#?(\d+)", re.IGNORECASE)
 _DESC_SUFFIX_RE = re.compile(r"\s*\(SteamDB Build \d+\)\s*$")
 _GID_RE = re.compile(r"^\d{1,20}$")
+# The feed is read with regexes, not xml.etree, and dates/entities are decoded
+# here, not with email.utils / html: Decky's bundled Python only carries the
+# modules the loader itself pulls in ("No module named 'xml.etree'" on the
+# Deck, 2026-09-21), so this module imports nothing beyond re/json/datetime.
+_ITEM_RE = re.compile(r"<item\b[^>]*>(.*?)</item>", re.DOTALL | re.IGNORECASE)
+_CDATA_RE = re.compile(r"^\s*<!\[CDATA\[(.*?)\]\]>\s*$", re.DOTALL)
+_ENTITY_RE = re.compile(r"&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos|nbsp);")
+_ENTITIES = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'", "nbsp": "\xa0"}
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+_RFC2822_RE = re.compile(
+    r"(?:[A-Za-z]{3},\s*)?(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?"
+    r"\s*(?:([+-])(\d{2})(\d{2})|UT|UTC|GMT|Z)?\s*$")
 _TR_RE = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.DOTALL)
 _ROW_TIME_RE = re.compile(r'data-time="([^"]+)"')
 _ROW_GID_RE = re.compile(r"/depot/(\d+)/history/\?changeid=M:(\d+)")
@@ -100,31 +110,75 @@ def _utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def _unescape(text: str) -> str:
+    def rep(m):
+        e = m.group(1)
+        if e.startswith("#x"):
+            code = int(e[2:], 16)
+        elif e.startswith("#"):
+            code = int(e[1:])
+        else:
+            return _ENTITIES[e]
+        try:
+            return chr(code)
+        except (ValueError, OverflowError):
+            return m.group(0)
+    return _ENTITY_RE.sub(rep, text)
+
+
+def parse_rfc2822(text: str) -> Optional[datetime]:
+    """RSS <pubDate> ("Tue, 08 Sep 2026 12:53:52 +0000") -> aware UTC
+    datetime, or None when it does not parse."""
+    m = _RFC2822_RE.match((text or "").strip())
+    if not m:
+        return None
+    day, mon, year, hh, mm, ss, sign, oh, om = m.groups()
+    month = _MONTHS.get(mon.lower())
+    if not month:
+        return None
+    try:
+        dt = datetime(int(year), month, int(day), int(hh), int(mm), int(ss or 0), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    if sign:
+        off = timedelta(hours=int(oh), minutes=int(om))
+        dt = dt - off if sign == "+" else dt + off
+    return dt
+
+
+def _tag_text(block: str, tag: str) -> str:
+    """Text of the first <tag>…</tag> in `block`, CDATA unwrapped and XML
+    entities decoded; "" when absent."""
+    m = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", block, re.DOTALL | re.IGNORECASE)
+    if not m:
+        return ""
+    raw = m.group(1)
+    c = _CDATA_RE.match(raw)
+    if c:
+        return c.group(1).strip()
+    return _unescape(raw).strip()
+
+
 def parse_builds_feed(xml_text: str) -> List[Build]:
     """The PatchnotesRSS feed -> builds, newest first (feed order kept).
 
     Tolerant: an <item> without a build id or a parseable date is skipped,
     never invented. Duplicated build ids keep the first occurrence."""
-    try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError:
-        return []
     out: List[Build] = []
     seen = set()
-    for item in root.iter("item"):
-        link = (item.findtext("link") or "").strip()
-        title = _html.unescape((item.findtext("title") or "").strip())
-        desc = _html.unescape((item.findtext("description") or "").strip())
+    for m_item in _ITEM_RE.finditer(xml_text or ""):
+        item = m_item.group(1)
+        link = _tag_text(item, "link")
+        title = _tag_text(item, "title")
+        desc = _tag_text(item, "description")
         m = _BUILD_LINK_RE.search(link) or _BUILD_TITLE_RE.search(title) or _BUILD_TITLE_RE.search(desc)
         if not m:
             continue
         buildid = int(m.group(1))
         if buildid in seen:
             continue
-        pub = (item.findtext("pubDate") or "").strip()
-        try:
-            when = _utc(parsedate_to_datetime(pub))
-        except (TypeError, ValueError, IndexError):
+        when = parse_rfc2822(_tag_text(item, "pubDate"))
+        if when is None:
             continue
         label = _DESC_SUFFIX_RE.sub("", desc).strip()
         if not label or _BUILD_TITLE_RE.fullmatch(label.replace("SteamDB ", "")):
