@@ -83,6 +83,10 @@ def app_url(appid: int) -> str:
     return f"{BASE}/app/{int(appid)}/"
 
 
+def patchnotes_path(appid: int) -> str:
+    return f"/app/{int(appid)}/patchnotes/"
+
+
 def classify(status: int, text: str) -> str:
     """ok | challenge | http_error | empty — what an answer really is."""
     head = (text or "")[:40000]
@@ -391,6 +395,34 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
                                 for d, r in res.items()},
                 "confirmed": len(versions.pins_from(res)), "of": len(depots),
             }
+
+        # Measurement: does the app's patchnotes PAGE list more builds than the
+        # feed's 10? Count its build links, the dates next to them, and any
+        # sign of paging / lazy loading.
+        page = await reader.get(patchnotes_path(appid), TTL_FEED)
+        if page.ok:
+            html = page.text
+            ids = []
+            for m in re.finditer(r'href="/patchnotes/(\d+)/?"', html):
+                if m.group(1) not in ids:
+                    ids.append(m.group(1))
+            times = re.findall(r'(?:data-time|datetime)="([^"]+)"', html)
+            branches = re.findall(r'<code class="js-branch">([^<]*)</code>', html)
+            hints = [h for h in ("js-load-more", "load-more", "page=", "Load more", "Show more",
+                                 "data-page", "infinite", "rel=\"next\"") if h in html]
+            first = html.find('href="/patchnotes/')
+            row_start = html.rfind("<tr", 0, first) if first > 0 else -1
+            snippet = html[row_start:row_start + 700] if row_start >= 0 else html[max(0, first - 200):first + 500]
+            out["patchnotes_page"] = {
+                "bytes": len(html), "build_links": len(ids),
+                "newest_id": ids[0] if ids else None, "oldest_id": ids[-1] if ids else None,
+                "times": len(times), "first_time": times[0] if times else None, "last_time": times[-1] if times else None,
+                "branch_tags": len(branches), "paging_hints": hints,
+                "in_feed": sum(1 for b in builds if str(b.buildid) in ids),
+                "row_snippet": snippet,
+            }
+        else:
+            out["patchnotes_page"] = {"outcome": page.outcome, "error": page.error}
     except Exception as exc:
         out["success"] = False
         out["error"] = f"{type(exc).__name__}: {exc}"
