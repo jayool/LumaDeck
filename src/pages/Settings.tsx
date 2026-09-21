@@ -1364,6 +1364,11 @@ export function Settings() {
               {devChallengeUrl ? `Abrir ${devChallengeUrl.replace("https://steamdb.info", "")} en SteamDB` : "Abrir SteamDB (si pide el reto de Cloudflare)"}
             </ButtonItem>
           </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => Navigation.NavigateToExternalWeb("https://steamdb.info/login/")}>
+              Entrar en SteamDB con Steam (login)
+            </ButtonItem>
+          </PanelSectionRow>
           {devProbeMsg && (
             <PanelSectionRow>
               <div style={{ fontSize: "12px", color: "#c7d5e0", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
