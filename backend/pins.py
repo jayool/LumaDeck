@@ -141,15 +141,98 @@ def frozen_info(appid: int) -> dict:
 
 
 def set_frozen(appid: int, frozen: bool, fix_id: Optional[str] = None,
-               reason: Optional[str] = None) -> None:
+               reason: Optional[str] = None,
+               version: Optional[dict] = None) -> None:
+    """`version` describes the build the game is pinned to, for display only:
+    {"buildid": str|None, "date": "YYYY-MM-DD"|None, "label": str|None,
+     "gids": {depot: gid}}. The .acf's own `buildid` is NOT the source of that
+    label: Steam stamps it with Valve's current build even on a pinned older
+    one (measured 2026-09-21: Balatro on the Dec-2024 manifest still reads
+    buildid 17459173). Cleared on unfreeze."""
     data = _load_state()
     entry = data["apps"].get(str(int(appid)), {})
     entry["frozen"] = bool(frozen)
     entry["fix_id"] = fix_id if frozen else None
     entry["reason"] = reason if frozen else None
+    if frozen:
+        if version is not None:
+            entry["version"] = {
+                "buildid": (str(version.get("buildid")).strip() or None)
+                           if version.get("buildid") is not None else None,
+                "date": version.get("date") or None,
+                "label": version.get("label") or None,
+                "gids": {str(int(d)): str(int(g))
+                         for d, g in (version.get("gids") or {}).items()},
+            }
+    else:
+        entry["version"] = None
     entry["updated_at"] = int(time.time())
     data["apps"][str(int(appid))] = entry
     _save_state(data)
+
+
+def version_info(appid: int) -> Optional[dict]:
+    """The version a frozen game was pinned to (see set_frozen), or None when
+    unknown / not frozen. The gids are the ones written at pin time; if the
+    .acf's InstalledDepots no longer match them the label is stale."""
+    info = frozen_info(appid)
+    if not info.get("frozen"):
+        return None
+    v = info.get("version")
+    return dict(v) if isinstance(v, dict) else None
+
+
+# Steam's EAppState bits, as written in appmanifest_<app>.acf "StateFlags".
+_STATE_UPDATE_REQUIRED = 2
+_STATE_FULLY_INSTALLED = 4
+
+
+def mark_update_required(appid: int) -> bool:
+    """Flag the installed game as "update required" (StateFlags |= 2) in its
+    .acf so Steam re-plans its depots on the NEXT time it loads the manifest,
+    i.e. its next start.
+
+    Why this exists: Steam only re-plans a game's depots when it believes
+    something is pending. Moving the pin in SLSsteam's ManifestIds tells
+    SLSsteam, not Steam; Steam's own check (installed buildid == Valve's) says
+    "up to date" and it never asks. Verified 2026-09-21 on a Codespace: pin to
+    an older gid + Steam restart -> nothing; pin + "verify files" -> nothing
+    (validation compares against the manifest already installed); pin +
+    StateFlags 4->6 + restart -> Steam re-plans, SLSsteam substitutes the gid,
+    lumalinux's GMRC hook fetches the request code, Steam downloads the old
+    build (7 chunks, .acf manifest = the pinned gid).
+
+    Only the StateFlags value changes; nothing else in the .acf is touched and
+    the buildid is never written (writing an old one is the same trigger with
+    no way to clear it). Steam keeps its own in-memory copy while running, so
+    the edit takes effect at its next start — the caller reports needsRestart.
+    Returns True when the flag is set (or already was), False when there is no
+    .acf or no StateFlags line to edit."""
+    path = find_acf(appid)
+    if not path:
+        return False
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            txt = f.read()
+    except Exception as exc:
+        logger.warning(f"LumaDeck: mark_update_required {appid}: cannot read .acf: {exc}")
+        return False
+    m = re.search(r'("StateFlags"\s+")(\d+)(")', txt)
+    if not m:
+        return False
+    flags = int(m.group(2))
+    if flags & _STATE_UPDATE_REQUIRED:
+        return True
+    new_flags = flags | _STATE_UPDATE_REQUIRED
+    new_txt = txt[:m.start(2)] + str(new_flags) + txt[m.end(2):]
+    try:
+        from manifests import _write_atomic
+        _write_atomic(path, new_txt.encode("utf-8"))
+    except Exception as exc:
+        logger.warning(f"LumaDeck: mark_update_required {appid}: cannot write .acf: {exc}")
+        return False
+    logger.info(f"LumaDeck: {appid} StateFlags {flags} -> {new_flags} (update required on next Steam start)")
+    return True
 
 
 def frozen_by_providers(appid: int) -> bool:

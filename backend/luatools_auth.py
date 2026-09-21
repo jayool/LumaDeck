@@ -624,11 +624,21 @@ async def _install_fix_version(appid: int, fix_id: str, build_tag: str = "") -> 
 
     found, missing = await resolve_all(appid, gids, allow_hubcap=True, current_gids=current)
     if missing:
+        # No source has the file. Since lumalinux 0.21 that is no longer fatal:
+        # with a manifest request-code provider up, Steam fetches any gid's
+        # manifest from Valve's CDN itself (pin -> SLSsteam substitutes the gid
+        # -> GMRC hook gets the code; verified 2026-09-21 with a Dec-2024 gid).
+        # Only refuse when no provider is known to be up.
+        import pins as _pins
         depot = sorted(missing)[0]
         what = f"build {build_tag}" if str(build_tag).strip() else f"gid {gids[depot]}"
-        logger.info(f"LuaTools: version for {appid} fix {fix_id} not available: {missing}")
-        return {"success": False,
-                "error": f"Version not available: no source has the manifest for depot {depot} ({what})."}
+        if _pins.gmrc_state() == "up":
+            logger.info(f"LuaTools: version for {appid} fix {fix_id}: no file for depots "
+                        f"{sorted(missing)}; providers are up, Steam will fetch them")
+        else:
+            logger.info(f"LuaTools: version for {appid} fix {fix_id} not available: {missing}")
+            return {"success": False,
+                    "error": f"Version not available: no source has the manifest for depot {depot} ({what})."}
 
     # Hand steamidra a zip with the lua and the manifests it pins (sizes come
     # from the files), through the same pinned install path as a game zip.
@@ -642,8 +652,19 @@ async def _install_fix_version(appid: int, fix_id: str, build_tag: str = "") -> 
         from downloads import _process_and_install_lua
         await _process_and_install_lua(appid, zip_path, pin=True)
         import pins
-        pins.set_frozen(appid, True, str(fix_id))
-        logger.info(f"LuaTools: {appid} pinned to fix {fix_id} build ({sorted(gids.items())}) and frozen")
+        pins.set_frozen(appid, True, str(fix_id),
+                        version={"buildid": str(build_tag).strip() or None,
+                                 "label": str(build_tag).strip() or None,
+                                 "gids": gids})
+        # An already-installed game on another build: Steam believes it is up
+        # to date and would never re-plan, so flag its .acf (StateFlags |= 2).
+        # A game not installed yet has no .acf and installs the pin natively.
+        installed = pins.installed_depots(appid)
+        flagged = False
+        if installed and any(installed.get(d) != g for d, g in gids.items() if d in installed):
+            flagged = pins.mark_update_required(appid)
+        logger.info(f"LuaTools: {appid} pinned to fix {fix_id} build ({sorted(gids.items())}) "
+                    f"and frozen; update flagged={flagged}")
         return {"success": True, "needsRestart": True}
     except Exception as exc:
         logger.warning(f"LuaTools: version install failed for {appid}: {exc}")

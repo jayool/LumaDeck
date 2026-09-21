@@ -214,9 +214,14 @@ async def unpin_game(appid: int) -> dict:
     try:
         import pins
         pins.set_frozen(int(appid), False)
+        needs_restart = False
         if pins.gmrc_state() == "up":
-            await pins.unpin_game_depots(int(appid))
-        return {"success": True, "pinned": False}
+            if await pins.unpin_game_depots(int(appid)):
+                # Steam won't notice the dropped pin on its own until Valve's
+                # next build; flag the .acf so it re-plans (and moves to the
+                # current build) at its next start. See pins.mark_update_required.
+                needs_restart = pins.mark_update_required(int(appid))
+        return {"success": True, "pinned": False, "needsRestart": needs_restart}
     except Exception as exc:
         return {"success": False, "error": f"unfreeze failed: {exc}"}
 
