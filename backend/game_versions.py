@@ -76,6 +76,28 @@ async def _histories(reader, depots: List[int]) -> Dict[int, List[ManifestRow]]:
     return out
 
 
+async def _all_builds(reader):
+    """(builds, source). The app's full builds table when SteamDB serves it;
+    the feed's last 10 public builds when it does not (the table's request,
+    /api/RenderAppSection/, is refused by Cloudflare for this client at
+    times — for hours on 2026-09-21 — while the feed and the pages still
+    answer). Both newest first."""
+    from steamdb_reader import TTL_FEED, feed_path
+    page = await reader.builds_page()
+    if page.ok:
+        builds = versions.parse_builds_page(page.text)
+        if builds:
+            return builds, "table"
+    if reader.needs_user:
+        return [], "none"
+    logger.info(f"Versions: {reader.appid}: builds table {page.outcome} {page.error}; using the feed")
+    feed = await reader.get(feed_path(reader.appid), TTL_FEED)
+    if feed.ok:
+        return versions.parse_builds_feed(feed.text), "feed"
+    logger.info(f"Versions: {reader.appid}: feed {feed.outcome} {feed.error}")
+    return [], "none"
+
+
 def _needs_user(reader) -> dict:
     return {"success": False, "error": "steamdb_challenge", "needsUser": True,
             "challengeUrl": reader.challenge_url}
@@ -92,17 +114,10 @@ async def list_versions(appid: int) -> dict:
     t0 = time.monotonic()
     reader = Reader(appid)
     try:
-        page = await reader.builds_page()
+        builds, source = await _all_builds(reader)
         if reader.needs_user:
             return _needs_user(reader)
-        if not page.ok:
-            logger.info(f"Versions: {appid}: builds page {page.outcome} {page.error} view={reader.view_state}")
-            return {"success": False, "error": "no_builds" if page.outcome == "empty"
-                    else f"steamdb: {page.outcome} {page.error}".strip()}
-        builds = versions.parse_builds_page(page.text)
         if not builds:
-            logger.info(f"Versions: {appid}: builds page read ({len(page.text)} chars, {page.transport}) "
-                        f"but no rows parsed; view={reader.view_state}")
             return {"success": False, "error": "no_builds"}
         history = await _histories(reader, depots)
         if reader.needs_user:
@@ -112,6 +127,7 @@ async def list_versions(appid: int) -> dict:
         cur = current_build(appid)
         out = {
             "success": True,
+            "source": source,
             "builds": [{"buildid": b.buildid, "date": b.time.isoformat(), "label": b.label,
                         "installed": cur is not None and b.buildid == cur} for b in builds],
             "installedBuild": cur,
@@ -119,7 +135,7 @@ async def list_versions(appid: int) -> dict:
             "depots": depots,
             "elapsedMs": int((time.monotonic() - t0) * 1000),
         }
-        logger.info(f"Versions: {appid}: {len(builds)} builds, current {cur}, "
+        logger.info(f"Versions: {appid}: {len(builds)} builds from the {source}, current {cur}, "
                     f"{out['elapsedMs']} ms, {[f.transport for f in reader.fetches]}")
         return out
     except Exception as exc:
@@ -139,11 +155,10 @@ async def install_version(appid: int, buildid: int) -> dict:
         return {"success": False, "error": "not_installed"}
     reader = Reader(appid)
     try:
-        page = await reader.builds_page()
+        builds, _source = await _all_builds(reader)
         if reader.needs_user:
             return _needs_user(reader)
-        build = next((b for b in versions.parse_builds_page(page.text) if b.buildid == buildid), None) \
-            if page.ok else None
+        build = next((b for b in builds if b.buildid == buildid), None)
         if build is None:
             return {"success": False, "error": f"unknown build {buildid}"}
         bpage = await reader.get(build_path(buildid), TTL_BUILD)

@@ -63,6 +63,47 @@ class CurrentBuild(unittest.TestCase):
         self.assertEqual(gv.current_build(1), 17459173)
 
 
+class AllBuilds(unittest.TestCase):
+    """_all_builds: the table when it comes, the feed's 10 when it does not."""
+
+    def _reader(self, table_ok, feed_ok):
+        import steamdb_reader as sr
+        rows = ('<tbody id="js-builds"><tr data-date="1740421318"><td><a href="/patchnotes/17459173/">x</a></td>'
+                '<td>Mon</td><td>18:21</td><td>t</td><td></td><td></td><td>17459173</td></tr>'
+                '<tr data-date="1714582320"><td><a href="/patchnotes/14234225/">x</a></td>'
+                '<td>Wed</td><td>16:34</td><td>u</td><td></td><td></td><td>14234225</td></tr></tbody>')
+        feed = open(os.path.join(os.path.dirname(__file__), "fixtures", "steamdb",
+                                 "PatchnotesRSS_2545360.xml"), encoding="utf-8").read()
+
+        class R:
+            appid = 1
+            needs_user = False
+            view_state = {}
+
+            async def builds_page(self):
+                return sr.Fetched("/app/1/patchnotes/", outcome="ok" if table_ok else "empty",
+                                  transport="browser", status=200, text=("<html>" + rows + "</html>") if table_ok else "")
+
+            async def get(self, path, ttl, *a, **k):
+                return sr.Fetched(path, outcome="ok" if feed_ok else "http_error",
+                                  transport="browser", status=200 if feed_ok else 403, text=feed if feed_ok else "")
+        return R()
+
+    def test_table_first(self):
+        builds, source = asyncio.run(gv._all_builds(self._reader(True, True)))
+        self.assertEqual(source, "table")
+        self.assertEqual([b.buildid for b in builds], [17459173, 14234225])
+
+    def test_feed_when_the_table_is_refused(self):
+        builds, source = asyncio.run(gv._all_builds(self._reader(False, True)))
+        self.assertEqual(source, "feed")
+        self.assertEqual(len(builds), 10)
+
+    def test_nothing_when_both_fail(self):
+        builds, source = asyncio.run(gv._all_builds(self._reader(False, False)))
+        self.assertEqual((builds, source), ([], "none"))
+
+
 class NotInstalled(unittest.TestCase):
     def test_list_and_install_refuse_without_depots(self):
         import pins
