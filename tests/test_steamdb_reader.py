@@ -257,6 +257,36 @@ class ReadOrder(unittest.TestCase):
         self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
         run(r.close())
 
+    def test_validate_turns_a_200_into_empty_and_caches_nothing(self):
+        path = sr.builds_section_path(256290)
+        view = FakeView({path: ("ready", "<html><body>Access denied</body></html>")})
+        r = sr.Reader(256290, cache_dir=self.dir, use_direct=False,
+                      view_factory=lambda appid: view, now=self.now)
+        f = run(r.get(path, sr.TTL_FEED, validate=lambda t: "js-builds" in t))
+        self.assertEqual(f.outcome, "empty")
+        self.assertIn("Access denied", f.error)
+        self.assertIsNone(sr.cache_get(path, sr.TTL_FEED, self.dir, self.now))
+        run(r.close())
+
+    def test_builds_page_prefers_the_section_and_falls_back_to_the_app_page(self):
+        rows = ('<tbody id="js-builds"><tr data-date="1740421318"><td><a href="/patchnotes/17459173/">x</a></td>'
+                '<td>Mon</td><td>18:21</td><td>t</td><td></td><td></td><td>17459173</td></tr></tbody>')
+        sec, page = sr.builds_section_path(1), sr.patchnotes_path(1)
+        view = FakeView({sec: ("ready", "<html>" + rows + "</html>")})
+        r = sr.Reader(1, cache_dir=self.dir, use_direct=False, view_factory=lambda appid: view, now=self.now)
+        f = run(r.builds_page())
+        self.assertEqual((f.outcome, f.path), ("ok", sec))
+        self.assertEqual(view.navigated, [sr.BASE + sec])
+        run(r.close())
+        # section answers an error page → the app page is read instead
+        view2 = FakeView({sec: ("ready", "<html>403</html>"), page: ("ready", "<html>" + rows + "</html>")})
+        r2 = sr.Reader(1, cache_dir=os.path.join(self.dir, "b"), use_direct=False,
+                       view_factory=lambda appid: view2, now=self.now)
+        f2 = run(r2.builds_page())
+        self.assertEqual((f2.outcome, f2.path), ("ok", page))
+        self.assertEqual(view2.navigated, [sr.BASE + sec, sr.BASE + page])
+        run(r2.close())
+
     def test_page_timeout_is_an_error_not_cached(self):
         path = sr.depot_path(999)
         view = FakeView({path: ("timeout", "")})

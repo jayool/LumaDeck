@@ -87,6 +87,15 @@ def patchnotes_path(appid: int) -> str:
     return f"/app/{int(appid)}/patchnotes/"
 
 
+def builds_section_path(appid: int) -> str:
+    """What the app page itself requests to fill its Patches tab (from
+    SteamDB's app.js: fetch('/api/RenderAppSection/?section=patchnotes&appid=')).
+    Public-branch builds only; the page adds all=true for its "view all"
+    link, which we never do. Answers the tab's HTML, <tbody id="js-builds">
+    included."""
+    return f"/api/RenderAppSection/?section=patchnotes&appid={int(appid)}"
+
+
 # The app's builds table (<tbody id="js-builds">) is filled by script only
 # once the Patches tab is activated — in Steam's browser the URL alone does
 # not do it (measured: 8 build links before clicking the tab, 74 after). So
@@ -418,10 +427,13 @@ class Reader:
     # -- public --------------------------------------------------------------
 
     async def get(self, path: str, ttl: float, settle_js: Optional[str] = None,
-                  prepare_js: Optional[str] = None) -> Fetched:
+                  prepare_js: Optional[str] = None,
+                  validate: Optional[Callable[[str], bool]] = None) -> Fetched:
         """`prepare_js` / `settle_js`: see _read_by_navigation. A page that
         needs them is never read directly (the backend would only get the
-        empty shell)."""
+        empty shell). `validate(text)` False turns a 200 into "empty": an
+        error page served with 200, or a fragment without the rows — never
+        cached."""
         f = self._from_cache(path, ttl)
         if f is None and not (settle_js or prepare_js) and self._use_direct and self._now() >= _direct_blocked_until:
             f = await self._via_direct(path)
@@ -430,6 +442,9 @@ class Reader:
                 f = None
         if f is None:
             f = await self._via_browser(path, settle_js, prepare_js)
+        if f.ok and validate is not None and not validate(f.text):
+            f.outcome = "empty"
+            f.error = f"unexpected content: {re.sub(r'<[^>]+>', ' ', f.text[:600]).strip()[:200]!r}"
         if f.ok and f.transport != "cache":
             cache_put(path, f.status, f.text, self.cache_dir, self._now)
         self.fetches.append(f)
@@ -444,8 +459,19 @@ class Reader:
             await loop.run_in_executor(None, v.close)
 
     async def builds_page(self, ttl: float = TTL_FEED) -> Fetched:
-        """The app's builds table page, tab activated and rows settled."""
-        return await self.get(patchnotes_path(self.appid), ttl, BUILDS_SETTLE_JS, BUILDS_PREPARE_JS)
+        """The app's builds table: the section fragment the app page itself
+        requests, read by navigation (Cloudflare lets a document through
+        where it 403s the page's own fetch — measured on Child of Light and
+        Scott Pilgrim). Falls back to the app page + Patches tab if the
+        fragment does not come with rows."""
+        import versions
+        has_rows = lambda text: bool(versions.parse_builds_page(text))  # noqa: E731
+        f = await self.get(builds_section_path(self.appid), ttl, validate=has_rows)
+        if f.ok or f.outcome == "needs_user":
+            return f
+        logger.info(f"SteamDB builds section for {self.appid}: {f.outcome} {f.error}; trying the app page")
+        return await self.get(patchnotes_path(self.appid), ttl, BUILDS_SETTLE_JS, BUILDS_PREPARE_JS,
+                              validate=has_rows)
 
     @property
     def needs_user(self) -> bool:
