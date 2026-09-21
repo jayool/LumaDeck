@@ -183,5 +183,74 @@ class Rfc2822AndEntities(unittest.TestCase):
         self.assertEqual(v.parse_builds_feed("not xml"), [])
 
 
+BUILDS_PAGE = """<html><body>
+<table class="table table-hover"><thead><tr><th>Date</th><th>Day</th><th>Time</th><th>Patch Title</th><th></th><th></th><th>BuildID</th></tr></thead>
+<tbody id="js-builds">
+<tr data-date="1740421318">
+<td><a href="/patchnotes/17459173/" style="color:inherit">24 February 2025</a></td>
+<td>Mon</td>
+<td class="tabular-nums">18:21</td>
+<td>
+<span class="patchnotes-major"><svg width="16" height="16"><path d="M9.5"></path></svg> MAJOR</span> <a href="/patchnotes/17459173/">Welcoming Friends of Jimbo 4!</a>
+</td>
+<td><svg><path d=""></path></svg></td>
+<td></td>
+<td class="tabular-nums">17459173</td>
+</tr>
+<tr data-date="1724777280">
+<td><a href="/patchnotes/15507502/" style="color:inherit">27 August 2024</a></td>
+<td>Tue</td>
+<td class="tabular-nums">16:48</td>
+<td><i class="muted">No title</i></td>
+<td></td><td></td>
+<td class="tabular-nums">15507502</td>
+</tr>
+<tr data-date="1714582320">
+<td><a href="/patchnotes/14234225/" style="color:inherit">1 May 2024</a></td>
+<td>Wed</td><td class="tabular-nums">16:34</td>
+<td>1.0.1f - Patch notes &amp; more</td>
+<td></td><td></td>
+<td class="tabular-nums">14234225</td>
+</tr>
+<tr data-date="1714582320">
+<td><a href="/patchnotes/14234225/" style="color:inherit">1 May 2024</a></td>
+<td>Wed</td><td class="tabular-nums">16:34</td><td>duplicate row</td><td></td><td></td><td>14234225</td>
+</tr>
+</tbody></table>
+<div class="history-container"></div></body></html>"""
+
+
+class BuildsPage(unittest.TestCase):
+    """parse_builds_page: the app's builds table (all builds, all branches)."""
+
+    def test_rows(self):
+        from datetime import datetime, timezone
+        import versions as v
+        b = v.parse_builds_page(BUILDS_PAGE)
+        self.assertEqual([x.buildid for x in b], [17459173, 15507502, 14234225])
+        self.assertEqual(b[0].time, datetime(2025, 2, 24, 18, 21, 58, tzinfo=timezone.utc))
+        self.assertEqual(b[0].label, "Welcoming Friends of Jimbo 4!")   # MAJOR badge and svg stripped
+        self.assertIsNone(b[1].label)                                      # "No title"
+        self.assertEqual(b[2].label, "1.0.1f - Patch notes & more")
+        self.assertEqual(b[2].date, "2024-05-01")
+
+    def test_without_tbody_or_garbage(self):
+        import versions as v
+        self.assertEqual(v.parse_builds_page("<html></html>"), [])
+        self.assertEqual(v.parse_builds_page(""), [])
+
+    def test_branch_classification_uses_depot_rows(self):
+        from datetime import datetime, timezone
+        import versions as v
+        b = v.parse_builds_page(BUILDS_PAGE)
+        rows = [
+            v.ManifestRow(depot=1, gid=11, time=datetime(2025, 2, 24, 18, 21, 57, tzinfo=timezone.utc)),
+            v.ManifestRow(depot=1, gid=12, time=datetime(2024, 8, 27, 16, 48, 1, tzinfo=timezone.utc), branch="beta"),
+        ]
+        self.assertEqual(v.build_branch(b[0].time, rows), "public")
+        self.assertEqual(v.build_branch(b[1].time, rows), "beta")
+        self.assertIsNone(v.build_branch(b[2].time, rows))
+
+
 if __name__ == "__main__":
     unittest.main()

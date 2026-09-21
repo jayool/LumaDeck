@@ -61,6 +61,11 @@ _ROW_TIME_RE = re.compile(r'data-time="([^"]+)"')
 _ROW_GID_RE = re.compile(r"/depot/(\d+)/history/\?changeid=M:(\d+)")
 _ROW_BRANCH_RE = re.compile(r'<code class="js-branch">([^<]*)</code>')
 _DEPOTS_JSON_RE = re.compile(r"const depots = (\[.*?\]);", re.DOTALL)
+_BUILDS_TBODY_RE = re.compile(r'<tbody[^>]*id="js-builds"[^>]*>(.*?)</tbody>', re.DOTALL)
+_BUILD_ROW_RE = re.compile(r'<tr\b[^>]*data-date="(\d+)"[^>]*>(.*?)</tr>', re.DOTALL)
+_TD_RE = re.compile(r"<td\b[^>]*>(.*?)</td>", re.DOTALL)
+_SVG_RE = re.compile(r"<svg\b.*?</svg>", re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 @dataclass(frozen=True)
@@ -182,6 +187,48 @@ def parse_builds_feed(xml_text: str) -> List[Build]:
             continue
         label = _DESC_SUFFIX_RE.sub("", desc).strip()
         if not label or _BUILD_TITLE_RE.fullmatch(label.replace("SteamDB ", "")):
+            label = None
+        seen.add(buildid)
+        out.append(Build(buildid=buildid, time=when, title=title, label=label))
+    return out
+
+
+def parse_builds_page(html_text: str) -> List[Build]:
+    """The app's builds table (``steamdb.info/app/<app>/patchnotes/``, the
+    <tbody id="js-builds"> SteamDB fills when the Patches tab is active) ->
+    builds, page order (newest first). Every build SteamDB ever saw for the
+    app, not just the feed's 10, and not only the public branch — the
+    caller tells branches apart with build_branch() against the depot rows.
+    Row: <tr data-date="<epoch>"> date-link / day / time / title / two icon
+    cells / build id. "No title" is no label. Measured 2026-09-21 on app
+    2379780: 33 rows vs 10 in the feed."""
+    m = _BUILDS_TBODY_RE.search(html_text or "")
+    if not m:
+        return []
+    out: List[Build] = []
+    seen = set()
+    for row in _BUILD_ROW_RE.finditer(m.group(1)):
+        epoch, cell_html = row.groups()
+        mb = _BUILD_LINK_RE.search(cell_html)
+        cells = [_TAG_RE.sub(" ", _SVG_RE.sub(" ", c)) for c in _TD_RE.findall(cell_html)]
+        cells = [re.sub(r"\s+", " ", _unescape(c)).strip() for c in cells]
+        buildid = None
+        if mb:
+            buildid = int(mb.group(1))
+        else:
+            for c in reversed(cells):
+                if re.fullmatch(r"\d{6,}", c):
+                    buildid = int(c)
+                    break
+        if buildid is None or buildid in seen:
+            continue
+        try:
+            when = datetime.fromtimestamp(int(epoch), tz=timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            continue
+        title = cells[3] if len(cells) > 3 else ""
+        label = re.sub(r"^\s*MAJOR\b\s*", "", title).strip()
+        if not label or label.lower() == "no title":
             label = None
         seen.add(buildid)
         out.append(Build(buildid=buildid, time=when, title=title, label=label))

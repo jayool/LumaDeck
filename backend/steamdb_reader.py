@@ -87,34 +87,18 @@ def patchnotes_path(appid: int) -> str:
     return f"/app/{int(appid)}/patchnotes/"
 
 
-# The app's builds list is filled by script after load, into
-# <div class="history-container">. Count its build links.
-PATCHNOTES_SETTLE_JS = "document.querySelectorAll('.history-container a[href*=\"/patchnotes/\"]').length"
-
-_PATCHNOTES_INSPECT_JS = """(function(){try{
-  var panes=[].slice.call(document.querySelectorAll('.tab-pane')).map(function(e){return e.id+':'+(e.classList.contains('active')?'on':'off')+':'+e.innerHTML.length;});
-  var pn=document.querySelector('#patchnotes')||document.querySelector('[id*="patchnotes"]');
-  var links=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /\\/patchnotes\\/?$/.test(a.getAttribute('href')||'');}).map(function(a){return (a.getAttribute('href')||'')+' | '+(a.className||'')+' | '+(a.getAttribute('role')||'')+' | '+a.textContent.trim().slice(0,30);});
-  var scripts=[].slice.call(document.scripts).map(function(s){return (s.src||'inline').replace('https://steamdb.info','')+(s.defer?' defer':'')+(s.type?' '+s.type:'');});
-  return JSON.stringify({panes:panes,pane_id:pn?pn.id:null,pane_html:pn?pn.innerHTML.slice(0,1500):null,tab_links:links.slice(0,8),scripts:scripts.slice(0,12),ua:navigator.userAgent});
-}catch(e){return JSON.stringify({err:String(e)});}})()"""
-
-_PATCHNOTES_CLICK_JS = """(function(){try{
-  var a=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /\\/patchnotes\\/?$/.test(a.getAttribute('href')||'') && (a.getAttribute('role')==='tab' || /tab/i.test(a.className||'') || (a.parentElement&&/tab/i.test(a.parentElement.className||'')));})[0];
-  if(!a) return 'no tab link';
-  a.click();
-  return 'clicked '+(a.getAttribute('href')||'');
+# The app's builds table (<tbody id="js-builds">) is filled by script only
+# once the Patches tab is activated — in Steam's browser the URL alone does
+# not do it (measured: 8 build links before clicking the tab, 74 after). So
+# the reader clicks the tab, then waits for the rows to settle.
+BUILDS_PREPARE_JS = """(function(){try{
+  var a=document.querySelector('a.tabnav-tab[href$="/patchnotes/"]')
+       ||[].slice.call(document.querySelectorAll('a[role="tab"]')).filter(function(x){return /\\/patchnotes\\/?$/.test(x.getAttribute('href')||'');})[0];
+  if(!a) return 'no tab';
+  a.click(); return 'ok';
 }catch(e){return 'error: '+String(e);}})()"""
+BUILDS_SETTLE_JS = "document.querySelectorAll('#js-builds tr').length"
 
-_PATCHNOTES_SAMPLE_JS = """(function(){try{
-  var q=function(s){return document.querySelectorAll(s).length;};
-  var vis=function(s){var e=document.querySelector(s);return !!(e&&e.offsetParent!==null);};
-  var tabs=[].slice.call(document.querySelectorAll('.tab-pane')).map(function(e){return e.id+':'+(e.classList.contains('active')?'on':'off');});
-  return JSON.stringify({all:q('a[href*="/patchnotes/"]'),tbl:q('table a[href*="/patchnotes/"]'),hist:q('.history-container a[href*="/patchnotes/"]'),
-    loading:vis('#js-history-loading'),loadbtn:vis('#js-history-load'),signin:vis('#js-history-signin'),
-    builds_h:!!Array.prototype.find.call(document.querySelectorAll('h2,h3'),function(h){return /Builds/.test(h.textContent);}),
-    hash:location.hash,tabs:tabs});
-}catch(e){return JSON.stringify({err:String(e)});}})()"""
 
 
 def classify(status: int, text: str) -> str:
@@ -286,15 +270,23 @@ class Reader:
         self._view = view
         return None
 
-    def _read_by_navigation(self, path: str, f: Fetched, settle_js: Optional[str] = None) -> None:
+    def _read_by_navigation(self, path: str, f: Fetched, settle_js: Optional[str] = None,
+                            prepare_js: Optional[str] = None) -> None:
         """HTML pages: navigate the hidden view there and take the document.
-        needs_user when the page stays on a challenge. `settle_js` counts the
-        rows a page fills by script after load (the app's builds list); the
-        document is read once that count is stable."""
+        needs_user when the page stays on a challenge. `prepare_js` runs once
+        the page is ready (e.g. click a tab); `settle_js` counts the rows a
+        page fills by script after that, and the document is read once the
+        count is stable."""
         st = self._view.navigate(BASE + path, 20.0)
         self.view_state = dict(st)
         state = st.get("state")
         if state == "ready":
+            if prepare_js:
+                import cef_cdp
+                try:
+                    self.view_state["prepared"] = cef_cdp.evaluate(self._view.ws, prepare_js, timeout=5, await_promise=False)
+                except Exception as exc:
+                    self.view_state["prepared"] = f"error: {exc}"
             if settle_js:
                 self.view_state["settled"] = self._view.wait_settled(settle_js, 15.0)
             f.status, f.text = 200, self._view.html()
@@ -310,7 +302,8 @@ class Reader:
             f.outcome = "error"
             f.error = f"page not ready ({state}: {st.get('title') or st.get('err') or st.get('href')})"
 
-    def _browser_fetch(self, path: str, settle_js: Optional[str] = None) -> Fetched:
+    def _browser_fetch(self, path: str, settle_js: Optional[str] = None,
+                       prepare_js: Optional[str] = None) -> Fetched:
         t0 = time.monotonic()
         f = Fetched(path=path, transport="browser")
         why = self._open_view()
@@ -327,29 +320,32 @@ class Reader:
                         f.outcome = "needs_user"
                         self.challenge_url = BASE + path
                 else:
-                    self._read_by_navigation(path, f, settle_js)
+                    self._read_by_navigation(path, f, settle_js, prepare_js)
             except Exception as exc:
                 f.outcome, f.error = "error", str(exc)
         f.ms = int((time.monotonic() - t0) * 1000)
         return f
 
-    async def _via_browser(self, path: str, settle_js: Optional[str] = None) -> Fetched:
+    async def _via_browser(self, path: str, settle_js: Optional[str] = None,
+                           prepare_js: Optional[str] = None) -> Fetched:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._browser_fetch, path, settle_js)
+        return await loop.run_in_executor(None, self._browser_fetch, path, settle_js, prepare_js)
 
     # -- public --------------------------------------------------------------
 
-    async def get(self, path: str, ttl: float, settle_js: Optional[str] = None) -> Fetched:
-        """`settle_js`: see _read_by_navigation. A page that needs it is never
-        read directly (the backend would only get the empty shell)."""
+    async def get(self, path: str, ttl: float, settle_js: Optional[str] = None,
+                  prepare_js: Optional[str] = None) -> Fetched:
+        """`prepare_js` / `settle_js`: see _read_by_navigation. A page that
+        needs them is never read directly (the backend would only get the
+        empty shell)."""
         f = self._from_cache(path, ttl)
-        if f is None and not settle_js and self._use_direct and self._now() >= _direct_blocked_until:
+        if f is None and not (settle_js or prepare_js) and self._use_direct and self._now() >= _direct_blocked_until:
             f = await self._via_direct(path)
             if not f.ok:
                 self.fetches.append(f)
                 f = None
         if f is None:
-            f = await self._via_browser(path, settle_js)
+            f = await self._via_browser(path, settle_js, prepare_js)
         if f.ok and f.transport != "cache":
             cache_put(path, f.status, f.text, self.cache_dir, self._now)
         self.fetches.append(f)
@@ -357,46 +353,15 @@ class Reader:
                     f"{len(f.text)} chars {f.ms} ms{(' ' + f.error) if f.error else ''}")
         return f
 
-    def _sample_view(self, js: str, seconds: float, every: float) -> list:
-        """Dev: evaluate `js` (must return a JSON string) in the open view
-        every `every` s for `seconds` s; the list of parsed samples with
-        their offset. Used to see WHEN a page fills its lists."""
-        import cef_cdp
-        out = []
-        if self._view is None or not getattr(self._view, "ws", None):
-            return out
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < seconds:
-            try:
-                raw = cef_cdp.evaluate(self._view.ws, js, timeout=5, await_promise=False)
-                try:
-                    d = json.loads(raw) if isinstance(raw, str) else {"raw": raw}
-                except ValueError:
-                    d = {"raw": raw}
-                if not isinstance(d, dict):
-                    d = {"raw": d}
-            except Exception as exc:
-                d = {"err": str(exc)}
-            d["t"] = round(time.monotonic() - t0, 1)
-            out.append(d)
-            time.sleep(every)
-        return out
-
-    async def sample_view(self, js: str, seconds: float = 20.0, every: float = 1.0) -> list:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._sample_view, js, seconds, every)
-
-    async def view_html(self) -> str:
-        if self._view is None:
-            return ""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._view.html)
-
     async def close(self) -> None:
         v, self._view = self._view, None
         if v is not None:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, v.close)
+
+    async def builds_page(self, ttl: float = TTL_FEED) -> Fetched:
+        """The app's builds table page, tab activated and rows settled."""
+        return await self.get(patchnotes_path(self.appid), ttl, BUILDS_SETTLE_JS, BUILDS_PREPARE_JS)
 
     @property
     def needs_user(self) -> bool:
@@ -467,49 +432,33 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
                 "confirmed": len(versions.pins_from(res)), "of": len(depots),
             }
 
-        # Measurement: does the app's patchnotes PAGE list more builds than the
-        # feed's 10? Count its build links, the dates next to them, and any
-        # sign of paging / lazy loading.
-        page = await reader.get(patchnotes_path(appid), TTL_FEED, PATCHNOTES_SETTLE_JS)
-        if page.ok and page.transport == "browser":
-            # Watch the page for 20 s after load: where and when do build links
-            # appear, is a loader on screen, is there a button to press.
-            out["patchnotes_inspect"] = (await reader.sample_view(_PATCHNOTES_INSPECT_JS, 0.5, 1.0) or [{}])[0]
-            out["patchnotes_click"] = (await reader.sample_view(_PATCHNOTES_CLICK_JS, 0.5, 1.0) or [{}])[0]
-            samples = await reader.sample_view(_PATCHNOTES_SAMPLE_JS, 12.0, 2.0)
-            out["patchnotes_timeline"] = samples
-            out["patchnotes_inspect_after"] = (await reader.sample_view(_PATCHNOTES_INSPECT_JS, 0.5, 1.0) or [{}])[0]
-            html_after = await reader.view_html()
-            if html_after:
-                page.text = html_after
+        # The full builds table (all of them, all branches), classified by
+        # branch against the depot rows: public / other / unknown (no row at
+        # the build's time — the depot did not change, or it is off the
+        # visible history).
+        page = await reader.builds_page()
         if page.ok:
-            html = page.text
-            j = html.find("Patch Title")
-            out["builds_table_snippet"] = html[max(0, j - 1500):j + 1500] if j >= 0 else None
-            i = html.find('class="history-container"')
-            hist = html[i:] if i >= 0 else ""
-            ids = []
-            for m in re.finditer(r'href="/patchnotes/(\d+)/?"', hist):
-                if m.group(1) not in ids:
-                    ids.append(m.group(1))
-            times = re.findall(r'(?:data-time|datetime)="([^"]+)"', hist)
-            branches = re.findall(r'<code class="js-branch">([^<]*)</code>', hist)
-            hints = [h for h in ("js-load-more", "load-more", "Load more", "Show more",
-                                 "data-page", "infinite", "rel=\"next\"") if h in hist]
-            first = hist.find('href="/patchnotes/')
-            row_start = hist.rfind("<tr", 0, first) if first > 0 else -1
-            snippet = hist[row_start:row_start + 900] if row_start >= 0 else hist[:900]
-            out["patchnotes_page"] = {
-                "bytes": len(html), "settled": reader.view_state.get("settled"),
-                "build_links": len(ids),
-                "newest_id": ids[0] if ids else None, "oldest_id": ids[-1] if ids else None,
-                "times": len(times), "first_time": times[0] if times else None, "last_time": times[-1] if times else None,
-                "branch_tags": len(branches), "paging_hints": hints,
-                "in_feed": sum(1 for b in builds if str(b.buildid) in ids),
-                "row_snippet": snippet,
+            all_builds = versions.parse_builds_page(page.text)
+            rows_all = [r for rows in history.values() for r in rows]
+            by_branch: Dict[str, int] = {}
+            for b in all_builds:
+                br = versions.build_branch(b.time, rows_all) or "unknown"
+                by_branch[br] = by_branch.get(br, 0) + 1
+            feed_ids = {b.buildid for b in builds}
+            out["builds_page"] = {
+                "settled": reader.view_state.get("settled"), "prepared": reader.view_state.get("prepared"),
+                "builds": len(all_builds), "with_label": sum(1 for b in all_builds if b.label),
+                "newest": {"buildid": all_builds[0].buildid, "date": all_builds[0].time.isoformat(), "label": all_builds[0].label} if all_builds else None,
+                "oldest": {"buildid": all_builds[-1].buildid, "date": all_builds[-1].time.isoformat(), "label": all_builds[-1].label} if all_builds else None,
+                "in_feed": sum(1 for b in all_builds if b.buildid in feed_ids),
+                "by_branch": by_branch,
+                "first_rows": [{"buildid": b.buildid, "date": b.time.isoformat(), "title": b.title, "label": b.label} for b in all_builds[:4]],
             }
+            if not all_builds:
+                j = page.text.find('id="js-builds"')
+                out["builds_page"]["snippet"] = page.text[j:j + 1500] if j >= 0 else "(no js-builds tbody)"
         else:
-            out["patchnotes_page"] = {"outcome": page.outcome, "error": page.error}
+            out["builds_page"] = {"outcome": page.outcome, "error": page.error}
     except Exception as exc:
         out["success"] = False
         out["error"] = f"{type(exc).__name__}: {exc}"
