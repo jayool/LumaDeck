@@ -132,6 +132,17 @@ _UNFILLED_SNAPSHOT_JS = """(function(){try{
     net:(window.__lumadeck_net||[]).slice(0,20)});
 }catch(e){return JSON.stringify({err:String(e)});}})()"""
 
+# The page's own scripts: which API paths they call and the code around the
+# builds table / the "failed to load" message.
+_SCRIPT_SCAN_JS = """(function(){
+  var srcs=[].slice.call(document.scripts).map(function(s){return s.src;}).filter(function(u){return /app(_extension)?\\.js|global\\.js|tabnav\\.js/.test(u);});
+  return Promise.all(srcs.map(function(u){return fetch(u).then(function(r){return r.text();}).then(function(t){
+    var apis={};var m;var re=/["'](\\/api\\/[A-Za-z0-9_\\/?=&.-]*)["']/g;while((m=re.exec(t))){apis[m[1]]=(apis[m[1]]||0)+1;}
+    var ctx=[];['js-builds','failed to load','patchnotes'].forEach(function(k){var i=t.indexOf(k);if(i>=0)ctx.push(k+' @'+i+': '+t.slice(Math.max(0,i-300),i+300));});
+    return {src:u.replace('https://steamdb.info',''),len:t.length,apis:Object.keys(apis),ctx:ctx};
+  }).catch(function(e){return {src:u,err:String(e)};});})).then(function(r){return JSON.stringify(r);});
+})()"""
+
 
 
 def classify(status: int, text: str) -> str:
@@ -338,6 +349,13 @@ class Reader:
                     snap = f"snapshot failed: {exc}"
                 self.view_state["snapshot"] = snap
                 logger.info(f"SteamDB {path}: list did not fill; snapshot={snap}")
+                try:
+                    import cef_cdp
+                    scan = cef_cdp.evaluate(self._view.ws, _SCRIPT_SCAN_JS, timeout=20, await_promise=True)
+                except Exception as exc:
+                    scan = f"scan failed: {exc}"
+                self.view_state["scripts"] = scan
+                logger.info(f"SteamDB {path}: script scan={scan}")
                 # Diagnostic: read the failed request as a DOCUMENT (a
                 # navigation can pass Cloudflare where the page's own request
                 # got a 403) and log the head of what comes back.
