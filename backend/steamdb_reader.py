@@ -17,9 +17,10 @@ CEF browser is a real browser, so it passes. Reading order, per URL:
                fetch() of a challenged path just gets the 403 challenge page
                back (measured 2026-09-21: the app page loads, fetch() of
                /depot/…/manifests/ from it answers 403 + 10.9 KB of
-               challenge). The feed (/api/…) is XML, which a navigation would
-               render through the XML viewer, so it alone is read with
-               fetch() from a page already on steamdb.info. The view lives
+               challenge). The feed (/api/PatchnotesRSS/) is XML; a navigation would
+               render it through the XML viewer, so it alone is read with
+               fetch() from a page already on steamdb.info; every other
+               path, /api/RenderAppSection/ included, is a navigation. The view lives
                for the Reader's life and is destroyed on close().
 
 If the hidden page is still on a challenge after 20 s it is an interactive
@@ -405,7 +406,8 @@ class Reader:
             f.error = "" if why == "needs_user" else why
         else:
             try:
-                if path.startswith("/api/"):
+                if path.startswith("/api/PatchnotesRSS/"):
+                    # XML: a navigation would show it through the XML viewer.
                     status, text = self._view.fetch(path)
                     f.status, f.text = status, text
                     f.outcome = classify(status, text)
