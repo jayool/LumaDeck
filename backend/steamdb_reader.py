@@ -107,6 +107,14 @@ class Fetched:
         d = asdict(self)
         d["bytes"] = len(self.text.encode("utf-8", "replace"))
         d.pop("text", None)
+        if not self.ok and self.text:
+            # What the bad answer looked like: its <title> and its first words.
+            m = re.search(r"<title[^>]*>(.*?)</title>", self.text, re.DOTALL | re.IGNORECASE)
+            d["title"] = re.sub(r"\s+", " ", m.group(1)).strip()[:120] if m else ""
+            plain = re.sub(r"<script.*?</script>|<style.*?</style>", " ", self.text, flags=re.DOTALL | re.IGNORECASE)
+            plain = re.sub(r"<[^>]+>", " ", plain)
+            d["snippet"] = re.sub(r"\s+", " ", plain).strip()[:300]
+            d["marker"] = (_CHALLENGE_RE.search(self.text[:40000]) or [None])[0]
         return d
 
 
@@ -185,6 +193,7 @@ class Reader:
         self._view = None
         self._view_err: Optional[str] = None   # sticky: once the view failed, say so and stop trying
         self._view_reused = False
+        self.view_state: dict = {}             # what wait_ready saw (for the probe)
         self.fetches: List[Fetched] = []
 
     # -- steps -------------------------------------------------------------
@@ -227,6 +236,7 @@ class Reader:
             self._view_err = f"error: {err}"
             return self._view_err
         st = view.wait_ready(20.0)
+        self.view_state = dict(st, reused=reused)
         state = st.get("state")
         if state != "ready":
             view.close()
@@ -360,6 +370,7 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
     finally:
         await reader.close()
     out["fetches"] = [f.summary() for f in reader.fetches]
+    out["view"] = reader.view_state
     out["needs_user"] = reader.needs_user
     out["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
     logger.info(f"SteamDB probe {appid}: {json.dumps(out)}")
