@@ -91,6 +91,21 @@ def patchnotes_path(appid: int) -> str:
 # <div class="history-container">. Count its build links.
 PATCHNOTES_SETTLE_JS = "document.querySelectorAll('.history-container a[href*=\"/patchnotes/\"]').length"
 
+_PATCHNOTES_INSPECT_JS = """(function(){try{
+  var panes=[].slice.call(document.querySelectorAll('.tab-pane')).map(function(e){return e.id+':'+(e.classList.contains('active')?'on':'off')+':'+e.innerHTML.length;});
+  var pn=document.querySelector('#patchnotes')||document.querySelector('[id*="patchnotes"]');
+  var links=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /\\/patchnotes\\/?$/.test(a.getAttribute('href')||'');}).map(function(a){return (a.getAttribute('href')||'')+' | '+(a.className||'')+' | '+(a.getAttribute('role')||'')+' | '+a.textContent.trim().slice(0,30);});
+  var scripts=[].slice.call(document.scripts).map(function(s){return (s.src||'inline').replace('https://steamdb.info','')+(s.defer?' defer':'')+(s.type?' '+s.type:'');});
+  return JSON.stringify({panes:panes,pane_id:pn?pn.id:null,pane_html:pn?pn.innerHTML.slice(0,1500):null,tab_links:links.slice(0,8),scripts:scripts.slice(0,12),ua:navigator.userAgent});
+}catch(e){return JSON.stringify({err:String(e)});}})()"""
+
+_PATCHNOTES_CLICK_JS = """(function(){try{
+  var a=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /\\/patchnotes\\/?$/.test(a.getAttribute('href')||'') && (a.getAttribute('role')==='tab' || /tab/i.test(a.className||'') || (a.parentElement&&/tab/i.test(a.parentElement.className||'')));})[0];
+  if(!a) return 'no tab link';
+  a.click();
+  return 'clicked '+(a.getAttribute('href')||'');
+}catch(e){return 'error: '+String(e);}})()"""
+
 _PATCHNOTES_SAMPLE_JS = """(function(){try{
   var q=function(s){return document.querySelectorAll(s).length;};
   var vis=function(s){var e=document.querySelector(s);return !!(e&&e.offsetParent!==null);};
@@ -98,7 +113,7 @@ _PATCHNOTES_SAMPLE_JS = """(function(){try{
   return JSON.stringify({all:q('a[href*="/patchnotes/"]'),tbl:q('table a[href*="/patchnotes/"]'),hist:q('.history-container a[href*="/patchnotes/"]'),
     loading:vis('#js-history-loading'),loadbtn:vis('#js-history-load'),signin:vis('#js-history-signin'),
     builds_h:!!Array.prototype.find.call(document.querySelectorAll('h2,h3'),function(h){return /Builds/.test(h.textContent);}),
-    hash:location.hash,tabs:tabs.slice(0,12)});
+    hash:location.hash,tabs:tabs});
 }catch(e){return JSON.stringify({err:String(e)});}})()"""
 
 
@@ -354,7 +369,12 @@ class Reader:
         while time.monotonic() - t0 < seconds:
             try:
                 raw = cef_cdp.evaluate(self._view.ws, js, timeout=5, await_promise=False)
-                d = json.loads(raw) if isinstance(raw, str) else {"raw": raw}
+                try:
+                    d = json.loads(raw) if isinstance(raw, str) else {"raw": raw}
+                except ValueError:
+                    d = {"raw": raw}
+                if not isinstance(d, dict):
+                    d = {"raw": d}
             except Exception as exc:
                 d = {"err": str(exc)}
             d["t"] = round(time.monotonic() - t0, 1)
@@ -454,8 +474,11 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
         if page.ok and page.transport == "browser":
             # Watch the page for 20 s after load: where and when do build links
             # appear, is a loader on screen, is there a button to press.
-            samples = await reader.sample_view(_PATCHNOTES_SAMPLE_JS, 20.0, 1.0)
+            out["patchnotes_inspect"] = (await reader.sample_view(_PATCHNOTES_INSPECT_JS, 0.5, 1.0) or [{}])[0]
+            out["patchnotes_click"] = (await reader.sample_view(_PATCHNOTES_CLICK_JS, 0.5, 1.0) or [{}])[0]
+            samples = await reader.sample_view(_PATCHNOTES_SAMPLE_JS, 12.0, 2.0)
             out["patchnotes_timeline"] = samples
+            out["patchnotes_inspect_after"] = (await reader.sample_view(_PATCHNOTES_INSPECT_JS, 0.5, 1.0) or [{}])[0]
             html_after = await reader.view_html()
             if html_after:
                 page.text = html_after
