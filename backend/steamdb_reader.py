@@ -87,6 +87,11 @@ def patchnotes_path(appid: int) -> str:
     return f"/app/{int(appid)}/patchnotes/"
 
 
+# The app's builds list is filled by script after load, into
+# <div class="history-container">. Count its build links.
+PATCHNOTES_SETTLE_JS = "document.querySelectorAll('.history-container a[href*=\"/patchnotes/\"]').length"
+
+
 def classify(status: int, text: str) -> str:
     """ok | challenge | http_error | empty — what an answer really is."""
     head = (text or "")[:40000]
@@ -256,13 +261,17 @@ class Reader:
         self._view = view
         return None
 
-    def _read_by_navigation(self, path: str, f: Fetched) -> None:
+    def _read_by_navigation(self, path: str, f: Fetched, settle_js: Optional[str] = None) -> None:
         """HTML pages: navigate the hidden view there and take the document.
-        needs_user when the page stays on a challenge."""
+        needs_user when the page stays on a challenge. `settle_js` counts the
+        rows a page fills by script after load (the app's builds list); the
+        document is read once that count is stable."""
         st = self._view.navigate(BASE + path, 20.0)
         self.view_state = dict(st)
         state = st.get("state")
         if state == "ready":
+            if settle_js:
+                self.view_state["settled"] = self._view.wait_settled(settle_js, 15.0)
             f.status, f.text = 200, self._view.html()
             f.outcome = classify(f.status, f.text)
             if f.outcome == "challenge":
@@ -276,7 +285,7 @@ class Reader:
             f.outcome = "error"
             f.error = f"page not ready ({state}: {st.get('title') or st.get('err') or st.get('href')})"
 
-    def _browser_fetch(self, path: str) -> Fetched:
+    def _browser_fetch(self, path: str, settle_js: Optional[str] = None) -> Fetched:
         t0 = time.monotonic()
         f = Fetched(path=path, transport="browser")
         why = self._open_view()
@@ -293,27 +302,29 @@ class Reader:
                         f.outcome = "needs_user"
                         self.challenge_url = BASE + path
                 else:
-                    self._read_by_navigation(path, f)
+                    self._read_by_navigation(path, f, settle_js)
             except Exception as exc:
                 f.outcome, f.error = "error", str(exc)
         f.ms = int((time.monotonic() - t0) * 1000)
         return f
 
-    async def _via_browser(self, path: str) -> Fetched:
+    async def _via_browser(self, path: str, settle_js: Optional[str] = None) -> Fetched:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._browser_fetch, path)
+        return await loop.run_in_executor(None, self._browser_fetch, path, settle_js)
 
     # -- public --------------------------------------------------------------
 
-    async def get(self, path: str, ttl: float) -> Fetched:
+    async def get(self, path: str, ttl: float, settle_js: Optional[str] = None) -> Fetched:
+        """`settle_js`: see _read_by_navigation. A page that needs it is never
+        read directly (the backend would only get the empty shell)."""
         f = self._from_cache(path, ttl)
-        if f is None and self._use_direct and self._now() >= _direct_blocked_until:
+        if f is None and not settle_js and self._use_direct and self._now() >= _direct_blocked_until:
             f = await self._via_direct(path)
             if not f.ok:
                 self.fetches.append(f)
                 f = None
         if f is None:
-            f = await self._via_browser(path)
+            f = await self._via_browser(path, settle_js)
         if f.ok and f.transport != "cache":
             cache_put(path, f.status, f.text, self.cache_dir, self._now)
         self.fetches.append(f)
@@ -399,22 +410,25 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
         # Measurement: does the app's patchnotes PAGE list more builds than the
         # feed's 10? Count its build links, the dates next to them, and any
         # sign of paging / lazy loading.
-        page = await reader.get(patchnotes_path(appid), TTL_FEED)
+        page = await reader.get(patchnotes_path(appid), TTL_FEED, PATCHNOTES_SETTLE_JS)
         if page.ok:
             html = page.text
+            i = html.find('class="history-container"')
+            hist = html[i:] if i >= 0 else ""
             ids = []
-            for m in re.finditer(r'href="/patchnotes/(\d+)/?"', html):
+            for m in re.finditer(r'href="/patchnotes/(\d+)/?"', hist):
                 if m.group(1) not in ids:
                     ids.append(m.group(1))
-            times = re.findall(r'(?:data-time|datetime)="([^"]+)"', html)
-            branches = re.findall(r'<code class="js-branch">([^<]*)</code>', html)
-            hints = [h for h in ("js-load-more", "load-more", "page=", "Load more", "Show more",
-                                 "data-page", "infinite", "rel=\"next\"") if h in html]
-            first = html.find('href="/patchnotes/')
-            row_start = html.rfind("<tr", 0, first) if first > 0 else -1
-            snippet = html[row_start:row_start + 700] if row_start >= 0 else html[max(0, first - 200):first + 500]
+            times = re.findall(r'(?:data-time|datetime)="([^"]+)"', hist)
+            branches = re.findall(r'<code class="js-branch">([^<]*)</code>', hist)
+            hints = [h for h in ("js-load-more", "load-more", "Load more", "Show more",
+                                 "data-page", "infinite", "rel=\"next\"") if h in hist]
+            first = hist.find('href="/patchnotes/')
+            row_start = hist.rfind("<tr", 0, first) if first > 0 else -1
+            snippet = hist[row_start:row_start + 900] if row_start >= 0 else hist[:900]
             out["patchnotes_page"] = {
-                "bytes": len(html), "build_links": len(ids),
+                "bytes": len(html), "settled": reader.view_state.get("settled"),
+                "build_links": len(ids),
                 "newest_id": ids[0] if ids else None, "oldest_id": ids[-1] if ids else None,
                 "times": len(times), "first_time": times[0] if times else None, "last_time": times[-1] if times else None,
                 "branch_tags": len(branches), "paging_hints": hints,

@@ -380,6 +380,26 @@ class HiddenView:
             return {"state": "error", "err": f"Page.navigate failed: {exc}"}
         return self.wait_ready(wait_s, expect_url=url)
 
+    def wait_settled(self, count_js: str, wait_s: float = 15.0) -> int:
+        """For pages that fill a container by script AFTER load: poll
+        `count_js` (an expression returning a number) every 0.5 s until it is
+        > 0 and unchanged between two polls, or the wait runs out. Returns the
+        last count (0 when nothing ever appeared)."""
+        import time as _time
+        deadline = _time.time() + wait_s
+        last = -1
+        while _time.time() < deadline:
+            try:
+                n = evaluate(self.ws or "", f"Number({count_js})", timeout=5, await_promise=False)
+                n = int(n or 0)
+            except Exception:
+                n = 0
+            if n > 0 and n == last:
+                return n
+            last = n
+            _time.sleep(0.5)
+        return max(last, 0)
+
     def html(self) -> str:
         """The current document's HTML, as the browser has it."""
         if not self.ws:
