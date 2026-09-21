@@ -121,6 +121,26 @@ _UNFILLED_SNAPSHOT_JS = """(function(){try{
 }catch(e){return JSON.stringify({err:String(e)});}})()"""
 
 
+def steamdb_cookies() -> list:
+    """SteamDB's cookies in Steam's browser (names, expiry, flags; never the
+    values), straight from CEF's live jar — HttpOnly ones included, which
+    document.cookie never shows. Which Cloudflare cookie exists, and for how
+    long, decides whether /api/ answers 200 or 403."""
+    import cef_cdp
+    out = []
+    for c in cef_cdp.get_cookies() or []:
+        if "steamdb.info" not in str(c.get("domain", "")):
+            continue
+        exp = c.get("expires")
+        out.append({
+            "name": c.get("name"), "domain": c.get("domain"), "path": c.get("path"),
+            "httpOnly": c.get("httpOnly"), "secure": c.get("secure"),
+            "expires": time.strftime("%H:%M:%S", time.gmtime(exp)) if isinstance(exp, (int, float)) and exp > 0 else "session",
+            "minutes_left": int((exp - time.time()) / 60) if isinstance(exp, (int, float)) and exp > 0 else None,
+        })
+    return out
+
+
 def classify(status: int, text: str) -> str:
     """ok | challenge | http_error | empty — what an answer really is."""
     head = (text or "")[:40000]
@@ -339,6 +359,11 @@ class Reader:
                     snap = f"snapshot failed: {exc}"
                 self.view_state["snapshot"] = snap
                 logger.info(f"SteamDB {path}: list did not fill after {self.view_state.get('attempts')}; {snap}")
+                try:
+                    self.view_state["cookies"] = steamdb_cookies()
+                    logger.info(f"SteamDB cookies now: {self.view_state['cookies']}")
+                except Exception as exc:
+                    logger.info(f"SteamDB cookies: {exc}")
         elif state == "challenge":
             f.outcome, f.status = "needs_user", 403
             f.error = str(st.get("title") or "")
@@ -448,6 +473,7 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
                  "depots": {}, "sample": None, "needs_user": False, "notes": []}
     reader = Reader(appid)
     try:
+        out["cookies_before"] = steamdb_cookies()
         feed = await reader.get(feed_path(appid), TTL_FEED)
         builds = versions.parse_builds_feed(feed.text) if feed.ok else []
         out["builds"] = len(builds)
@@ -528,6 +554,7 @@ async def probe(appid: int, max_depots: int = 6) -> dict:
         await reader.close()
     out["fetches"] = [f.summary() for f in reader.fetches]
     out["view"] = reader.view_state
+    out["cookies_after"] = steamdb_cookies()
     out["challenge_url"] = reader.challenge_url
     out["needs_user"] = reader.needs_user
     out["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
