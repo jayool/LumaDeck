@@ -908,7 +908,7 @@ from Selectively11), not from a headcrab bundle. lumalinux self-validates via it
 
 ---
 
-### ERRORS → the user can only ever do 5 things
+### ERRORS → the user can only ever do 6 things
 
 | # | User action | Backend states it covers | Where |
 |---|---|---|---|
@@ -917,6 +917,29 @@ from Selectively11), not from a headcrab bundle. lumalinux self-validates via it
 | 3 | **Downgrade Steam** | "Steam too new": `broken`/`hash_blocked` (cross-ref headcrab) | Desktop |
 | 4 | **Configure cloud provider** | CR `not_authed` | Desktop |
 | 5 | **Install LumaDeck manually** | plugin needs the zip | manual |
+| 6 | **Retry injection** (clear the crash guard + restart) | `guard.active` — the launcher's crash guard latched safe mode (3 startup crashes, or 1 right after a Steam update); every hook component reads `not_loaded` and Steam runs with **no** injection until the guard's state files go | Game Mode |
+
+**Row 6 (2026-09-23).** `lumalinux/setup.sh`'s `luma_guard_run` is the stack's
+anti-brick fail-safe: a Steam minidump in `/tmp/dumps` within 180 s of a
+launch counts as a startup crash; three in a row (or one when
+`steamclient.so` changed since the last clean boot) latch `safe_mode` in
+`~/.local/state/lumalinux/`, and from then on every launch is plain Steam
+(`env -u LD_AUDIT -u LD_PRELOAD`) until the payload fingerprint changes (a
+stack update) or the state files are removed. While latched, action 1 is a
+lie — the launcher goes vanilla again — so the plugin reads the latch
+(`paths.read_crash_guard`, surfaced as `guard` in `get_components_status`)
+and shows **Recovery mode** ("Steam crashed at startup. Running without
+injection.") with **Retry** instead of "Restart needed". Retry
+(`retry_injection` → `paths.clear_crash_guard`) removes exactly
+`safe_mode`, `safe_mode_fingerprint`, `boot_fail_count`, `last_launch` and
+restarts Steam; nothing else (not the payload, not `setup.sh`, not
+`guard.log`). It is a retry, not an override: if the cause is still there
+the guard latches again after three more crashes. The guard does not
+distinguish whose crash it was — on 2026-09-23 it latched on three
+CloudRedirect-induced Steam freezes while lumalinux itself had booted
+healthy — and that is by design: vanilla strips the whole stack, which is
+what let the user fix the cause (untick Steam Cloud for the game). The
+plugin's job is to say what happened, not to second-guess the guard.
 
 Silent: `healthy`, CR `kill_switched` (`~/.config/CloudRedirect/disable`, a
 deliberate opt-out the plugin only *detects*, never creates), CR `not_installed`.
@@ -929,12 +952,28 @@ deliberate opt-out the plugin only *detects*, never creates), CR `not_installed`
 - **Core (SLS+luma) is evaluated as one unit**; CR separate, only if installed.
 - **Priority:** action 3 (downgrade) **supersedes** 1 and 2 (nothing works until
   Steam is right). Show the single highest-priority row; the next surfaces once
-  it's resolved.
+  it's resolved. Action 6 (Retry) sits between the incomplete-install row and
+  1/2: `not_loaded` / `not_injected` are the guard's *symptom*, and their
+  restart / repair cannot lift it. Order: waiting-for-support > downgrade >
+  finish setup > **retry** > repair > restart.
 - **lumalinux `hash_blocked` is conditional:** it joins the downgrade group ONLY
   if SLS/CR also report "Steam too new" (then the headcrab pin is in lumalinux's
   hash set and it recovers too). If lumalinux is blocked **alone**, headcrab
   can't help (it doesn't know about lumalinux) → it's a **lumalinux update**
   problem, not a downgrade.
+
+**Confirm rule (2026-09-23).** Every button that restarts Steam or leaves
+Game Mode asks for a second tap, and the first tap says which: **"Confirm
+(restarts Steam)"** for Restart Steam, Repair, Finish setup, Update,
+Reinstall, Retry, Quick Install at the pin and the achievements section's
+Restart Steam; **"Confirm (continues in Desktop)"** for Fix in Desktop,
+Update in Desktop and Quick Install off-pin. The armed state auto-reverts
+after 5 s. Actions that do neither (open a stuck game, download the plugin
+zip) fire at once. While running, a button that *only* restarts says
+**"Restarting Steam..."**; anything that runs `setup.sh` first says
+**"Working..."**; Quick Install keeps **"Setting up..."**. The same
+`SystemStatus` row model drives the QAM and the Settings morphing button, so
+the rule holds on both surfaces by construction.
 
 **Two Desktop actions (3 and 4) — why they can't run in Game Mode:**
 - **Downgrade (3):** the Steam roll-back is a multi-restart op; even with our
