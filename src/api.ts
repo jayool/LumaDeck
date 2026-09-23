@@ -431,6 +431,12 @@ export const getQuickInstallStatus = async () =>
 export const reinjectInstalled = async () =>
   parseResult(await call<[], string>("reinject_installed"));
 
+// Clear the launcher's crash guard (safe mode) so the next launch injects
+// again; the caller restarts Steam afterwards, like Repair. Removes only the
+// guard's four state files (backend paths.clear_crash_guard).
+export const retryInjection = async () =>
+  parseResult(await call<[], string>("retry_injection"));
+
 // Cascade-safe install/repair/update for one component (or "core"). op is
 // install|repair|update (same mechanics, differs only in trigger/label). Poll
 // getQuickInstallStatus for progress. See DESIGN_UI.md "Component model".

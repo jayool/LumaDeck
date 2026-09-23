@@ -34,6 +34,7 @@ import {
   checkHeadcrabCompat,
   getComponentsStatus,
   reinjectInstalled,
+  retryInjection,
   applyComponent,
   listAdditionalApps,
   addToAdditionalApps,
@@ -547,10 +548,13 @@ export function Settings() {
   // every component: from the user's side there are only two fixes, "Restart
   // Steam" and "Fix in Desktop", so a broken component only ever says one of
   // those. healthy / not_installed / not_authed / disabled are handled elsewhere.
+  const guardActive = !!componentsStatus?.guard?.active;
   const healthLine = (state: string): string | null => {
     switch (state) {
-      case "not_loaded":    return t("healthNotLoaded");
-      case "not_injected":  return t("healthNotInjected");
+      // Crash guard latched: not_loaded / not_injected are its symptom, and the
+      // restart / repair those lines name can't lift it — Retry can.
+      case "not_loaded":    return guardActive ? t("healthPausedByGuard") : t("healthNotLoaded");
+      case "not_injected":  return guardActive ? t("healthPausedByGuard") : t("healthNotInjected");
       case "not_supported": return t("healthNeedsDesktop");
       default:              return null;
     }
@@ -693,6 +697,7 @@ export function Settings() {
     { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "not_authed", "disabled"] },
     { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
+    { key: "crash_guard", label: "Crash guard", opts: ["real", "active"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
     { key: "ryuu_cred", label: "Ryuu cookie", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
     { key: "fake_games", label: "Fake games (library)", opts: ["real", "5", "10", "25", "50"] },
@@ -1153,6 +1158,11 @@ export function Settings() {
             // place (Game Mode safe), then restart.
             label = t("sysFinishSetup");
             onClick = () => runFix(() => applyComponent("core", "install"));
+          } else if (primary === "retry") {
+            // Crash guard latched: Steam runs with no injection until its state
+            // is cleared. Retry removes the guard's state files and restarts.
+            label = t("sysRetry");
+            onClick = () => runFix(() => retryInjection());
           } else if (primary === "reinject") {
             // not_injected: the wrapper interposition was lost, so a plain restart
             // won't help. Repair re-runs setup.sh (reinject) and restarts. "Repair",

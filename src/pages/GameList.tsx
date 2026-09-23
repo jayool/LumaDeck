@@ -27,6 +27,7 @@ import {
   quickInstall,
   getQuickInstallStatus,
   reinjectInstalled,
+  retryInjection,
   runDesktopHandoffReal,
   runDesktopHandoffQuickInstall,
 } from "../api";
@@ -436,6 +437,13 @@ export function GameList() {
   // which own the steam.sh ordering. Each refreshes the status afterwards.
   const sysActions: SystemStatusActions = {
     restart: () => runSysAction(async () => { await restartSteam(); }),
+    retry: () => runSysAction(async () => {
+      // Crash guard latched: clear its state files, then restart so the
+      // launcher injects again (a bare restart would go vanilla once more).
+      const r = await retryInjection();
+      if (r?.success) await restartSteam();
+      else toast(t("toastError"), r?.error || "", 4000);
+    }),
     repair: () => runSysAction(async () => {
       const r = await reinjectInstalled();
       if (r?.success) await restartSteam();

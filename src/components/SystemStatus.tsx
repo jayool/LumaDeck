@@ -38,6 +38,12 @@ export interface ComponentsStatus {
     current_build_supported_by_latest?: boolean | null;
   };
   plugin: { installed: string | null; latest: string | null; available: boolean };
+  // The launcher's crash guard (lumalinux/setup.sh): after 3 startup crashes
+  // (or 1 right after a Steam update) it latches "safe mode" and launches Steam
+  // WITHOUT any injection until the stack changes or the state is cleared.
+  // While latched every hook component reads not_loaded and a plain restart
+  // does nothing — so the UI shows Recovery mode + Retry instead. Stack-wide.
+  guard?: { active: boolean; fails: number; since: string | null; client_changed: boolean };
   // Dev preview override for the Quick Install onboarding (backend/dev.py):
   // "show" forces it on, "hide" forces it off, null/absent = real behaviour.
   quickInstall?: string | null;
@@ -45,6 +51,7 @@ export interface ComponentsStatus {
 
 export interface SystemStatusActions {
   restart: () => void;       // not_loaded — plain Steam restart
+  retry: () => void;         // crash guard latched — clear its state, then restart
   repair: () => void;        // not_injected — re-inject steam.sh, then restart
   reinstallCore: () => void; // (unused since the 2-action model; kept for callers)
   downgrade: () => void;     // not_supported / partial install: hand off to Desktop (downgrade + pin)
@@ -74,9 +81,10 @@ const INFO = "#5b9eff";
 // From the user's side there are exactly two ways to fix anything: Restart Steam
 // (in place) or Fix in Desktop. Every component state maps to one of them.
 //   downgrade — not_supported / partial install: hand off to Desktop
+//   retry     — crash guard latched: clear its state, then restart (label: Retry)
 //   reinject  — not_injected: re-patch steam.sh, then restart (label: Restart)
 //   restart   — not_loaded: plain restart (label: Restart)
-export type PrimaryAction = "downgrade" | "core" | "reinject" | "restart" | null;
+export type PrimaryAction = "downgrade" | "core" | "retry" | "reinject" | "restart" | null;
 
 // The single highest-priority SYSTEM action for the current status, exported so
 // the Dependencies page drives its one morphing button from the same logic as
@@ -99,6 +107,9 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
     return null;
   if (anyUnsupported) return "downgrade";
   if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
+  // Guard latched: the not_loaded/not_injected below are its SYMPTOM, and their
+  // restart/repair can't lift it (the launcher goes vanilla again) — Retry can.
+  if (status.guard?.active) return "retry";
   if (installed.some((c) => c.health === "not_injected")) return "reinject";
   if (installed.some((c) => c.health === "not_loaded")) return "restart";
   return null;
@@ -167,6 +178,19 @@ function buildRows(
       label: t("sysNotComplete"), description: t("sysNotCompleteDesc"),
       actionLabel: busy ? t("sysWorking") : t("sysFinishSetup"),
       onAction: actions.reinstallCore,
+    });
+  } else if (status.guard?.active) {
+    // The launcher's crash guard is latched: Steam runs with NO injection until
+    // its state is cleared. A restart alone cannot lift it, so the restart row
+    // below (which the not_loaded symptom would otherwise trigger) must not
+    // show. Retry clears the guard's state files and restarts; if the cause is
+    // still there the guard re-latches after three more crashes.
+    rows.push({
+      key: "guard", severity: "problem",
+      label: t("sysRecovery"), description: t("sysRecoveryDesc"),
+      actionLabel: busy ? t("sysWorking") : t("sysRetry"),
+      onAction: actions.retry,
+      confirmFirst: true,
     });
   } else if (anyInjectLost || anyNotLoaded) {
     rows.push({
