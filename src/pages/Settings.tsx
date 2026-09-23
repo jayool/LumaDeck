@@ -68,10 +68,14 @@ export function Settings() {
   const [deps, setDeps] = useState<any>(null);
   const [componentsStatus, setComponentsStatus] = useState<ComponentsStatus | null>(null);
   const [applyingFix, setApplyingFix] = useState(false);
-  // Two-tap confirm for the morphing button ONLY when it's Fix in Desktop (it
-  // leaves Game Mode). Other button states (Restart / Repair / Finish setup) fire
-  // on the first press, untouched by this.
-  const [confirmDesktop, setConfirmDesktop] = useState(false);
+  // Two-tap confirm for the ONE morphing system button below: every state of it
+  // either restarts Steam or leaves Game Mode, so every state asks for a second
+  // tap, and the first tap names which ("Confirm (restarts Steam)" /
+  // "Confirm (continues in Desktop)"). Same rule as the QAM rows and Quick Install.
+  const [confirmFix, setConfirmFix] = useState(false);
+  // The achievements section's own Restart Steam button: same two-tap rule.
+  const [confirmAchRestart, setConfirmAchRestart] = useState(false);
+  const [achRestarting, setAchRestarting] = useState(false);
   const [platform, setPlatform] = useState<any>(null);
   const [devState, setDevStateLocal] = useState<Record<string, string>>({});
   // Dev: SteamDB reader probe (backend/steamdb_reader.py). Appid to read,
@@ -965,8 +969,19 @@ export function Settings() {
             />
           </PanelSectionRow>
           <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => restartSteam()}>
-              {t("restartSteam")}
+            <ButtonItem layout="below" disabled={achRestarting} onClick={async () => {
+              // Same two-tap rule as every other button that restarts Steam.
+              if (!confirmAchRestart) {
+                setConfirmAchRestart(true);
+                setTimeout(() => setConfirmAchRestart(false), 5000);
+                return;
+              }
+              setConfirmAchRestart(false);
+              setAchRestarting(true);
+              try { await restartSteam(); } finally { setAchRestarting(false); }
+            }}>
+              {achRestarting ? t("restartingSteam")
+                : confirmAchRestart ? t("confirmRestartsSteam") : t("restartSteam")}
             </ButtonItem>
           </PanelSectionRow>
         </PanelSection>
@@ -1132,17 +1147,10 @@ export function Settings() {
             headcrabCompat?.lumalinux_ready === true;
           let label = t("installReinstallDeps");
           let desc: string | undefined;
-          let onClick: () => any;
-          // Two-tap arm/fire for the Desktop hand-off (shared by Fix and Update).
-          const armDesktop = (fire: () => any) => () => {
-            if (!confirmDesktop) {
-              setConfirmDesktop(true);
-              setTimeout(() => setConfirmDesktop(false), 5000);
-              return;
-            }
-            setConfirmDesktop(false);
-            fire();
-          };
+          let fire: () => any;
+          // What the first tap announces, and what the button says while it runs.
+          let confirmKind: "restart" | "desktop" = "restart";
+          let busyLabel = t("sysWorking");
           if (primary === "downgrade") {
             // Genuinely unsupported build (Steam moved off a build we can hook) →
             // the break-recovery downgrade: downgrade.sh aligns Steam DOWN to a
@@ -1150,28 +1158,31 @@ export function Settings() {
             // the wrapper. This is the ONE fix that can't run in Game Mode, and the
             // ONE path that writes the pin (steam_freeze.py lifts it once the
             // ecosystem catches up and the align-up update is offered below).
-            label = confirmDesktop ? t("sysConfirmTap") : t("sysFixInDesktop");
+            label = t("sysFixInDesktop");
             desc = t("sysSteamTooNewFixDesc");
-            onClick = armDesktop(() => fixInDesktop(runDesktopHandoffReal));
+            confirmKind = "desktop";
+            fire = () => fixInDesktop(runDesktopHandoffReal);
           } else if (primary === "core") {
             // Partial install, Steam at the pin → install the missing core in
             // place (Game Mode safe), then restart.
             label = t("sysFinishSetup");
-            onClick = () => runFix(() => applyComponent("core", "install"));
+            fire = () => runFix(() => applyComponent("core", "install"));
           } else if (primary === "retry") {
             // Crash guard latched: Steam runs with no injection until its state
             // is cleared. Retry removes the guard's state files and restarts.
             label = t("sysRetry");
-            onClick = () => runFix(() => retryInjection());
+            busyLabel = t("restartingSteam");
+            fire = () => runFix(() => retryInjection());
           } else if (primary === "reinject") {
             // not_injected: the wrapper interposition was lost, so a plain restart
             // won't help. Repair re-runs setup.sh (reinject) and restarts. "Repair",
             // not "Restart Steam", because a manual restart genuinely doesn't fix it.
             label = t("repair");
-            onClick = () => runFix(() => reinjectInstalled());
+            fire = () => runFix(() => reinjectInstalled());
           } else if (primary === "restart") {
             label = t("restartSteam");
-            onClick = () => runFix(async () => ({ success: true })); // restart + refresh
+            busyLabel = t("restartingSteam");
+            fire = () => runFix(async () => ({ success: true })); // restart + refresh
           } else if (steamUpdate) {
             // Healthy, but Steam sits behind a newer SUPPORTED build → offer the
             // align-up as an UPDATE (not a fix). This is the "first update after a
@@ -1180,24 +1191,40 @@ export function Settings() {
             // ecosystem caught up, so Steam self-updates UP on the next launch —
             // back to the update-free state. Opposite direction to the downgrade,
             // and deliberately NOT the downgrade machinery (no pin written here).
-            label = confirmDesktop ? t("sysConfirmTap") : t("sysSteamUpdateBtn");
+            label = t("sysSteamUpdateBtn");
             desc = t("sysSteamUpdateAvailableDesc");
-            onClick = armDesktop(() => fixInDesktop(
+            confirmKind = "desktop";
+            fire = () => fixInDesktop(
               runDesktopHandoffQuickInstall,
-              "sysSteamUpdateAvailable", "sysAlignUpSwitching", "sysAlignUpManual"));
+              "sysSteamUpdateAvailable", "sysAlignUpSwitching", "sysAlignUpManual");
           } else {
             // healthy on-pin: manual maintenance. Reflect the real state in the
             // label — "Reinstall" when the core is already there (nothing is
             // missing), "Install" only on a fresh device.
             label = coreInstalled ? t("reinstallDeps") : t("installDeps");
-            onClick = () => runFix(() =>
+            fire = () => runFix(() =>
               coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
           }
+          // First tap arms (auto-reverts in 5 s), second tap fires.
+          const onClick = () => {
+            if (!confirmFix) {
+              setConfirmFix(true);
+              setTimeout(() => setConfirmFix(false), 5000);
+              return;
+            }
+            setConfirmFix(false);
+            fire();
+          };
+          const shown = applyingFix
+            ? busyLabel
+            : confirmFix
+              ? t(confirmKind === "desktop" ? "confirmContinuesDesktop" : "confirmRestartsSteam")
+              : label;
           return (
             <PanelSectionRow>
               <ButtonItem layout="below" disabled={applyingFix}
                 description={desc} onClick={onClick}>
-                {applyingFix ? t("installing") : label}
+                {shown}
               </ButtonItem>
             </PanelSectionRow>
           );

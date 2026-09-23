@@ -675,8 +675,8 @@ export function GameList() {
                 ? t("quickInstalling")
                 : confirmQuickInstall
                   ? quickInstallOffPin
-                    ? t("quickInstallConfirmDesktop")
-                    : t("quickInstallConfirm")
+                    ? t("confirmContinuesDesktop")
+                    : t("confirmRestartsSteam")
                   : t("quickInstall")}
             </ButtonItem>
           </PanelSectionRow>

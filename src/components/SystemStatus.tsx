@@ -71,8 +71,14 @@ type Row = {
   description?: string;
   actionLabel?: string;
   onAction?: () => void;
-  // Destructive / Desktop-switching actions ask for a second tap before firing.
-  confirmFirst?: boolean;
+  // Every action that restarts Steam or leaves Game Mode asks for a second tap,
+  // and the first tap SAYS which of the two it is about to do:
+  //   "restart" → "Confirm (restarts Steam)"   "desktop" → "Confirm (continues in Desktop)"
+  // Actions that do neither (open a game, download the plugin zip) fire at once.
+  confirm?: "restart" | "desktop";
+  // Label while the action runs. Default "Working..." (setup.sh + restart);
+  // actions that ONLY restart Steam say so ("Restarting Steam...").
+  busyLabel?: string;
 };
 
 const WARN = "#ff8c00";
@@ -122,7 +128,6 @@ function buildRows(
   t: (k: string, ...a: any[]) => string,
   status: ComponentsStatus,
   stuck: { appid: number; name: string }[],
-  busy: boolean,
   actions: SystemStatusActions,
 ): Row[] {
   const rows: Row[] = [];
@@ -165,9 +170,9 @@ function buildRows(
     rows.push({
       key: "desktop", severity: "problem",
       label: t("sysUnsupported"), description: t("sysUnsupportedDesc"),
-      actionLabel: busy ? t("sysWorking") : t("sysFixInDesktop"),
+      actionLabel: t("sysFixInDesktop"),
       onAction: actions.downgrade,
-      confirmFirst: true,
+      confirm: "desktop",
     });
   } else if (notComplete) {
     // A core component is missing. Steam is at the pin here (if it weren't, the
@@ -176,8 +181,9 @@ function buildRows(
     rows.push({
       key: "incomplete", severity: "problem",
       label: t("sysNotComplete"), description: t("sysNotCompleteDesc"),
-      actionLabel: busy ? t("sysWorking") : t("sysFinishSetup"),
+      actionLabel: t("sysFinishSetup"),
       onAction: actions.reinstallCore,
+      confirm: "restart",
     });
   } else if (status.guard?.active) {
     // The launcher's crash guard is latched: Steam runs with NO injection until
@@ -188,18 +194,20 @@ function buildRows(
     rows.push({
       key: "guard", severity: "problem",
       label: t("sysRecovery"), description: t("sysRecoveryDesc"),
-      actionLabel: busy ? t("sysWorking") : t("sysRetry"),
+      actionLabel: t("sysRetry"),
       onAction: actions.retry,
-      confirmFirst: true,
+      confirm: "restart", busyLabel: t("restartingSteam"),
     });
   } else if (anyInjectLost || anyNotLoaded) {
     rows.push({
       key: "restart", severity: "problem",
       label: t("sysNeedsRestart"), description: t("sysNeedsRestartDesc"),
-      actionLabel: busy ? t("sysWorking") : t("restartSteam"),
+      actionLabel: t("restartSteam"),
       // not_injected needs steam.sh re-patched first (repair = reinject + restart);
-      // a plain not_loaded just needs the restart. Same button label either way.
+      // a plain not_loaded just needs the restart. Same button label either way;
+      // the busy label tells them apart (setup.sh runs before the restart).
       onAction: anyInjectLost ? actions.repair : actions.restart,
+      confirm: "restart", busyLabel: anyInjectLost ? undefined : t("restartingSteam"),
     });
   }
 
@@ -246,9 +254,9 @@ function buildRows(
       rows.push({
         key: "steam-update", severity: "info",
         label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),
-        actionLabel: busy ? t("sysWorking") : t("sysSteamUpdateBtn"),
+        actionLabel: t("sysSteamUpdateBtn"),
         onAction: actions.alignUp,
-        confirmFirst: true,
+        confirm: "desktop",
       });
     }
 
@@ -263,8 +271,9 @@ function buildRows(
       rows.push({
         key: "update", severity: "info",
         label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),
-        actionLabel: busy ? t("sysWorking") : t("sysUpdate"),
+        actionLabel: t("sysUpdate"),
         onAction: actions.update,
+        confirm: "restart",
       });
     }
   }
@@ -272,7 +281,7 @@ function buildRows(
     rows.push({
       key: "plugin", severity: "info",
       label: t("sysPluginUpdate"), description: t("sysPluginUpdateDesc"),
-      actionLabel: busy ? t("sysWorking") : t("sysPluginUpdateBtn"),
+      actionLabel: t("sysPluginUpdateBtn"),
       onAction: actions.pluginUpdate,
     });
   }
@@ -309,7 +318,7 @@ export function SystemStatus({
   useEffect(() => () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); }, []);
   if (!status?.success) return null;
 
-  const rows = buildRows(t, status, stuck, busy, actions);
+  const rows = buildRows(t, status, stuck, actions);
   if (rows.length === 0) return null;
 
   return (
@@ -322,20 +331,23 @@ export function SystemStatus({
             <FaArrowCircleUp color={INFO} />
           );
         const isConfirming = confirming === r.key;
-        // A confirmFirst row turns its first tap into "tap again to confirm"; the
-        // second tap fires. Other rows fire on the first tap.
+        // A row with `confirm` turns its first tap into the explicit confirm
+        // label (what is about to happen); the second tap fires. Rows without
+        // it fire on the first tap.
         const handleClick = () => {
           if (!r.onAction) return;
-          if (r.confirmFirst && !isConfirming) {
+          if (r.confirm && !isConfirming) {
             armConfirm(r.key);
             return;
           }
           clearConfirm();
           r.onAction();
         };
-        const buttonLabel = r.confirmFirst && isConfirming
-          ? t("sysConfirmTap")
-          : r.actionLabel;
+        const buttonLabel = busy
+          ? (r.busyLabel ?? t("sysWorking"))
+          : r.confirm && isConfirming
+            ? t(r.confirm === "desktop" ? "confirmContinuesDesktop" : "confirmRestartsSteam")
+            : r.actionLabel;
         return (
           <PanelSectionRow key={r.key}>
             {r.actionLabel && r.onAction ? (
