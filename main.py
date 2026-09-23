@@ -736,6 +736,13 @@ class Plugin:
         from installer import reinject_installed
         return _j(await reinject_installed())
 
+    async def retry_injection(self) -> str:
+        """Clear the launcher's crash guard (safe mode) so the next Steam launch
+        injects again. Removes only its four state files; the frontend then
+        restarts Steam, exactly like Repair. See paths.clear_crash_guard."""
+        from paths import clear_crash_guard
+        return _j(clear_crash_guard())
+
     async def apply_component(self, component_id: str, op: str = "repair") -> str:
         """Install/repair/update one component (or 'core'), cascade-safe. Poll
         get_quick_install_status. See the Component model spec in DESIGN_UI.md."""

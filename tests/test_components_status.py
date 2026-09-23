@@ -47,6 +47,8 @@ class GetComponentsStatusTests(unittest.TestCase):
             patch(paths, fn, lambda: dict(HEALTHY))
         patch(paths, "read_lumalinux_health", lambda: dict(HEALTHY, version="0.18.1"))
         patch(paths, "get_cloudredirect_so_path", lambda: None)
+        patch(paths, "read_crash_guard",
+              lambda: {"active": False, "fails": 0, "since": None, "client_changed": False})
 
         async def _has_update(owner, repo, installed, force=False):
             return {"installed": installed, "latest": None, "has_update": False, "url": None}
@@ -117,6 +119,28 @@ class GetComponentsStatusTests(unittest.TestCase):
 
         self.assertEqual(set(result["plugin"]), {"installed", "latest", "available"})
         self.assertIn("headcrab", result)
+        # The launcher's crash guard, read by the QAM's "Recovery mode" row and
+        # the Settings button; stack-wide like headcrab.
+        self.assertEqual(set(result["guard"]), {"active", "fails", "since", "client_changed"})
+        self.assertFalse(result["guard"]["active"])
+
+    def test_a_latched_crash_guard_is_reported(self):
+        import paths
+        self.patch(paths, "read_crash_guard",
+                   lambda: {"active": True, "fails": 3, "since": "2026-09-23 10:22:09",
+                            "client_changed": False})
+        result = asyncio.run(components.get_components_status())
+        self.assertEqual(result["guard"], {"active": True, "fails": 3,
+                                           "since": "2026-09-23 10:22:09", "client_changed": False})
+
+    def test_a_failing_guard_read_reports_inactive(self):
+        import paths
+        def boom():
+            raise OSError("permission denied")
+        self.patch(paths, "read_crash_guard", boom)
+        result = asyncio.run(components.get_components_status())
+        self.assertTrue(result["success"])
+        self.assertFalse(result["guard"]["active"])
 
     def test_a_failing_subcheck_does_not_blank_the_payload(self):
         async def boom(*args, **kwargs):

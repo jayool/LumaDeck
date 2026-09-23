@@ -8,6 +8,7 @@ so ~ expands to /root/. We include explicit /home/deck/ paths to handle this.
 from __future__ import annotations
 
 import os
+import re
 from typing import Optional
 
 try:
@@ -788,6 +789,96 @@ def read_lumalinux_health() -> dict:
         return {"state": "not_supported", "cause": "hooks", "version": version, "action": "downgrade"}
 
     return {"state": "healthy", "cause": None, "version": version, "action": None}
+
+
+# ---------------------------------------------------------------------------
+# Crash guard (lumalinux/setup.sh `luma_guard_run`) — the launcher's anti-brick
+# fail-safe. It counts Steam crashes that leave a minidump in /tmp/dumps within
+# 180 s of a launch; three in a row (or ONE right after steamclient.so changed)
+# latch "safe mode": every launch is then plain Steam, with NO LD_PRELOAD /
+# LD_AUDIT, until the payload fingerprint changes (a stack update) or the state
+# files are removed. Its state lives in ~/.local/state/lumalinux/:
+#   safe_mode              latch flag (empty file)
+#   safe_mode_fingerprint  size:mtime of the four .so at latch time
+#   boot_fail_count        consecutive startup crashes seen
+#   last_launch            touched at every injected launch
+#   guard.log              one line per event (latch, vanilla launch, reset)
+# While latched, all three hook components read "not_loaded" and a plain Steam
+# restart is useless — the launcher goes vanilla again. LumaDeck reads the latch
+# here so the UI can say so ("Recovery mode") instead of offering that restart.
+# ---------------------------------------------------------------------------
+
+_GUARD_STATE_FILES = ("safe_mode", "safe_mode_fingerprint", "boot_fail_count", "last_launch")
+_GUARD_INACTIVE = {"active": False, "fails": 0, "since": None, "client_changed": False}
+
+
+def crash_guard_dir() -> str:
+    """The launcher's state dir. setup.sh honours XDG_STATE_HOME, but that is
+    the deck user's session variable, invisible to Decky (root); the default
+    is what a Steam Deck has."""
+    return os.path.join(_REAL_HOME, ".local/state/lumalinux")
+
+
+def _parse_guard_latch(log_text: str) -> tuple:
+    """(since, fails, client_changed) from the LAST 'latching safe mode' line of
+    guard.log, e.g.
+        2026-09-23 10:22:09 latching safe mode (fails=3 client_changed=0) -> vanilla (...)
+    Unknown fields stay at their defaults; a missing line yields (None, 0, False)."""
+    since, fails, changed = None, 0, False
+    for line in log_text.splitlines():
+        m = re.match(r"^(\S+ \S+) latching safe mode \(fails=(\d+) client_changed=(\d)\)", line)
+        if m:
+            since, fails, changed = m.group(1), int(m.group(2)), m.group(3) == "1"
+    return since, fails, changed
+
+
+def read_crash_guard() -> dict:
+    """{"active": bool, "fails": int, "since": "YYYY-MM-DD HH:MM:SS"|None,
+        "client_changed": bool}. Read-only. active is exactly "safe_mode exists".
+    Dev override "crash_guard" = "active" forges a latched state for previews."""
+    try:
+        import dev
+        if dev.get("crash_guard") == "active":
+            return {"active": True, "fails": 3, "since": "2026-01-01 00:00:00", "client_changed": False}
+    except Exception:
+        pass
+    d = crash_guard_dir()
+    if not os.path.isfile(os.path.join(d, "safe_mode")):
+        return dict(_GUARD_INACTIVE)
+    fails = 0
+    try:
+        with open(os.path.join(d, "boot_fail_count"), "r", encoding="utf-8") as f:
+            fails = int((f.read().strip() or "0"))
+    except Exception:
+        pass
+    since, log_fails, changed = None, 0, False
+    try:
+        with open(os.path.join(d, "guard.log"), "r", encoding="utf-8", errors="replace") as f:
+            since, log_fails, changed = _parse_guard_latch(f.read())
+    except Exception:
+        pass
+    return {"active": True, "fails": fails or log_fails, "since": since, "client_changed": changed}
+
+
+def clear_crash_guard() -> dict:
+    """Remove the launcher's four state files so its next launch injects again
+    (what a user otherwise does by hand over SSH). Touches nothing else: not the
+    payload, not setup.sh, not guard.log — the launcher keeps logging there. The
+    crash counter restarts at zero, so if the cause is still present the guard
+    latches again after three more crashes; this is a retry, not an override.
+    Returns {"success", "removed": [...]}; a missing file is not an error."""
+    d = crash_guard_dir()
+    removed = []
+    for name in _GUARD_STATE_FILES:
+        path = os.path.join(d, name)
+        try:
+            os.remove(path)
+            removed.append(name)
+        except FileNotFoundError:
+            continue
+        except Exception as exc:
+            return {"success": False, "error": f"cannot remove {path}: {exc}", "removed": removed}
+    return {"success": True, "removed": removed}
 
 
 # ---------------------------------------------------------------------------

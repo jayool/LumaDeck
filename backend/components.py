@@ -160,6 +160,7 @@ async def get_components_status(force: bool = False) -> dict:
         read_slssteam_health,
         read_lumalinux_health,
         read_cloudredirect_health,
+        read_crash_guard,
     )
     from headcrab_compat import check_headcrab_compat
     from self_update import check_plugin_update
@@ -185,6 +186,11 @@ async def get_components_status(force: bool = False) -> dict:
     sls_health = _safe_sync(read_slssteam_health, {"state": None})
     ll_health = _safe_sync(read_lumalinux_health, {"state": None})
     cr_health = _safe_sync(read_cloudredirect_health, {"state": None})
+    # The launcher's crash guard (paths.read_crash_guard). While it is latched
+    # every hook component reads not_loaded and a plain restart cannot help, so
+    # the UI shows "Recovery mode" + Retry instead of "Restart needed". Stack-wide
+    # like headcrab, not per component. Inactive on any failure (safe default).
+    guard = _safe_sync(read_crash_guard, {"active": False, "fails": 0, "since": None, "client_changed": False})
 
     # SLSsteam has no readable version on disk of its own (config.yaml is settings
     # only; the version is a build timestamp embedded inside the .so). setup.sh
@@ -254,5 +260,11 @@ async def get_components_status(force: bool = False) -> dict:
             "installed": plugin.get("installed"),
             "latest": plugin.get("latest"),
             "available": bool(plugin.get("has_update")),
+        },
+        "guard": {
+            "active": bool(guard.get("active")),
+            "fails": int(guard.get("fails") or 0),
+            "since": guard.get("since"),
+            "client_changed": bool(guard.get("client_changed")),
         },
     }
