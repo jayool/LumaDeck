@@ -917,7 +917,7 @@ from Selectively11), not from a headcrab bundle. lumalinux self-validates via it
 | 3 | **Downgrade Steam** | "Steam too new": `broken`/`hash_blocked` (cross-ref headcrab) | Desktop |
 | 4 | **Configure cloud provider** | CR `not_authed` | Desktop |
 | 5 | **Install LumaDeck manually** | plugin needs the zip | manual |
-| 6 | **Retry injection** (clear the crash guard + restart) | `guard.active` — the launcher's crash guard latched safe mode (3 startup crashes, or 1 right after a Steam update); every hook component reads `not_loaded` and Steam runs with **no** injection until the guard's state files go | Game Mode |
+| 6 | **Re-enable injection** (clear the crash guard + restart) | `guard.active` — the launcher's crash guard latched safe mode (3 startup crashes, or 1 right after a Steam update); every hook component reads `not_loaded` and Steam runs with **no** injection until the guard's state files go | Game Mode |
 
 **Row 6 (2026-09-23).** `lumalinux/setup.sh`'s `luma_guard_run` is the stack's
 anti-brick fail-safe: a Steam minidump in `/tmp/dumps` within 180 s of a
@@ -929,7 +929,7 @@ stack update) or the state files are removed. While latched, action 1 is a
 lie — the launcher goes vanilla again — so the plugin reads the latch
 (`paths.read_crash_guard`, surfaced as `guard` in `get_components_status`)
 and shows **Recovery mode** ("Steam crashed at startup. Running without
-injection.") with **Retry** instead of "Restart needed". Retry
+injection.") with **Re-enable injection** instead of "Restart needed". It
 (`retry_injection` → `paths.clear_crash_guard`) removes exactly
 `safe_mode`, `safe_mode_fingerprint`, `boot_fail_count`, `last_launch` and
 restarts Steam; nothing else (not the payload, not `setup.sh`, not
@@ -952,10 +952,10 @@ deliberate opt-out the plugin only *detects*, never creates), CR `not_installed`
 - **Core (SLS+luma) is evaluated as one unit**; CR separate, only if installed.
 - **Priority:** action 3 (downgrade) **supersedes** 1 and 2 (nothing works until
   Steam is right). Show the single highest-priority row; the next surfaces once
-  it's resolved. Action 6 (Retry) sits between the incomplete-install row and
+  it's resolved. Action 6 (Re-enable injection) sits between the incomplete-install row and
   1/2: `not_loaded` / `not_injected` are the guard's *symptom*, and their
   restart / repair cannot lift it. Order: waiting-for-support > downgrade >
-  finish setup > **retry** > repair > restart.
+  finish setup > **re-enable injection** > repair > restart.
 - **lumalinux `hash_blocked` is conditional:** it joins the downgrade group ONLY
   if SLS/CR also report "Steam too new" (then the headcrab pin is in lumalinux's
   hash set and it recovers too). If lumalinux is blocked **alone**, headcrab
@@ -965,7 +965,7 @@ deliberate opt-out the plugin only *detects*, never creates), CR `not_installed`
 **Confirm rule (2026-09-23).** Every button that restarts Steam or leaves
 Game Mode asks for a second tap, and the first tap says which: **"Confirm
 (restarts Steam)"** for Restart Steam, Repair, Finish setup, Update,
-Reinstall, Retry, Quick Install at the pin and the achievements section's
+Reinstall, Re-enable injection, Quick Install at the pin and the achievements section's
 Restart Steam; **"Confirm (continues in Desktop)"** for Fix in Desktop,
 Update in Desktop and Quick Install off-pin. The armed state auto-reverts
 after 5 s. Actions that do neither (open a stuck game, download the plugin

@@ -1170,7 +1170,7 @@ export function Settings() {
           } else if (primary === "retry") {
             // Crash guard latched: Steam runs with no injection until its state
             // is cleared. Retry removes the guard's state files and restarts.
-            label = t("sysRetry");
+            label = t("sysReenable");
             busyLabel = t("restartingSteam");
             fire = () => runFix(() => retryInjection());
           } else if (primary === "reinject") {

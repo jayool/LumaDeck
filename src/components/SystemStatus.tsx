@@ -87,7 +87,7 @@ const INFO = "#5b9eff";
 // From the user's side there are exactly two ways to fix anything: Restart Steam
 // (in place) or Fix in Desktop. Every component state maps to one of them.
 //   downgrade — not_supported / partial install: hand off to Desktop
-//   retry     — crash guard latched: clear its state, then restart (label: Retry)
+//   retry     — crash guard latched: clear its state, then restart (label: Re-enable injection)
 //   reinject  — not_injected: re-patch steam.sh, then restart (label: Restart)
 //   restart   — not_loaded: plain restart (label: Restart)
 export type PrimaryAction = "downgrade" | "core" | "retry" | "reinject" | "restart" | null;
@@ -194,7 +194,7 @@ function buildRows(
     rows.push({
       key: "guard", severity: "problem",
       label: t("sysRecovery"), description: t("sysRecoveryDesc"),
-      actionLabel: t("sysRetry"),
+      actionLabel: t("sysReenable"),
       onAction: actions.retry,
       confirm: "restart", busyLabel: t("restartingSteam"),
     });
