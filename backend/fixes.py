@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import posixpath
 import re
@@ -512,13 +513,49 @@ _ANTICHEAT_MARKERS = ("easyanticheat", "beservice", "battleye", "eac_launcher", 
 
 
 def _netsock_marker_path(install_path: str, appid: int) -> str:
+    """The online-fix automatism's netsock marker (written when a LuaTools
+    online fix declaring a FakeAppId is applied; removed with that fix)."""
     return os.path.join(install_path, f"luatools-netsock-{appid}.on")
 
 
+# ---------------------------------------------------------------------------
+# The Online toggle (per game): FakeAppId 480 + netsock + the EOS proxy when
+# the game ships the Epic SDK — the three known doors, applied by detection.
+# Its state lives in ONE marker in the game dir, `lumadeck-online-<appid>.json`:
+#   {"netsock": bool, "eos": bool, "fakeAppId": bool}
+# `fakeAppId` records that the TOGGLE registered the 480 (not a fix, not the
+# user), so disable removes exactly what enable added. The online-fix
+# automatism keeps its own legacy marker above; the two are independent, and
+# netsock is on for a game if either says so.
+# ---------------------------------------------------------------------------
+
+def _online_marker_path(install_path: str, appid: int) -> str:
+    return os.path.join(install_path, f"lumadeck-online-{appid}.json")
+
+
+def _read_online_marker(install_path: str, appid: int):
+    """The toggle's marker as a dict, or None if the toggle is off."""
+    if not install_path:
+        return None
+    try:
+        with open(_online_marker_path(install_path, appid), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+        return {"netsock": bool(data.get("netsock")), "eos": bool(data.get("eos")),
+                "fakeAppId": bool(data.get("fakeAppId"))}
+    except Exception:
+        return None
+
+
 def _netsock_enabled(install_path: str, appid: int) -> bool:
-    """True if native online (netsock) is marked on for this game."""
+    """True if netsock is on for this game: the Online toggle says so, or an
+    applied online fix's automatism does (legacy marker)."""
     if not install_path:
         return False
+    m = _read_online_marker(install_path, appid)
+    if m and m["netsock"]:
+        return True
     return os.path.isfile(_netsock_marker_path(install_path, appid))
 
 
@@ -554,6 +591,37 @@ def _has_anticheat(install_path: str) -> bool:
                 dirs[:] = []  # prune deeper descent
     except Exception:
         pass
+    return False
+
+
+def _fix_log_blocks(appid: int, install_path: str) -> list:
+    """The [FIX] blocks of this game's fix log, as raw text; [] when none."""
+    if not install_path:
+        return []
+    log_file = os.path.join(install_path, f"luatools-fix-log-{appid}.log")
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+    except Exception:
+        return []
+    return [b.split("[/FIX]")[0] for b in content.split("[FIX]")[1:]]
+
+
+def _fix_declares_fakeappid(appid: int, install_path: str) -> bool:
+    """A surviving fix registered a FakeAppId (the un-fix logic's own rule for
+    "someone still needs the 480")."""
+    return any(l.strip().startswith("FakeAppId:")
+               for b in _fix_log_blocks(appid, install_path) for l in b.splitlines())
+
+
+def _has_online_fix(appid: int, install_path: str) -> bool:
+    """An online fix (LuaTools "online" tag, or one that declared a FakeAppId)
+    is installed on this game."""
+    for b in _fix_log_blocks(appid, install_path):
+        for l in b.splitlines():
+            st = l.strip()
+            if st.startswith("Online: yes") or st.startswith("FakeAppId:"):
+                return True
     return False
 
 
@@ -706,70 +774,127 @@ def compute_fix_launch_options(appid: int, install_path: str) -> dict:
     }
 
 
-def enable_native_online(appid: int, install_path: str) -> dict:
-    """Turn on the native online (netsock) route for a game: FakeAppId 480 +
-    a per-game netsock marker. The frontend then recomputes launch options
-    (which now include the LD_AUDIT) and writes them via SteamClient.
-
-    Hard-stops on anti-cheat (netsock scans memory → ban) and requires headcrab's
-    netsock.so to actually be on disk."""
+def enable_online(appid: int, install_path: str) -> dict:
+    """Turn the Online toggle on for a game, applying the three doors by
+    detection:
+      - FakeAppId 480 in SLSsteam: always (recorded as ours only if it was not
+        there before, so disable never removes a fix's or the user's entry);
+      - netsock: when netsock.so is on disk (no anti-cheat gate — the UI carries
+        the fixed "do not use with anti-cheat games" warning, netsock's own);
+      - the EOS proxy: when the game ships EOSSDK-Win64-Shipping.dll.
+    Refuses on a game listed in SLSsteam's DenuvoGames (a ticket-activated
+    Denuvo game: FakeAppId would break the activation and online cannot work
+    on it anyway). Returns {"success", "applied": {...}, "skipped": {...}}."""
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
     if not install_path or not os.path.exists(install_path):
         return {"success": False, "error": "Install path does not exist"}
-    if _has_anticheat(install_path):
-        return {"success": False, "error": "This game has anti-cheat — netsock would get you banned, so it was not enabled."}
-    if not _netsock_so_installed():
-        return {"success": False, "error": "netsock.so not found — run Install Dependencies first."}
 
-    # FakeAppId 480 is the shared primitive; idempotent, refuses to seed a missing config.
-    fake_result = {"success": True}
+    from slssteam_ops import add_fake_app_id, check_fake_app_id_status, is_in_denuvo_games
+    from eos_proxy import apply_eos_proxy, get_eos_proxy_status
+
+    if is_in_denuvo_games(appid):
+        return {"success": False, "blockedBy": "denuvo",
+                "error": "Denuvo-activated game: online is not available."}
+
+    applied = {"fakeAppId": False, "netsock": False, "eos": False}
+    skipped: dict = {}
+    marker = _read_online_marker(install_path, appid) or {"netsock": False, "eos": False, "fakeAppId": False}
+
+    # FakeAppId 480 — the shared primitive; ours only if we are the one adding it.
+    had_fake = bool(check_fake_app_id_status(appid).get("exists"))
+    fake_res = add_fake_app_id(appid, 480)
+    if fake_res.get("success"):
+        applied["fakeAppId"] = True
+        marker["fakeAppId"] = marker["fakeAppId"] or not had_fake
+    else:
+        skipped["fakeAppId"] = fake_res.get("error") or "could not register FakeAppId"
+
+    # netsock — via the LD_AUDIT the launch-options recompute emits.
+    if _netsock_so_installed():
+        marker["netsock"] = True
+        applied["netsock"] = True
+    else:
+        skipped["netsock"] = "netsock not installed"
+
+    # EOS proxy — only where the game ships the Epic SDK.
+    eos = get_eos_proxy_status(install_path)
+    if eos.get("status") in ("inactive", "stale", "active"):
+        res = apply_eos_proxy(install_path)
+        if res.get("success"):
+            marker["eos"] = True
+            applied["eos"] = True
+        else:
+            skipped["eos"] = res.get("error") or "EOS proxy failed"
+    else:
+        skipped["eos"] = "no EOS SDK"
+
     try:
-        from slssteam_ops import add_fake_app_id
-        fake_result = add_fake_app_id(appid, 480)
+        with open(_online_marker_path(install_path, appid), "w", encoding="utf-8") as f:
+            json.dump(marker, f)
     except Exception as exc:
-        logger.warning(f"LumaDeck: FakeAppId for native online failed ({appid}): {exc}")
-
-    try:
-        with open(_netsock_marker_path(install_path, appid), "w", encoding="utf-8") as f:
-            f.write("netsock enabled\n")
-    except Exception as exc:
-        return {"success": False, "error": f"Could not write netsock marker: {exc}"}
-
-    return {"success": True, "fakeAppId": fake_result.get("success", False)}
+        return {"success": False, "error": f"Could not write online marker: {exc}"}
+    logger.info(f"LumaDeck: online enabled for {appid}: applied={applied} skipped={skipped}")
+    return {"success": True, "applied": applied, "skipped": skipped}
 
 
-def disable_native_online(appid: int, install_path: str) -> dict:
-    """Turn off native online (netsock) for a game: drop the marker so the next
-    launch-options recompute strips the LD_AUDIT. The FakeAppId 480 is left in
-    place — it is inert on its own and a crack fix may still need it."""
+def disable_online(appid: int, install_path: str) -> dict:
+    """Turn the Online toggle off: drop the marker (the next launch-options
+    recompute strips the LD_AUDIT), remove the EOS proxy if we put it, and
+    remove the FakeAppId only if the toggle added it and no surviving fix
+    declares one. The online-fix automatism's legacy marker is not ours."""
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
+    marker = _read_online_marker(install_path, appid)
+    if marker is None:
+        return {"success": True, "removed": {"eos": False, "fakeAppId": False}}
+    removed = {"eos": False, "fakeAppId": False}
+    if marker["eos"]:
+        from eos_proxy import remove_eos_proxy
+        res = remove_eos_proxy(install_path)
+        removed["eos"] = bool(res.get("success"))
+        if not res.get("success"):
+            logger.warning(f"LumaDeck: EOS proxy removal failed for {appid}: {res.get('error')}")
+    if marker["fakeAppId"] and not _fix_declares_fakeappid(appid, install_path):
+        try:
+            from slssteam_ops import remove_fake_app_id
+            removed["fakeAppId"] = bool(remove_fake_app_id(appid).get("success"))
+        except Exception as exc:
+            logger.warning(f"LumaDeck: could not remove FakeAppId for {appid}: {exc}")
     try:
-        marker = _netsock_marker_path(install_path, appid)
-        if os.path.isfile(marker):
-            os.remove(marker)
+        os.remove(_online_marker_path(install_path, appid))
+    except FileNotFoundError:
+        pass
     except Exception as exc:
         return {"success": False, "error": str(exc)}
-    return {"success": True}
+    return {"success": True, "removed": removed}
 
 
-def get_native_online_status(appid: int, install_path: str = "") -> dict:
-    """Report whether native online (netsock) is on, plus the two gating facts the
-    UI needs: is netsock.so installed, and does the game have anti-cheat."""
+def get_online_status(appid: int, install_path: str = "") -> dict:
+    """Everything the Online control renders: enabled + what is applied, the
+    netsock and EOS facts, whether a Denuvo activation blocks it, and whether
+    an online fix is installed (the "try that first" note)."""
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
+    from slssteam_ops import is_in_denuvo_games
+    from eos_proxy import get_eos_proxy_status
+    marker = _read_online_marker(install_path, appid)
+    eos = get_eos_proxy_status(install_path) if install_path else {"status": "none", "bundled": False}
     return {
         "success": True,
-        "enabled": _netsock_enabled(install_path, appid),
+        "enabled": marker is not None,
+        "applied": marker or {"netsock": False, "eos": False, "fakeAppId": False},
         "netsockInstalled": _netsock_so_installed(),
-        "hasAntiCheat": _has_anticheat(install_path) if install_path else False,
+        "eosStatus": eos.get("status", "none"),
+        "eosBundled": bool(eos.get("bundled")),
+        "blockedBy": "denuvo" if is_in_denuvo_games(appid) else None,
+        "hasOnlineFix": _has_online_fix(appid, install_path),
     }
 
 

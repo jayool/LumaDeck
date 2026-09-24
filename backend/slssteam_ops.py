@@ -264,6 +264,50 @@ def list_fake_app_ids() -> dict:
         return {"success": False, "error": str(e)}
 
 
+def is_in_denuvo_games(appid: int) -> bool:
+    """True if `appid` is listed under SLSsteam's `DenuvoGames:` block — an
+    external Denuvo activation done with another account's identity:
+
+        DenuvoGames:
+          76561198000000000:
+            - 1234
+            - 5678
+
+    Such a game must not get a FakeAppId: with the pipe reporting 480 SLSsteam
+    can no longer find the activator's identity for the real appid and the
+    activation fails (AceSLS, 293eb93, 2026-07-26). Online cannot work on a
+    ticket-activated Denuvo game anyway (publisher servers want a real licence),
+    so the Online toggle refuses instead of breaking it. Comment-safe, block
+    and flow list styles; anything unparseable reads as "not listed"."""
+    try:
+        config_path = _config_path()
+        if not os.path.exists(config_path):
+            return False
+        target = str(int(appid))
+        with open(config_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        in_block = False
+        for line in lines:
+            stripped = line.strip()
+            if not in_block:
+                if stripped.lower().startswith("denuvogames:"):
+                    in_block = True
+                continue
+            indent = len(line) - len(line.lstrip())
+            if stripped and not stripped.startswith("#") and indent == 0:
+                break                                   # next top-level key
+            if not stripped or stripped.startswith("#"):
+                continue
+            # "- 1234" list items, or a flow list "steamid: [1234, 5678]"
+            body = stripped[1:].strip() if stripped.startswith("-") else stripped.partition(":")[2]
+            for tok in body.replace("[", " ").replace("]", " ").replace(",", " ").split():
+                if tok.strip("'\"") == target:
+                    return True
+        return False
+    except Exception:
+        return False
+
+
 # ==========================================
 #  ADDITIONAL APPS MANAGEMENT
 # ==========================================
