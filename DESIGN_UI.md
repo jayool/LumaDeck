@@ -629,6 +629,22 @@ principle. Kept as-is.
     (the component still lives for Library/Downloads).
 - **Native or custom:** 🟢 fully native; no inline styles left on this page.
 
+#### 8e-bis. Online toggle (Online Fixes tab) — ✅ built
+
+- **What:** one `ActionButton` per installed game, "Enable Online" / "Disable
+  Online" ("Enabling…" / "Disabling…" while busy), under a `PanelSection` titled
+  "Online" at the end of the Online Fixes tab.
+- **Description (native `description`):** what it will apply or has applied —
+  `Will apply: Steam (480), netsock, Epic proxy.` / `Active: …` — plus at most
+  one extra note: netsock not installed, an online fix already installed ("try
+  it first"), or the Epic proxy stale after a game update.
+- **Fixed sub-line (`Field description`):** "Do not use with anti-cheat games."
+  No detection; it is netsock's own warning.
+- **Disabled** while busy, with no install path, or on a Denuvo-activated game
+  (description: "Denuvo-activated game: online is not available.").
+- **Toasts:** "Online enabled" / "Online disabled"; failures show the backend
+  error. Backend and lifecycle: FIXES_MAP.md, "Online multiplayer".
+
 #### 8f. Uninstall (Danger Zone) page — ✅ built (v0.3.56)
 
 - **What:** the destructive full-uninstall flow — a "what will be removed" list,

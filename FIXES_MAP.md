@@ -34,15 +34,15 @@ Two Game Detail tabs carry fixes:
 - **Fixes & Repairs**: the **non-online** LuaTools catalogue (crack / Denuvo),
   **Fixes** (Steamless / Goldberg), and **Repairs** (install/account plumbing).
 - **Online Fixes**: the **online** LuaTools catalogue (its own "Check for Online
-  Fixes"), then a **Native Online** control — the crack-free 480 + netsock route
-  (see "Online multiplayer" below).
+  Fixes"), then the **Online** toggle — the crack-free route: 480 + netsock +
+  the EOS proxy, each applied by detection (see "Online multiplayer" below).
 
 The split between the two catalogues is a tag filter: an entry tagged `online`
 goes to the Online Fixes tab, the rest stay in Fixes & Repairs. Both tabs share
 the same loaded listing and the same per-entry rendering; only the filter and the
 check-button label differ. (There is no longer a separate Game Management tab —
-it was only a FakeAppId control; the 480 online case is now the Native Online
-control, and setting an arbitrary FakeAppId lives in Settings.)
+it was only a FakeAppId control; the 480 online case is now the Online toggle,
+and setting an arbitrary FakeAppId lives in Settings.)
 
 ### Block: LuaTools Fixes (the catalogue)
 
@@ -103,61 +103,93 @@ Backend: `fixes.compute_fix_launch_options` + `steam_utils.get_app_launch_option
 Goldberg is intentionally NOT wired into the override (in-place steam_api64
 replacement that Proton loads without forcing).
 
-## Online multiplayer: 480, netsock, and the anti-cheat gate
+## Online multiplayer: 480, netsock, the EOS proxy, and the Online toggle
 
 Online play (problem C) rests on faking a networking-authorized appid. **480 =
-Spacewar**, the Steam SDK sample everyone is "authorized" for, so all online
-routes route through it. There are three, and the first two need **no crack**:
+Spacewar**, the Steam SDK sample everyone is "authorized" for, so every online
+route goes through it. Four doors exist; the first three need **no crack** and
+the Online toggle applies them together:
 
-| Route | What it needs | When |
+| Door | What it does | When it matters |
 |---|---|---|
-| **Native P2P** | SLSsteam `FakeAppId 480` only | classic Steamworks P2P lobbies |
-| **Native SNS** | `FakeAppId 480` + **netsock** (`LD_AUDIT`) | games using SteamNetworkingSockets (Lethal Company, Enshrouded, Teardown…) |
-| **OnlineFix crack** | the online-fix zip's DLLs (`WINEDLLOVERRIDES`) + `FakeAppId 480` | fallback when native doesn't connect |
+| **FakeAppId 480** (SLSsteam) | the game asks Steam for tickets/lobbies as Spacewar | every route — always applied by the toggle |
+| **netsock** (`LD_AUDIT` in the game process) | patches steamclient's GameNetworkingSockets cert check | games on SteamNetworkingSockets (Lethal Company, Enshrouded, Teardown…) |
+| **EOS proxy** (`EOSSDK-Win64-Shipping.dll`) | forwards to the game's real SDK, renamed `.yes`, and swaps `EOS_Connect_Login` to device-id | games whose multiplayer runs on Epic Online Services |
+| **Online fix** (catalogue zip) | in-process replacement steamclient / wrapper `steam_api` (`WINEDLLOVERRIDES`) + its own `FakeAppId` | when the native doors don't connect, or the game needs more (PlayFab, custom backends) |
 
-We don't try to tell native-P2P from native-SNS: netsock is **non-destructive and
-inert where unneeded** (it patches a steamclient cert function SNS games hit and
-fails gracefully with `"pattern not found"` otherwise), so **480 + netsock are
-applied together** as the native route.
+We don't try to tell one native door from another: 480 is inert where unneeded,
+netsock **fails gracefully with `"pattern not found"`** on a non-SNS game, and
+the EOS proxy only exists where the game ships the Epic SDK. So the toggle
+applies **480 always, netsock when it is installed, the EOS proxy when the SDK
+is found**, and tells the user which of the three it applied.
 
 **netsock** = `yesyes0649/steamnetsock-patch`. `setup.sh` installs it on every run
-to `~/.config/SLSsteam/tools/netsock/netsock.so`; we do
-not bundle it. Launch option (per its README): `LD_AUDIT="$HOME/.config/SLSsteam/tools/netsock/netsock.so" %command%`.
+to `~/.config/SLSsteam/tools/netsock/netsock.so`; we do not bundle it. Launch
+option (per its README): `LD_AUDIT="$HOME/.config/SLSsteam/tools/netsock/netsock.so" %command%`.
 
-### How each is applied, and the gate that decides
+**EOS proxy** = `yesyes0649/eos-proxy`, release **v1.0.0** (only a 64-bit build
+exists; the 32-bit asset is a dead link). `release.yml` fetches it into
+`backend/deps/EosProxy/` at build time and checks its SHA-256, so the plugin zip
+carries it and the backend can verify a placed copy by hash. Its README caveats
+are the toggle's: most games ask Steam for a web-API ticket before calling EOS,
+which is why 480 goes with it; games that turned off device-id login in their
+Epic product cannot be helped; the proxy writes `epic_proxy.log` beside the exe.
+
+### The Online toggle (Online Fixes tab)
+
+One button per installed game, **Enable Online / Disable Online**, with a
+description that says what it will apply, or what is active: `Will apply: Steam
+(480), netsock, Epic proxy.` / `Active: Steam (480), netsock.` Extra one-line
+notes by state: netsock not installed (points to Install Dependencies), an online
+fix already installed ("try it first"), the Epic proxy stale after a game update
+("disable and enable to refresh"). A fixed sub-line under the button, netsock's
+own README warning and the only anti-cheat handling: **"Do not use with
+anti-cheat games."** — no detection, nobody else gates this either.
+
+- **Enable** (`enable_online`): registers FakeAppId 480 (remembering whether the
+  entry was already there); sets the netsock leg when `netsock.so` is on disk
+  (the launch-options recompute emits the `LD_AUDIT`); applies the EOS proxy
+  when the game ships the SDK (`eos_proxy.apply_eos_proxy`: rename the SDK to
+  `.yes`, copy the proxy, verify by hash; a `stale` location keeps the game's
+  *new* SDK as the `.yes`). The result is one marker per game,
+  `lumadeck-online-<appid>.json` = `{netsock, eos, fakeAppId}`, where
+  `fakeAppId` is true only if the toggle was the one adding the 480.
+- **Disable** (`disable_online`): removes the EOS proxy if the marker says we put
+  it (`.yes` renamed back); removes the 480 only if the toggle added it **and**
+  no installed `[FIX]` block declares a FakeAppId; deletes the marker, so the
+  next launch-options recompute strips the `LD_AUDIT`. A fix's or a manual
+  FakeAppId is never touched.
+- **Status** (`get_online_status`): `enabled`, `applied`, `netsockInstalled`,
+  `eosStatus` (none / inactive / active / stale), `eosBundled`, `blockedBy`,
+  `hasOnlineFix`.
+- **Refused on Denuvo-activated games**: an appid listed in SLSsteam's
+  `DenuvoGames:` block is activated with another account's identity; a FakeAppId
+  would break that activation and online cannot work on a ticket-activated Denuvo
+  game anyway. The button is disabled with "Denuvo-activated game: online is not
+  available." (`slssteam_ops.is_in_denuvo_games`).
+
+### How the online-fix automatism relates
 
 - **From an online fix (catalogue "Apply fix"):** the definitive "this is an
   online fix" signal is that the zip ships an **`OnlineFix.ini` with a `FakeAppId`**
   in its `[Main]` section. On extract, `_apply_onlinefix_fakeappid` reads it and
   registers that id in SLSsteam (logged as a `FakeAppId:` line in the `[FIX]`
-  block). Denuvo / single-player / generic cracks have **no such `.ini`** → they
-  get **neither 480 nor netsock**; only their files are copied.
-- **Native route with no catalogue fix:** the **Native Online** control in the
-  Online Fixes tab. Enabling it (game installed) sets FakeAppId 480 and netsock;
-  disabling drops netsock (480 is left, it's inert). This is how an SNS game that
-  has no LuaTools online-fix still gets the crack-free route. Backend:
-  `enable_native_online` / `disable_native_online`.
-- **netsock rides the 480**, with two extra gates: it is only set when the
-  **`netsock.so` is on disk** and the game has **no anti-cheat**.
+  block), and sets the legacy netsock marker `luatools-netsock-{appid}.on` when
+  `netsock.so` is on disk and the install dir shows no anti-cheat markers
+  (`_has_anticheat`). Denuvo / single-player / generic cracks have **no such
+  `.ini`** → only their files are copied.
+- Both markers feed the same launch-options recompute: netsock is on when either
+  the toggle's marker or the legacy marker says so. Un-fixing an online fix drops
+  its FakeAppId and its legacy marker; the toggle's marker is the toggle's own.
+- Whether the ini automatism keeps setting netsock by itself is pending a real
+  test (Valheim on PC); the toggle does not depend on it.
 
-### The anti-cheat gate
-
-netsock **scans and modifies game memory**, which any anti-cheat (EasyAntiCheat,
-BattlEye) flags → ban. So a bounded scan of the install dir for their markers is
-a hard stop: **netsock is never applied to an anti-cheat game.** (The crack and
-the bare 480 are config/file-level, not memory scans, so they aren't gated on
-this — only netsock is.)
-
-### Lifecycle
-
-Set together, removed together. Un-fixing an online fix (or removing the 480
-toggle) drops the FakeAppId **and** the netsock marker, and the launch-options
-recompute strips the `LD_AUDIT` with it — only when no surviving fix still needs
-the FakeAppId, and never touching a manually-set entry.
-
-Backend: `fixes._apply_onlinefix_fakeappid`, `_parse_onlinefix_ini`,
-`enable_native_online` / `disable_native_online`, `_has_anticheat`,
-`_netsock_so_installed`, the netsock marker `luatools-netsock-{appid}.on`.
+Backend: `fixes.enable_online` / `disable_online` / `get_online_status`,
+`_read_online_marker`, `_netsock_enabled`, `_has_online_fix`,
+`_fix_declares_fakeappid`, `eos_proxy.py` (`get_eos_proxy_status`,
+`apply_eos_proxy`, `remove_eos_proxy`, `find_eos_dirs`),
+`slssteam_ops.is_in_denuvo_games`; the online-fix path keeps
+`_apply_onlinefix_fakeappid`, `_parse_onlinefix_ini`, `_has_anticheat`.
 
 ## Two real fix examples (verified by opening the zips)
 
