@@ -260,7 +260,10 @@ def _swap_in_unpacked(exe_path: str) -> bool:
         return False
 
 
-async def run_steamless(install_path: str) -> str:
+async def run_steamless(install_path: str, appid: int = 0) -> str:
+    """Unpack every Windows exe under install_path in a background task.
+    `appid` (0 = unknown) lets the task freeze the game once an exe has been
+    swapped, so a Steam update does not put the packed one back."""
     global _steamless_state
 
     if not install_path or not os.path.isdir(install_path):
@@ -290,11 +293,11 @@ async def run_steamless(install_path: str) -> str:
         "results": [],
     }
 
-    asyncio.ensure_future(_run_task(cli, exes))
+    asyncio.ensure_future(_run_task(cli, exes, appid))
     return json.dumps({"success": True, "total": len(exes)})
 
 
-async def _run_task(cli: str, exes: list):
+async def _run_task(cli: str, exes: list, appid: int = 0):
     global _steamless_state
     results = []
 
@@ -369,6 +372,14 @@ async def _run_task(cli: str, exes: list):
             logger.error(f"[LumaDeck/Steamless] Error on {fname}: {e}")
 
     success_count = sum(1 for r in results if r["success"])
+    if success_count and appid:
+        # An unpacked exe is in place of Valve's: freeze the game so an update
+        # does not put the packed one back (pins.freeze_for_files).
+        try:
+            import pins
+            await pins.freeze_for_files(int(appid))
+        except Exception as e:
+            logger.warning(f"[LumaDeck/Steamless] could not freeze {appid}: {e}")
     _steamless_state = {
         "status": "done",
         "total": len(exes),

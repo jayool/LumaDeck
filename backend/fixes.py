@@ -119,7 +119,18 @@ async def _download_and_extract_fix(appid: int, download_url: str, install_path:
 
         # Run extraction in executor (blocking I/O)
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _extract_fix_sync, appid, dest_zip, install_path, fix_type, game_name, download_url, online)
+        written = await loop.run_in_executor(None, _extract_fix_sync, appid, dest_zip, install_path, fix_type, game_name, download_url, online)
+
+        # Our files are in the game dir now: freeze the game so a Steam update
+        # does not put Valve's back (pins.freeze_for_files). Before "done", so
+        # the frontend's pin re-read on "done" sees the freeze.
+        if written:
+            try:
+                import pins
+                await pins.freeze_for_files(appid)
+            except Exception as exc:
+                logger.warning(f"LumaDeck: could not freeze {appid} after fix: {exc}")
+        _set_fix_download_state(appid, {"status": "done", "success": True})
 
     except Exception as exc:
         if str(exc) == "cancelled":
@@ -287,7 +298,9 @@ def _apply_onlinefix_fakeappid(appid: int, install_path: str, extracted_files: l
         return 0
 
 
-def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: str, game_name: str, download_url: str, online: bool = False) -> None:
+def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: str, game_name: str, download_url: str, online: bool = False) -> int:
+    """Extract the zip into the game dir and log the [FIX] block. Returns the
+    number of files written (0 = nothing landed)."""
     """Synchronous extraction of fix zip (runs in executor)."""
     if not zipfile.is_zipfile(dest_zip):
         # A LuaTools fix is always a real .zip. A non-zip here means the link
@@ -422,12 +435,12 @@ def _extract_fix_sync(appid: int, dest_zip: str, install_path: str, fix_type: st
     except Exception:
         pass
 
-    _set_fix_download_state(appid, {"status": "done", "success": True})
-
     try:
         os.remove(dest_zip)
     except Exception:
         pass
+    # "done" is written by the async caller, after the freeze below.
+    return len(extracted_files)
 
 
 # ---------------------------------------------------------------------------

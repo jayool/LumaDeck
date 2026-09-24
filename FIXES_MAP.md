@@ -103,6 +103,32 @@ Backend: `fixes.compute_fix_launch_options` + `steam_utils.get_app_launch_option
 Goldberg is intentionally NOT wired into the override (in-place steam_api64
 replacement that Proton loads without forcing).
 
+## Anything in the game dir freezes the game
+
+Under the native model (v0.9+, a request-code provider up) an unfrozen game
+updates by itself, like an owned one, and a Steam update rewrites the depot's
+files: the crack's `steam_api`, Goldberg's, the Steamless-unpacked exe, the EOS
+proxy all silently revert to Valve's. In the SLSsteam world this never came up
+(games are downloaded pinned and never update); in LumaDeck it does. So **every
+operation that writes into the game dir freezes the game** to its installed
+build, with the same freeze the Auto-update toggle applies (`pins.freeze_for_files`
+→ `ensure_pinned` + `set_frozen(reason="files")`):
+
+| Operation | Freezes | Why / why not |
+|---|---|---|
+| Apply fix (generic, online, LuaTools catalogue) | yes, once files landed | its files replace the game's |
+| LuaTools version fix | yes (already did) | pins the build the fix needs |
+| Apply Goldberg | yes | replaces `steam_api` |
+| Steamless | yes, when at least one exe was swapped | replaces the exe |
+| Online toggle | only when eos-proxy was applied | 480 is SLSsteam config, steamnetsock-patch a launch option |
+| Remove fix / Goldberg / Online | **no** | unfreezing is the user's Auto-update toggle; another fix may still be there |
+
+A game the user already froze is left as is (its version-fix id survives); a
+providers freeze (the one the local pass lifts when a provider answers) is
+upgraded to the durable `files` freeze. The UI shows nothing new: the Auto-update
+toggle goes off and the version line reads "Frozen", as with a manual freeze.
+The frontend re-reads the pin after each of these operations (`refreshPin`).
+
 ## Online multiplayer: 480, netsock, the EOS proxy, and the Online toggle
 
 Online play (problem C) rests on faking a networking-authorized appid. **480 =
@@ -137,14 +163,16 @@ Epic product cannot be helped; the proxy writes `epic_proxy.log` beside the exe.
 
 ### The Online toggle (Online Fixes tab)
 
-One button per installed game, **Enable Online / Disable Online**, with a
-description that says what it will apply, or what is active: `Will apply: Steam
-(480), netsock, Epic proxy.` / `Active: Steam (480), netsock.` Extra one-line
-notes by state: netsock not installed (points to Install Dependencies), an online
-fix already installed ("try it first"), the Epic proxy stale after a game update
-("disable and enable to refresh"). A fixed sub-line under the button, netsock's
-own README warning and the only anti-cheat handling: **"Do not use with
-anti-cheat games."** — no detection, nobody else gates this either.
+One button per installed game, **Enable Online / Disable Online**, and one
+description line under it, naming each door by its real name: `Will apply:
+FakeAppId (480) · steamnetsock-patch · eos-proxy.` / `Active: FakeAppId (480) ·
+steamnetsock-patch.` Situational notes on the same line: steamnetsock-patch not
+installed (points to Install Dependencies), an online fix already installed
+("try it first"). The line always ends with steamnetsock-patch's own README
+warning, the only anti-cheat handling: **"Do not use with anti-cheat games."**
+— no detection, nobody else gates this either. Applying eos-proxy **freezes the
+game** (see "Anything in the game dir freezes the game" above); 480 and
+steamnetsock-patch live outside the game dir and do not.
 
 - **Enable** (`enable_online`): registers FakeAppId 480 (remembering whether the
   entry was already there); sets the netsock leg when `netsock.so` is on disk
@@ -161,7 +189,9 @@ anti-cheat games."** — no detection, nobody else gates this either.
   FakeAppId is never touched.
 - **Status** (`get_online_status`): `enabled`, `applied`, `netsockInstalled`,
   `eosStatus` (none / inactive / active / stale), `eosBundled`, `blockedBy`,
-  `hasOnlineFix`.
+  `hasOnlineFix`. `stale` (a `.yes` exists but the dll is not our proxy: the
+  game was updated after all, e.g. the user unfroze it) is backend-only; the UI
+  shows nothing for it, a new Enable re-applies the proxy over the new SDK.
 - **Refused on Denuvo-activated games**: an appid listed in SLSsteam's
   `DenuvoGames:` block is activated with another account's identity; a FakeAppId
   would break that activation and online cannot work on a ticket-activated Denuvo

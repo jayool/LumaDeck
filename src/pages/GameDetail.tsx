@@ -330,6 +330,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           toast(t("toastSuccess"), gameName);
           loadInstalledFixes();
           syncFixLaunchOptions();
+          refreshPin();
         } else if (status.state.status === "failed") {
           toast(t("toastError"), status.state.error || gameName, 5000);
         }
@@ -387,6 +388,7 @@ export function GameDetail({ appid }: GameDetailProps) {
           const total = status.state.total || 0;
           if (count > 0) {
             toast(t("removeDrmDone", count, total), gameName);
+            refreshPin();
           } else {
             toast(t("removeDrmNoDrm"), gameName, 4000);
           }
@@ -435,6 +437,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       await syncFixLaunchOptions();
       const st = await getOnlineStatus(appid, installPath);
       if (st?.success) setOnline(st);
+      if (!on) refreshPin();
       toast(on ? t("onlineOffToast") : t("onlineOnToast"), gameName);
     } else {
       toast(t("toastError"), result.error || "", 5000);
@@ -442,28 +445,31 @@ export function GameDetail({ appid }: GameDetailProps) {
     setBusy("");
   };
 
-  // What the Online control says under its button, from the status: blocked,
-  // the "you have an online fix" note, or what is / will be applied.
+  // The one line under the Online button, from the status: blocked (Denuvo),
+  // or what is / will be applied by its real name, the situational notes, and
+  // always the anti-cheat warning last. That warning is steamnetsock-patch's
+  // own README line: it patches memory in the game process, which any
+  // anti-cheat detects. No detection here — nobody else gates this either.
   const onlineDesc = (): string => {
-    if (!online) return t("onlineDesc");
+    if (!online) return "";
     if (online.blockedBy === "denuvo") return t("onlineBlockedDenuvo");
     const parts: string[] = [];
+    let line: string;
     if (online.enabled) {
       const a = online.applied || {};
       if (a.fakeAppId) parts.push(t("onlinePartSteam"));
       if (a.netsock) parts.push(t("onlinePartNetsock"));
       if (a.eos) parts.push(t("onlinePartEpic"));
-      let line = t("onlineActive", parts.join(" · ") || "—");
-      if (online.eosStatus === "stale") line += " " + t("onlineEpicStale");
-      return line;
+      line = t("onlineActive", parts.join(" · ") || "—");
+    } else {
+      parts.push(t("onlinePartSteam"));
+      if (online.netsockInstalled) parts.push(t("onlinePartNetsock"));
+      if (online.eosStatus !== "none" && online.eosBundled) parts.push(t("onlinePartEpic"));
+      line = t("onlineWillApply", parts.join(" · "));
+      if (!online.netsockInstalled) line += " " + t("onlineNoNetsock");
+      if (online.hasOnlineFix) line += " " + t("onlineHasFix");
     }
-    parts.push(t("onlinePartSteam"));
-    if (online.netsockInstalled) parts.push(t("onlinePartNetsock"));
-    if (online.eosStatus !== "none" && online.eosBundled) parts.push(t("onlinePartEpic"));
-    let line = t("onlineWillApply", parts.join(" · "));
-    if (!online.netsockInstalled) line += " " + t("onlineNoNetsock");
-    if (online.hasOnlineFix) line += " " + t("onlineHasFix");
-    return line;
+    return line + " " + t("onlineAntiCheatWarning");
   };
 
   const handleCheckFixes = async () => {
@@ -618,6 +624,14 @@ export function GameDetail({ appid }: GameDetailProps) {
     setAcfBuildid(typeof r.installedBuildid === "number" ? r.installedBuildid : null);
   };
 
+  // Every operation that writes into the game dir freezes the game in the
+  // backend (pins.freeze_for_files): a fix, Goldberg, Steamless, the EOS proxy.
+  // Re-read the pin so the Auto-update toggle and the version line show it.
+  const refreshPin = async () => {
+    const r = await getPinStatus(appid);
+    if (r.success) applyPinStatus(r);
+  };
+
   const handleTogglePin = async () => {
     const result = isPinned ? await unpinGame(appid) : await pinGame(appid);
     if (result.success) {
@@ -750,6 +764,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       if (result.success) {
         setGoldbergApplied(true);
         toast(t("toastGoldbergApplied"), gameName);
+        refreshPin();
       } else {
         toast(t("toastError"), result.message || result.error || "", 4000);
       }
@@ -780,7 +795,7 @@ export function GameDetail({ appid }: GameDetailProps) {
       toast(t("toastError"), t("installPathNotFound"), 4000);
       return;
     }
-    const result = await runSteamless(installPath);
+    const result = await runSteamless(installPath, appid);
     if (result.success) {
       setSteamlessState({ status: "running", total: result.total, processed: 0, current: "" });
     } else {
@@ -1397,12 +1412,6 @@ export function GameDetail({ appid }: GameDetailProps) {
           disabled={busy === "online" || !installPath || online?.blockedBy === "denuvo"}
           description={onlineDesc()}
         />
-        {/* netsock's own README warning: it scans and patches memory in the game
-            process, which any anti-cheat detects. A fixed line, no detection —
-            nobody else gates this either (ASSella, LGT). */}
-        <PanelSectionRow>
-          <Field description={t("onlineAntiCheatWarning")} />
-        </PanelSectionRow>
       </PanelSection>
         </>
       ),

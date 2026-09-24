@@ -23,6 +23,17 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 
+async def _freeze_for_files(appid: int) -> bool:
+    """Freeze a game after one of our operations wrote into its install dir
+    (pins.freeze_for_files). Never fails the operation that called it."""
+    try:
+        import pins
+        return await pins.freeze_for_files(int(appid))
+    except Exception as exc:
+        decky.logger.warning(f"LumaDeck: could not freeze {appid}: {exc}")
+        return False
+
+
 def _j(obj) -> str:
     """Ensure we always return a JSON string to the frontend."""
     if isinstance(obj, str):
@@ -537,7 +548,10 @@ class Plugin:
 
     async def apply_goldberg(self, install_path: str, appid: int) -> str:
         from goldberg import apply_goldberg
-        return _j(apply_goldberg(install_path, appid))
+        res = apply_goldberg(install_path, appid)
+        if res.get("success"):
+            res["frozen"] = await _freeze_for_files(appid)
+        return _j(res)
 
     async def remove_goldberg(self, install_path: str, appid: int) -> str:
         from goldberg import remove_goldberg
@@ -645,9 +659,13 @@ class Plugin:
         return _j(compute_fix_launch_options(appid, install_path))
 
     async def enable_online(self, appid: int, install_path: str) -> str:
-        """The Online toggle: FakeAppId 480 + netsock + EOS proxy by detection."""
+        """The Online toggle: FakeAppId 480 + netsock + EOS proxy by detection.
+        Only the proxy lives in the game's files, so only it freezes the game."""
         from fixes import enable_online
-        return _j(enable_online(appid, install_path))
+        res = enable_online(appid, install_path)
+        if res.get("success") and (res.get("applied") or {}).get("eos"):
+            res["frozen"] = await _freeze_for_files(appid)
+        return _j(res)
 
     async def disable_online(self, appid: int, install_path: str) -> str:
         from fixes import disable_online
@@ -685,9 +703,9 @@ class Plugin:
         from steamless import get_steamless_download_status
         return _j(get_steamless_download_status())
 
-    async def run_steamless(self, install_path: str) -> str:
+    async def run_steamless(self, install_path: str, appid: int = 0) -> str:
         from steamless import run_steamless
-        return _j(await run_steamless(install_path))
+        return _j(await run_steamless(install_path, appid))
 
     async def get_steamless_status(self) -> str:
         from steamless import get_steamless_status

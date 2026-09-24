@@ -397,8 +397,8 @@ export const downloadSteamless = async () =>
 export const getSteamlessDownloadStatus = async () =>
   parseResult(await call<[], string>("get_steamless_download_status"));
 
-export const runSteamless = async (installPath: string) =>
-  parseResult(await call<[string], string>("run_steamless", installPath));
+export const runSteamless = async (installPath: string, appid: number) =>
+  parseResult(await call<[string, number], string>("run_steamless", installPath, appid));
 
 export const getSteamlessStatus = async () =>
   parseResult(await call<[], string>("get_steamless_status"));

@@ -92,6 +92,11 @@ UPDATE_INTERVAL = 30 * 60
 # pins.json `reason` for a freeze this module applied because no provider
 # answered; the only freeze it will undo by itself.
 FREEZE_REASON_PROVIDERS = "providers"
+# pins.json `reason` for a freeze applied because something of ours now lives
+# in the game's files (a fix, Goldberg, a Steamless-unpacked exe, the EOS
+# proxy). Treated exactly like a user freeze: kept and healed, released only
+# by the Auto-update toggle. See freeze_for_files.
+FREEZE_REASON_FILES = "files"
 # Valve's CDN, for the recovery probe (same hosts lumalinux checks codes on).
 _CDN_HOSTS = ("https://steampipe.akamaized.net",
               "https://fastly.cdn.steampipe.steamcontent.com")
@@ -232,6 +237,27 @@ def mark_update_required(appid: int) -> bool:
         logger.warning(f"LumaDeck: mark_update_required {appid}: cannot write .acf: {exc}")
         return False
     logger.info(f"LumaDeck: {appid} StateFlags {flags} -> {new_flags} (update required on next Steam start)")
+    return True
+
+
+async def freeze_for_files(appid: int) -> bool:
+    """Freeze a game because we just changed files in its install dir.
+
+    Under the native model an unfrozen game updates by itself, and a Steam
+    update rewrites the depot's files: the crack's steam_api, Goldberg's,
+    the unpacked exe, the EOS proxy all revert to Valve's, silently. So
+    every operation that writes into the game dir pins the game to its
+    installed build, the same freeze the Auto-update toggle applies. A game
+    the user already froze is left as is; a providers freeze (the one the
+    local pass would lift once a provider answers) is upgraded to a durable
+    one. Removing the fix does NOT unfreeze: that is the user's toggle.
+    Returns True when this call froze (or upgraded) the game."""
+    appid = int(appid)
+    if user_frozen(appid):
+        return False
+    await ensure_pinned(appid, allow_pin=True)
+    set_frozen(appid, True, reason=FREEZE_REASON_FILES)
+    logger.info(f"LumaDeck: {appid} frozen to its installed build (files changed)")
     return True
 
 

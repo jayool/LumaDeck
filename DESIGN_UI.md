@@ -634,16 +634,21 @@ principle. Kept as-is.
 - **What:** one `ActionButton` per installed game, "Enable Online" / "Disable
   Online" ("Enabling…" / "Disabling…" while busy), under a `PanelSection` titled
   "Online" at the end of the Online Fixes tab.
-- **Description (native `description`):** what it will apply or has applied —
-  `Will apply: Steam (480), netsock, Epic proxy.` / `Active: …` — plus at most
-  one extra note: netsock not installed, an online fix already installed ("try
-  it first"), or the Epic proxy stale after a game update.
-- **Fixed sub-line (`Field description`):** "Do not use with anti-cheat games."
-  No detection; it is netsock's own warning.
+- **Description (native `description`), one line:** what it will apply or has
+  applied, each door by its real name — `Will apply: FakeAppId (480) ·
+  steamnetsock-patch · eos-proxy.` / `Active: …` — then the situational notes
+  (steamnetsock-patch not installed; an online fix already installed, "try it
+  first"), and always last: "Do not use with anti-cheat games." (steamnetsock-
+  patch's own warning, no detection). No separate `Field`: one line, no extra
+  row.
 - **Disabled** while busy, with no install path, or on a Denuvo-activated game
-  (description: "Denuvo-activated game: online is not available.").
+  (description: "Denuvo-activated game: online is not available.", no warning).
 - **Toasts:** "Online enabled" / "Online disabled"; failures show the backend
   error. Backend and lifecycle: FIXES_MAP.md, "Online multiplayer".
+- **Freeze:** enabling with eos-proxy applied freezes the game (Auto-update
+  toggle off, version line "Frozen"), like Apply fix, Goldberg and Steamless —
+  FIXES_MAP.md, "Anything in the game dir freezes the game". The page re-reads
+  the pin after each of those operations.
 
 #### 8f. Uninstall (Danger Zone) page — ✅ built (v0.3.56)
 
