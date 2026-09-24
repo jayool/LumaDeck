@@ -88,7 +88,15 @@ instead of deleting the file. The backup tree is removed with the last fix.
 
 | Button | What it does | Source / origin | File treatment |
 |---|---|---|---|
-| **Remove Steam DRM** (Steamless) | Unpacks the SteamStub DRM shell from the game's `.exe` (problem B). | `Steamless.CLI` (atom0s), bundled in the plugin (`backend/deps/Steamless/`); needs .NET | runs Steamless on each `.exe`, keeps `.original.exe`, swaps the unpacked exe in |
+| **Remove Steam DRM** (Steamless) | Unpacks the SteamStub DRM shell from the game's `.exe` (problem B). | `Steamless.CLI` (atom0s), bundled in the plugin (`backend/deps/Steamless/`); needs .NET | runs Steamless on each `.exe` (10 min cap each, killed + partial output removed past it), keeps `.original.exe`, swaps the unpacked exe in; one outcome per exe (below). Freezes the game when an exe was swapped. |
+
+Steamless outcomes, per exe (`steamless._classify`, shown as one row each under
+the button): the CLI exits 0 when it wrote `<exe>.unpacked.exe` (→ `unpacked`,
+or `swap_failed` if it could not be put in place), **1 both when the file is
+not packed and when it recognised the stub and failed** — the two only differ
+in the text, "Failed to unpack file." → `unpack_failed`, else `no_drm` — and
+>1 → `error`; a killed run is `timeout`. The CLI's full output goes to the Decky
+log for every exe, whatever the code (rc 1 used to be discarded as "no DRM").
 | **Apply Goldberg** | Steam emulator: fakes ownership + offline achievements (problem A). Overlaps SLSsteam, so use only when SLSsteam isn't enough. | gbe_fork (Detanup01), bundled in the plugin (`backend/deps/Goldberg/`) | renames game `steam_api(64).dll` to `.valve`, drops Goldberg's + `steam_settings/` + `steam_appid.txt` |
 
 ### Block: Repairs (plumbing, NOT cracks)

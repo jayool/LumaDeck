@@ -629,6 +629,17 @@ principle. Kept as-is.
     (the component still lives for Library/Downloads).
 - **Native or custom:** 🟢 fully native; no inline styles left on this page.
 
+#### 8e-quater. Steamless — one row per exe — ✅ built
+
+- **What:** after a Remove Steam DRM run, under the button (which keeps its
+  "Done: N/M executables unpacked" line), one native `Field` per processed exe:
+  `label` = the exe name, `description` = its outcome — "DRM removed", "No
+  Steam DRM", "Unpack failed", "Unpacked, could not replace the exe", "Timed
+  out", "Error". Skipped exes (launchers, tiny files) do not appear, as before.
+- **Why:** the count alone hid "SteamStub recognised but unpack failed" behind
+  "no DRM" (Steamless.CLI exits 1 for both). Backend: FIXES_MAP.md, Steamless
+  outcomes.
+
 #### 8e-ter. One fix per game — the "Replace fix" press — ✅ built
 
 - **What:** a catalogue entry's "Apply fix" on a game that already has a

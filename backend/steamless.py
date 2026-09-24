@@ -218,6 +218,54 @@ def _scan_executables(game_dir: str) -> list:
     return [f for f, _ in found]
 
 
+# Per-exe cap. The old 120 s was not enough for a big exe and left the CLI
+# running past the timeout; 10 min is generous and a hung CLI still ends.
+_EXE_TIMEOUT = 10 * 60
+# What the status carries of the CLI's output per exe (the full text goes to
+# the Decky log).
+_OUTPUT_TAIL = 300
+
+# Steamless.CLI exit codes: 0 = unpacked (a new `<exe>.unpacked.exe`), 1 = the
+# file is not packed OR the unpacker recognised the stub and failed, >1 = error.
+# The two rc=1 cases only differ in the text: the failure prints "Failed to
+# unpack file."; "not packed" is what we used to report for both.
+OUTCOME_UNPACKED = "unpacked"
+OUTCOME_NO_DRM = "no_drm"
+OUTCOME_UNPACK_FAILED = "unpack_failed"
+OUTCOME_SWAP_FAILED = "swap_failed"
+OUTCOME_TIMEOUT = "timeout"
+OUTCOME_ERROR = "error"
+
+
+def _classify(rc: int | None, output: str, swapped: bool) -> str:
+    """One outcome per exe from the CLI's exit code, its output, and whether
+    the unpacked exe was swapped in (only attempted on rc 0)."""
+    if rc == 0:
+        return OUTCOME_UNPACKED if swapped else OUTCOME_SWAP_FAILED
+    if rc == 1:
+        return OUTCOME_UNPACK_FAILED if "failed to unpack" in (output or "").lower() else OUTCOME_NO_DRM
+    return OUTCOME_ERROR
+
+
+def _unpacked_candidates(exe_path: str) -> list[str]:
+    """Where Steamless.CLI writes its output for exe_path (two naming schemes)."""
+    return [exe_path + ".unpacked.exe", os.path.splitext(exe_path)[0] + ".unpacked.exe"]
+
+
+def _cleanup_partial(exe_path: str) -> int:
+    """Drop a half-written `.unpacked.exe` (killed CLI). The original is never
+    touched here: the swap only happens on a clean rc 0. Returns files removed."""
+    removed = 0
+    for p in _unpacked_candidates(exe_path):
+        try:
+            if os.path.isfile(p):
+                os.remove(p)
+                removed += 1
+        except OSError as e:
+            logger.warning(f"[LumaDeck/Steamless] could not remove partial {p}: {e}")
+    return removed
+
+
 def _swap_in_unpacked(exe_path: str) -> bool:
     """Put the DRM-free exe in place of the original after a successful Steamless
     run — the step LumaDeck was missing, so the game kept launching the still
@@ -232,14 +280,9 @@ def _swap_in_unpacked(exe_path: str) -> bool:
     Idempotent: on a re-run the pristine `.original.exe` backup is preserved, not
     clobbered with an already-patched exe. Returns True only if the swap happened.
     """
-    unpacked = exe_path + ".unpacked.exe"
-    if not os.path.isfile(unpacked):
-        # Some Steamless builds name it "<base>.unpacked.exe" instead.
-        alt = os.path.splitext(exe_path)[0] + ".unpacked.exe"
-        if os.path.isfile(alt):
-            unpacked = alt
-        else:
-            return False
+    unpacked = next((p for p in _unpacked_candidates(exe_path) if os.path.isfile(p)), None)
+    if not unpacked:
+        return False
 
     backup = os.path.splitext(exe_path)[0] + ".original.exe"
     try:
@@ -341,34 +384,44 @@ async def _run_task(cli: str, exes: list, appid: int = 0):
                 cwd=steamless_dir,
                 env=env,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=_EXE_TIMEOUT)
+            except asyncio.TimeoutError:
+                # The CLI is still running: end it, drop its half-written output.
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+                _cleanup_partial(exe_path)
+                results.append({"file": fname, "success": False, "outcome": OUTCOME_TIMEOUT, "output": ""})
+                logger.warning(f"[LumaDeck/Steamless] timeout after {_EXE_TIMEOUT}s, killed: {fname}")
+                continue
             rc = proc.returncode
             output = stdout.decode("utf-8", errors="replace") if stdout else ""
-            # exit 0 = DRM removed; exit 1 = no DRM found; >1 = error
-            success = rc == 0
-            no_drm = rc == 1
-            if success:
-                # DRM stripped from the copy — now put it in place (ACCELA's step).
-                # If the swap fails, this is NOT a real success: the game would
-                # still launch the protected original, so report it honestly.
-                replaced = _swap_in_unpacked(exe_path)
-                results.append({"file": fname, "success": replaced, "unpacked": True})
-                if replaced:
-                    logger.info(f"[LumaDeck/Steamless] unpacked + swapped in: {fname}")
-                else:
-                    logger.warning(f"[LumaDeck/Steamless] unpacked but swap-in failed "
-                                   f"(original still in place): {fname}")
-            elif no_drm:
-                results.append({"file": fname, "success": False, "noDrm": True})
+            # The CLI's whole output, every time: rc 1 hides a real failure
+            # behind "no DRM" and this is the only place to see which it was.
+            logger.info(f"[LumaDeck/Steamless] {fname}: rc={rc}\n{output.strip()}")
+            # DRM stripped from the copy — now put it in place (ACCELA's step).
+            # If the swap fails, this is NOT a real success: the game would
+            # still launch the protected original, so report it honestly.
+            swapped = _swap_in_unpacked(exe_path) if rc == 0 else False
+            outcome = _classify(rc, output, swapped)
+            results.append({"file": fname, "success": outcome == OUTCOME_UNPACKED,
+                            "outcome": outcome, "rc": rc, "output": output[-_OUTPUT_TAIL:]})
+            if outcome == OUTCOME_UNPACKED:
+                logger.info(f"[LumaDeck/Steamless] unpacked + swapped in: {fname}")
+            elif outcome == OUTCOME_SWAP_FAILED:
+                logger.warning(f"[LumaDeck/Steamless] unpacked but swap-in failed "
+                               f"(original still in place): {fname}")
+            elif outcome == OUTCOME_NO_DRM:
                 logger.info(f"[LumaDeck/Steamless] no DRM: {fname}")
+            elif outcome == OUTCOME_UNPACK_FAILED:
+                logger.warning(f"[LumaDeck/Steamless] SteamStub recognised but unpack FAILED: {fname}")
             else:
-                results.append({"file": fname, "success": False})
-                logger.warning(f"[LumaDeck/Steamless] error (rc={rc}): {fname} — {output[:200]}")
-        except asyncio.TimeoutError:
-            results.append({"file": fname, "success": False, "error": "timeout"})
-            logger.warning(f"[LumaDeck/Steamless] Timeout: {fname}")
+                logger.warning(f"[LumaDeck/Steamless] error (rc={rc}): {fname}")
         except Exception as e:
-            results.append({"file": fname, "success": False, "error": str(e)})
+            results.append({"file": fname, "success": False, "outcome": OUTCOME_ERROR, "output": str(e)})
             logger.error(f"[LumaDeck/Steamless] Error on {fname}: {e}")
 
     success_count = sum(1 for r in results if r["success"])

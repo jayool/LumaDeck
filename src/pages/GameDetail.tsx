@@ -76,6 +76,18 @@ interface InstalledFix {
   online?: boolean;
 }
 
+// steamless.py outcome → i18n key for the per-exe row.
+function drmOutcomeKey(outcome: string): string {
+  switch (outcome) {
+    case "unpacked": return "drmUnpacked";
+    case "no_drm": return "drmNone";
+    case "unpack_failed": return "drmUnpackFailed";
+    case "swap_failed": return "drmSwapFailed";
+    case "timeout": return "drmTimeout";
+    default: return "drmError";
+  }
+}
+
 function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
   if (bytesPerSec < 1024 * 1024)
@@ -1362,6 +1374,15 @@ export function GameDetail({ appid }: GameDetailProps) {
             }
           />
         ) : null}
+        {/* One row per exe the run processed, with its outcome (steamless.py
+            _classify): the count alone hid "SteamStub recognised, unpack failed"
+            behind "no DRM". Shown until the page is left. */}
+        {steamlessState?.status === "done" &&
+          (steamlessState.results || []).map((r: any, idx: number) => (
+            <PanelSectionRow key={`sl-${idx}`}>
+              <Field label={r.file} description={t(drmOutcomeKey(r.outcome))} />
+            </PanelSectionRow>
+          ))}
         {/* Goldberg — moved here from Game Management (it's a crack: replaces
             steam_api with the emulator). Intentionally NOT wired to the
             WINEDLLOVERRIDES override: it's an in-place steam_api64 replacement
