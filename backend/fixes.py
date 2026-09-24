@@ -92,10 +92,20 @@ async def check_for_fixes(appid: int) -> dict:
     return result
 
 
-async def _download_and_extract_fix(appid: int, download_url: str, install_path: str, fix_type: str, game_name: str = "", online: bool = False) -> None:
+async def _download_and_extract_fix(appid: int, download_url: str, install_path: str, fix_type: str, game_name: str = "", online: bool = False, replace: bool = False) -> None:
     client = await ensure_http_client("fix download")
     dest_zip = ""
     try:
+        if replace:
+            # One LuaTools fix per game: the installed one(s) go first, through
+            # the normal un-fix (originals restored, FakeAppId / netsock undone),
+            # then the new one lands on a clean game. Phase shown as "replacing".
+            _set_fix_download_state(appid, {"status": "replacing", "bytesRead": 0, "totalBytes": 0, "error": None})
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _unfix_game_worker, appid, install_path, "")
+            st = _get_unfix_state(appid)
+            if st.get("status") != "done":
+                raise RuntimeError(f"could not remove the installed fix: {st.get('error') or 'unknown error'}")
         dest_root = ensure_temp_download_dir()
         dest_zip = os.path.join(dest_root, f"fix_{appid}.zip")
         _set_fix_download_state(appid, {"status": "downloading", "bytesRead": 0, "totalBytes": 0, "error": None})
@@ -607,6 +617,22 @@ def _has_anticheat(install_path: str) -> bool:
     return False
 
 
+def installed_fix_types(appid: int, install_path: str) -> list:
+    """The `Fix Type:` of every [FIX] block on this game, in log order ("fix"
+    when a block has none). Non-empty = a LuaTools fix is installed; Goldberg,
+    Steamless and the Online toggle keep no block and do not count."""
+    out = []
+    for b in _fix_log_blocks(appid, install_path):
+        name = "fix"
+        for l in b.splitlines():
+            st = l.strip()
+            if st.startswith("Fix Type:"):
+                name = st.partition(":")[2].strip() or "fix"
+                break
+        out.append(name)
+    return out
+
+
 def _fix_log_blocks(appid: int, install_path: str) -> list:
     """The [FIX] blocks of this game's fix log, as raw text; [] when none."""
     if not install_path:
@@ -911,7 +937,11 @@ def get_online_status(appid: int, install_path: str = "") -> dict:
     }
 
 
-async def apply_game_fix(appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "", online: bool = False) -> dict:
+async def apply_game_fix(appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "", online: bool = False, replace: bool = False) -> dict:
+    """Queue a fix download + extraction. One LuaTools fix per game: with a
+    [FIX] block already on the game and `replace` false nothing is queued and
+    the answer carries `needsReplace` + the installed types, for the UI to
+    ask; with `replace` true the installed fix(es) are removed first."""
     try:
         appid = int(appid)
     except Exception:
@@ -922,9 +952,15 @@ async def apply_game_fix(appid: int, download_url: str, install_path: str, fix_t
     if not os.path.exists(install_path):
         return {"success": False, "error": "Install path does not exist"}
 
+    installed = installed_fix_types(appid, install_path)
+    if installed and not replace:
+        return {"success": False, "needsReplace": True, "installed": installed,
+                "error": "This game already has a fix installed."}
+
     _set_fix_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0, "error": None})
-    asyncio.create_task(_download_and_extract_fix(appid, download_url, install_path, fix_type, game_name, online))
-    return {"success": True}
+    asyncio.create_task(_download_and_extract_fix(appid, download_url, install_path, fix_type, game_name, online,
+                                                  replace=bool(installed)))
+    return {"success": True, "replaced": installed}
 
 
 def get_apply_fix_status(appid: int) -> dict:
@@ -1021,9 +1057,11 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
                 backup_path = os.path.join(backup_root, rel)
                 if os.path.isfile(backup_path):
                     # The fix overwrote an original here → put the original back
-                    # (over the crack file). shutil.move consumes the backup.
+                    # (over the crack file). COPY, not move: on a legacy install
+                    # with two fixes over the same file, the second un-fix must
+                    # still find the original. The tree goes when no fix remains.
                     os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                    shutil.move(backup_path, full_path)
+                    shutil.copy2(backup_path, full_path)
                     restored_count += 1
                 elif os.path.exists(full_path):
                     # Purely added by the fix → remove it.
@@ -1033,7 +1071,7 @@ def _unfix_game_worker(appid: int, install_path: str, fix_date: str = "") -> Non
                 pass
 
         # Drop the backup tree only when no fixes remain; otherwise other fixes'
-        # originals still live there. Restored files were already moved out.
+        # originals still live there (restores are copies, see above).
         if not remaining_fixes:
             shutil.rmtree(backup_root, ignore_errors=True)
 

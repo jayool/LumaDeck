@@ -53,9 +53,36 @@ listing for the appid; each entry then renders its own actions.
 | Control | What it does | Source / origin | File treatment |
 |---|---|---|---|
 | **Check for Fixes** | Loads the LuaTools catalogue for the appid (public; no login). Downloads nothing. | `list_luatools_fixes` → `/api/denuvo/fixes?appid=` | none |
-| **Apply fix** (per catalogue entry) | Downloads + applies that entry's zip (crack / online / Denuvo — problem A or C). | `download_luatools_fix` → the entry's signed URL → the same extract pipeline as `apply_game_fix` | extract into the game dir, overwriting. Logs a `[FIX]` block in `luatools-fix-log-{appid}.log`. **If the zip ships an `OnlineFix.ini` with a `FakeAppId`, it is an online fix → also registers the FakeAppId in SLSsteam and enables netsock (see below).** |
+| **Apply fix** (per catalogue entry) | Downloads + applies that entry's zip (crack / online / Denuvo — problem A or C). **One LuaTools fix per game** (see below). | `download_luatools_fix` → the entry's signed URL → the same extract pipeline as `apply_game_fix` | extract into the game dir, overwriting; originals copied to `luatools-backup-{appid}/` first (first-time copy only). Logs a `[FIX]` block in `luatools-fix-log-{appid}.log`. **If the zip ships an `OnlineFix.ini` with a `FakeAppId`, it is an online fix → also registers the FakeAppId in SLSsteam and enables netsock (see below).** Freezes the game (see "Anything in the game dir freezes the game"). |
 | **Install the game version this fix needs** (per entry, when it has one) | Pins the SLSsteam ManifestId so Steam (re)downloads the build the fix targets. | `download_luatools_fix` slot=`manifest` | no game-dir writes; user restarts Steam + re-downloads |
-| **Installed Fixes** | Lists applied fixes (from the log) with per-fix / all remove. | `get_installed_fixes` | un-fix deletes the fix's files, drops its `[FIX]` block, and removes any FakeAppId / netsock it set (see below) |
+| **Installed Fixes** | Lists applied fixes (from the log) with per-fix / all remove. | `get_installed_fixes` | un-fix deletes the fix's added files, **copies** the originals back from the backup (the backup tree is only dropped when no fix remains), drops its `[FIX]` block, and removes any FakeAppId / netsock it set (see below) |
+
+#### One LuaTools fix per game
+
+Two fixes on one game overlap (a generic crack and an online fix both ship a
+`steam_api`, an `OnlineFix.ini`…) and the result is undefined: whichever wrote
+last wins, and nothing can tell which files belong to which. So the rule is
+**one LuaTools fix installed per game**, enforced at apply:
+
+- `apply_game_fix` (and `download_luatools_fix` before it spends a signed URL)
+  reads the game's `[FIX]` blocks (`installed_fix_types`). With one or more
+  present and `replace` false it queues nothing and answers `{"needsReplace":
+  true, "installed": ["OnlineFix"]}`.
+- The UI turns that entry's "Apply fix" into **"Replace fix"** for 5 s, with
+  "This game already has a fix installed: OnlineFix. Press again to replace
+  it." (or "…already has 2 fixes installed. Press again to replace them." on a
+  legacy install). The second press sends `replace: true`.
+- With `replace` the download task first runs the normal un-fix over **all**
+  blocks (phase `replacing`, "Removing the installed fix..."): originals back,
+  added files gone, FakeAppId / netsock undone; then the new fix lands on a
+  clean game. If the un-fix fails nothing is downloaded.
+- Goldberg, Steamless and the Online toggle keep no `[FIX]` block and are not
+  part of the rule.
+
+**Restores are copies, not moves.** A legacy install may still carry two fixes
+over the same file; the backup holds the pristine original from before the
+first fix, and each un-fix copies it back, so the second un-fix still finds it
+instead of deleting the file. The backup tree is removed with the last fix.
 
 ### Block: Fixes (Steamless / Goldberg — local cracks, not the catalogue)
 

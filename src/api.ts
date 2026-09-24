@@ -275,21 +275,25 @@ export const getSyncAllStatus = async () =>
 export const checkForFixes = async (appid: number) =>
   parseResult(await call<[number], string>("check_for_fixes", appid));
 
+// replace: the game already has a LuaTools fix (the backend answered
+// needsReplace + installed[]) and the user confirmed replacing it.
 export const applyGameFix = async (
   appid: number,
   downloadUrl: string,
   installPath: string,
   fixType: string,
   gameName: string,
+  replace: boolean = false,
 ) =>
   parseResult(
-    await call<[number, string, string, string, string], string>(
+    await call<[number, string, string, string, string, boolean], string>(
       "apply_game_fix",
       appid,
       downloadUrl,
       installPath,
       fixType,
       gameName,
+      replace,
     ),
   );
 
@@ -322,9 +326,10 @@ export const downloadLuatoolsFix = async (
   slot: string = "",
   title: string = "",
   online: boolean = false,
+  replace: boolean = false,
 ) =>
   parseResult(
-    await call<[number, string, string, string, string, boolean], string>(
+    await call<[number, string, string, string, string, boolean, boolean], string>(
       "download_luatools_fix",
       appid,
       fixId,
@@ -332,6 +337,7 @@ export const downloadLuatoolsFix = async (
       slot,
       title,
       online,
+      replace,
     ),
   );
 

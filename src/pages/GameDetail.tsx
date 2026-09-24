@@ -138,6 +138,9 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [luatoolsFixes, setLuatoolsFixes] = useState<any[] | null>(null);
   const [luatoolsError, setLuatoolsError] = useState<string>("");
   const [confirmUninstall, setConfirmUninstall] = useState(false);
+  // One LuaTools fix per game: the catalogue entry whose "Apply fix" is waiting
+  // for a second press to replace what is installed (backend: needsReplace).
+  const [replaceAsk, setReplaceAsk] = useState<{ id: string; installed: string[] } | null>(null);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   // Game version (Status row + the Updates picker; backend/game_versions.py).
@@ -539,13 +542,23 @@ export function GameDetail({ appid }: GameDetailProps) {
       luaFixTagList(f)[0] ||
       "";
     const online = luaFixTagList(f).some((tg: string) => /online/i.test(tg));
+    // One fix per game. First press: the backend refuses with needsReplace and
+    // the installed types; this entry's button turns into "Replace fix" for 5 s
+    // (the same two-press rule as Uninstall). Second press: replace = true, the
+    // backend removes the installed fix(es) and applies this one.
+    const replace = replaceAsk?.id === String(f.id);
+    setReplaceAsk(null);
     // slot="fix" downloads the crack zip (vs "manifest"); download_luatools_fix
     // resolves the signed URL server-side and hands it to the same apply pipeline
     // as applyGameFix, so the existing fixStatus polling and progress UI cover it.
     const result = await downloadLuatoolsFix(
-      appid, String(f.id), installPath, "fix", name, online,
+      appid, String(f.id), installPath, "fix", name, online, replace,
     );
-    if (result.success) {
+    if (result.needsReplace) {
+      const ask = { id: String(f.id), installed: result.installed || [] };
+      setReplaceAsk(ask);
+      setTimeout(() => setReplaceAsk((cur) => (cur && cur.id === ask.id ? null : cur)), 5000);
+    } else if (result.success) {
       setFixStatus({ status: "queued" });
       // netsock + 480 are applied by the backend during extraction — but ONLY when
       // the fix is a real online fix (its zip ships an OnlineFix.ini with a
@@ -866,6 +879,7 @@ export function GameDetail({ appid }: GameDetailProps) {
     if (fixStatus.status === "downloading") return t("statusDownloading");
     if (fixStatus.status === "extracting") return t("extracting");
     if (fixStatus.status === "queued") return t("statusQueued");
+    if (fixStatus.status === "replacing") return t("statusReplacing");
     return fixStatus.status;
   })();
 
@@ -931,6 +945,12 @@ export function GameDetail({ appid }: GameDetailProps) {
       : [buildNote, "Sets the game to the build this fix needs. Restart Steam, (re)download the game, then apply the fix."]
           .filter(Boolean).join(". ");
     const applyDesc = (!f?.hasManifest ? buildNote : "") || undefined;
+    const asking = replaceAsk?.id === String(f.id);
+    const askDesc = asking
+      ? (replaceAsk!.installed.length === 1
+          ? t("fixAlreadyInstalledOne", replaceAsk!.installed[0])
+          : t("fixAlreadyInstalledMany", replaceAsk!.installed.length))
+      : undefined;
     return (
       <Fragment key={String(f.id)}>
         {(fixName || tagsSub) && (
@@ -948,8 +968,8 @@ export function GameDetail({ appid }: GameDetailProps) {
         )}
         {f?.hasFix !== false && (
           <ActionButton
-            label="Apply fix"
-            description={applyDesc}
+            label={asking ? t("replaceFix") : "Apply fix"}
+            description={asking ? askDesc : applyDesc}
             onClick={() => handleApplyLuatoolsFix(f)}
             disabled={!canApply || !!isFixInProgress || busyManifest}
           />

@@ -629,6 +629,19 @@ principle. Kept as-is.
     (the component still lives for Library/Downloads).
 - **Native or custom:** 🟢 fully native; no inline styles left on this page.
 
+#### 8e-ter. One fix per game — the "Replace fix" press — ✅ built
+
+- **What:** a catalogue entry's "Apply fix" on a game that already has a
+  LuaTools fix. The backend refuses (`needsReplace` + the installed types) and
+  the button becomes **"Replace fix"** with the description "This game already
+  has a fix installed: X. Press again to replace it." / "…already has N fixes
+  installed. Press again to replace them." Same two-press rule as Uninstall:
+  5 s without a press and it reverts to "Apply fix".
+- **Second press:** the usual apply flow with a first phase "Removing the
+  installed fix..." (`replacing`) in the progress bar, then download / extract.
+- **Native or custom:** the same `ActionButton`, label and description only.
+  Backend: FIXES_MAP.md, "One LuaTools fix per game".
+
 #### 8e-bis. Online toggle (Online Fixes tab) — ✅ built
 
 - **What:** one `ActionButton` per installed game, "Enable Online" / "Disable

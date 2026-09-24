@@ -675,7 +675,7 @@ async def _install_fix_version(appid: int, fix_id: str, build_tag: str = "") -> 
 
 async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
                                 slot: str = "", title: str = "",
-                                online: bool = False) -> dict:
+                                online: bool = False, replace: bool = False) -> dict:
     """Resolve the signed download URL for a catalogue fix and hand it to the
     existing fix pipeline (download → extract → Proton launch-option wiring).
 
@@ -686,6 +686,14 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
     the update job leaves it there. If any is missing nothing is written."""
     if slot == "manifest":
         return await _install_fix_version(appid, fix_id, title)
+
+    # One LuaTools fix per game (fixes.apply_game_fix): ask before spending a
+    # signed URL on a download that would be refused anyway.
+    from fixes import installed_fix_types
+    installed = installed_fix_types(appid, install_path)
+    if installed and not replace:
+        return {"success": False, "needsReplace": True, "installed": installed,
+                "error": "This game already has a fix installed."}
 
     token = await _access_token()
     if not token:
@@ -719,4 +727,4 @@ async def download_luatools_fix(appid: int, fix_id: str, install_path: str,
     # filed under the right tab even for EOS/EpicFix fixes (no FakeAppId).
     return await apply_game_fix(appid, signed_url, install_path,
                                 fix_type=(title.strip() or "LuaTools Catalog"),
-                                online=bool(online))
+                                online=bool(online), replace=replace)

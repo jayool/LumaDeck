@@ -601,9 +601,9 @@ class Plugin:
         from fixes import check_for_fixes
         return _j(await check_for_fixes(appid))
 
-    async def apply_game_fix(self, appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "") -> str:
+    async def apply_game_fix(self, appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "", replace: bool = False) -> str:
         from fixes import apply_game_fix
-        return _j(await apply_game_fix(appid, download_url, install_path, fix_type, game_name))
+        return _j(await apply_game_fix(appid, download_url, install_path, fix_type, game_name, replace=replace))
 
     async def get_apply_fix_status(self, appid: int) -> str:
         from fixes import get_apply_fix_status
@@ -634,9 +634,9 @@ class Plugin:
         from luatools_auth import list_luatools_fixes
         return _j(await list_luatools_fixes(appid))
 
-    async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "", title: str = "", online: bool = False) -> str:
+    async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "", title: str = "", online: bool = False, replace: bool = False) -> str:
         from luatools_auth import download_luatools_fix
-        return _j(await download_luatools_fix(appid, fix_id, install_path, slot, title, online))
+        return _j(await download_luatools_fix(appid, fix_id, install_path, slot, title, online, replace))
 
     async def unfix_game(self, appid: int, install_path: str = "", fix_date: str = "") -> str:
         from fixes import unfix_game
