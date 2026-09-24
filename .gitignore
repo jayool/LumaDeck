@@ -13,3 +13,5 @@ backend/appaccesstokens.json
 # CI (.github/workflows/release.yml), never committed. Steamless.CLI is small
 # enough to live in git, so backend/deps/Steamless is NOT ignored.
 backend/deps/Goldberg/
+# EOS proxy dll (yesyes0649/eos-proxy v1.0.0), fetched by CI the same way.
+backend/deps/EosProxy/

@@ -109,6 +109,23 @@ jobs:
           fi
           echo "Goldberg bundled:"; ls -la "$dest"
 
+      # EOS proxy (yesyes0649/eos-proxy): the Epic Online Services leg of the
+      # Online toggle (backend/eos_proxy.py). One 64-bit dll, ~200 KB, gitignored
+      # like Goldberg and fetched here from the pinned release, verified by
+      # SHA-256 so a re-tagged asset can never slip into a build unnoticed.
+      - name: Fetch EOS proxy (yesyes0649/eos-proxy)
+        env:
+          EOS_TAG: v1.0.0
+          EOS_SHA256: 00e0f034af8ba3ca53cc1a1d046d8f92c0c58cb90e252253d286ef8ce0d23916
+        run: |
+          set -euo pipefail
+          dest="backend/deps/EosProxy"
+          mkdir -p "$dest"
+          curl -fsSL -o "$dest/EOSSDK-Win64-Shipping.dll" \
+            "https://github.com/yesyes0649/eos-proxy/releases/download/${EOS_TAG}/EOSSDK-Win64-Shipping.dll"
+          echo "${EOS_SHA256}  $dest/EOSSDK-Win64-Shipping.dll" | sha256sum -c -
+          echo "EOS proxy bundled:"; ls -la "$dest"
+
       - name: Create plugin zip
         run: |
           mkdir -p LumaDeck
