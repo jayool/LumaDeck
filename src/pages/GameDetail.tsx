@@ -32,9 +32,9 @@ import {
   cancelDownload,
   hasLuatoolsForApp,
   getGameInstallPath,
-  enableNativeOnline,
-  disableNativeOnline,
-  getNativeOnlineStatus,
+  enableOnline,
+  disableOnline,
+  getOnlineStatus,
   getApplyFixStatus,
   getInstalledFixes,
   unfixGame,
@@ -129,7 +129,8 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [gameSize, setGameSize] = useState(0);
   const [downloadState, setDownloadState] = useState<any>(null);
   // Native online (netsock): { enabled, netsockInstalled, hasAntiCheat }. null = not loaded.
-  const [nativeOnline, setNativeOnline] = useState<any>(null);
+  // The Online toggle: { enabled, applied, netsockInstalled, eosStatus, eosBundled, blockedBy, hasOnlineFix }. null = not loaded.
+  const [online, setOnline] = useState<any>(null);
   const [fixStatus, setFixStatus] = useState<any>(null);
   const [installedFixes, setInstalledFixes] = useState<InstalledFix[]>([]);
   // LuaTools catalogue fixes for this game (null = not loaded). The listing is
@@ -256,8 +257,8 @@ export function GameDetail({ appid }: GameDetailProps) {
         if (pathResult.installPath) {
           const gbResult = await checkGoldbergStatus(pathResult.installPath);
           if (gbResult.success) setGoldbergApplied(gbResult.applied);
-          getNativeOnlineStatus(appid, pathResult.installPath).then((r: any) => {
-            if (r?.success) setNativeOnline(r);
+          getOnlineStatus(appid, pathResult.installPath).then((r: any) => {
+            if (r?.success) setOnline(r);
           });
         }
       }
@@ -416,27 +417,53 @@ export function GameDetail({ appid }: GameDetailProps) {
     setDownloadState((prev: any) => ({ ...prev, status: "cancelled" }));
   };
 
-  const handleToggleNativeOnline = async () => {
+  const handleToggleOnline = async () => {
     if (!installPath) {
       toast(t("toastError"), t("installPathNotFound"), 4000);
       return;
     }
-    const on = !!nativeOnline?.enabled;
-    setBusy("nativeonline");
-    // Enable = FakeAppId 480 + netsock marker (backend no-ops on anti-cheat /
-    // missing netsock.so). Disable = drop the marker. Either way recompute the
-    // launch options so the LD_AUDIT is added or stripped.
+    const on = !!online?.enabled;
+    setBusy("online");
+    // Enable = FakeAppId 480 + netsock (when netsock.so is there) + the EOS
+    // proxy (when the game ships the Epic SDK), decided by the backend. Disable
+    // = exactly what enable added. Either way recompute the launch options so
+    // the LD_AUDIT is added or stripped, then re-read the status.
     const result = on
-      ? await disableNativeOnline(appid, installPath)
-      : await enableNativeOnline(appid, installPath);
-    setBusy("");
+      ? await disableOnline(appid, installPath)
+      : await enableOnline(appid, installPath);
     if (result.success) {
-      setNativeOnline((p: any) => ({ ...(p || {}), enabled: !on }));
       await syncFixLaunchOptions();
-      toast(on ? t("nativeOnlineOffToast") : t("nativeOnlineOnToast"), gameName);
+      const st = await getOnlineStatus(appid, installPath);
+      if (st?.success) setOnline(st);
+      toast(on ? t("onlineOffToast") : t("onlineOnToast"), gameName);
     } else {
       toast(t("toastError"), result.error || "", 5000);
     }
+    setBusy("");
+  };
+
+  // What the Online control says under its button, from the status: blocked,
+  // the "you have an online fix" note, or what is / will be applied.
+  const onlineDesc = (): string => {
+    if (!online) return t("onlineDesc");
+    if (online.blockedBy === "denuvo") return t("onlineBlockedDenuvo");
+    const parts: string[] = [];
+    if (online.enabled) {
+      const a = online.applied || {};
+      if (a.fakeAppId) parts.push(t("onlinePartSteam"));
+      if (a.netsock) parts.push(t("onlinePartNetsock"));
+      if (a.eos) parts.push(t("onlinePartEpic"));
+      let line = t("onlineActive", parts.join(" · ") || "—");
+      if (online.eosStatus === "stale") line += " " + t("onlineEpicStale");
+      return line;
+    }
+    parts.push(t("onlinePartSteam"));
+    if (online.netsockInstalled) parts.push(t("onlinePartNetsock"));
+    if (online.eosStatus !== "none" && online.eosBundled) parts.push(t("onlinePartEpic"));
+    let line = t("onlineWillApply", parts.join(" · "));
+    if (!online.netsockInstalled) line += " " + t("onlineNoNetsock");
+    if (online.hasOnlineFix) line += " " + t("onlineHasFix");
+    return line;
   };
 
   const handleCheckFixes = async () => {
@@ -1354,33 +1381,28 @@ export function GameDetail({ appid }: GameDetailProps) {
       content: (
         <>
       {/* Online fixes: the online LuaTools catalogue, then the online fixes already
-          installed on THIS game, then the crack-free native route (480 + netsock). */}
+          installed on THIS game, then the Online toggle (480 + netsock + EOS proxy). */}
       {renderCatalogueSection(t("luatoolsOnlineFixes"), t("checkForOnlineFixes"), t("noOnlineFixes"), onlineFixes)}
 
       {renderInstalledFixes(installedFixes.filter((f) => f.online), "Installed Online Fixes")}
 
-      <PanelSection title={t("nativeOnline")}>
+      <PanelSection title={t("online")}>
         <ActionButton
           label={
-            busy === "nativeonline"
-              ? (nativeOnline?.enabled ? t("nativeOnlineDisabling") : t("nativeOnlineEnabling"))
-              : (nativeOnline?.enabled ? t("nativeOnlineDisable") : t("nativeOnlineEnable"))
+            busy === "online"
+              ? (online?.enabled ? t("onlineDisabling") : t("onlineEnabling"))
+              : (online?.enabled ? t("onlineDisable") : t("onlineEnable"))
           }
-          onClick={handleToggleNativeOnline}
-          disabled={
-            busy === "nativeonline"
-            || !installPath
-            || !!nativeOnline?.hasAntiCheat
-            || (nativeOnline && !nativeOnline.netsockInstalled)
-          }
-          description={
-            nativeOnline?.hasAntiCheat
-              ? t("nativeOnlineAntiCheat")
-              : (nativeOnline && !nativeOnline.netsockInstalled)
-                ? t("nativeOnlineNoLib")
-                : t("nativeOnlineDesc")
-          }
+          onClick={handleToggleOnline}
+          disabled={busy === "online" || !installPath || online?.blockedBy === "denuvo"}
+          description={onlineDesc()}
         />
+        {/* netsock's own README warning: it scans and patches memory in the game
+            process, which any anti-cheat detects. A fixed line, no detection —
+            nobody else gates this either (ASSella, LGT). */}
+        <PanelSectionRow>
+          <Field description={t("onlineAntiCheatWarning")} />
+        </PanelSectionRow>
       </PanelSection>
         </>
       ),

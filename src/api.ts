@@ -369,23 +369,17 @@ export const computeFixLaunchOptions = async (appid: number, installPath: string
     await call<[number, string], string>("compute_fix_launch_options", appid, installPath),
   );
 
-// Native online (netsock): the crack-free SteamNetworkingSockets primitive. Sets
-// FakeAppId 480 + a per-game marker so computeFixLaunchOptions re-emits the
-// LD_AUDIT. Non-destructive and inert where unneeded, so it's applied alongside
-// every online fix (backend no-ops on anti-cheat / missing netsock.so).
-export const enableNativeOnline = async (appid: number, installPath: string) =>
-  parseResult(
-    await call<[number, string], string>("enable_native_online", appid, installPath),
-  );
-export const disableNativeOnline = async (appid: number, installPath: string) =>
-  parseResult(
-    await call<[number, string], string>("disable_native_online", appid, installPath),
-  );
-// { enabled, netsockInstalled, hasAntiCheat } — drives the Native Online control.
-export const getNativeOnlineStatus = async (appid: number, installPath: string) =>
-  parseResult(
-    await call<[number, string], string>("get_native_online_status", appid, installPath),
-  );
+// The Online toggle: FakeAppId 480 + netsock + the EOS proxy, applied by
+// detection (backend/fixes.py enable_online). Refused on a Denuvo-activated
+// game (blockedBy: "denuvo"). Disable removes exactly what enable added.
+export const enableOnline = async (appid: number, installPath: string) =>
+  parseResult(await call<[number, string], string>("enable_online", appid, installPath));
+export const disableOnline = async (appid: number, installPath: string) =>
+  parseResult(await call<[number, string], string>("disable_online", appid, installPath));
+// { enabled, applied:{netsock,eos,fakeAppId}, netsockInstalled, eosStatus,
+//   eosBundled, blockedBy, hasOnlineFix } — drives the Online control.
+export const getOnlineStatus = async (appid: number, installPath: string) =>
+  parseResult(await call<[number, string], string>("get_online_status", appid, installPath));
 
 // Repair / Maintenance
 export const repairAppmanifest = async (appid: number) =>
