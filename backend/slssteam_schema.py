@@ -21,9 +21,11 @@ comment). It is APPEND-ONLY: it never edits or deletes an existing byte, so it
 cannot lose the user's values (AdditionalApps, ManifestIds, flag choices, …) or
 corrupt nested structures. Idempotent.
 
-The reference key-set is SLSsteam's own ``src/config_default.hpp`` — fetched live
-(so newly-added keys are tracked) with the bundled snapshot below as the offline
-fallback. If neither yields a valid reference, completion is a no-op (worst case:
+The reference key-set is SLSsteam's own ``res/config.yaml`` (the default config
+its build embeds into the binary) — fetched live from ``main`` (so newly-added
+keys are tracked) with the bundled snapshot below as the offline fallback.
+(Until 2026-09 we fetched the generated ``src/config_default.hpp`` instead; that
+header left upstream's git on dev@ae5cbf1, the YAML is its source and identical.) If neither yields a valid reference, completion is a no-op (worst case:
 the toast persists; never a partial write).
 """
 
@@ -43,15 +45,16 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 
-# Raw config_default.hpp URL (the authoritative default SLSsteam compiles in).
-_CONFIG_DEFAULT_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/main/src/config_default.hpp"
+# Raw URL of SLSsteam's default config (the YAML its build embeds; shipped in
+# every release zip). Plain YAML, no unwrapping needed.
+_CONFIG_DEFAULT_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/main/res/config.yaml"
 _CACHE_DIR = os.path.join(real_home(), ".cache/lumadeck")
 _CACHE_FILE = os.path.join(_CACHE_DIR, "slssteam_config_default.yaml")
 _FETCH_TIMEOUT = 8.0
 
-# Bundled fallback: SLSsteam's default config YAML, verbatim from
-# src/config_default.hpp (the content of its R"(...)" raw string). Updated when we
-# bump supported SLSsteam. Used only when the live fetch is unavailable.
+# Bundled fallback: SLSsteam's default config YAML, verbatim from res/config.yaml.
+# Updated when we bump supported SLSsteam. Used only when the live fetch is
+# unavailable.
 _BUNDLED_YAML = r"""#Example AppIds Config for those not familiar with YAML:
 #AppIds:
 #  - 440
@@ -220,13 +223,6 @@ def present_top_level_keys(content: str) -> set:
     return {_top_key_name(l) for l in content.splitlines() if _is_top_key(l)}
 
 
-def extract_yaml_from_hpp(text: str):
-    """Pull the YAML out of config_default.hpp's `R"(...)"` raw-string literal.
-    Returns the YAML text, or None if the wrapper isn't found."""
-    m = re.search(r'R"\((.*)\)"', text, re.DOTALL)
-    return m.group(1) if m else None
-
-
 def _looks_like_reference(yaml_text: str) -> bool:
     """Sanity gate before trusting a reference: must carry the keys we key the
     whole thing on, so a garbled fetch/parse never drives the completion."""
@@ -314,19 +310,19 @@ def load_reference_yaml() -> str:
 
 
 async def refresh_reference_cache() -> bool:
-    """Best-effort: fetch config_default.hpp, extract + validate the YAML, cache
-    it to disk. Returns True on a successful refresh. Never raises. On any failure
-    the existing cache (or the bundled snapshot) keeps being used."""
+    """Best-effort: fetch res/config.yaml, validate it, cache it to disk. Returns
+    True on a successful refresh. Never raises. On any failure the existing
+    cache (or the bundled snapshot) keeps being used."""
     try:
         from http_client import ensure_http_client
         client = await ensure_http_client(context="slssteam_schema")
         resp = await client.get(_CONFIG_DEFAULT_URL, timeout=_FETCH_TIMEOUT)
         if resp.status_code != 200:
-            logger.info(f"slssteam_schema: HTTP {resp.status_code} for config_default.hpp; keeping cache")
+            logger.info(f"slssteam_schema: HTTP {resp.status_code} for res/config.yaml; keeping cache")
             return False
-        yaml_text = extract_yaml_from_hpp(resp.text)
+        yaml_text = resp.text or ""
         if not _looks_like_reference(yaml_text):
-            logger.info("slssteam_schema: fetched config_default.hpp didn't validate; keeping bundled")
+            logger.info("slssteam_schema: fetched res/config.yaml didn't validate; keeping bundled")
             return False
         os.makedirs(_CACHE_DIR, exist_ok=True)
         tmp = _CACHE_FILE + ".tmp"
