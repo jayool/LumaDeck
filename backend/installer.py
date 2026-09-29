@@ -276,6 +276,7 @@ def _set_disableupdates_no(config_path: str) -> tuple[bool, str]:
 SPLICED_TICKETS_PLUGIN = "lumadeck-spliced-tickets.lua"
 SPLICED_TICKETS_MIN_SLSSTEAM = "20260903114323"   # first release with the Lua plugin system
 SPLICED_TICKETS_KILL_SWITCH = "no_spliced_tickets"  # ~/.config/lumadeck/<this>
+SPLICED_TICKETS_SETTLE_S = 1.5   # flag flip -> file drop; see _install_spliced_tickets
 
 
 def _spliced_tickets_source() -> str:
@@ -358,6 +359,15 @@ def _install_spliced_tickets(config_path: str,
     ok, msg = _set_plugins_yes(config_path)
     if not ok:
         return False, msg
+    if "already" not in msg:
+        # The flag just changed. SLSsteam reloads config.yaml and watches the
+        # plugins dir on different threads; a file event processed before the
+        # reload has landed sees `Plugins: no` and runLua silently skips it
+        # (codespace, 2026-09-29). Give the reload a moment so the drop-in
+        # loads hot instead of waiting for the next Steam start.
+        if SPLICED_TICKETS_SETTLE_S > 0:
+            import time
+            time.sleep(SPLICED_TICKETS_SETTLE_S)
 
     plugins_dir = os.path.join(os.path.dirname(config_path), "plugins")
     dest = os.path.join(plugins_dir, SPLICED_TICKETS_PLUGIN)

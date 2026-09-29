@@ -129,8 +129,12 @@ other SLSsteam flags on every plugin start):
 - installed as `~/.config/SLSsteam/plugins/lumadeck-spliced-tickets.lua`
   (0600, owned by the real user) and `Plugins: yes` in SLSsteam's
   `config.yaml`, flag first, file second: SLSsteam hot-loads a plugin dropped
-  in while the flag is on, so no Steam restart is needed. If the hot path is
-  missed it loads on the next Steam start.
+  in while the flag is on, so no Steam restart is needed. LumaDeck waits
+  1.5 s after changing the flag before writing the file: SLSsteam handles the
+  two events on different threads, and a file event processed before the
+  config reload lands sees `Plugins: no` and silently does nothing (seen in
+  the codespace, 2026-09-29). If the hot path is still missed it loads on the
+  next Steam start.
 - own file name on purpose: other tools drop *their* copy of the same plugin
   into that directory and delete it when done; ours is never theirs to
   delete. Two copies do not double-hook: SLSsteam runs all plugins in one Lua
@@ -142,9 +146,11 @@ other SLSsteam flags on every plugin start):
   rather than claim an install that does nothing. Unknown version → skip.
 - opt-out: `touch ~/.config/lumadeck/no_spliced_tickets`; LumaDeck then leaves
   the flag and the file alone (it does not remove an existing copy).
-- did it load? `grep -a loaded ~/.SLSsteam.log` shows
-  `lumadeck-spliced-tickets.lua loaded!`. The splice itself logs only in
-  SLSsteam debug builds, so the evidence that it worked is the game launching.
+- did it load? `grep -a "loaded\|Ran " ~/.SLSsteam.log` shows
+  `spliced-tickets.lua loaded!` (the plugin's own notify, Ace's original name,
+  from inside the untouched file) and `Ran lumadeck-spliced-tickets.lua`
+  (SLSsteam's line, our file name). The splice itself logs only in SLSsteam
+  debug builds, so the evidence that it worked is the game launching.
 
 **Steamless (manual, "Remove Steam DRM").** For the stub that verifies the
 signature, or an SLSsteam too old for plugins. It rewrites the `.exe`, so it

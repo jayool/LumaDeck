@@ -30,6 +30,9 @@ class SplicedTickets(unittest.TestCase):
         self.cfg = os.path.join(self.cfg_dir, "config.yaml")
         self.plugins = os.path.join(self.cfg_dir, "plugins")
         self.dest = os.path.join(self.plugins, installer.SPLICED_TICKETS_PLUGIN)
+        self._settle = installer.SPLICED_TICKETS_SETTLE_S
+        installer.SPLICED_TICKETS_SETTLE_S = 0          # no need to wait for SLSsteam here
+        self.addCleanup(lambda: setattr(installer, "SPLICED_TICKETS_SETTLE_S", self._settle))
         self._real_home = installer.real_home
         installer.real_home = lambda: self.home
         self.addCleanup(lambda: setattr(installer, "real_home", self._real_home))
