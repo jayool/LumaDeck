@@ -163,8 +163,16 @@ class Plugin:
                         await refresh_reference_cache()
                     except Exception as exc:
                         logger.info("LumaDeck: SLSsteam schema refresh skipped: %s", exc)
+                    # The spliced-tickets plugin is gated on the SLSsteam release;
+                    # resolve it once here (async) and hand it to the sync helper.
+                    try:
+                        from slssteam_version import resolve_installed_version
+                        sls_ver = await resolve_installed_version()
+                    except Exception as exc:
+                        logger.info("LumaDeck: SLSsteam version resolve skipped: %s", exc)
+                        sls_ver = None
                     for _ in range(20):  # ~60s (20 x 3s)
-                        res = ensure_slssteam_flags()
+                        res = ensure_slssteam_flags(sls_ver)
                         if res.get("applied"):
                             logger.info("LumaDeck: SLSsteam flags ensured: %s", res.get("results"))
                             return

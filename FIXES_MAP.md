@@ -15,7 +15,7 @@ code-level read of all of them.
 | Problem | Symptom | Tools that attack it |
 |---|---|---|
 | **A. Won't launch (ownership / DRM check)** | Crashes on start, "you don't own this" | Generic Fix (crack), Goldberg, Unsteam, Steamless (for SteamStub) |
-| **B. Won't launch (.exe wrapped in SteamStub)** | Same, but caused by Steam's own DRM shell | Steamless |
+| **B. Won't launch (.exe wrapped in SteamStub)** | "Application load error 6:0000065432" at launch, caused by Steam's own DRM shell | **Spliced tickets** (automatic, SLSsteam plugin), Steamless for the rest |
 | **C. Online doesn't connect** | Runs solo, multiplayer/co-op won't connect | **netsock** (native, no crack), Online Fix (Unsteam / OnlineFix), perondepot |
 
 Everything else (Tested / Extra Steps / Unstable / voices38 / Ryuu) is a quality
@@ -98,6 +98,65 @@ in the text, "Failed to unpack file." → `unpack_failed`, else `no_drm` — and
 >1 → `error`; a killed run is `timeout`. The CLI's full output goes to the Decky
 log for every exe, whatever the code (rc 1 used to be discarded as "no DRM").
 | **Apply Goldberg** | Steam emulator: fakes ownership + offline achievements (problem A). Overlaps SLSsteam, so use only when SLSsteam isn't enough. | gbe_fork (Detanup01), bundled in the plugin (`backend/deps/Goldberg/`) | renames game `steam_api(64).dll` to `.valve`, drops Goldberg's + `steam_settings/` + `steam_appid.txt` |
+
+### SteamStub, error 6:0000065432: spliced tickets first, Steamless second
+
+**What the error is.** SteamStub is Valve's own DRM shell around a game's
+`.exe`. At launch it asks the Steam client for an *app-ownership ticket*
+(`IClientUser::GetAppOwnershipTicketExtendedData`). For a game the account
+does not own the client returns an empty ticket, the stub refuses to unpack
+itself and shows `Application load error 6:0000065432`. SLSsteam fakes
+ownership for the library, not for that ticket.
+
+**Spliced tickets (automatic).** Ace's `spliced-tickets.lua`, an SLSsteam Lua
+plugin (Ace published it on the SLSsteam Discord, 2026-08-30). It hooks that
+ticket call: on an empty ticket it re-requests the ticket of app 7 (owned by
+every account), splices the game's appid in just before the signature and
+adjusts the offsets the stub reads. A stub that only reads the appid where it
+is told to unpacks and runs; one that verifies the signature does not. Ace:
+19 of 20 games (Insurgency Sandstorm the exception). Measured here on Joe
+Danger (229890), 2026-09-28, with a control run: plugin on → launches, plugin
+off → 65432. Nothing in the game directory changes, so checksums, mods and
+the game's own updates are untouched, and nothing is frozen.
+
+How LumaDeck ships it (`installer._install_spliced_tickets`, run with the
+other SLSsteam flags on every plugin start):
+
+- bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`: a
+  credit header, then Ace's file byte for byte (the copy's sha256 starts
+  `62f377e3`). Not fetched from anywhere at runtime; updated by hand like the
+  Steamless DLLs when Ace publishes a new one.
+- installed as `~/.config/SLSsteam/plugins/lumadeck-spliced-tickets.lua`
+  (0600, owned by the real user) and `Plugins: yes` in SLSsteam's
+  `config.yaml`, flag first, file second: SLSsteam hot-loads a plugin dropped
+  in while the flag is on, so no Steam restart is needed. If the hot path is
+  missed it loads on the next Steam start.
+- own file name on purpose: other tools drop *their* copy of the same plugin
+  into that directory and delete it when done; ours is never theirs to
+  delete. Two copies do not double-hook: SLSsteam runs all plugins in one Lua
+  state and the plugin's first line (`SplicedTickets = SplicedTickets or …`
+  + `if SplicedTickets.setup then return end`) makes the second copy a no-op.
+  That guard is why the file is shipped verbatim.
+- gated on SLSsteam `>= 20260903114323`, the first release with the plugin
+  system: an older one ignores `Plugins`, so LumaDeck skips (log says so)
+  rather than claim an install that does nothing. Unknown version → skip.
+- opt-out: `touch ~/.config/lumadeck/no_spliced_tickets`; LumaDeck then leaves
+  the flag and the file alone (it does not remove an existing copy).
+- did it load? `grep -a loaded ~/.SLSsteam.log` shows
+  `lumadeck-spliced-tickets.lua loaded!`. The splice itself logs only in
+  SLSsteam debug builds, so the evidence that it worked is the game launching.
+
+**Steamless (manual, "Remove Steam DRM").** For the stub that verifies the
+signature, or an SLSsteam too old for plugins. It rewrites the `.exe`, so it
+freezes the game (see "Anything in the game dir freezes the game").
+
+**Why a plugin and not a native lumalinux hook.** Investigated and parked
+(lumalinux `docs/slssteam-plugins-analysis.md`, probe in
+`tools/experiment_ownership_ticket.py`): the port is feasible, but a native
+inline hook on that function would be copied *unrelocated* into the trampoline
+of any third-party copy of the plugin placed on top of it (SLSsteam's
+`LuaHook::place` fixes only the PIC-thunk call), crashing Steam; the plugin
+route has the guard above instead. It also costs 40 lines instead of ~200.
 
 ### Block: Repairs (plumbing, NOT cracks)
 
@@ -290,6 +349,7 @@ catalogue, used by luatools-moon's crackfix) and `/download?...file_type=manifes
 | **Online Fix** | same CDN + perondepot (`api.perondepot.xyz`) | "Multiplayer Fix" (online-fix.me) + LC Online Fix | — | same CDN |
 | **Goldberg** | not a tool (only a DLL heuristic) | gbe_fork + gse_fork | **the source** (`deps/Goldberg`) | via ACCELA |
 | **Steamless** | — | `steamstub_unpacker.py` | **the source** (`steamless-aio.sh`) | via ACCELA |
+| **Spliced tickets** | — | — | ASSella `canary` deploys Ace's plugin per native download, then deletes it | — |
 | **Fix Linux Permissions** | partial (unset LD_* only) | — (Windows) | `chmod_resume.py` | identical code |
 | **Reconfigure SLSsteam** | `slsteam.lua` | SLSsteam ID mgmt | writes `SLSsteam/config.yaml` | "Missing Keys / No licenses fix" |
 | **Repair Appmanifest** | `steam_utils.lua` | "Purchase error fix" | `manifest_check_task.py` | "Purchase error fix" |

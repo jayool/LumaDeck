@@ -259,7 +259,131 @@ def _set_disableupdates_no(config_path: str) -> tuple[bool, str]:
         return False, f"Cannot write SLSsteam config: {exc}"
 
 
-def ensure_slssteam_flags() -> dict:
+# ---------------------------------------------------------------------------
+# Spliced tickets (SteamStub "Application load error 6:0000065432")
+# ---------------------------------------------------------------------------
+# Ace's spliced-tickets.lua, an SLSsteam Lua plugin: when a SteamStub-wrapped
+# game asks for its app-ownership ticket and gets an empty one (unowned), it
+# re-requests the ticket of app 7 (owned by every account) and splices the
+# game's appid in, so the stub unpacks and runs. Ace: 19 of 20 stubs; measured
+# here on Joe Danger (229890) with a control run, 2026-09-28. Steamless stays
+# for the stubs that verify the signature. Shipped as the plugin, not a native
+# lumalinux hook: a second copy of the same file (other tools deploy their own)
+# hits the plugin's `SplicedTickets.setup` guard and places no second hook,
+# whereas an inline hook of ours would be copied unrelocated into SLSsteam's
+# trampoline (LuaHook::place fixes only the PIC thunk call) and crash Steam.
+
+SPLICED_TICKETS_PLUGIN = "lumadeck-spliced-tickets.lua"
+SPLICED_TICKETS_MIN_SLSSTEAM = "20260903114323"   # first release with the Lua plugin system
+SPLICED_TICKETS_KILL_SWITCH = "no_spliced_tickets"  # ~/.config/lumadeck/<this>
+
+
+def _spliced_tickets_source() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "deps", "SplicedTickets", SPLICED_TICKETS_PLUGIN)
+
+
+def _spliced_tickets_kill_switch_path() -> str:
+    return os.path.join(real_home(), ".config", "lumadeck", SPLICED_TICKETS_KILL_SWITCH)
+
+
+def _chown_real_user(path: str) -> None:
+    """Decky runs as root; SLSsteam runs as the real user and must read this."""
+    try:
+        import pwd
+        p = pwd.getpwnam(real_user())
+        os.chown(path, p.pw_uid, p.pw_gid)
+    except Exception as exc:  # non-fatal on hosts without that user (tests, VMs)
+        logger.info(f"LumaDeck: chown {path} to real user skipped: {exc}")
+
+
+def _set_plugins_yes(config_path: str) -> tuple[bool, str]:
+    """`Plugins: yes` in SLSsteam's config.yaml (flip a `no`, append if absent)."""
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as exc:
+        return False, f"Cannot read SLSsteam config: {exc}"
+    if re.search(r"^Plugins\s*:\s*(yes|true)\s*$", content, flags=re.MULTILINE | re.IGNORECASE):
+        return True, "Plugins already yes"
+    new_content, n = re.subn(r"^(Plugins\s*:\s*)(no|false)\s*$", r"\1yes", content,
+                             flags=re.MULTILINE | re.IGNORECASE)
+    if n == 0:
+        new_content = content + ("" if content.endswith("\n") else "\n") + "Plugins: yes\n"
+    try:
+        tmp = config_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        os.replace(tmp, config_path)
+        return True, "Plugins set to yes (appended)" if n == 0 else "Plugins flipped to yes"
+    except Exception as exc:
+        return False, f"Cannot write SLSsteam config: {exc}"
+
+
+def _install_spliced_tickets(config_path: str,
+                             slssteam_version: tuple | None = None) -> tuple[bool, str]:
+    """Install the spliced-tickets plugin: `Plugins: yes` in config.yaml, then the
+    .lua into <config dir>/plugins/. Idempotent; never touches other plugins.
+
+    `slssteam_version` is (tag, source) from slssteam_version.resolve_installed_
+    version(); when None only the recorded tag is consulted (sync path). Skips,
+    reporting why, when: the kill-switch file exists; the version is unknown or
+    predates the plugin system (an older SLSsteam ignores `Plugins`, so writing
+    it would only claim an install that does nothing).
+
+    Order matters: the flag first, the file second. SLSsteam hot-reloads both,
+    and a plugin dropped in while `Plugins` is already yes runs at once — no
+    Steam restart. If the hot path is missed it loads on the next Steam start.
+    """
+    if os.path.isfile(_spliced_tickets_kill_switch_path()):
+        return True, f"skipped (kill-switch {SPLICED_TICKETS_KILL_SWITCH} present)"
+
+    if slssteam_version is None:
+        from slssteam_version import read_recorded_version, SOURCE_RECORDED, SOURCE_UNKNOWN
+        rec = read_recorded_version()
+        slssteam_version = (rec, SOURCE_RECORDED) if rec else (None, SOURCE_UNKNOWN)
+    tag, source = slssteam_version
+    if not tag:
+        return True, "skipped (SLSsteam version unknown; reinstall components to record it)"
+    if str(tag) < SPLICED_TICKETS_MIN_SLSSTEAM:
+        return True, (f"skipped (SLSsteam {tag} [{source}] predates the plugin system, "
+                      f"needs >= {SPLICED_TICKETS_MIN_SLSSTEAM})")
+
+    if not os.path.isfile(config_path):
+        return False, f"SLSsteam config not found at {config_path}"
+    src = _spliced_tickets_source()
+    if not os.path.isfile(src):
+        return False, f"bundled plugin missing: {src}"
+
+    ok, msg = _set_plugins_yes(config_path)
+    if not ok:
+        return False, msg
+
+    plugins_dir = os.path.join(os.path.dirname(config_path), "plugins")
+    dest = os.path.join(plugins_dir, SPLICED_TICKETS_PLUGIN)
+    try:
+        with open(src, "rb") as f:
+            want = f.read()
+        have = None
+        if os.path.isfile(dest):
+            with open(dest, "rb") as f:
+                have = f.read()
+        if have == want:
+            return True, f"{msg}; plugin already installed"
+        os.makedirs(plugins_dir, mode=0o700, exist_ok=True)
+        _chown_real_user(plugins_dir)
+        tmp = dest + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(want)
+        os.chmod(tmp, 0o600)
+        _chown_real_user(tmp)
+        os.replace(tmp, dest)
+    except Exception as exc:
+        return False, f"Cannot install plugin: {exc}"
+    return True, f"{msg}; plugin {'updated' if have is not None else 'installed'} at {dest}"
+
+
+def ensure_slssteam_flags(slssteam_version: tuple | None = None) -> dict:
     """Ensure the three SLSsteam config flags LumaDeck depends on, on the config
     SLSsteam writes itself (we no longer seed a hardcoded one). Idempotent, and
     SLSsteam hot-reloads config.yaml so no restart is needed.
@@ -267,6 +391,7 @@ def ensure_slssteam_flags() -> dict:
         DisableCloud: no   — CloudRedirect owns cloud saves; SLSsteam must not disable them
         DisableUpdates: no — added (unowned) games must be allowed to auto-update
         SafeMode: no       — let SLSsteam hook fresh builds (scan is the gate, not the hash); don't override its default
+        Plugins: yes       — plus the spliced-tickets plugin (SteamStub 65432), gated on SLSsteam >= 20260903114323
 
     Returns {"applied": bool, ...}. applied=False means the config isn't there yet
     (SLSsteam writes it on its first injected run) — the caller should retry later.
@@ -289,6 +414,7 @@ def ensure_slssteam_flags() -> dict:
         "DisableCloud": _set_disablecloud_no(path),
         "DisableUpdates": _set_disableupdates_no(path),
         "SafeMode": _set_safemode_no(path),
+        "SplicedTickets": _install_spliced_tickets(path, slssteam_version),
     }
     return {"applied": True, "completion": completion,
             "results": {k: {"ok": v[0], "msg": v[1]} for k, v in results.items()}}
