@@ -15,8 +15,13 @@ status.json after every manifest-request-code lookup):
            `reason: "providers"` in pins.json; Steam sees "installed == target"
            and clears any pending update. The window is one local pass (60 s)
            for the games that happened to publish an update meanwhile.
-  absent — older lumalinux or no lookup yet this session: the pre-0.9 model,
-           every game pinned and moved by the update pass below.
+  absent — no lookup yet this session. If lumalinux's status.json reports
+           the GMRC hook installed, Steam will get a code the moment it asks,
+           so this is "up" (no pins); the file only appears after the first
+           request, and pinning in that window froze owned games added before
+           it (RESEARCH §21.4). Without that hook (older lumalinux, or the
+           pattern failed on this build): the pre-0.9 model, every game pinned
+           and moved by the update pass below.
 
 Release: `gmrc.json` only changes when Steam asks for a code, so while any game
 is frozen by us the 30-minute pass probes a provider itself (one code for one
@@ -75,7 +80,7 @@ import time
 import zipfile
 from typing import Dict, List, Optional
 
-from paths import get_depotcache_dir, get_lumalinux_keys_path, real_home
+from paths import get_depotcache_dir, get_lumalinux_keys_path, read_lumalinux_hook, real_home
 from steam_utils import _library_entries, detect_steam_install_path
 
 try:
@@ -304,10 +309,16 @@ def _iso_epoch(s: str) -> float:
 def gmrc_state() -> Optional[str]:
     """'up' | 'down' | None. lumalinux's word, unless our own probe succeeded
     more recently than lumalinux last wrote (the file only changes when Steam
-    asks for a code, so a recovery would otherwise never be seen)."""
+    asks for a code, so a recovery would otherwise never be seen).
+
+    No gmrc.json yet but the GMRC hook is installed in the running lumalinux:
+    'up'. The hook answers Steam's first request like any other; the file is
+    just not written until then. Treating that window as "no provider" pinned
+    every game on a fresh install and froze an owned game added in it
+    (RESEARCH §21.4). None only when the hook is not reported installed."""
     d = _read_gmrc_json()
     if d is None:
-        return None
+        return "up" if read_lumalinux_hook("GMRC") == "installed" else None
     if d["providers"] == "down" and _probe_ok_at > _iso_epoch(str(d.get("at", ""))):
         return "up"
     return d["providers"]
@@ -717,7 +728,7 @@ async def _apply_model(appid: int, state: Optional[str]) -> None:
                 logger.info(f"LumaDeck: provider up — {appid} released to native updates")
         await ensure_pinned(appid, allow_pin=False)     # archive/heal only
         return
-    # No gmrc.json: the pre-0.9 model, everything pinned.
+    # No gmrc.json and no GMRC hook reported: the pre-0.9 model, everything pinned.
     await ensure_pinned(appid, allow_pin=True)
 
 

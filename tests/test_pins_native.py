@@ -37,6 +37,8 @@ class PinsNativeModel(unittest.TestCase):
         patch("read_manifest_ids", lambda: dict(self.mids))
         patch("_download_busy", lambda appid: False)
         patch("_read_gmrc_json", lambda: self.state)
+        self.gmrc_hook = None   # lumalinux status.json "GMRC" outcome, or None
+        patch("read_lumalinux_hook", lambda name: self.gmrc_hook if name == "GMRC" else None)
 
         async def ensure_pinned(appid, allow_pin=True):
             self.calls.append(("ensure_pinned", appid, allow_pin))
@@ -119,6 +121,18 @@ class PinsNativeModel(unittest.TestCase):
         self.assertEqual(pins.gmrc_state(), "up")
         pins._probe_ok_at = pins._iso_epoch("2026-09-16T09:00:00Z")   # older: no
         self.assertEqual(pins.gmrc_state(), "down")
+
+    # ── no gmrc.json yet, but the hook is live: that is "up", not "absent" ─
+    def test_absent_file_with_gmrc_hook_installed_reads_as_up(self):
+        self.state = None
+        self.gmrc_hook = "installed"
+        self.assertEqual(pins.gmrc_state(), "up")
+        self.assertFalse(pins.pin_new_installs())
+        self.gmrc_hook = "failed"
+        self.assertIsNone(pins.gmrc_state())
+        self.assertTrue(pins.pin_new_installs())
+        self.gmrc_hook = None
+        self.assertIsNone(pins.gmrc_state())
 
     # ── the toggle reports only the user's freeze ─────────────────────────
     def test_status_does_not_report_our_freeze_as_pinned(self):
