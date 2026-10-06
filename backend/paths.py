@@ -354,24 +354,6 @@ def find_lumalinux_gmrc_path() -> Optional[str]:
     return p if os.path.isfile(p) else None
 
 
-def read_lumalinux_reconcile() -> Optional[dict]:
-    """lumalinux's reconcile.json, written next to status.json after every
-    licence reconcile (a keys.txt change the client was told about):
-    {"seq": n, "at": iso, "epoch": unix}. None when absent: older lumalinux,
-    or no reconcile yet this session."""
-    status = find_lumalinux_status_path()
-    if not status:
-        return None
-    p = os.path.join(os.path.dirname(status), "reconcile.json")
-    try:
-        with open(p, "r", encoding="utf-8") as fh:
-            import json as _json
-            data = _json.load(fh)
-        return data if isinstance(data, dict) and "seq" in data else None
-    except Exception:
-        return None
-
-
 def find_lumalinux_status_path() -> Optional[str]:
     """Return the path to lumalinux's status.json if it exists.
 

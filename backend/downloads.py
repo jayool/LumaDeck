@@ -993,8 +993,49 @@ def _owned_plan(lua_text: str, appid: int, dlc_map: dict, licensed,
             "add_dlcs": add_dlcs, "cycle": cycle}
 
 
-_CYCLE_SETTLE_SEC = 1.0    # after the reconcile, before Steam is asked
-_CYCLE_GIVE_UP_SEC = 20.0  # no reconcile seen: hand out anyway (restart is the fallback)
+_CYCLE_GIVE_UP_SEC = 20.0  # Steam never processed the licence: hand out anyway
+
+_APPINFO_REQUEST = re.compile(r"RequestAppInfoUpdate: AppIDs ([0-9,]+)")
+_APPINFO_DONE = "UpdatesJob: finished OK"
+
+
+def _appinfo_log_path() -> str:
+    try:
+        from steam_utils import detect_steam_install_path
+        root = detect_steam_install_path()
+    except Exception:
+        root = ""
+    return os.path.join(root or "", "logs", "appinfo_log.txt")
+
+
+def _appinfo_log_size() -> int:
+    try:
+        return os.path.getsize(_appinfo_log_path())
+    except Exception:
+        return 0
+
+
+def _steam_took_licence(log_text: str, dlc_ids) -> bool:
+    """Has Steam processed a licence change covering these DLC? Its own
+    appinfo_log.txt says so: after lumalinux's LicensesUpdated broadcast the
+    client runs OnAppLicensesChanged, writes `RequestAppInfoUpdate: AppIDs
+    <the newly licensed apps>` and, once the server answered, `UpdatesJob:
+    finished OK`. Only from then on does a depot plan see the DLC as owned.
+    Measured 2026-10-06 on every add of the day (12:42, 16:45, 17:19, 19:07,
+    19:28, 19:32, 19:37): request 0-3 s after the broadcast, job done ~1 s
+    later; a re-tick before the job (16:45) did nothing, after it (×4)
+    downloaded. True when a request naming at least one of `dlc_ids` is
+    followed by a finished job."""
+    wanted = {int(d) for d in dlc_ids}
+    seen_request = False
+    for line in log_text.splitlines():
+        if not seen_request:
+            m = _APPINFO_REQUEST.search(line)
+            if m and wanted & {int(x) for x in m.group(1).split(",") if x.isdigit()}:
+                seen_request = True
+        elif _APPINFO_DONE in line:
+            return True
+    return False
 
 
 def take_owned_dlc_cycle(appid: int) -> dict:
@@ -1003,41 +1044,37 @@ def take_owned_dlc_cycle(appid: int) -> dict:
     two pages poll the same download, and cycling a DLC that is already
     downloading would cancel and restart it.
 
-    Not before the client knows the licence: lumalinux injects the DLC into
-    PackageId 0 and broadcasts LicensesUpdated_t on the keys.txt write, and
-    a re-tick that lands before that finds no licence and does nothing
-    (measured 2026-10-06 16:45: mark cleared, no "added depots"). lumalinux
-    records each broadcast in reconcile.json; until its seq moves past the
-    one seen before the add (plus a second for the client to digest it) the
-    answer is {"pending": true} and the page asks again. Without the file
-    (older lumalinux, reconcile hook down) or after 20 s, the list goes out
-    anyway: the cycle is harmless, and the page's fallback is "restart Steam".
+    Not before Steam has processed the licence lumalinux injected: until its
+    appinfo_log.txt shows the request for these DLC and the finished job
+    (_steam_took_licence, read from where the log stood when the add began)
+    the answer is {"pending": true} and the page asks again. If Steam never
+    processes it (seen once, 2026-10-06 18:47, two minutes after a Steam
+    start) the list goes out after 20 s anyway: the cycle is harmless and a
+    Steam restart plans the same thing.
     """
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
     state = DOWNLOAD_STATE.get(appid) or {}
-    if not state.get("ownedDlcCycle"):
+    dlc = list(state.get("ownedDlcCycle") or [])
+    if not dlc:
         return {"success": True, "dlc": []}
-    seq_before = state.get("ownedDlcCycleSeq")
     since = float(state.get("ownedDlcCycleSince") or 0)
-    now = time.time()
-    if seq_before is not None and now - since < _CYCLE_GIVE_UP_SEC:
+    if time.time() - since < _CYCLE_GIVE_UP_SEC:
+        pos = int(state.get("ownedDlcCycleLogPos") or 0)
         try:
-            from paths import read_lumalinux_reconcile
-            rec = read_lumalinux_reconcile()
+            with open(_appinfo_log_path(), "r", encoding="utf-8", errors="replace") as fh:
+                fh.seek(0, os.SEEK_END)
+                end = fh.tell()
+                fh.seek(pos if pos <= end else 0)
+                tail = fh.read()
         except Exception:
-            rec = None
-        if rec is not None:
-            try:
-                seq, epoch = int(rec.get("seq", 0)), float(rec.get("epoch", 0))
-            except Exception:
-                seq, epoch = 0, 0.0
-            if seq <= int(seq_before) or now - epoch < _CYCLE_SETTLE_SEC:
-                return {"success": True, "dlc": [], "pending": True}
-    dlc = list(state.pop("ownedDlcCycle", None) or [])
-    state.pop("ownedDlcCycleSeq", None)
+            tail = ""
+        if not _steam_took_licence(tail, dlc):
+            return {"success": True, "dlc": [], "pending": True}
+    state.pop("ownedDlcCycle", None)
+    state.pop("ownedDlcCycleLogPos", None)
     state.pop("ownedDlcCycleSince", None)
     return {"success": True, "dlc": dlc}
 
@@ -1195,19 +1232,13 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
             # Installed already? Then Steam will not fetch the new DLC on its
             # own: hand the frontend the list to cycle (see _owned_plan).
             installed = _pins.find_acf(appid) is not None
-            # The reconcile seq BEFORE steamidra writes keys.txt: the cycle is
-            # handed out only once lumalinux has moved past it (take_owned_dlc_cycle).
-            seq_before = None
-            try:
-                from paths import read_lumalinux_reconcile
-                rec = read_lumalinux_reconcile()
-                seq_before = int(rec.get("seq", 0)) if rec else None
-            except Exception:
-                seq_before = None
+            # Where Steam's appinfo log stands BEFORE steamidra writes keys.txt:
+            # the cycle is handed out only once Steam logs, after this point,
+            # that it processed the new licence (take_owned_dlc_cycle).
             _set_download_state(appid, {
                 "ownedDlc": plan["add_dlcs"],
                 "ownedDlcCycle": plan["cycle"] if installed else [],
-                "ownedDlcCycleSeq": seq_before,
+                "ownedDlcCycleLogPos": _appinfo_log_size(),
                 "ownedDlcCycleSince": time.time(),
             })
             if installed and plan["cycle"]:

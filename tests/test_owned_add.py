@@ -186,44 +186,63 @@ class OwnedPlan(unittest.TestCase):
 
 
 class DlcCycleHandout(unittest.TestCase):
+    """take_owned_dlc_cycle waits for Steam's own record of the processed
+    licence (appinfo_log.txt) and hands the list out once."""
+    REQ = "[2026-10-06 19:28:49] RequestAppInfoUpdate: AppIDs 580100,702540,735730,4964110\n"
+    REQ_OTHER = "[2026-10-06 19:28:49] RequestAppInfoUpdate: AppIDs 999\n"
+    DONE = "[2026-10-06 19:28:49] UpdatesJob: finished OK, apps updated 0 (0 KB), packages updated 0 (0 KB)\n"
+
     def setUp(self):
-        import paths
         import time as _t
-        self._orig = paths.read_lumalinux_reconcile
-        self.rec = None
-        paths.read_lumalinux_reconcile = lambda: self.rec
+        self.tmp = tempfile.mkdtemp()
+        self.log = os.path.join(self.tmp, "appinfo_log.txt")
+        open(self.log, "w").write("[2026-10-06 19:00:00] older stuff\n" + self.REQ + self.DONE)
+        self._orig = downloads._appinfo_log_path
+        downloads._appinfo_log_path = lambda: self.log
         self.now = _t.time()
 
     def tearDown(self):
-        import paths
-        paths.read_lumalinux_reconcile = self._orig
+        downloads._appinfo_log_path = self._orig
         downloads.DOWNLOAD_STATE.pop(APP, None)
 
-    def _state(self, seq_before, since=None):
+    def _state(self, since=None):
         downloads.DOWNLOAD_STATE[APP] = {"status": "done", "ownedDlcCycle": [580100, 702540],
-                                         "ownedDlcCycleSeq": seq_before,
+                                         "ownedDlcCycleLogPos": os.path.getsize(self.log),
                                          "ownedDlcCycleSince": self.now if since is None else since}
 
-    def test_taken_once_without_reconcile_file(self):
-        self._state(None)
-        self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": [580100, 702540]})
-        self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": []})
-        self.assertEqual(downloads.DOWNLOAD_STATE[APP]["status"], "done")
+    def test_signal_parser(self):
+        self.assertFalse(downloads._steam_took_licence("", [580100]))
+        self.assertFalse(downloads._steam_took_licence(self.REQ, [580100]), "request alone is not enough (16:45)")
+        self.assertFalse(downloads._steam_took_licence(self.DONE + self.REQ, [580100]), "job must follow the request")
+        self.assertFalse(downloads._steam_took_licence(self.REQ_OTHER + self.DONE, [580100]), "another app's request")
+        self.assertTrue(downloads._steam_took_licence(self.REQ + "noise\n" + self.DONE, [580100]))
+        self.assertTrue(downloads._steam_took_licence(self.REQ + self.DONE, [702540, 123]), "any of ours")
 
-    def test_pending_until_lumalinux_reconciles(self):
-        self._state(seq_before=7)
-        self.rec = {"seq": 7, "epoch": self.now - 10}
+    def test_pending_until_steam_logs_it_then_once(self):
+        self._state()
+        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"), "older lines before the add do not count")
+        with open(self.log, "a") as fh:
+            fh.write(self.REQ)
         self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"))
-        self.rec = {"seq": 8, "epoch": self.now}          # just broadcast: let it settle
-        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"))
-        self.rec = {"seq": 8, "epoch": self.now - 2}
+        with open(self.log, "a") as fh:
+            fh.write(self.DONE)
         self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
         self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [])
+        self.assertEqual(downloads.DOWNLOAD_STATE[APP]["status"], "done")
 
-    def test_gives_up_waiting_after_a_while(self):
-        self._state(seq_before=7, since=self.now - 30)
-        self.rec = {"seq": 7, "epoch": self.now - 60}
+    def test_rotated_log_is_read_from_start(self):
+        self._state()
+        open(self.log, "w").write(self.REQ + self.DONE)   # Steam restarted: smaller file
         self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
+
+    def test_gives_up_after_a_while(self):
+        self._state(since=self.now - 30)
+        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
+
+    def test_no_log_at_all_waits_then_gives_up(self):
+        self._state()
+        os.remove(self.log)
+        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"))
 
 
 class AppRunning(unittest.TestCase):
