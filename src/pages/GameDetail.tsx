@@ -884,8 +884,10 @@ export function GameDetail({ appid }: GameDetailProps) {
     // DLC list, and the backend refuses to touch anything until that is
     // done (steamDlc.ts). If Steam does not take it, nothing changes.
     let steamDlcDisabled = false;
+    let ownedUninstall = false;
     try {
       const prep = await ownedDlcToDisable(appid);
+      ownedUninstall = !!(prep.success && prep.owned);
       if (prep.success && prep.owned && prep.installed && prep.dlc?.length) {
         if (!disableDlcs(appid, prep.dlc)) {
           setBusy("");
@@ -904,6 +906,8 @@ export function GameDetail({ appid }: GameDetailProps) {
       const errors = result.errors || [];
       if (errors.length > 0) {
         toast(t("toastUninstalled"), t("uninstallWarnings", errors.join(", ")), 5000);
+      } else if (ownedUninstall) {
+        toast(t("toastUninstalled"), t("ownedUninstalled"));
       } else if (!hasFiles) {
         toast(t("toastUninstalled"), t("configRemoved"));
       } else {
