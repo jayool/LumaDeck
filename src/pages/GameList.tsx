@@ -624,6 +624,9 @@ export function GameList() {
       </span>,
     );
     const desc = facts.flatMap((f, i) => (i === 0 ? [f] : [" · ", f]));
+    // Hint from Steam's own library model (steamOwnership.ts); the backend
+    // decides for itself. One short line: the QAM is narrow.
+    const pendingOwned = isOwnedBySteam(parseInt(addAppId, 10));
     return (
       <>
         <PanelSectionRow>
@@ -632,6 +635,11 @@ export function GameList() {
             description={
               <>
                 <span>{desc}</span>
+                {pendingOwned && (
+                  <div style={{ marginTop: "4px", color: "#7ed36f" }}>
+                    {t("ownedGameTitle")}: {t("ownedGameDesc")}
+                  </div>
+                )}
                 {pendingNotices.map((notice, i) => (
                   <div key={`note-${i}`} style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
                     <FaExclamationTriangle color="#ff8c00" style={{ flexShrink: 0 }} />
