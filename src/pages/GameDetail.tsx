@@ -421,8 +421,8 @@ export function GameDetail({ appid }: GameDetailProps) {
     // Ask Steam whether the account already has the game — only meaningful
     // before we add it (see steamOwnership.ts); a re-download of a managed
     // game is never an "owned" add.
-    // A managed game keeps what the backend recorded (isOwned); a new one asks
-    // Steam. The backend re-checks both (downloads.resolve_owned).
+    // Hint only: a managed game sends what the backend recorded, a new one
+    // what Steam's appStore says. The backend decides (downloads.resolve_owned).
     const owned = hasLua ? isOwned : isOwnedBySteam(appid);
     const result = await startDownload(appid, libraryPath, owned);
     if (result.success) {

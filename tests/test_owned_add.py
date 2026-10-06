@@ -51,6 +51,11 @@ class OwnedLuaFilter(unittest.TestCase):
         self.assertEqual(sorted(dropped), [228989, 262065, 702541, 702542])
         self.assertNotIn(",1,", text)
 
+    def test_owned_dlc_appid_line_is_dropped_base_line_kept(self):
+        text, _ = downloads._filter_lua_for_owned_base(LUA, APP, {702541, 702542}, owned_apps={702540, APP})
+        self.assertNotIn("addappid(702540)\n", text)   # the account has this DLC: no AdditionalApps entry
+        self.assertIn(f"addappid({APP})\n", text)       # the base AppID line always stays
+
 
 class OwnedFlag(unittest.TestCase):
     def setUp(self):
@@ -79,12 +84,13 @@ if __name__ == "__main__":
 class ResolveOwned(unittest.TestCase):
     """downloads.resolve_owned: the one decision for the add shape."""
     def test_recorded_wins(self):
-        self.assertTrue(downloads.resolve_owned(claimed=False, managed=True, listed_in_sls=True, recorded=True))
+        self.assertTrue(downloads.resolve_owned(licensed=False, managed=True, listed_in_sls=True, recorded=True))
 
     def test_managed_or_listed_is_never_owned(self):
-        self.assertFalse(downloads.resolve_owned(claimed=True, managed=True, listed_in_sls=False, recorded=False))
-        self.assertFalse(downloads.resolve_owned(claimed=True, managed=False, listed_in_sls=True, recorded=False))
+        # a licence that arrives AFTER the add is a migration, not an owned add
+        self.assertFalse(downloads.resolve_owned(licensed=True, managed=True, listed_in_sls=False, recorded=False))
+        self.assertFalse(downloads.resolve_owned(licensed=True, managed=False, listed_in_sls=True, recorded=False))
 
-    def test_fresh_game_follows_steams_answer(self):
-        self.assertTrue(downloads.resolve_owned(claimed=True, managed=False, listed_in_sls=False, recorded=False))
-        self.assertFalse(downloads.resolve_owned(claimed=False, managed=False, listed_in_sls=False, recorded=False))
+    def test_fresh_game_follows_the_package_cache(self):
+        self.assertTrue(downloads.resolve_owned(licensed=True, managed=False, listed_in_sls=False, recorded=False))
+        self.assertFalse(downloads.resolve_owned(licensed=False, managed=False, listed_in_sls=False, recorded=False))

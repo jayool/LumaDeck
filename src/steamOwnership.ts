@@ -1,5 +1,8 @@
 /**
- * Does the account own this game, according to Steam's own UI?
+ * Does the account own this game, according to Steam's own UI? A HINT for
+ * the page ("you already own this game"); the backend decides on its own
+ * from Steam's package cache (backend/steam_licenses.py), which SLSsteam's
+ * `SubscriptionTimestamps` setting cannot fake and whose format is known.
  *
  * `appStore.GetAppOverviewByAppID(appid)` is the client's library model
  * (the same object the library grid renders from). Measured 2026-10-06 on

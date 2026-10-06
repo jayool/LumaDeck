@@ -850,17 +850,22 @@ def _count_app_depot_keys(appid: int) -> int:
     return count
 
 
-def _filter_lua_for_owned_base(lua_text: str, appid: int, dlc_depots: set) -> tuple[str, list]:
+def _filter_lua_for_owned_base(lua_text: str, appid: int, dlc_depots: set,
+                               owned_apps: set = frozenset()) -> tuple[str, list]:
     """The shape for a game the account OWNS (RESEARCH §21 run E): keep only
-    the DLC depots. Drops every keyed `addappid(depot, 1, "key")` line and
-    every `setManifestid(depot, ...)` line (commented or not) whose depot is
-    not in `dlc_depots`; keeps the keyless `addappid(n)` lines (the base AppID
-    and the DLC AppIDs — steamidra turns the latter into AdditionalApps) and
-    everything else (comments, addtoken, section headers). Returns the filtered
-    text and the depot ids that were dropped, so the caller can also drop their
+    the DLC depots the account does NOT have. Drops every keyed
+    `addappid(depot, 1, "key")` line and every `setManifestid(depot, ...)`
+    line (commented or not) whose depot is not in `dlc_depots`, and the
+    keyless `addappid(n)` line of any DLC in `owned_apps` (a real licence
+    needs no AdditionalApps entry; SLSsteam's own template warns one breaks
+    downloads for shared apps). Keeps the base AppID's keyless line, the
+    other DLC AppIDs (steamidra turns them into AdditionalApps) and everything
+    else (comments, addtoken, section headers). Returns the filtered text and
+    the depot ids that were dropped, so the caller can also drop their
     .manifest files before steamidra copies them into depotcache."""
     keyed = re.compile(r'^\s*addappid\s*\(\s*(\d+)\s*,\s*\d+\s*,')
     pinned = re.compile(r'^\s*(?:--\s*)?setManifestid\s*\(\s*(\d+)\s*,')
+    keyless = re.compile(r'^\s*addappid\s*\(\s*(\d+)\s*\)')
     out, dropped = [], []
     for line in lua_text.splitlines(keepends=True):
         m = keyed.match(line) or pinned.match(line)
@@ -869,6 +874,10 @@ def _filter_lua_for_owned_base(lua_text: str, appid: int, dlc_depots: set) -> tu
             if depot not in dlc_depots:
                 if depot not in dropped:
                     dropped.append(depot)
+                continue
+        else:
+            k = keyless.match(line)
+            if k and int(k.group(1)) != int(appid) and int(k.group(1)) in owned_apps:
                 continue
         out.append(line)
     return "".join(out), dropped
@@ -889,7 +898,7 @@ def _in_additional_apps(appid: int) -> bool:
         return False
 
 
-def resolve_owned(claimed: bool, managed: bool, listed_in_sls: bool, recorded: bool) -> bool:
+def resolve_owned(licensed: bool, managed: bool, listed_in_sls: bool, recorded: bool) -> bool:
     """The one place that decides the add shape.
 
     recorded  — pins.json says LumaDeck added this game as owned (DLC only):
@@ -897,30 +906,34 @@ def resolve_owned(claimed: bool, managed: bool, listed_in_sls: bool, recorded: b
                 MUST keep that shape, or the base game's depots would land in
                 keys.txt and the AppID in AdditionalApps.
     managed   — LumaDeck already manages it (lua / keys.txt) but not as owned:
-                never owned, whatever the frontend says (Steam shows our own
-                adds as owned too).
+                it stays an added game (a later purchase is a migration, not
+                an add; see docs).
     listed    — some tool put the AppID in AdditionalApps: same thing.
-    claimed   — the frontend's answer from Steam's appStore at Add time.
+    licensed  — the account has a licence for the AppID per Steam's own
+                package cache (steam_licenses.is_licensed). The frontend's
+                appStore answer is only a hint for the UI; it never decides.
     """
     if recorded:
         return True
     if managed or listed_in_sls:
         return False
-    return bool(claimed)
+    return bool(licensed)
 
 
-async def _dlc_depots_of(appid: int) -> set:
-    """Depots that belong to one of the game's DLC (PICS `dlcappid`), from
-    api.steamcmd.net. Empty set when the lookup fails; the caller decides."""
+async def _dlc_depots_of(appid: int) -> dict:
+    """{depot: dlc appid} for the depots that belong to one of the game's DLC
+    (PICS `dlcappid`), from api.steamcmd.net. Empty when the lookup fails;
+    the caller decides."""
     try:
         from manifests import steamcmd_app_info
         info = await steamcmd_app_info(appid)
     except Exception as exc:
         logger.warning(f"LumaDeck: steamcmd info for {appid} failed: {exc}")
-        return set()
+        return {}
     if not info:
-        return set()
-    return {d for d, meta in (info.get("depots") or {}).items() if meta.get("dlcappid")}
+        return {}
+    return {d: int(meta["dlcappid"]) for d, meta in (info.get("depots") or {}).items()
+            if meta.get("dlcappid")}
 
 
 async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
@@ -1042,13 +1055,24 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
             # Which depots are DLC depots comes from PICS (`dlcappid`); without
             # that answer we refuse rather than guess, because guessing wrong
             # here means serving keys for an owned game's own depots.
-            dlc_depots = await _dlc_depots_of(appid)
-            if not dlc_depots:
+            dlc_map = await _dlc_depots_of(appid)
+            if not dlc_map:
                 raise RuntimeError(
                     "Could not tell this game's DLC depots apart from its own "
                     "(api.steamcmd.net did not answer). Try again in a minute."
                 )
-            filtered, dropped = _filter_lua_for_owned_base(lua_text, appid, dlc_depots)
+            # DLC the account already has are Steam's too: neither their
+            # AppIDs (AdditionalApps) nor their depots (keys, manifests).
+            from steam_licenses import licensed_appids
+            licensed = licensed_appids()
+            owned_dlc = {dlc for dlc in dlc_map.values() if dlc in licensed}
+            dlc_depots = {d for d, dlc in dlc_map.items() if dlc not in owned_dlc}
+            if not dlc_depots:
+                raise RuntimeError(
+                    f"Nothing to add: every DLC of app {appid} with content is "
+                    f"already in your library."
+                )
+            filtered, dropped = _filter_lua_for_owned_base(lua_text, appid, dlc_depots, owned_dlc)
             if filtered != lua_text:
                 lua_path.write_text(filtered, encoding="utf-8")
             for depot in dropped:
@@ -1058,7 +1082,8 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
                     except Exception:
                         pass
             logger.info(f"LumaDeck: owned game {appid}: kept DLC depots "
-                        f"{sorted(dlc_depots)}, dropped base depots {dropped}")
+                        f"{sorted(dlc_depots)}, dropped depots {dropped}, "
+                        f"owned DLC left to Steam {sorted(owned_dlc)}")
             # The base game is installed by Steam with whatever platform the
             # account chose; no Linux-depot enrichment and no Proton forcing.
             _set_download_state(appid, {"hasLinuxDepot": True, "owned": True})
@@ -1547,21 +1572,22 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
 
 
 async def start_download(appid: int, target_library_path: str = "", owned: bool = False) -> dict:
-    """`owned` comes from the frontend asking Steam's own appStore whether the
-    game is in the account's library BEFORE anything is added (the only moment
-    that answer is true: once SLSsteam lists the app, Steam shows it as owned
-    too). A game LumaDeck already manages is never treated as owned, whatever
-    the frontend says."""
+    """`owned` is the frontend's hint (Steam's appStore, see steamOwnership.ts)
+    and is logged, not trusted: the decision is resolve_owned() over Steam's
+    package cache (steam_licenses), what LumaDeck manages, SLSsteam's
+    AdditionalApps and pins.json."""
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
 
+    hinted = bool(owned)
     try:
         from steam_utils import has_lua_for_app
+        from steam_licenses import is_licensed
         import pins as _pins
         owned = resolve_owned(
-            claimed=bool(owned),
+            licensed=is_licensed(appid),
             managed=has_lua_for_app(appid),
             listed_in_sls=_in_additional_apps(appid),
             recorded=_pins.is_owned(appid),
@@ -1569,6 +1595,8 @@ async def start_download(appid: int, target_library_path: str = "", owned: bool 
     except Exception as exc:
         logger.warning(f"LumaDeck: owned resolution failed for {appid} ({exc}); treating as not owned")
         owned = False
+    if hinted != owned:
+        logger.info(f"LumaDeck: {appid}: frontend hinted owned={hinted}, packageinfo.vdf says {owned}")
 
     logger.info(f"LumaDeck: start_download appid={appid} library={target_library_path or '(default)'} owned={owned}")
     _set_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0, "owned": owned})

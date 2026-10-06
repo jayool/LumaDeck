@@ -312,8 +312,8 @@ export function GameList() {
   const doStartDownload = async (id: number, libraryPath: string = "") => {
     setAddStatus(t("startingDownload"));
     try {
-      // Steam's own answer, asked before the add (steamOwnership.ts). The
-      // backend ignores it for a game LumaDeck already manages.
+      // Hint only (steamOwnership.ts); the backend decides from Steam's
+      // package cache (downloads.resolve_owned).
       const owned = isOwnedBySteam(id);
       const result = await startDownload(id, libraryPath, owned);
       if (!result.success) {
