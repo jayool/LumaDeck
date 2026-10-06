@@ -993,17 +993,52 @@ def _owned_plan(lua_text: str, appid: int, dlc_map: dict, licensed,
             "add_dlcs": add_dlcs, "cycle": cycle}
 
 
+_CYCLE_SETTLE_SEC = 1.0    # after the reconcile, before Steam is asked
+_CYCLE_GIVE_UP_SEC = 20.0  # no reconcile seen: hand out anyway (restart is the fallback)
+
+
 def take_owned_dlc_cycle(appid: int) -> dict:
     """The DLC AppIDs the frontend must untick/re-tick in Steam so an already
     installed owned game downloads them (see _owned_plan). Handed out ONCE:
     two pages poll the same download, and cycling a DLC that is already
-    downloading would cancel and restart it."""
+    downloading would cancel and restart it.
+
+    Not before the client knows the licence: lumalinux injects the DLC into
+    PackageId 0 and broadcasts LicensesUpdated_t on the keys.txt write, and
+    a re-tick that lands before that finds no licence and does nothing
+    (measured 2026-10-06 16:45: mark cleared, no "added depots"). lumalinux
+    records each broadcast in reconcile.json; until its seq moves past the
+    one seen before the add (plus a second for the client to digest it) the
+    answer is {"pending": true} and the page asks again. Without the file
+    (older lumalinux, reconcile hook down) or after 20 s, the list goes out
+    anyway: the cycle is harmless, and the page's fallback is "restart Steam".
+    """
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
     state = DOWNLOAD_STATE.get(appid) or {}
+    if not state.get("ownedDlcCycle"):
+        return {"success": True, "dlc": []}
+    seq_before = state.get("ownedDlcCycleSeq")
+    since = float(state.get("ownedDlcCycleSince") or 0)
+    now = time.time()
+    if seq_before is not None and now - since < _CYCLE_GIVE_UP_SEC:
+        try:
+            from paths import read_lumalinux_reconcile
+            rec = read_lumalinux_reconcile()
+        except Exception:
+            rec = None
+        if rec is not None:
+            try:
+                seq, epoch = int(rec.get("seq", 0)), float(rec.get("epoch", 0))
+            except Exception:
+                seq, epoch = 0, 0.0
+            if seq <= int(seq_before) or now - epoch < _CYCLE_SETTLE_SEC:
+                return {"success": True, "dlc": [], "pending": True}
     dlc = list(state.pop("ownedDlcCycle", None) or [])
+    state.pop("ownedDlcCycleSeq", None)
+    state.pop("ownedDlcCycleSince", None)
     return {"success": True, "dlc": dlc}
 
 
@@ -1160,9 +1195,20 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
             # Installed already? Then Steam will not fetch the new DLC on its
             # own: hand the frontend the list to cycle (see _owned_plan).
             installed = _pins.find_acf(appid) is not None
+            # The reconcile seq BEFORE steamidra writes keys.txt: the cycle is
+            # handed out only once lumalinux has moved past it (take_owned_dlc_cycle).
+            seq_before = None
+            try:
+                from paths import read_lumalinux_reconcile
+                rec = read_lumalinux_reconcile()
+                seq_before = int(rec.get("seq", 0)) if rec else None
+            except Exception:
+                seq_before = None
             _set_download_state(appid, {
                 "ownedDlc": plan["add_dlcs"],
                 "ownedDlcCycle": plan["cycle"] if installed else [],
+                "ownedDlcCycleSeq": seq_before,
+                "ownedDlcCycleSince": time.time(),
             })
             if installed and plan["cycle"]:
                 logger.info(f"LumaDeck: owned game {appid} is installed: Steam must be "

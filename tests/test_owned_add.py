@@ -186,14 +186,44 @@ class OwnedPlan(unittest.TestCase):
 
 
 class DlcCycleHandout(unittest.TestCase):
-    def test_taken_once(self):
-        downloads.DOWNLOAD_STATE[APP] = {"status": "done", "ownedDlcCycle": [580100, 702540]}
-        try:
-            self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": [580100, 702540]})
-            self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": []})
-            self.assertEqual(downloads.DOWNLOAD_STATE[APP]["status"], "done")
-        finally:
-            downloads.DOWNLOAD_STATE.pop(APP, None)
+    def setUp(self):
+        import paths
+        import time as _t
+        self._orig = paths.read_lumalinux_reconcile
+        self.rec = None
+        paths.read_lumalinux_reconcile = lambda: self.rec
+        self.now = _t.time()
+
+    def tearDown(self):
+        import paths
+        paths.read_lumalinux_reconcile = self._orig
+        downloads.DOWNLOAD_STATE.pop(APP, None)
+
+    def _state(self, seq_before, since=None):
+        downloads.DOWNLOAD_STATE[APP] = {"status": "done", "ownedDlcCycle": [580100, 702540],
+                                         "ownedDlcCycleSeq": seq_before,
+                                         "ownedDlcCycleSince": self.now if since is None else since}
+
+    def test_taken_once_without_reconcile_file(self):
+        self._state(None)
+        self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": [580100, 702540]})
+        self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": []})
+        self.assertEqual(downloads.DOWNLOAD_STATE[APP]["status"], "done")
+
+    def test_pending_until_lumalinux_reconciles(self):
+        self._state(seq_before=7)
+        self.rec = {"seq": 7, "epoch": self.now - 10}
+        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"))
+        self.rec = {"seq": 8, "epoch": self.now}          # just broadcast: let it settle
+        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"))
+        self.rec = {"seq": 8, "epoch": self.now - 2}
+        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
+        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [])
+
+    def test_gives_up_waiting_after_a_while(self):
+        self._state(seq_before=7, since=self.now - 30)
+        self.rec = {"seq": 7, "epoch": self.now - 60}
+        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
 
 
 class AppRunning(unittest.TestCase):

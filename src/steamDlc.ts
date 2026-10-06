@@ -51,3 +51,30 @@ export const cycleDlcs = (appid: number, dlcs: number[]): boolean => {
   }
   return true;
 };
+
+/** After an owned add on an installed game: fetch the DLC to cycle from the
+ *  backend (it withholds them until lumalinux has told the client about the
+ *  new licence, answering {pending: true} meanwhile) and cycle them. Returns
+ *  "none" (nothing to do), "ok" or "failed" (Steam did not take the call:
+ *  the user restarts Steam, which plans the same thing at startup). */
+export const runOwnedDlcCycle = async (
+  appid: number,
+  take: (appid: number) => Promise<any>,
+): Promise<"none" | "ok" | "failed"> => {
+  for (let i = 0; i < 30; i++) {
+    let res: any;
+    try {
+      res = await take(appid);
+    } catch {
+      return "none";
+    }
+    if (!res?.success) return "none";
+    if (res.pending) {
+      await new Promise((r) => setTimeout(r, 1000));
+      continue;
+    }
+    if (!res.dlc?.length) return "none";
+    return cycleDlcs(appid, res.dlc) ? "ok" : "failed";
+  }
+  return "none";
+};

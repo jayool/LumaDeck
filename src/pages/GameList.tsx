@@ -45,7 +45,7 @@ import { useT } from "../i18n";
 import { toaster } from "@decky/api";
 
 import { isOwnedBySteam } from "../steamOwnership";
-import { cycleDlcs } from "../steamDlc";
+import { runOwnedDlcCycle } from "../steamDlc";
 interface SearchResult {
   appid: number;
   name: string;
@@ -168,12 +168,9 @@ export function GameList() {
             setAddStatus(t("doneRestartSteam"));
             // Owned game that was already installed: cycle its new DLC in
             // Steam's DLC list so Steam downloads them (steamDlc.ts).
-            try {
-              const cyc = await takeOwnedDlcCycle(id);
-              if (cyc.success && cyc.dlc?.length && !cycleDlcs(id, cyc.dlc)) {
-                setAddStatus(t("ownedDlcCycleFailed"));
-              }
-            } catch { }
+            runOwnedDlcCycle(id, takeOwnedDlcCycle).then((r) => {
+              if (r === "failed") setAddStatus(t("ownedDlcCycleFailed"));
+            });
             setActiveDownloadId(null);
             setActiveDownloadPhase("");
             setDownloadPct(0); setDownloadSpeed(0); setDownloadBytes({ read: 0, total: 0 });

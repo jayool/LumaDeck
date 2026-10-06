@@ -68,7 +68,7 @@ import {
 import { errorText, useT } from "../i18n";
 
 import { isOwnedBySteam } from "../steamOwnership";
-import { disableDlcs, cycleDlcs } from "../steamDlc";
+import { disableDlcs, runOwnedDlcCycle } from "../steamDlc";
 interface GameDetailProps {
   appid: number;
 }
@@ -330,12 +330,9 @@ export function GameDetail({ appid }: GameDetailProps) {
           toast(t("toastDownloadComplete"), gameName);
           // Owned game that was already installed: Steam will not fetch the
           // new DLC on its own — cycle them in its DLC list (steamDlc.ts).
-          try {
-            const cyc = await takeOwnedDlcCycle(appid);
-            if (cyc.success && cyc.dlc?.length && !cycleDlcs(appid, cyc.dlc)) {
-              toast(t("toastError"), t("ownedDlcCycleFailed"), 6000);
-            }
-          } catch { }
+          runOwnedDlcCycle(appid, takeOwnedDlcCycle).then((r) => {
+            if (r === "failed") toast(t("toastError"), t("ownedDlcCycleFailed"), 6000);
+          });
         } else if (status.state.status === "failed") {
           toast(t("toastDownloadFailed"), status.state.error || gameName, 5000);
         }
