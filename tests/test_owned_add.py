@@ -51,6 +51,16 @@ class OwnedLuaFilter(unittest.TestCase):
         self.assertEqual(sorted(dropped), [228989, 262065, 702541, 702542])
         self.assertNotIn(",1,", text)
 
+    def test_base_line_is_added_when_the_lua_only_had_the_keyed_one(self):
+        # Hubcap shape: the base game appears only as addappid(APP,1,"key") (its
+        # Windows depot), followed by the DLC. Dropping it must not promote the
+        # first DLC to "the game".
+        lua = f'addappid({APP},1,"{KEY}")\naddappid(580100)\naddappid(580101,1,"{KEY}")\n'
+        text, dropped = downloads._filter_lua_for_owned_base(lua, APP, {580101})
+        self.assertTrue(text.startswith(f"addappid({APP})\n"), text)
+        self.assertEqual(dropped, [APP])
+        self.assertEqual(text.count(f"addappid({APP})"), 1)
+
     def test_owned_dlc_appid_line_is_dropped_base_line_kept(self):
         text, _ = downloads._filter_lua_for_owned_base(LUA, APP, {702541, 702542}, owned_apps={702540, APP})
         self.assertNotIn("addappid(702540)\n", text)   # the account has this DLC: no AdditionalApps entry

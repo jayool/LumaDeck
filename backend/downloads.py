@@ -880,6 +880,14 @@ def _filter_lua_for_owned_base(lua_text: str, appid: int, dlc_depots: set,
             if k and int(k.group(1)) != int(appid) and int(k.group(1)) in owned_apps:
                 continue
         out.append(line)
+    # steamidra takes the FIRST addappid() in the file as the game's AppID.
+    # A Hubcap .lua carries the base game only as its keyed Windows-depot line
+    # (depot id == AppID), which the loop above just dropped, so without this
+    # the first DLC would be taken for the game (measured 2026-10-06: Darkest
+    # Dungeon parsed as 580100, keys parented to it, 580100.lua in stplug-in).
+    has_base = any(keyless.match(l) and int(keyless.match(l).group(1)) == int(appid) for l in out)
+    if not has_base:
+        out.insert(0, f"addappid({int(appid)})\n")
     return "".join(out), dropped
 
 
