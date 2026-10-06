@@ -15,6 +15,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
+import paths  # noqa: E402
 import pins  # noqa: E402
 import slssteam_ops  # noqa: E402
 import steam_licenses  # noqa: E402
@@ -72,7 +73,7 @@ class OwnedUninstall(unittest.TestCase):
         for name in ("remove_fake_app_id", "remove_game_token", "remove_game_dlcs"):
             patch(slssteam_ops, name, (lambda n: (lambda appid: self.calls.append((n, int(appid)))))(name))
         patch(slssteam_ops, "remove_from_lumalinux_keys",
-              lambda appid, extra_depot_ids=None: (self.calls.append(("keys", int(appid))) or {"removed": 2, "depot_ids": ["580102", "702542"]}))
+              lambda appid, extra_depot_ids=None, retire=False: (self.calls.append(("keys", int(appid), retire)) or {"removed": 2, "depot_ids": ["580102", "702542"], "retired": 2 if retire else 0}))
         patch(slssteam_ops, "remove_depot_decryption_keys",
               lambda ids: self.fail("config.vdf must not be edited on uninstall"))
         real_delete = slssteam_ops.delete_luatools_for_app
@@ -129,7 +130,8 @@ class OwnedUninstall(unittest.TestCase):
         self.assertFalse(os.path.isdir(os.path.join(self.game, ".DepotDownloader")))
         self.assertIn(("sls", DLC_A), self.calls)
         self.assertIn(("sls", DLC_B), self.calls)
-        self.assertIn(("keys", APP), self.calls)
+        self.assertIn(("keys", APP, True), self.calls, "owned: keys are retired, not dropped")
+        self.assertIn("lumalinux_keys_retired", res["removed"])
         self.assertEqual(self.calls[-1], ("lua", APP))
         self.assertFalse(pins.is_owned(APP))
 
@@ -138,6 +140,60 @@ class OwnedUninstall(unittest.TestCase):
         res = slssteam_ops.uninstall_game_full(APP)
         self.assertTrue(res["success"], res)
         self.assertFalse(os.path.exists(self.lua))
+
+
+class RetiredKeys(unittest.TestCase):
+    """remove_from_lumalinux_keys(retire=True) and prune_retired_keys on real
+    files: the DLC's keyed lines move to retired_keys.txt (the app's own line
+    and presence-only lines do not), a second retirement replaces the entry,
+    and a re-add that puts the depot back in keys.txt prunes it."""
+    KEYS = (f"{APP};\n"
+            f"580102;{APP};0;0;{KEY}\n"
+            f"702542;{APP};0;0;{'cd' * 32}\n"
+            f"1942280;\n"
+            f"1942281;1942280;0;0;{'ef' * 32}\n")
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.keys = os.path.join(self.tmp, "keys.txt")
+        self.retired = os.path.join(self.tmp, "retired_keys.txt")
+        open(self.keys, "w").write(self.KEYS)
+        self._orig = (paths.get_lumalinux_keys_path, paths.get_lumalinux_retired_keys_path)
+        paths.get_lumalinux_keys_path = lambda: self.keys
+        paths.get_lumalinux_retired_keys_path = lambda: self.retired
+
+    def tearDown(self):
+        paths.get_lumalinux_keys_path, paths.get_lumalinux_retired_keys_path = self._orig
+
+    def test_retire_moves_the_keyed_lines(self):
+        res = slssteam_ops.remove_from_lumalinux_keys(APP, retire=True)
+        self.assertEqual((res["removed"], res["retired"]), (3, 2))
+        keys = open(self.keys).read()
+        self.assertNotIn("580102;", keys)
+        self.assertIn("1942281;1942280;", keys, "the other game's lines stay")
+        retired = open(self.retired).read().splitlines()
+        self.assertEqual(sorted(l.split(";")[0] for l in retired), ["580102", "702542"])
+        self.assertTrue(all(len(l.split(";")[4]) == 64 for l in retired))
+
+    def test_plain_removal_retires_nothing(self):
+        res = slssteam_ops.remove_from_lumalinux_keys(APP)
+        self.assertEqual(res["retired"], 0)
+        self.assertFalse(os.path.exists(self.retired))
+
+    def test_second_retirement_replaces_and_readd_prunes(self):
+        slssteam_ops.remove_from_lumalinux_keys(APP, retire=True)
+        # the game is added again: steamidra rewrites keys.txt with the depots
+        open(self.keys, "w").write(self.KEYS)
+        self.assertEqual(slssteam_ops.prune_retired_keys(), 2)
+        self.assertEqual(open(self.retired).read().strip(), "")
+        # retire again with a new key for one depot: one entry per depot
+        open(self.keys, "w").write(self.KEYS.replace(KEY, "12" * 32))
+        slssteam_ops.remove_from_lumalinux_keys(APP, retire=True)
+        open(self.keys, "w").write(f"580102;{APP};0;0;{KEY}\n")
+        slssteam_ops.remove_from_lumalinux_keys(APP, retire=True)
+        retired = [l for l in open(self.retired).read().splitlines() if l.strip()]
+        self.assertEqual(len(retired), 2)
+        self.assertEqual([l for l in retired if l.startswith("580102;")][0].split(";")[4], KEY)
 
 
 if __name__ == "__main__":

@@ -1251,6 +1251,15 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
                     f"keys.txt for app {appid} ({manifest_count} manifest(s))"
                 )
 
+        # Depots that are back in keys.txt no longer need a retired key.
+        try:
+            from slssteam_ops import prune_retired_keys
+            pruned = prune_retired_keys()
+            if pruned:
+                logger.info(f"LumaDeck: {pruned} retired key(s) superseded by keys.txt")
+        except Exception as exc:
+            logger.warning(f"LumaDeck: retired keys prune failed: {exc}")
+
         # Record the installed lua path for any downstream code that looks
         # it up (the canonical place is stplug-in, written by the script).
         _set_download_state(appid, {

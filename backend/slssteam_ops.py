@@ -800,7 +800,67 @@ def _find_game_dir_fallback(appid: int) -> str:
     return ""
 
 
-def remove_from_lumalinux_keys(appid: int, extra_depot_ids=None) -> dict:
+def _retire_key_lines(lines: list) -> int:
+    """Append keyed depot lines to lumalinux's retired_keys.txt (same line
+    format as keys.txt), replacing an older entry for the same depot. Returns
+    how many were written. See remove_from_lumalinux_keys(retire=True)."""
+    from paths import get_lumalinux_retired_keys_path
+    keyed = {}
+    for raw in lines:
+        fields = raw.strip().split(";")
+        if len(fields) >= 5 and len(fields[4]) == 64:
+            keyed[fields[0]] = raw.strip() + "\n"
+    if not keyed:
+        return 0
+    path = get_lumalinux_retired_keys_path()
+    kept = []
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for raw in f:
+                st = raw.strip()
+                if st and not st.startswith("#") and st.split(";")[0] in keyed:
+                    continue
+                kept.append(raw if raw.endswith("\n") else raw + "\n")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.writelines(kept)
+        f.writelines(keyed.values())
+    os.replace(tmp, path)
+    return len(keyed)
+
+
+def prune_retired_keys() -> int:
+    """Drop retired entries for depots that are back in keys.txt with a key
+    (the DLC were added again): keys.txt wins in lumalinux anyway, this only
+    keeps the file honest. Returns how many were dropped."""
+    from paths import get_lumalinux_keys_path, get_lumalinux_retired_keys_path
+    path = get_lumalinux_retired_keys_path()
+    keys_path = get_lumalinux_keys_path()
+    if not os.path.isfile(path) or not os.path.isfile(keys_path):
+        return 0
+    live = set()
+    with open(keys_path, "r", encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            fields = raw.strip().split(";")
+            if len(fields) >= 5 and len(fields[4]) == 64:
+                live.add(fields[0])
+    kept, dropped = [], 0
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            st = raw.strip()
+            if st and not st.startswith("#") and st.split(";")[0] in live:
+                dropped += 1
+                continue
+            kept.append(raw)
+    if dropped:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.writelines(kept)
+        os.replace(tmp, path)
+    return dropped
+
+
+def remove_from_lumalinux_keys(appid: int, extra_depot_ids=None, retire: bool = False) -> dict:
     """Remove an app's lines from lumalinux's keys.txt.
 
     Removes any non-comment line that is:
@@ -809,21 +869,29 @@ def remove_from_lumalinux_keys(appid: int, extra_depot_ids=None) -> dict:
       - a depot line for any id in extra_depot_ids (legacy/no-key shapes that
         carry no parent field, recovered from the .lua before it's deleted)
 
+    retire — move the keyed depot lines to retired_keys.txt instead of
+    dropping them: lumalinux keeps serving those keys to Steam but no longer
+    injects them as licences. For an owned game's DLC: Steam deletes their
+    files only with the key (depotcache manifests carry encrypted file names)
+    and asks for it after the uninstall unticked them — measured 2026-10-06
+    14:51, "Missing decryption key", nothing deleted, when the key went with
+    the licence. Exactly what Steam does with its own key cache.
+
     Comments (#...) and blank lines are preserved verbatim. Best-effort: any
     read/write error is reported but never raises. Returns the depot ids that
-    were removed (so the caller can clean the matching config.vdf keys) and a
-    count of removed lines.
+    were removed and a count of removed lines.
     """
     from paths import get_lumalinux_keys_path
 
     keys_path = get_lumalinux_keys_path()
     if not os.path.isfile(keys_path):
-        return {"success": True, "removed": 0, "depot_ids": []}
+        return {"success": True, "removed": 0, "depot_ids": [], "retired": 0}
 
     appid_str = str(appid)
     extra = {str(d) for d in (extra_depot_ids or [])}
     removed_depot_ids = set()
     kept_lines = []
+    removed_lines = []
     removed = 0
     try:
         with open(keys_path, "r", encoding="utf-8", errors="replace") as f:
@@ -840,19 +908,24 @@ def remove_from_lumalinux_keys(appid: int, extra_depot_ids=None) -> dict:
             is_extra = depot in extra
             if is_app_dummy or is_parented or is_extra:
                 removed += 1
-                # The app's own dummy line is not a depot — don't list it as a
-                # depot id for the config.vdf follow-up.
+                # The app's own dummy line is not a depot.
                 if not is_app_dummy:
                     removed_depot_ids.add(depot)
+                    removed_lines.append(raw)
                 continue
             kept_lines.append(raw)
 
+        retired = 0
         if removed:
+            # Retire BEFORE rewriting keys.txt: lumalinux reloads both files
+            # on the keys.txt write, so the key is never absent in between.
+            if retire:
+                retired = _retire_key_lines(removed_lines)
             tmp = keys_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.writelines(kept_lines)
             os.replace(tmp, keys_path)
-        return {"success": True, "removed": removed, "depot_ids": sorted(removed_depot_ids)}
+        return {"success": True, "removed": removed, "depot_ids": sorted(removed_depot_ids), "retired": retired}
     except Exception as e:
         logger.warning(f"LumaDeck: remove_from_lumalinux_keys failed: {e}")
         return {"success": False, "error": str(e), "depot_ids": sorted(removed_depot_ids)}
@@ -980,8 +1053,10 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False, steam_dlc_d
     needs the depotcache manifests to delete the DLC files once the frontend
     unticks the DLC (owned_dlc_to_disable), and it rewrites config.vdf from
     memory on exit anyway. What goes is LumaDeck's record: AdditionalApps
-    entries, keys.txt lines, pins, and the .lua — last, so a retry after a
-    failure half-way still knows which DLC were ours.
+    entries, keys.txt lines (their keys move to retired_keys.txt: Steam
+    still needs them to delete the DLC files, see remove_from_lumalinux_keys),
+    pins, and the .lua — last, so a retry after a failure half-way still
+    knows which DLC were ours.
 
     steam_dlc_disabled — the frontend confirms it unticked the DLC in Steam.
     Without it an installed owned game with DLC is refused, because the
@@ -1165,9 +1240,11 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False, steam_dlc_d
         # while Steam runs is undone (measured 2026-10-06) and a stale key
         # for a depot the user no longer has is inert.
         try:
-            keys_res = remove_from_lumalinux_keys(appid, extra_depot_ids=lua_depot_ids)
+            keys_res = remove_from_lumalinux_keys(appid, extra_depot_ids=lua_depot_ids, retire=owned)
             if keys_res.get("removed"):
                 removed.append("lumalinux_keys")
+            if keys_res.get("retired"):
+                removed.append("lumalinux_keys_retired")
         except Exception as e:
             logger.warning(f"LumaDeck: lumalinux keys cleanup error: {e}")
 

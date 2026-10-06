@@ -297,6 +297,13 @@ def get_lumalinux_so_path() -> Optional[str]:
     return os.path.join(root, "liblumalinux.so") if root else None
 
 
+def get_lumalinux_retired_keys_path() -> str:
+    """lumalinux's retired_keys.txt, next to keys.txt: keys lumalinux still
+    serves to Steam but no longer counts as a licence (an owned game's DLC
+    after uninstall — Steam needs the key to delete their files)."""
+    return os.path.join(os.path.dirname(get_lumalinux_keys_path()), "retired_keys.txt")
+
+
 def get_lumalinux_keys_path() -> str:
     """Path to lumalinux's keys.txt — config lives under ~/.config/, not the
     deploy directory. Returns the path even if the file doesn't exist yet so
