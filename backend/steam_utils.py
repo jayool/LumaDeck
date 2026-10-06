@@ -286,8 +286,17 @@ def check_stuck_updates() -> dict:
     Returns {"success": True, "stuck": [{"appid", "name"}, ...]}.
     """
     stuck = []
+    try:
+        import pins as _pins
+        owned = _pins.is_owned
+    except Exception:
+        def owned(_appid):
+            return False
     for game in get_installed_games():
-        if str(game.get("updateResult", "0")) == "8" and has_lua_for_app(game["appid"]):
+        # A game the account owns is updated by Steam with Steam's own keys;
+        # its UpdateResult is not ours to "fix" (that would re-add it).
+        if str(game.get("updateResult", "0")) == "8" and has_lua_for_app(game["appid"]) \
+                and not owned(game["appid"]):
             stuck.append({"appid": game["appid"], "name": game["name"]})
     return {"success": True, "stuck": stuck}
 

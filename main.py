@@ -415,6 +415,9 @@ class Plugin:
         return _j(await list_versions(int(appid)))
 
     async def install_game_version(self, appid: int, buildid: int) -> str:
+        import pins as _pins
+        if _pins.is_owned(int(appid)):
+            return _j({"success": False, "error": "This game is yours: Steam manages its version."})
         from game_versions import install_version
         return _j(await install_version(int(appid), int(buildid)))
 
@@ -688,6 +691,9 @@ class Plugin:
     # ==========================================================================
 
     async def repair_appmanifest(self, appid: int) -> str:
+        import pins as _pins
+        if _pins.is_owned(int(appid)):
+            return _j({"success": False, "error": "This game is yours: its appmanifest belongs to Steam."})
         from downloads import repair_appmanifest
         return _j(await repair_appmanifest(appid))
 

@@ -74,3 +74,17 @@ class OwnedFlag(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolveOwned(unittest.TestCase):
+    """downloads.resolve_owned: the one decision for the add shape."""
+    def test_recorded_wins(self):
+        self.assertTrue(downloads.resolve_owned(claimed=False, managed=True, listed_in_sls=True, recorded=True))
+
+    def test_managed_or_listed_is_never_owned(self):
+        self.assertFalse(downloads.resolve_owned(claimed=True, managed=True, listed_in_sls=False, recorded=False))
+        self.assertFalse(downloads.resolve_owned(claimed=True, managed=False, listed_in_sls=True, recorded=False))
+
+    def test_fresh_game_follows_steams_answer(self):
+        self.assertTrue(downloads.resolve_owned(claimed=True, managed=False, listed_in_sls=False, recorded=False))
+        self.assertFalse(downloads.resolve_owned(claimed=False, managed=False, listed_in_sls=False, recorded=False))

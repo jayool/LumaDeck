@@ -800,6 +800,12 @@ async def check_update(appid: int, native: bool = False) -> str:
         if d not in REDIST_DEPOTS and not v["sharedinstall"]
         and v["oslist"] in ("", platform) and v["osarch"] in ("", "64")
     }
+    owned = is_owned(appid)
+    if owned:
+        # The account owns the base game: its own depots are Steam's business
+        # and must never read as "new depots we lack keys for" (that would pull
+        # a zip and re-add the game in the normal shape). Only DLC depots count.
+        relevant = {d: v for d, v in relevant.items() if v.get("dlcappid")}
     new_depots = sorted(d for d in relevant if d not in keyed)
     if native:
         changed = {}
@@ -831,7 +837,7 @@ async def check_update(appid: int, native: bool = False) -> str:
                 return (f"zip is stale or lacks the new depots (stale={stale}, "
                         f"has={sorted(zg)}); retry tomorrow")
             from downloads import DOWNLOAD_STATE, _process_and_install_lua
-            await _process_and_install_lua(appid, zip_path, pin=not native)
+            await _process_and_install_lua(appid, zip_path, pin=not native, owned=owned)
             DOWNLOAD_STATE.pop(int(appid), None)
             return f"reinstalled from zip: new depots {new_depots}, build {info.get('buildid')}"
         finally:

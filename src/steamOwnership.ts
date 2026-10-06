@@ -10,14 +10,21 @@
  * an overview right after being added). So this is asked at Add time and the
  * backend records it; it is never re-derived later.
  *
- * Family-shared games also return an overview and count as owned here: Steam
- * downloads and updates them itself, so the DLC-only shape fits them too.
+ * Family-shared games: whether they carry rt_purchased_time is NOT measured
+ * yet. If they do not, they take the normal add path (today's behaviour).
  */
 export const isOwnedBySteam = (appid: number): boolean => {
   try {
     const store: any = (window as any).appStore;
     const overview = store?.GetAppOverviewByAppID?.(appid);
-    return !!overview;
+    if (!overview) return false;
+    // A real licence carries its purchase time (Darkest Dungeon 2018, TF2
+    // 2010, measured); an app SLSsteam merely lists has an overview but no
+    // rt_purchased_time (Brotato right after being added, measured). This is
+    // what keeps a game added by ANOTHER tool (ASSella, SLSDeck, a hand-edited
+    // AdditionalApps) from passing as owned. The backend adds its own checks.
+    const purchased = Number(overview.rt_purchased_time || 0);
+    return purchased > 0;
   } catch {
     return false;
   }

@@ -421,7 +421,9 @@ export function GameDetail({ appid }: GameDetailProps) {
     // Ask Steam whether the account already has the game — only meaningful
     // before we add it (see steamOwnership.ts); a re-download of a managed
     // game is never an "owned" add.
-    const owned = !hasLua && isOwnedBySteam(appid);
+    // A managed game keeps what the backend recorded (isOwned); a new one asks
+    // Steam. The backend re-checks both (downloads.resolve_owned).
+    const owned = hasLua ? isOwned : isOwnedBySteam(appid);
     const result = await startDownload(appid, libraryPath, owned);
     if (result.success) {
       setDownloadState({ status: "queued", bytesRead: 0, totalBytes: 0 });
@@ -1120,7 +1122,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             <Field label={t("ownedGameTitle")} description={t("ownedGameDesc")} />
           </PanelSectionRow>
         )}
-        {hasLua && installPath && versionRow && (
+        {hasLua && installPath && !isOwned && versionRow && (
           <PanelSectionRow>
             <Field label={t("version")} description={versionRow.desc || undefined}>
               <span>{versionRow.value}</span>
@@ -1168,7 +1170,7 @@ export function GameDetail({ appid }: GameDetailProps) {
               label={hasLua ? t("redownloadManifest") : t("downloadManifest")}
               onClick={handleDownload}
             />
-            {hasLua && installPath ? (
+            {hasLua && installPath && !isOwned ? (
               <PanelSectionRow>
                 <ToggleField
                   label={t("autoUpdate")}
@@ -1185,7 +1187,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 selected build's studio label and LuaTools fix tags ride as the
                 description. Install = pin + freeze + flag the .acf; the user
                 restarts Steam (toast), never us. backend/game_versions.py. */}
-            {hasLua && installPath && !versionList && versionsState !== "needsUser" && (
+            {hasLua && installPath && !isOwned && !versionList && versionsState !== "needsUser" && (
               <ActionButton
                 label={versionsState === "loading" ? t("readingSteamdb") : t("changeVersion")}
                 onClick={handleLoadVersions}
@@ -1193,7 +1195,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 description={versionsState === "error" ? versionsError : undefined}
               />
             )}
-            {hasLua && installPath && versionsState === "needsUser" && (
+            {hasLua && installPath && !isOwned && versionsState === "needsUser" && (
               <>
                 <PanelSectionRow>
                   <Field
@@ -1206,7 +1208,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 <ActionButton label={t("changeVersion")} onClick={handleLoadVersions} />
               </>
             )}
-            {hasLua && installPath && versionList && versionsState !== "needsUser" && (
+            {hasLua && installPath && !isOwned && versionList && versionsState !== "needsUser" && (
               <>
                 <PanelSectionRow>
                   <DropdownItem
@@ -1228,7 +1230,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             )}
             {/* Stuck update → one native actionable row (warning icon + Fix
                 Update). No "open game" button: we're already in GameDetail. */}
-            {isStuck && (
+            {isStuck && !isOwned && (
               <PanelSectionRow>
                 <ButtonItem
                   layout="below"
@@ -1464,8 +1466,8 @@ export function GameDetail({ appid }: GameDetailProps) {
               : (online?.enabled ? t("onlineDisable") : t("onlineEnable"))
           }
           onClick={handleToggleOnline}
-          disabled={busy === "online" || !installPath || online?.blockedBy === "denuvo"}
-          description={onlineDesc()}
+          disabled={busy === "online" || !installPath || online?.blockedBy === "denuvo" || isOwned}
+          description={isOwned ? t("ownedNoOnline") : onlineDesc()}
         />
       </PanelSection>
         </>

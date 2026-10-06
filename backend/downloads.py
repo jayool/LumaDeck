@@ -874,6 +874,41 @@ def _filter_lua_for_owned_base(lua_text: str, appid: int, dlc_depots: set) -> tu
     return "".join(out), dropped
 
 
+def _in_additional_apps(appid: int) -> bool:
+    """Is the AppID listed in SLSsteam's AdditionalApps (by LumaDeck or by any
+    other tool)? Then Steam shows it owned without a licence behind it."""
+    try:
+        from slssteam_ops import _config_path
+        path = _config_path()
+        if not path or not os.path.isfile(path):
+            return False
+        pat = re.compile(r"^\s*-\s*" + str(int(appid)) + r"(?:\s|#|$)")
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return any(pat.match(line) for line in fh)
+    except Exception:
+        return False
+
+
+def resolve_owned(claimed: bool, managed: bool, listed_in_sls: bool, recorded: bool) -> bool:
+    """The one place that decides the add shape.
+
+    recorded  — pins.json says LumaDeck added this game as owned (DLC only):
+                every later install path (re-download, update pass, a fix)
+                MUST keep that shape, or the base game's depots would land in
+                keys.txt and the AppID in AdditionalApps.
+    managed   — LumaDeck already manages it (lua / keys.txt) but not as owned:
+                never owned, whatever the frontend says (Steam shows our own
+                adds as owned too).
+    listed    — some tool put the AppID in AdditionalApps: same thing.
+    claimed   — the frontend's answer from Steam's appStore at Add time.
+    """
+    if recorded:
+        return True
+    if managed or listed_in_sls:
+        return False
+    return bool(claimed)
+
+
 async def _dlc_depots_of(appid: int) -> set:
     """Depots that belong to one of the game's DLC (PICS `dlcappid`), from
     api.steamcmd.net. Empty set when the lookup fails; the caller decides."""
@@ -931,6 +966,17 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
 
     if _is_download_cancelled(appid):
         raise RuntimeError("cancelled")
+
+    # A game recorded as owned keeps the owned shape on EVERY path that lands
+    # here (update pass, a LuaTools fix, a re-download), not only on Add.
+    if not owned:
+        try:
+            import pins as _pins
+            if _pins.is_owned(appid):
+                owned = True
+                logger.info(f"LumaDeck: {appid} is recorded as owned — keeping the DLC-only shape")
+        except Exception:
+            pass
 
     base_path = detect_steam_install_path()
     if not base_path:
@@ -1511,14 +1557,18 @@ async def start_download(appid: int, target_library_path: str = "", owned: bool 
     except Exception:
         return {"success": False, "error": "Invalid appid"}
 
-    if owned:
-        try:
-            from steam_utils import has_lua_for_app
-            if has_lua_for_app(appid):
-                logger.info(f"LumaDeck: {appid} is already managed here — ignoring owned=True")
-                owned = False
-        except Exception:
-            pass
+    try:
+        from steam_utils import has_lua_for_app
+        import pins as _pins
+        owned = resolve_owned(
+            claimed=bool(owned),
+            managed=has_lua_for_app(appid),
+            listed_in_sls=_in_additional_apps(appid),
+            recorded=_pins.is_owned(appid),
+        )
+    except Exception as exc:
+        logger.warning(f"LumaDeck: owned resolution failed for {appid} ({exc}); treating as not owned")
+        owned = False
 
     logger.info(f"LumaDeck: start_download appid={appid} library={target_library_path or '(default)'} owned={owned}")
     _set_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0, "owned": owned})
