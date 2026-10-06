@@ -155,8 +155,11 @@ export const installGameVersion = async (appid: number, buildid: number) =>
   parseResult(await call<[number, number], string>("install_game_version", appid, buildid));
 
 // Downloads
-export const startDownload = async (appid: number, targetLibraryPath: string = "") =>
-  parseResult(await call<[number, string], string>("start_download", appid, targetLibraryPath));
+// `owned`: Steam's own appStore lists the game in the account's library, asked
+// BEFORE anything is added (src/steamOwnership.ts). The backend then adds only
+// the game's DLC and leaves the game itself to Steam.
+export const startDownload = async (appid: number, targetLibraryPath: string = "", owned: boolean = false) =>
+  parseResult(await call<[number, string, boolean], string>("start_download", appid, targetLibraryPath, owned));
 
 // #21 watchdog: installed lua games whose native Steam update is stuck on a
 // missing decryption key (new/rotated depot) → { stuck: [{appid, name}] }.

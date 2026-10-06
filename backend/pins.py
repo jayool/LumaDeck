@@ -266,6 +266,24 @@ async def freeze_for_files(appid: int) -> bool:
     return True
 
 
+def is_owned(appid: int) -> bool:
+    """The account owns the base game and LumaDeck only added its DLC
+    (RESEARCH §21 run E): the base game's depots are not in keys.txt, so
+    nothing here ever pins it; uninstall must leave the game itself alone."""
+    return bool(_load_state()["apps"].get(str(int(appid)), {}).get("owned"))
+
+
+def set_owned(appid: int, owned: bool) -> None:
+    data = _load_state()
+    entry = data["apps"].get(str(int(appid)), {})
+    if owned:
+        entry["owned"] = True
+    else:
+        entry.pop("owned", None)
+    data["apps"][str(int(appid))] = entry
+    _save_state(data)
+
+
 def frozen_by_providers(appid: int) -> bool:
     info = frozen_info(appid)
     return bool(info.get("frozen")) and info.get("reason") == FREEZE_REASON_PROVIDERS

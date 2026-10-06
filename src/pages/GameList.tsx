@@ -43,6 +43,7 @@ import { ACHIEVEMENTS_ENABLED } from "../features";
 import { useT } from "../i18n";
 import { toaster } from "@decky/api";
 
+import { isOwnedBySteam } from "../steamOwnership";
 interface SearchResult {
   appid: number;
   name: string;
@@ -311,7 +312,10 @@ export function GameList() {
   const doStartDownload = async (id: number, libraryPath: string = "") => {
     setAddStatus(t("startingDownload"));
     try {
-      const result = await startDownload(id, libraryPath);
+      // Steam's own answer, asked before the add (steamOwnership.ts). The
+      // backend ignores it for a game LumaDeck already manages.
+      const owned = isOwnedBySteam(id);
+      const result = await startDownload(id, libraryPath, owned);
       if (!result.success) {
         setAddStatus(result.error || t("downloadFailed"));
         return;

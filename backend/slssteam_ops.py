@@ -919,10 +919,21 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
     # clean legacy/no-key keys.txt lines and config.vdf keys that carry no
     # parent appid of their own.
     lua_depot_ids: list = []
+    # DLC AppIDs recovered from the .lua (keyless addappid lines): for a game
+    # the account OWNS they are what steamidra put into AdditionalApps.
+    lua_dlc_appids: list = []
+    try:
+        import pins as _pins
+        owned = _pins.is_owned(appid)
+    except Exception:
+        owned = False
 
     try:
-        # 1. Find and remove game files
-        path_info = get_game_install_path_response(appid)
+        # 1. Find and remove game files — NOT for a game the account owns:
+        # LumaDeck only added its DLC (RESEARCH §21 run E); the game, its .acf
+        # and its prefix are Steam's, and Steam drops the DLC depots itself on
+        # its next plan once their licences are gone.
+        path_info = get_game_install_path_response(appid) if not owned else {}
         install_path = path_info.get("installPath") if isinstance(path_info, dict) else None
         library_path = path_info.get("libraryPath") if isinstance(path_info, dict) else None
 
@@ -934,6 +945,10 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                 library_path = library_path or detect_steam_install_path()
                 logger.info(f"LumaDeck: Found game dir via fallback: {install_path}")
 
+        if owned:
+            logger.info(f"LumaDeck: {appid} is owned by the account — leaving its files, .acf and prefix alone")
+            install_path = None
+            remove_compatdata = False
         if install_path and os.path.exists(install_path):
             shutil.rmtree(install_path, ignore_errors=True)
             if not os.path.exists(install_path):
@@ -948,7 +963,7 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
         # Search all known library paths so orphan ACFs are always cleaned up.
         try:
             from steam_utils import get_steam_libraries, detect_steam_install_path
-            libs = get_steam_libraries() or [{"path": detect_steam_install_path()}]
+            libs = [] if owned else (get_steam_libraries() or [{"path": detect_steam_install_path()}])
             for lib in libs:
                 lib_path = lib.get("path", "") if isinstance(lib, dict) else str(lib)
                 acf_file = os.path.join(lib_path, "steamapps", f"appmanifest_{appid}.acf")
@@ -1002,6 +1017,14 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                     depots = _parse_lua_depots(actual_lua)
                     # Capture depot ids now — the .lua is deleted in step 3.
                     lua_depot_ids = [d["depot"] for d in depots if "depot" in d]
+                    try:
+                        import re as _re
+                        with open(actual_lua, "r", encoding="utf-8", errors="replace") as _fh:
+                            _lua_txt = _fh.read()
+                        lua_dlc_appids = [int(x) for x in _re.findall(r"^\s*addappid\s*\(\s*(\d+)\s*\)", _lua_txt, _re.MULTILINE)
+                                          if int(x) != int(appid)]
+                    except Exception:
+                        lua_dlc_appids = []
                     depotcache_dir = os.path.join(steam_path, "depotcache")
                     for depot_info in depots:
                         manifest_file = os.path.join(depotcache_dir, f"{depot_info['depot']}_{depot_info['manifest']}.manifest")
@@ -1026,6 +1049,10 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
         # 4. Remove all SLSsteam config entries
         try:
             _remove_from_additional_apps(appid)
+            # Owned game: steamidra registered the DLC AppIDs, not the base.
+            if owned:
+                for dlc in lua_dlc_appids:
+                    _remove_from_additional_apps(dlc)
             removed.append("additional_apps")
         except Exception:
             pass
@@ -1064,15 +1091,22 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
         # always goes; the unlocked-achievement progress file only on the full
         # "remove Proton prefix / my data too" path, so a normal uninstall →
         # reinstall keeps earned achievements.
-        try:
-            from achievements import remove_achievement_files
-            ach_res = remove_achievement_files(appid, remove_progress=remove_compatdata)
-            removed.extend(ach_res.get("removed", []))
-            errors.extend(ach_res.get("errors", []))
-        except Exception as e:
-            logger.warning(f"LumaDeck: achievement cleanup error: {e}")
+        if not owned:
+            try:
+                from achievements import remove_achievement_files
+                ach_res = remove_achievement_files(appid, remove_progress=remove_compatdata)
+                removed.extend(ach_res.get("removed", []))
+                errors.extend(ach_res.get("errors", []))
+            except Exception as e:
+                logger.warning(f"LumaDeck: achievement cleanup error: {e}")
 
-        logger.info(f"LumaDeck: Uninstall {appid} complete. Removed: {removed}")
+        if owned:
+            try:
+                _pins.set_owned(appid, False)
+            except Exception:
+                pass
+
+        logger.info(f"LumaDeck: Uninstall {appid} complete (owned={owned}). Removed: {removed}")
         return {"success": True, "removed": removed, "errors": errors}
     except Exception as e:  # noqa: E722 (kept for symmetry with original)
         return {"success": False, "error": str(e)}

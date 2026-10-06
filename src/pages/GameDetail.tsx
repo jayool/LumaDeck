@@ -65,6 +65,7 @@ import {
 } from "../api";
 import { errorText, useT } from "../i18n";
 
+import { isOwnedBySteam } from "../steamOwnership";
 interface GameDetailProps {
   appid: number;
 }
@@ -155,6 +156,9 @@ export function GameDetail({ appid }: GameDetailProps) {
   const [replaceAsk, setReplaceAsk] = useState<{ id: string; installed: string[] } | null>(null);
   const [removeCompatdata, setRemoveCompatdata] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
+  // The account owns the base game and LumaDeck only manages its DLC
+  // (backend pins.json `owned`, set at Add time from Steam's own answer).
+  const [isOwned, setIsOwned] = useState(false);
   // Game version (Status row + the Updates picker; backend/game_versions.py).
   // pinVersion: the build we pinned the game to (pins.json: buildid/date/label,
   // any may be null); acfBuildid: the .acf's buildid, right only while Steam
@@ -414,7 +418,11 @@ export function GameDetail({ appid }: GameDetailProps) {
   }, [steamlessState]);
 
   const doStartDownload = async (libraryPath: string = "") => {
-    const result = await startDownload(appid, libraryPath);
+    // Ask Steam whether the account already has the game — only meaningful
+    // before we add it (see steamOwnership.ts); a re-download of a managed
+    // game is never an "owned" add.
+    const owned = !hasLua && isOwnedBySteam(appid);
+    const result = await startDownload(appid, libraryPath, owned);
     if (result.success) {
       setDownloadState({ status: "queued", bytesRead: 0, totalBytes: 0 });
       toast(t("toastDownloadStarted"), gameName, 2000);
@@ -645,6 +653,7 @@ export function GameDetail({ appid }: GameDetailProps) {
 
   const applyPinStatus = (r: any) => {
     setIsPinned(!!r.pinned);
+    setIsOwned(!!r.owned);
     setPinVersion(r.version || null);
     setAcfBuildid(typeof r.installedBuildid === "number" ? r.installedBuildid : null);
   };
@@ -1100,12 +1109,17 @@ export function GameDetail({ appid }: GameDetailProps) {
           <Field label={`AppID ${appid}`} description={installPath || undefined}>
             {hasLua && (
               <span style={{ color: installPath ? "#00cc00" : "#ffaa00" }}>
-                {installPath ? t("installed") : t("manifestOnly")}
+                {isOwned ? t("ownedDlcOnly") : (installPath ? t("installed") : t("manifestOnly"))}
                 {gameSize > 0 && ` · ${formatSize(gameSize)}`}
               </span>
             )}
           </Field>
         </PanelSectionRow>
+        {!hasLua && isOwnedBySteam(appid) && (
+          <PanelSectionRow>
+            <Field label={t("ownedGameTitle")} description={t("ownedGameDesc")} />
+          </PanelSectionRow>
+        )}
         {hasLua && installPath && versionRow && (
           <PanelSectionRow>
             <Field label={t("version")} description={versionRow.desc || undefined}>
@@ -1474,7 +1488,14 @@ export function GameDetail({ appid }: GameDetailProps) {
           <Field
             icon={<FaExclamationTriangle color="#e07070" />}
             label={t("uninstallWillRemove")}
-            description={[
+            description={(isOwned ? [
+              t("uninstallItemOwnedKeeps"),
+              t("uninstallItemLua"),
+              t("uninstallItemManifest"),
+              t("uninstallItemDepots"),
+              t("uninstallItemSteamConfig"),
+              t("uninstallItemKeys"),
+            ] : [
               t("uninstallItemFiles"),
               t("uninstallItemLua"),
               t("uninstallItemManifest"),
@@ -1482,7 +1503,7 @@ export function GameDetail({ appid }: GameDetailProps) {
               t("uninstallItemSteamConfig"),
               t("uninstallItemKeys"),
               t("uninstallItemAchievements"),
-            ].join(" · ")}
+            ]).join(" · ")}
           />
         </PanelSectionRow>
 

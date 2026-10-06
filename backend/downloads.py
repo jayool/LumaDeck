@@ -73,30 +73,40 @@ def _find_steamidra_lite_script() -> str:
     return get_steamidra_lite_script() or ""
 
 
-_STEAMIDRA_SUPPORTS_NAME: bool | None = None
+_STEAMIDRA_HELP: bytes | None = None
 
 
-async def _steamidra_supports_name(python: str, script: str) -> bool:
-    """Whether the DEPLOYED steamidra_lite.py accepts --name. Older lumalinux
-    builds don't, and argparse errors out (exit 2) on an unknown flag — which
-    would break the install. Probed once via --help and cached for the session."""
-    global _STEAMIDRA_SUPPORTS_NAME
-    if _STEAMIDRA_SUPPORTS_NAME is None:
+async def _steamidra_help(python: str, script: str) -> bytes:
+    """`--help` of the DEPLOYED steamidra_lite.py, fetched once per session.
+    It is how we learn which flags this lumalinux accepts: argparse errors out
+    (exit 2) on an unknown one, which would break the install."""
+    global _STEAMIDRA_HELP
+    if _STEAMIDRA_HELP is None:
         try:
             proc = await asyncio.create_subprocess_exec(
                 python, script, "--help",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             )
             out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
-            _STEAMIDRA_SUPPORTS_NAME = b"--name" in (out or b"")
+            _STEAMIDRA_HELP = out or b""
         except Exception:
-            _STEAMIDRA_SUPPORTS_NAME = False
-    return _STEAMIDRA_SUPPORTS_NAME
+            _STEAMIDRA_HELP = b""
+    return _STEAMIDRA_HELP
+
+
+async def _steamidra_supports_flag(python: str, script: str, flag: str) -> bool:
+    return flag.encode() in await _steamidra_help(python, script)
+
+
+async def _steamidra_supports_name(python: str, script: str) -> bool:
+    """Whether the DEPLOYED steamidra_lite.py accepts --name (older lumalinux
+    builds don't)."""
+    return await _steamidra_supports_flag(python, script, "--name")
 
 
 async def _invoke_steamidra_lite(
     input_path: str, manifests_dir: str = "", appid_for_log: int = 0,
-    game_name: str = "", pin: bool = False,
+    game_name: str = "", pin: bool = False, dlc_of_owned: bool = False,
 ) -> tuple[bool, str]:
     """Run steamidra_lite.py on `input_path` (a Hubcap zip, or — when
     `manifests_dir` is supplied — a bare .lua file alongside an extracted
@@ -122,6 +132,19 @@ async def _invoke_steamidra_lite(
     # version-manifest install; the normal game install stays no-pin (latest).
     if pin:
         cmd.append("--pin")
+    # --dlc-of-owned: the account owns the base game; steamidra registers the
+    # DLC AppIDs in AdditionalApps instead of the base and leaves its .acf
+    # alone. Added to lumalinux on 2026-10-06; a deployed script that predates
+    # it cannot do the owned shape at all, so that is a hard error, not a
+    # silent fallback to the normal add (which would put an owned game into
+    # AdditionalApps and its depots into keys.txt).
+    if dlc_of_owned:
+        if not await _steamidra_supports_flag(python, script, "--dlc-of-owned"):
+            return False, (
+                "The installed lumalinux is too old to add DLC to a game you own "
+                "(steamidra_lite has no --dlc-of-owned). Update lumalinux first."
+            )
+        cmd.append("--dlc-of-owned")
     # --name is ACCEPTED AND IGNORED by steamidra since the .acf stub went away
     # (#41): it fed that stub's installdir, and Steam now writes the manifest
     # itself on Install, picking its own. We keep passing it, and keep gating it
@@ -251,6 +274,8 @@ async def get_pin_status(appid: int) -> dict:
             # `installedBuildid` is the .acf's, only trustworthy unpinned.
             "version": pins.version_info(int(appid)),
             "installedBuildid": pins.installed_buildid(int(appid)),
+            # The account owns the base game; LumaDeck only manages its DLC.
+            "owned": pins.is_owned(int(appid)),
         }
     except Exception as exc:
         return {"success": False, "error": f"status failed: {exc}", "pinned": False}
@@ -825,7 +850,46 @@ def _count_app_depot_keys(appid: int) -> int:
     return count
 
 
-async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False) -> None:
+def _filter_lua_for_owned_base(lua_text: str, appid: int, dlc_depots: set) -> tuple[str, list]:
+    """The shape for a game the account OWNS (RESEARCH §21 run E): keep only
+    the DLC depots. Drops every keyed `addappid(depot, 1, "key")` line and
+    every `setManifestid(depot, ...)` line (commented or not) whose depot is
+    not in `dlc_depots`; keeps the keyless `addappid(n)` lines (the base AppID
+    and the DLC AppIDs — steamidra turns the latter into AdditionalApps) and
+    everything else (comments, addtoken, section headers). Returns the filtered
+    text and the depot ids that were dropped, so the caller can also drop their
+    .manifest files before steamidra copies them into depotcache."""
+    keyed = re.compile(r'^\s*addappid\s*\(\s*(\d+)\s*,\s*\d+\s*,')
+    pinned = re.compile(r'^\s*(?:--\s*)?setManifestid\s*\(\s*(\d+)\s*,')
+    out, dropped = [], []
+    for line in lua_text.splitlines(keepends=True):
+        m = keyed.match(line) or pinned.match(line)
+        if m:
+            depot = int(m.group(1))
+            if depot not in dlc_depots:
+                if depot not in dropped:
+                    dropped.append(depot)
+                continue
+        out.append(line)
+    return "".join(out), dropped
+
+
+async def _dlc_depots_of(appid: int) -> set:
+    """Depots that belong to one of the game's DLC (PICS `dlcappid`), from
+    api.steamcmd.net. Empty set when the lookup fails; the caller decides."""
+    try:
+        from manifests import steamcmd_app_info
+        info = await steamcmd_app_info(appid)
+    except Exception as exc:
+        logger.warning(f"LumaDeck: steamcmd info for {appid} failed: {exc}")
+        return set()
+    if not info:
+        return set()
+    return {d for d, meta in (info.get("depots") or {}).items() if meta.get("dlcappid")}
+
+
+async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
+                                   owned: bool = False) -> None:
     """Process the downloaded Hubcap zip via lumalinux's steamidra_lite.
 
     Approach (LumaDeck flow):
@@ -922,18 +986,45 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
         )
         lua_path = preferred
 
-        # Optional enrichment with Linux depot (consults PICS via
-        # api.steamcmd.net). Updates the file in-place if it adds anything.
         try:
             lua_text = lua_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             lua_text = lua_path.read_bytes().decode("utf-8", errors="replace")
-        enriched_text, has_linux_depot = await _enrich_lua_with_linux_depot(
-            appid, lua_text,
-        )
-        if enriched_text != lua_text:
-            lua_path.write_text(enriched_text, encoding="utf-8")
-        _set_download_state(appid, {"hasLinuxDepot": has_linux_depot})
+
+        if owned:
+            # The account owns the base game: only its DLC are ours to add.
+            # Which depots are DLC depots comes from PICS (`dlcappid`); without
+            # that answer we refuse rather than guess, because guessing wrong
+            # here means serving keys for an owned game's own depots.
+            dlc_depots = await _dlc_depots_of(appid)
+            if not dlc_depots:
+                raise RuntimeError(
+                    "Could not tell this game's DLC depots apart from its own "
+                    "(api.steamcmd.net did not answer). Try again in a minute."
+                )
+            filtered, dropped = _filter_lua_for_owned_base(lua_text, appid, dlc_depots)
+            if filtered != lua_text:
+                lua_path.write_text(filtered, encoding="utf-8")
+            for depot in dropped:
+                for mf in Path(tmp_dir).rglob(f"{depot}_*.manifest"):
+                    try:
+                        mf.unlink()
+                    except Exception:
+                        pass
+            logger.info(f"LumaDeck: owned game {appid}: kept DLC depots "
+                        f"{sorted(dlc_depots)}, dropped base depots {dropped}")
+            # The base game is installed by Steam with whatever platform the
+            # account chose; no Linux-depot enrichment and no Proton forcing.
+            _set_download_state(appid, {"hasLinuxDepot": True, "owned": True})
+        else:
+            # Optional enrichment with Linux depot (consults PICS via
+            # api.steamcmd.net). Updates the file in-place if it adds anything.
+            enriched_text, has_linux_depot = await _enrich_lua_with_linux_depot(
+                appid, lua_text,
+            )
+            if enriched_text != lua_text:
+                lua_path.write_text(enriched_text, encoding="utf-8")
+            _set_download_state(appid, {"hasLinuxDepot": has_linux_depot})
 
         if _is_download_cancelled(appid):
             raise RuntimeError("cancelled")
@@ -961,6 +1052,7 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
             appid_for_log=appid,
             game_name=game_name or "",
             pin=pin,
+            dlc_of_owned=owned,
         )
         if not ok:
             raise RuntimeError(
@@ -979,6 +1071,11 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False)
         manifest_count = sum(1 for _ in Path(tmp_dir).rglob("*.manifest"))
         if manifest_count > 0:
             key_count = _count_app_depot_keys(appid)
+            if key_count == 0 and owned:
+                raise RuntimeError(
+                    f"Nothing to add: the package for app {appid} carries no DLC "
+                    f"depot keys, and the game itself is already yours."
+                )
             if key_count == 0:
                 raise RuntimeError(
                     f"Install aborted: the download succeeded but no usable depot "
@@ -1134,8 +1231,10 @@ async def repair_appmanifest(appid: int) -> dict:
 # Main download flow (async)
 # ---------------------------------------------------------------------------
 
-async def _download_zip_for_app(appid: int, target_library_path: str = "") -> None:
-    """Download manifest zip from enabled APIs and install."""
+async def _download_zip_for_app(appid: int, target_library_path: str = "",
+                                owned: bool = False) -> None:
+    """Download manifest zip from enabled APIs and install. `owned`: the
+    account owns the base game, add only its DLC (RESEARCH §21 run E)."""
     client = await ensure_http_client("download")
     apis = load_api_manifest()
     if not apis:
@@ -1280,7 +1379,9 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     # Native while a provider is up (no pin, Steam fetches and
                     # follows Valve), pinned to the zip's build otherwise.
                     import pins as _pins
-                    await _process_and_install_lua(appid, dest_path, pin=_pins.pin_new_installs())
+                    await _process_and_install_lua(appid, dest_path, pin=_pins.pin_new_installs(),
+                                                   owned=owned)
+                    _pins.set_owned(appid, owned)
 
                     if _is_download_cancelled(appid):
                         raise RuntimeError("cancelled")
@@ -1339,7 +1440,7 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
                     # Force Proton if no Linux depot was added during the
                     # enrich pass — Steam wouldn't otherwise launch a Windows
                     # binary on the Deck without explicit compat tool.
-                    if not _get_download_state(appid).get("hasLinuxDepot", False):
+                    if not owned and not _get_download_state(appid).get("hasLinuxDepot", False):
                         try:
                             from steam_utils import set_compat_tool_for_app
                             if set_compat_tool_for_app(appid):
@@ -1399,15 +1500,29 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "") -> No
         _set_download_state(appid, {"status": "failed", "error": "Not available on any API"})
 
 
-async def start_download(appid: int, target_library_path: str = "") -> dict:
+async def start_download(appid: int, target_library_path: str = "", owned: bool = False) -> dict:
+    """`owned` comes from the frontend asking Steam's own appStore whether the
+    game is in the account's library BEFORE anything is added (the only moment
+    that answer is true: once SLSsteam lists the app, Steam shows it as owned
+    too). A game LumaDeck already manages is never treated as owned, whatever
+    the frontend says."""
     try:
         appid = int(appid)
     except Exception:
         return {"success": False, "error": "Invalid appid"}
 
-    logger.info(f"LumaDeck: start_download appid={appid} library={target_library_path or '(default)'}")
-    _set_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0})
-    task = asyncio.create_task(_download_zip_for_app(appid, target_library_path))
+    if owned:
+        try:
+            from steam_utils import has_lua_for_app
+            if has_lua_for_app(appid):
+                logger.info(f"LumaDeck: {appid} is already managed here — ignoring owned=True")
+                owned = False
+        except Exception:
+            pass
+
+    logger.info(f"LumaDeck: start_download appid={appid} library={target_library_path or '(default)'} owned={owned}")
+    _set_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0, "owned": owned})
+    task = asyncio.create_task(_download_zip_for_app(appid, target_library_path, owned))
     DOWNLOAD_TASKS[appid] = task
     return {"success": True}
 

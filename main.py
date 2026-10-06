@@ -422,11 +422,11 @@ class Plugin:
     # Downloads
     # ==========================================================================
 
-    async def start_download(self, appid: int, target_library_path: str = "") -> str:
-        logger.info(f"LumaDeck: start_download called, appid={appid}, library={target_library_path or '(default)'}")
+    async def start_download(self, appid: int, target_library_path: str = "", owned: bool = False) -> str:
+        logger.info(f"LumaDeck: start_download called, appid={appid}, library={target_library_path or '(default)'}, owned={owned}")
         try:
             from downloads import start_download
-            result = await start_download(appid, target_library_path)
+            result = await start_download(appid, target_library_path, bool(owned))
             logger.info(f"LumaDeck: start_download result={result}")
             return _j(result)
         except Exception as exc:
