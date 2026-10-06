@@ -168,9 +168,7 @@ export function GameList() {
             setAddStatus(t("doneRestartSteam"));
             // Owned game that was already installed: cycle its new DLC in
             // Steam's DLC list so Steam downloads them (steamDlc.ts).
-            runOwnedDlcCycle(id, takeOwnedDlcCycle).then((r) => {
-              if (r === "failed") setAddStatus(t("ownedDlcCycleFailed"));
-            });
+            runOwnedDlcCycle(id, takeOwnedDlcCycle).catch(() => { });
             setActiveDownloadId(null);
             setActiveDownloadPhase("");
             setDownloadPct(0); setDownloadSpeed(0); setDownloadBytes({ read: 0, total: 0 });

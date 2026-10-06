@@ -330,9 +330,9 @@ export function GameDetail({ appid }: GameDetailProps) {
           toast(t("toastDownloadComplete"), gameName);
           // Owned game that was already installed: Steam will not fetch the
           // new DLC on its own — cycle them in its DLC list (steamDlc.ts).
-          runOwnedDlcCycle(appid, takeOwnedDlcCycle).then((r) => {
-            if (r === "failed") toast(t("toastError"), t("ownedDlcCycleFailed"), 6000);
-          });
+          // No notice when Steam does not take it: the user is long gone from
+          // this page by then, and a Steam restart plans the same thing.
+          runOwnedDlcCycle(appid, takeOwnedDlcCycle).catch(() => { });
         } else if (status.state.status === "failed") {
           toast(t("toastDownloadFailed"), status.state.error || gameName, 5000);
         }
