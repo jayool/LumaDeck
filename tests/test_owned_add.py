@@ -1,11 +1,16 @@
-"""Adding DLC to a game the account OWNS (RESEARCH §21 run E).
+"""Adding DLC to a game the account OWNS (RESEARCH §21 run E; the flows in
+lumalinux docs/owned-games-guide.md).
 
-Pure pieces, no Steam: the .lua filter that keeps only the DLC depots, and the
-`owned` flag in pins.json that uninstall and the game page read.
+Pure pieces, no Steam: the .lua filter that keeps only the DLC depots, the
+`owned` flag in pins.json that uninstall and the game page read, the
+three-way DLC-depot map, the owned plan (what gets added, what Steam must be
+told to fetch) and the one-shot hand-out of that DLC cycle.
 
     python -m unittest discover -s tests
 """
+import asyncio
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -104,3 +109,101 @@ class ResolveOwned(unittest.TestCase):
     def test_fresh_game_follows_the_package_cache(self):
         self.assertTrue(downloads.resolve_owned(licensed=True, managed=False, listed_in_sls=False, recorded=False))
         self.assertFalse(downloads.resolve_owned(licensed=False, managed=False, listed_in_sls=False, recorded=False))
+
+
+class DlcDepotMap(unittest.TestCase):
+    """downloads._dlc_depots_of: None (unknown) vs {} (no DLC depots) vs map."""
+    def setUp(self):
+        import manifests
+        self._orig = manifests.steamcmd_app_info
+
+    def tearDown(self):
+        import manifests
+        manifests.steamcmd_app_info = self._orig
+
+    def _with(self, answer):
+        import manifests
+        async def stub(appid):
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        manifests.steamcmd_app_info = stub
+        return asyncio.run(downloads._dlc_depots_of(APP))
+
+    def test_failure_is_unknown(self):
+        self.assertIsNone(self._with(RuntimeError("down")))
+        self.assertIsNone(self._with(None))
+        self.assertIsNone(self._with({"buildid": 1, "depots": {}}))
+
+    def test_depots_without_dlc_is_empty_map(self):
+        self.assertEqual(self._with({"depots": {262065: {"gid": 1}, 262066: {"gid": 2}}}), {})
+
+    def test_dlc_depots(self):
+        info = {"depots": {262065: {"gid": 1}, 580102: {"gid": 3, "dlcappid": 580100},
+                           "702542": {"gid": 4, "dlcappid": "702540"}}}
+        self.assertEqual(self._with(info), {580102: 580100, 702542: 702540})
+
+
+class OwnedPlan(unittest.TestCase):
+    """downloads._owned_plan over the zip's .lua and Steam's own data."""
+    MAP = {580102: 580100, 580101: 580100, 702542: 702540, 445702: 445700}
+    LUA = f"addappid({APP})\naddappid(580100)\naddappid(702540)\naddappid(445700)\naddappid(999001)\n" \
+          f"addappid(580102,1,\"{KEY}\")\naddappid(262065,1,\"{KEY}\")\n"
+
+    def test_depot_dlc_not_owned(self):
+        plan = downloads._owned_plan(self.LUA, APP, self.MAP, licensed={APP, 445700})
+        self.assertEqual(plan["owned_dlc"], {445700})
+        self.assertEqual(plan["dlc_depots"], {580102, 580101, 702542})
+        self.assertEqual(plan["flag_dlcs"], {999001})
+        self.assertEqual(plan["add_dlcs"], [580100, 702540, 999001])
+
+    def test_cycle_only_for_unmounted_dlc(self):
+        # game installed with Crimson Court's Linux depot already mounted:
+        # Steam must be told about Shieldbreaker only; never cycle a mounted DLC
+        plan = downloads._owned_plan(self.LUA, APP, self.MAP, licensed={APP},
+                                     installed_depots={262065, 580102})
+        self.assertEqual(plan["cycle"], [445700, 702540])
+        plan = downloads._owned_plan(self.LUA, APP, self.MAP, licensed={APP}, installed_depots=set())
+        self.assertEqual(plan["cycle"], [445700, 580100, 702540])
+
+    def test_flag_only_game_is_still_an_add(self):
+        # no DLC depot at all (map {}): every keyed line is the base game's,
+        # the flag DLC are what gets registered, nothing to cycle
+        plan = downloads._owned_plan(self.LUA, APP, {}, licensed={APP})
+        self.assertEqual(plan["dlc_depots"], set())
+        self.assertEqual(plan["add_dlcs"], [445700, 580100, 702540, 999001])
+        self.assertEqual(plan["cycle"], [])
+        filtered, dropped = downloads._filter_lua_for_owned_base(self.LUA, APP, plan["dlc_depots"], plan["owned_dlc"])
+        self.assertNotIn('addappid(580102,1', filtered)
+        self.assertNotIn('addappid(262065,1', filtered)
+        self.assertIn("addappid(580100)", filtered)
+        self.assertEqual(sorted(dropped), [262065, 580102])
+
+    def test_nothing_to_add_when_all_owned(self):
+        lua = f"addappid({APP})\naddappid(445700)\naddappid(445702,1,\"{KEY}\")\n"
+        plan = downloads._owned_plan(lua, APP, {445702: 445700}, licensed={APP, 445700})
+        self.assertEqual(plan["add_dlcs"], [])
+
+
+class DlcCycleHandout(unittest.TestCase):
+    def test_taken_once(self):
+        downloads.DOWNLOAD_STATE[APP] = {"status": "done", "ownedDlcCycle": [580100, 702540]}
+        try:
+            self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": [580100, 702540]})
+            self.assertEqual(downloads.take_owned_dlc_cycle(APP), {"success": True, "dlc": []})
+            self.assertEqual(downloads.DOWNLOAD_STATE[APP]["status"], "done")
+        finally:
+            downloads.DOWNLOAD_STATE.pop(APP, None)
+
+
+class AppRunning(unittest.TestCase):
+    def test_sees_steam_env_of_a_live_process(self):
+        import steam_utils
+        env = dict(os.environ, SteamAppId="4242424", SteamGameId="4242424")
+        proc = subprocess.Popen(["sleep", "20"], env=env)
+        try:
+            self.assertTrue(steam_utils.is_app_running(4242424))
+            self.assertFalse(steam_utils.is_app_running(4242425))
+        finally:
+            proc.kill()
+            proc.wait()

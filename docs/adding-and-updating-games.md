@@ -61,6 +61,26 @@ now nothing pretends otherwise.
 The full end-to-end breakdown is in the root
 [README → How a game install works](../README.md#how-a-game-install-works).
 
+### A game you already own: only its DLC are added
+
+If the account has a licence for the game (LumaDeck checks Steam's own
+package cache, not the library grid), **Add Game** adds only the DLC you do
+not have. The game, its files, its `.acf` and its updates stay Steam's; the
+DLC you already own are left to Steam too. The card says so before you tap.
+
+- **Game not installed yet**: press Install in Steam as usual. It downloads
+  the game with Steam's keys and the DLC with LumaDeck's.
+- **Game already installed**: Steam does not look for new DLC on its own
+  while it runs. LumaDeck ticks them in the game's own DLC list for you the
+  moment the add finishes, and Steam starts the download right away. If that
+  does not happen (the game was running, or Steam did not take it), a Steam
+  restart does the same.
+- **Uninstall** on such a game removes only the DLC: LumaDeck unticks them in
+  Steam's DLC list (Steam deletes their files itself), then drops its own
+  record. The game is never touched. A DLC you bought in the meantime is
+  skipped. Close the game first; Steam only applies DLC changes to a game
+  that is not running.
+
 ## Updating a game
 
 Games you install through LumaDeck are **normal owned games to Steam**, so

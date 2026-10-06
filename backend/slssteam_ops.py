@@ -910,9 +910,83 @@ def remove_depot_decryption_keys(depot_ids) -> dict:
         return {"success": False, "error": str(e)}
 
 
-def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
+def _lua_dlc_appids(appid: int) -> list:
+    """The DLC AppIDs LumaDeck registered for an owned game: the keyless
+    addappid(n) lines of its stplug-in .lua (steamidra turned them into
+    AdditionalApps). Empty without a .lua."""
+    try:
+        from steam_utils import detect_steam_install_path
+        steam_path = detect_steam_install_path()
+        if not steam_path:
+            return []
+        lua_path = os.path.join(steam_path, "config", "stplug-in", f"{int(appid)}.lua")
+        if not os.path.exists(lua_path):
+            lua_path += ".disabled"
+        if not os.path.exists(lua_path):
+            return []
+        import re as _re
+        with open(lua_path, "r", encoding="utf-8", errors="replace") as fh:
+            txt = fh.read()
+        return sorted({int(x) for x in _re.findall(r"^\s*addappid\s*\(\s*(\d+)\s*\)", txt, _re.MULTILINE)
+                       if int(x) != int(appid)})
+    except Exception:
+        return []
+
+
+def owned_dlc_to_disable(appid: int) -> dict:
+    """Step one of uninstalling an owned game, for the frontend.
+
+    Steam keeps an owned game's DLC installed whatever happens to the licence
+    behind them (measured 2026-10-06: not on licence loss, not on restart).
+    The one thing that makes it drop them is the DLC's own tick box in the
+    game's properties — SteamClient.Apps.SetDLCEnabled(app, dlc, false) —
+    after which Steam deletes their files with its own manifests and
+    rewrites the .acf. Only the frontend can press that; the backend tells
+    it which DLC, and uninstall_game_full then refuses to touch anything
+    unless the frontend says it did (see steam_dlc_disabled).
+
+    A DLC the account meanwhile BOUGHT is left out: unticking it would
+    uninstall something the user paid for. Its LumaDeck lines are stale and
+    the uninstall simply drops them.
+    """
+    try:
+        appid = int(appid)
+    except Exception:
+        return {"success": False, "error": "Invalid appid"}
+    import pins as _pins
+    owned = _pins.is_owned(appid)
+    if not owned:
+        return {"success": True, "owned": False, "installed": False, "running": False, "dlc": []}
+    try:
+        from steam_licenses import is_licensed
+        dlc = [d for d in _lua_dlc_appids(appid) if not is_licensed(d)]
+    except Exception:
+        dlc = _lua_dlc_appids(appid)
+    installed = _pins.find_acf(appid) is not None
+    try:
+        from steam_utils import is_app_running
+        running = is_app_running(appid)
+    except Exception:
+        running = False
+    return {"success": True, "owned": True, "installed": installed, "running": running, "dlc": dlc}
+
+
+def uninstall_game_full(appid: int, remove_compatdata: bool = False, steam_dlc_disabled: bool = False) -> dict:
     """Full uninstall: game files, appmanifest, depotcache manifests, lua, all
-    SLSsteam config entries, lumalinux keys.txt lines, and config.vdf keys."""
+    SLSsteam config entries and lumalinux keys.txt lines.
+
+    An OWNED game (pins.json) is Steam's: its files, .acf and prefix stay,
+    and so do depotcache and config.vdf — both are Steam's own caches. Steam
+    needs the depotcache manifests to delete the DLC files once the frontend
+    unticks the DLC (owned_dlc_to_disable), and it rewrites config.vdf from
+    memory on exit anyway. What goes is LumaDeck's record: AdditionalApps
+    entries, keys.txt lines, pins, and the .lua — last, so a retry after a
+    failure half-way still knows which DLC were ours.
+
+    steam_dlc_disabled — the frontend confirms it unticked the DLC in Steam.
+    Without it an installed owned game with DLC is refused, because the
+    alternative is Steam keeping the DLC mounted while their keys vanish.
+    """
     removed = []
     errors = []
     # Depot ids recovered from the .lua before it's deleted (step 3). Used to
@@ -928,12 +1002,19 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
     except Exception:
         owned = False
 
+    if owned:
+        prep = owned_dlc_to_disable(appid)
+        if prep.get("running"):
+            return {"success": False, "error": "Close the game first: its DLC are removed through Steam's own DLC list, which Steam only applies while the game is not running."}
+        if prep.get("installed") and prep.get("dlc") and not steam_dlc_disabled:
+            return {"success": False, "error": "Steam has not removed the DLC yet; nothing was changed. Try again from the game page."}
+
     try:
         # 1. Find and remove game files — NOT for a game the account owns:
         # LumaDeck only added its DLC (RESEARCH §21 run E); the game, its .acf
         # and its prefix are Steam's, and Steam drops the DLC depots itself on
         # its next plan once their licences are gone.
-        path_info = get_game_install_path_response(appid) if not owned else {}
+        path_info = get_game_install_path_response(appid)
         install_path = path_info.get("installPath") if isinstance(path_info, dict) else None
         library_path = path_info.get("libraryPath") if isinstance(path_info, dict) else None
 
@@ -947,9 +1028,15 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
 
         if owned:
             logger.info(f"LumaDeck: {appid} is owned by the account — leaving its files, .acf and prefix alone")
+            # Older steamidra builds left an ACCELA marker inside the game
+            # folder (an owned game's folder is the user's): drop it.
+            if install_path:
+                marker = os.path.join(install_path, ".DepotDownloader")
+                if os.path.isdir(marker):
+                    shutil.rmtree(marker, ignore_errors=True)
             install_path = None
             remove_compatdata = False
-        if install_path and os.path.exists(install_path):
+        elif install_path and os.path.exists(install_path):
             shutil.rmtree(install_path, ignore_errors=True)
             if not os.path.exists(install_path):
                 removed.append("game_files")
@@ -1004,7 +1091,10 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
             except Exception as e:
                 logger.warning(f"LumaDeck: Compatdata cleanup error: {e}")
 
-        # 2. Remove depotcache manifests for this game's depots
+        # 2. Remove depotcache manifests for this game's depots. NOT for an
+        # owned game: Steam deletes the unticked DLC's files by reading those
+        # very manifests (with them gone it deleted nothing — 2026-10-06 10:23,
+        # 1 GB left orphaned), and it keeps old manifests around itself.
         try:
             from steam_utils import detect_steam_install_path
             from downloads import _parse_lua_depots
@@ -1026,7 +1116,7 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                     except Exception:
                         lua_dlc_appids = []
                     depotcache_dir = os.path.join(steam_path, "depotcache")
-                    for depot_info in depots:
+                    for depot_info in ([] if owned else depots):
                         manifest_file = os.path.join(depotcache_dir, f"{depot_info['depot']}_{depot_info['manifest']}.manifest")
                         if os.path.exists(manifest_file):
                             try:
@@ -1034,17 +1124,12 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                                 logger.info(f"LumaDeck: Removed manifest: {manifest_file}")
                             except Exception:
                                 pass
-                    if depots:
+                    if depots and not owned:
                         removed.append("depot_manifests")
         except Exception as e:
             logger.warning(f"LumaDeck: Depotcache cleanup error: {e}")
 
-        # 3. Remove lua script
-        try:
-            delete_luatools_for_app(appid)
-            removed.append("lua_script")
-        except Exception as e:
-            errors.append(f"Failed to remove lua: {e}")
+        # 3. (the .lua goes last — see below)
 
         # 4. Remove all SLSsteam config entries
         try:
@@ -1072,20 +1157,27 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
         except Exception:
             pass
 
-        # 5. Remove lumalinux keys.txt lines + the matching config.vdf
-        # DecryptionKey blocks. keys.txt parent==appid is the reliable source
-        # for the native/lumalinux flow; lua_depot_ids supplements it for
-        # legacy/no-key shapes recovered from the .lua before deletion.
+        # 5. Remove lumalinux keys.txt lines. keys.txt parent==appid is the
+        # reliable source for the native/lumalinux flow; lua_depot_ids
+        # supplements it for legacy/no-key shapes recovered from the .lua.
+        # config.vdf's DecryptionKeys are left alone: that section is Steam's
+        # own key cache, held in memory and rewritten on exit, so editing it
+        # while Steam runs is undone (measured 2026-10-06) and a stale key
+        # for a depot the user no longer has is inert.
         try:
             keys_res = remove_from_lumalinux_keys(appid, extra_depot_ids=lua_depot_ids)
             if keys_res.get("removed"):
                 removed.append("lumalinux_keys")
-            depot_ids_for_vdf = set(str(d) for d in lua_depot_ids) | set(keys_res.get("depot_ids", []))
-            vdf_res = remove_depot_decryption_keys(depot_ids_for_vdf)
-            if vdf_res.get("removed"):
-                removed.append("decryption_keys")
         except Exception as e:
-            logger.warning(f"LumaDeck: lumalinux/config.vdf cleanup error: {e}")
+            logger.warning(f"LumaDeck: lumalinux keys cleanup error: {e}")
+
+        # 5b. Legacy ACCELA update-tracking marker (older steamidra builds).
+        try:
+            depot_marker = os.path.join(real_home(), ".local", "share", "ACCELA", "depots", f"{appid}.depot")
+            if os.path.isfile(depot_marker):
+                os.remove(depot_marker)
+        except Exception:
+            pass
 
         # 6. Remove achievement files. The schema (LumaDeck-written definitions)
         # always goes; the unlocked-achievement progress file only on the full
@@ -1099,6 +1191,14 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False) -> dict:
                 errors.extend(ach_res.get("errors", []))
             except Exception as e:
                 logger.warning(f"LumaDeck: achievement cleanup error: {e}")
+
+        # 7. The .lua, last: it is the record of what was ours, and a retry
+        # after any failure above must still be able to read it.
+        try:
+            delete_luatools_for_app(appid)
+            removed.append("lua_script")
+        except Exception as e:
+            errors.append(f"Failed to remove lua: {e}")
 
         if owned:
             try:

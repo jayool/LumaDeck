@@ -928,20 +928,83 @@ def resolve_owned(licensed: bool, managed: bool, listed_in_sls: bool, recorded: 
     return bool(licensed)
 
 
-async def _dlc_depots_of(appid: int) -> dict:
+async def _dlc_depots_of(appid: int):
     """{depot: dlc appid} for the depots that belong to one of the game's DLC
-    (PICS `dlcappid`), from api.steamcmd.net. Empty when the lookup fails;
-    the caller decides."""
+    (PICS `dlcappid`), from api.steamcmd.net.
+
+    Three answers, and the caller must tell them apart:
+      None  — the lookup failed or came back without a depot list: we do
+              not know which depots are the base game's, so an owned add
+              must refuse rather than guess.
+      {}    — the depot list is there and no depot carries `dlcappid`: the
+              game's DLC (if any) are flag-only, nothing to download.
+      {...} — the DLC depots.
+    """
     try:
         from manifests import steamcmd_app_info
         info = await steamcmd_app_info(appid)
     except Exception as exc:
         logger.warning(f"LumaDeck: steamcmd info for {appid} failed: {exc}")
-        return {}
-    if not info:
-        return {}
-    return {d: int(meta["dlcappid"]) for d, meta in (info.get("depots") or {}).items()
+        return None
+    if not info or not info.get("depots"):
+        return None
+    return {int(d): int(meta["dlcappid"]) for d, meta in info["depots"].items()
             if meta.get("dlcappid")}
+
+
+_KEYLESS_ADDAPPID = re.compile(r'^\s*addappid\s*\(\s*(\d+)\s*\)', re.MULTILINE)
+
+
+def _owned_plan(lua_text: str, appid: int, dlc_map: dict, licensed,
+                installed_depots=None) -> dict:
+    """What an owned add actually adds, from the zip's .lua and Steam's own
+    data. Pure; the owned branch of _process_and_install_lua acts on it.
+
+      dlc_depots — DLC depots we serve keys for: every depot whose DLC the
+                   account does NOT have.
+      owned_dlc  — DLC the account has (packageinfo): left to Steam entirely.
+      flag_dlcs  — DLC AppIDs in the .lua without any depot (flag-only DLC):
+                   nothing to download, SLSsteam answers for them in-game.
+      add_dlcs   — the DLC AppIDs this add registers (AdditionalApps).
+      cycle      — for a game that is ALREADY installed: the DLC AppIDs whose
+                   depots Steam has not mounted yet. Steam does not re-plan an
+                   installed game when a licence appears while it runs
+                   (measured 2026-10-06 12:12 and 12:43); unticking and
+                   re-ticking each of these DLC in Steam's own DLC list
+                   (SetDLCEnabled false → true) is a user-config change, which
+                   does make it plan and download them (12:48). Never a DLC
+                   that is already mounted: unticking it deletes its files.
+    """
+    appid = int(appid)
+    licensed = set(licensed or ())
+    installed_depots = set(installed_depots or ())
+    owned_dlc = {dlc for dlc in dlc_map.values() if dlc in licensed}
+    dlc_depots = {d for d, dlc in dlc_map.items() if dlc not in owned_dlc}
+    in_lua = {int(x) for x in _KEYLESS_ADDAPPID.findall(lua_text)} - {appid}
+    with_depots = set(dlc_map.values())
+    flag_dlcs = {dlc for dlc in in_lua if dlc not in with_depots and dlc not in licensed}
+    add_dlcs = sorted({dlc_map[d] for d in dlc_depots} | flag_dlcs)
+    depots_by_dlc: dict = {}
+    for d, dlc in dlc_map.items():
+        depots_by_dlc.setdefault(dlc, set()).add(d)
+    cycle = sorted(dlc for dlc in {dlc_map[d] for d in dlc_depots}
+                   if not (depots_by_dlc[dlc] & installed_depots))
+    return {"dlc_depots": dlc_depots, "owned_dlc": owned_dlc, "flag_dlcs": flag_dlcs,
+            "add_dlcs": add_dlcs, "cycle": cycle}
+
+
+def take_owned_dlc_cycle(appid: int) -> dict:
+    """The DLC AppIDs the frontend must untick/re-tick in Steam so an already
+    installed owned game downloads them (see _owned_plan). Handed out ONCE:
+    two pages poll the same download, and cycling a DLC that is already
+    downloading would cancel and restart it."""
+    try:
+        appid = int(appid)
+    except Exception:
+        return {"success": False, "error": "Invalid appid"}
+    state = DOWNLOAD_STATE.get(appid) or {}
+    dlc = list(state.pop("ownedDlcCycle", None) or [])
+    return {"success": True, "dlc": dlc}
 
 
 async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
@@ -1064,7 +1127,7 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
             # that answer we refuse rather than guess, because guessing wrong
             # here means serving keys for an owned game's own depots.
             dlc_map = await _dlc_depots_of(appid)
-            if not dlc_map:
+            if dlc_map is None:
                 raise RuntimeError(
                     "Could not tell this game's DLC depots apart from its own "
                     "(api.steamcmd.net did not answer). Try again in a minute."
@@ -1072,14 +1135,15 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
             # DLC the account already has are Steam's too: neither their
             # AppIDs (AdditionalApps) nor their depots (keys, manifests).
             from steam_licenses import licensed_appids
-            licensed = licensed_appids()
-            owned_dlc = {dlc for dlc in dlc_map.values() if dlc in licensed}
-            dlc_depots = {d for d, dlc in dlc_map.items() if dlc not in owned_dlc}
-            if not dlc_depots:
+            import pins as _pins
+            plan = _owned_plan(lua_text, appid, dlc_map, licensed_appids(),
+                               _pins.installed_depots(appid))
+            if not plan["add_dlcs"]:
                 raise RuntimeError(
-                    f"Nothing to add: every DLC of app {appid} with content is "
-                    f"already in your library."
+                    f"Nothing to add: every DLC of app {appid} is already in "
+                    f"your library (or the package carries none)."
                 )
+            dlc_depots, owned_dlc = plan["dlc_depots"], plan["owned_dlc"]
             filtered, dropped = _filter_lua_for_owned_base(lua_text, appid, dlc_depots, owned_dlc)
             if filtered != lua_text:
                 lua_path.write_text(filtered, encoding="utf-8")
@@ -1091,7 +1155,18 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
                         pass
             logger.info(f"LumaDeck: owned game {appid}: kept DLC depots "
                         f"{sorted(dlc_depots)}, dropped depots {dropped}, "
+                        f"flag-only DLC {sorted(plan['flag_dlcs'])}, "
                         f"owned DLC left to Steam {sorted(owned_dlc)}")
+            # Installed already? Then Steam will not fetch the new DLC on its
+            # own: hand the frontend the list to cycle (see _owned_plan).
+            installed = _pins.find_acf(appid) is not None
+            _set_download_state(appid, {
+                "ownedDlc": plan["add_dlcs"],
+                "ownedDlcCycle": plan["cycle"] if installed else [],
+            })
+            if installed and plan["cycle"]:
+                logger.info(f"LumaDeck: owned game {appid} is installed: Steam must be "
+                            f"told to fetch DLC {plan['cycle']} (DLC cycle)")
             # The base game is installed by Steam with whatever platform the
             # account chose; no Linux-depot enrichment and no Proton forcing.
             _set_download_state(appid, {"hasLinuxDepot": True, "owned": True})
@@ -1605,6 +1680,15 @@ async def start_download(appid: int, target_library_path: str = "", owned: bool 
         owned = False
     if hinted != owned:
         logger.info(f"LumaDeck: {appid}: frontend hinted owned={hinted}, packageinfo.vdf says {owned}")
+    if owned:
+        # Steam defers DLC changes of a running game until it exits; keep the
+        # whole owned add out of that window instead of explaining it.
+        try:
+            from steam_utils import is_app_running
+            if is_app_running(appid):
+                return {"success": False, "error": "Close the game first: its DLC are added through Steam's own DLC list, which Steam only applies while the game is not running."}
+        except Exception:
+            pass
 
     logger.info(f"LumaDeck: start_download appid={appid} library={target_library_path or '(default)'} owned={owned}")
     _set_download_state(appid, {"status": "queued", "bytesRead": 0, "totalBytes": 0, "owned": owned})

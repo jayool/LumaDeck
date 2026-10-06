@@ -188,7 +188,10 @@ unrelated to any other.
 
 - **Full Uninstall** — removes the game and all of LumaDeck's config for it
   (two-tap confirm). Optional extras: **delete compatdata** and **remove the
-  Proton prefix**.
+  Proton prefix**. For a game the account **owns** (LumaDeck only added its
+  DLC) it removes the DLC and nothing else: Steam deletes their files once
+  LumaDeck unticks them in the game's DLC list; the game, its `.acf` and
+  prefix stay. Refused while the game is running.
 
 > Most users never touch the management/advanced/danger groups. Reach for them
 > only when a specific game misbehaves — and see [Troubleshooting](troubleshooting.md)

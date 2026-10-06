@@ -12,6 +12,7 @@ import {
 } from "@decky/ui";
 import {
   getDownloadStatus,
+  takeOwnedDlcCycle,
   getActiveDownloads,
   startDownload,
   detectStoreAppid,
@@ -44,6 +45,7 @@ import { useT } from "../i18n";
 import { toaster } from "@decky/api";
 
 import { isOwnedBySteam } from "../steamOwnership";
+import { cycleDlcs } from "../steamDlc";
 interface SearchResult {
   appid: number;
   name: string;
@@ -164,6 +166,14 @@ export function GameList() {
             if (pollRef.current) clearInterval(pollRef.current);
             pollRef.current = null;
             setAddStatus(t("doneRestartSteam"));
+            // Owned game that was already installed: cycle its new DLC in
+            // Steam's DLC list so Steam downloads them (steamDlc.ts).
+            try {
+              const cyc = await takeOwnedDlcCycle(id);
+              if (cyc.success && cyc.dlc?.length && !cycleDlcs(id, cyc.dlc)) {
+                setAddStatus(t("ownedDlcCycleFailed"));
+              }
+            } catch { }
             setActiveDownloadId(null);
             setActiveDownloadPhase("");
             setDownloadPct(0); setDownloadSpeed(0); setDownloadBytes({ read: 0, total: 0 });

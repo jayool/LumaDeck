@@ -104,6 +104,30 @@ def _appid_in_lumalinux_keys(appid: int, keys_path: str) -> bool:
     return False
 
 
+def is_app_running(appid: int) -> bool:
+    """Is a Steam game with this AppID running right now? Steam launches every
+    game with SteamAppId=<appid> in its environment (SteamGameId too), so a
+    scan of /proc/*/environ is the same answer the client has. False on any
+    error — callers use it to refuse an operation, never to allow one."""
+    try:
+        needle = f"SteamAppId={int(appid)}".encode() + b"\0"
+    except Exception:
+        return False
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                with open(f"/proc/{pid}/environ", "rb") as fh:
+                    if needle in fh.read():
+                        return True
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False
+
+
 def has_lua_for_app(appid: int) -> bool:
     """Return True if the appid is registered with EITHER backend the plugin
     understands. Despite the historical name (kept for compat with the

@@ -42,6 +42,8 @@ import {
   applyLinuxNativeFix,
   computeFixLaunchOptions,
   uninstallGameFull,
+  ownedDlcToDisable,
+  takeOwnedDlcCycle,
   fetchAppName,
   repairAppmanifest,
   reconfigureSlssteam,
@@ -66,6 +68,7 @@ import {
 import { errorText, useT } from "../i18n";
 
 import { isOwnedBySteam } from "../steamOwnership";
+import { disableDlcs, cycleDlcs } from "../steamDlc";
 interface GameDetailProps {
   appid: number;
 }
@@ -325,6 +328,14 @@ export function GameDetail({ appid }: GameDetailProps) {
         if (status.state.status === "done") {
           setHasLua(true);
           toast(t("toastDownloadComplete"), gameName);
+          // Owned game that was already installed: Steam will not fetch the
+          // new DLC on its own — cycle them in its DLC list (steamDlc.ts).
+          try {
+            const cyc = await takeOwnedDlcCycle(appid);
+            if (cyc.success && cyc.dlc?.length && !cycleDlcs(appid, cyc.dlc)) {
+              toast(t("toastError"), t("ownedDlcCycleFailed"), 6000);
+            }
+          } catch { }
         } else if (status.state.status === "failed") {
           toast(t("toastDownloadFailed"), status.state.error || gameName, 5000);
         }
@@ -869,7 +880,22 @@ export function GameDetail({ appid }: GameDetailProps) {
     }
     setConfirmUninstall(false);
     setBusy("uninstall");
-    const result = await uninstallGameFull(appid, removeCompatdata);
+    // Owned game: Steam removes the DLC itself when they are unticked in its
+    // DLC list, and the backend refuses to touch anything until that is
+    // done (steamDlc.ts). If Steam does not take it, nothing changes.
+    let steamDlcDisabled = false;
+    try {
+      const prep = await ownedDlcToDisable(appid);
+      if (prep.success && prep.owned && prep.installed && prep.dlc?.length) {
+        if (!disableDlcs(appid, prep.dlc)) {
+          setBusy("");
+          toast(t("toastError"), t("ownedDlcDisableFailed"), 6000);
+          return;
+        }
+        steamDlcDisabled = true;
+      }
+    } catch { }
+    const result = await uninstallGameFull(appid, removeCompatdata, steamDlcDisabled);
     setBusy("");
     if (result.success) {
       setHasLua(false);
