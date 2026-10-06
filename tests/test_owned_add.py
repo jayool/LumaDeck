@@ -207,3 +207,12 @@ class AppRunning(unittest.TestCase):
         finally:
             proc.kill()
             proc.wait()
+
+
+class OwnedUpdateRelevance(unittest.TestCase):
+    """pins._owned_relevant: what the update pass may touch on an owned game."""
+    def test_only_dlc_the_account_lacks(self):
+        relevant = {262065: {"gid": 1, "dlcappid": None}, 580102: {"gid": 2, "dlcappid": 580100},
+                    445702: {"gid": 3, "dlcappid": 445700}}
+        out = pins._owned_relevant(relevant, lambda a: a in {APP, 445700})
+        self.assertEqual(sorted(out), [580102])

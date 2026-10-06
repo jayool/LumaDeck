@@ -777,6 +777,16 @@ def _zip_gids(zip_path: str) -> Dict[int, int]:
     return out
 
 
+def _owned_relevant(relevant: dict, is_licensed) -> dict:
+    """The depots an update check may act on for a game the account OWNS:
+    only DLC depots, and only of DLC the account does NOT have. The base
+    game's depots and a licensed DLC's are Steam's business and must never
+    read as "new depots we lack keys for" — that pulls a zip every day for
+    nothing (seen 2026-10-06: Darkest Dungeon's two owned DLC depots)."""
+    return {d: v for d, v in relevant.items()
+            if v.get("dlcappid") and not is_licensed(int(v["dlcappid"]))}
+
+
 async def check_update(appid: int, native: bool = False) -> str:
     """One game, one update check. Returns a short outcome for the log.
     `native`: the game carries no pin and Steam updates it itself; only the
@@ -802,10 +812,8 @@ async def check_update(appid: int, native: bool = False) -> str:
     }
     owned = is_owned(appid)
     if owned:
-        # The account owns the base game: its own depots are Steam's business
-        # and must never read as "new depots we lack keys for" (that would pull
-        # a zip and re-add the game in the normal shape). Only DLC depots count.
-        relevant = {d: v for d, v in relevant.items() if v.get("dlcappid")}
+        from steam_licenses import is_licensed
+        relevant = _owned_relevant(relevant, is_licensed)
     new_depots = sorted(d for d in relevant if d not in keyed)
     if native:
         changed = {}
