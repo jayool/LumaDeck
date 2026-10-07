@@ -99,6 +99,7 @@ class OwnedUninstall(unittest.TestCase):
 
     def test_prep_for_a_game_that_is_not_owned(self):
         pins.set_owned(APP, False)
+        self.licensed = set()
         self.assertEqual(slssteam_ops.owned_dlc_to_disable(APP)["dlc"], [])
         self.assertFalse(slssteam_ops.owned_dlc_to_disable(APP)["owned"])
 
@@ -135,17 +136,46 @@ class OwnedUninstall(unittest.TestCase):
         self.assertIn(("keys", APP, True), self.calls, "owned: keys are retired, not dropped")
         self.assertIn("lumalinux_keys_retired", res["removed"])
         self.assertEqual(self.calls[-1], ("lua", APP))
-        self.assertFalse(pins.is_owned(APP))
+        # The record is gone; the account's own licence still makes it owned.
+        self.assertNotIn("owned", pins._load_state()["apps"].get(str(APP), {}))
+        self.assertTrue(pins.is_owned(APP))
 
     def test_added_game_uninstall_drops_the_shader_cache(self):
         # The flow-E uninstall (lumalinux docs/owned-games-guide.md): Steam's
         # own uninstall removes steamapps/shadercache/<appid>, so do we.
         pins.set_owned(APP, False)
+        self.licensed = set()
         res = slssteam_ops.uninstall_game_full(APP)
         self.assertTrue(res["success"], res)
         self.assertFalse(os.path.exists(self.shaders))
         self.assertIn("shadercache", res["removed"])
         self.assertFalse(os.path.exists(self.game))
+
+    def test_a_game_bought_after_its_add_is_owned_now(self):
+        # Flow F: added as not owned, bought later. Steam's packageinfo says
+        # licensed, so is_owned is true without any record and uninstall
+        # takes the owned path: the game's files and .acf stay.
+        pins.set_owned(APP, False)
+        self.licensed = {APP}
+        self.assertTrue(pins.is_owned(APP))
+        res = slssteam_ops.uninstall_game_full(APP, steam_dlc_disabled=True)
+        self.assertTrue(res["success"], res)
+        self.assertTrue(os.path.exists(os.path.join(self.game, "game.bin")))
+        self.assertTrue(os.path.exists(self.acf))
+        self.assertTrue(os.path.isdir(self.shaders))
+        self.assertIn(("keys", APP, True), self.calls)
+        self.assertFalse(os.path.exists(self.lua))
+
+    def test_unreadable_licences_leave_the_record_alone(self):
+        pins.set_owned(APP, False)
+        orig = steam_licenses.is_licensed
+        steam_licenses.is_licensed = lambda appid: (_ for _ in ()).throw(RuntimeError("no packageinfo"))
+        try:
+            self.assertFalse(pins.is_owned(APP))
+        finally:
+            steam_licenses.is_licensed = orig
+        pins.set_owned(APP, True)
+        self.assertTrue(pins.is_owned(APP))
 
     def test_not_installed_needs_no_confirmation(self):
         self.installed = False

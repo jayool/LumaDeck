@@ -268,10 +268,23 @@ async def freeze_for_files(appid: int) -> bool:
 
 
 def is_owned(appid: int) -> bool:
-    """The account owns the base game and LumaDeck only added its DLC
-    (RESEARCH §21 run E): the base game's depots are not in keys.txt, so
-    nothing here ever pins it; uninstall must leave the game itself alone."""
-    return bool(_load_state()["apps"].get(str(int(appid)), {}).get("owned"))
+    """The account owns the base game: either recorded at add time (RESEARCH
+    §21 run E, LumaDeck only added its DLC) or, live, licensed in Steam's own
+    packageinfo.vdf (a game bought AFTER it was added; lumalinux docs
+    owned-games-guide.md flow F). Steam's file is immune to lumalinux's
+    in-memory package-0 injection (measured 2026-10-06) and unreadable means
+    "not licensed", so this can only widen "owned" with Steam's word for it.
+    Owned means: uninstall leaves the game itself alone, the update pass
+    looks only at unlicensed DLC depots. A game bought after its add still
+    has its base depots in keys.txt (pinned in the providers-down model)
+    until the clean-up of flow F exists."""
+    if _load_state()["apps"].get(str(int(appid)), {}).get("owned"):
+        return True
+    try:
+        from steam_licenses import is_licensed
+        return bool(is_licensed(int(appid)))
+    except Exception:
+        return False
 
 
 def set_owned(appid: int, owned: bool) -> None:
