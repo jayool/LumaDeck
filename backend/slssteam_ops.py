@@ -717,10 +717,11 @@ def _installdir_from_appinfo(appid: int) -> str:
     import urllib.request
     try:
         from config import USER_AGENT
+        from http_client import get_ssl_context  # Decky's Python has no CA bundle
         req = urllib.request.Request(
             f"https://api.steamcmd.net/v1/info/{int(appid)}",
             headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=get_ssl_context()) as resp:
             payload = json.load(resp)
         app = (payload.get("data") or {}).get(str(int(appid))) or {}
         installdir = str((app.get("config") or {}).get("installdir") or "").strip()

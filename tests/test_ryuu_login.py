@@ -97,3 +97,57 @@ class ConnectRyuu(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SyncCallsUseTheBackendSslContext(unittest.TestCase):
+    """Decky's bundled Python has no system CA bundle: a bare urlopen() fails
+    with CERTIFICATE_VERIFY_FAILED (measured 2026-10-07 in the codespace, the
+    login check logged exactly that and the anonymous cookie was saved
+    unverified). Both synchronous fetches must pass http_client's context."""
+
+    def _capture_urlopen(self):
+        import urllib.request
+        import http_client
+        calls = []
+
+        class Resp:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n=-1): return LOGGED_HTML.encode()
+
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(context)
+            return Resp()
+
+        orig = urllib.request.urlopen
+        urllib.request.urlopen = fake_urlopen
+        self.addCleanup(setattr, urllib.request, "urlopen", orig)
+        return calls, http_client.get_ssl_context()
+
+    def test_ryuu_login_check_passes_the_context(self):
+        calls, ctx = self._capture_urlopen()
+        self.assertIs(ryuu_cookie._session_logged_in("abc"), True)
+        self.assertEqual(calls, [ctx])
+
+    def test_installdir_lookup_passes_the_context(self):
+        import json
+        import slssteam_ops
+        calls, ctx = self._capture_urlopen()
+        import urllib.request
+        fake = urllib.request.urlopen
+
+        class JsonResp:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n=-1):
+                return json.dumps({"data": {"10": {"config": {"installdir": "Brotato"}}}}).encode()
+
+        urllib.request.urlopen = lambda req, timeout=None, context=None: (calls.append(context), JsonResp())[1]
+        self.assertEqual(slssteam_ops._installdir_from_appinfo(10), "Brotato")
+        self.assertEqual(calls, [ctx])
+
+    def test_context_is_built_once(self):
+        import http_client
+        self.assertIs(http_client.get_ssl_context(), http_client.get_ssl_context())

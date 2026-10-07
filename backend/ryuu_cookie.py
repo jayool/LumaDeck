@@ -461,11 +461,14 @@ def _session_logged_in(value: str):
     except Exception:
         USER_AGENT = "lumadeck"
     try:
+        # Decky's bundled Python has no system CA bundle: a bare urlopen()
+        # fails with CERTIFICATE_VERIFY_FAILED. Use the backend's context.
+        from http_client import get_ssl_context
         req = urllib.request.Request(_RYUU_HOME, headers={
             "Cookie": f"session={value}", "User-Agent": USER_AGENT,
             "Referer": _RYUU_HOME, "Accept": "text/html",
         })
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15, context=get_ssl_context()) as resp:
             if resp.status != 200:
                 return None
             html = resp.read(2_000_000).decode("utf-8", errors="replace")

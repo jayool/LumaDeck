@@ -223,6 +223,19 @@ def _make_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
+_shared_ssl_ctx: ssl.SSLContext | None = None
+
+
+def get_ssl_context() -> ssl.SSLContext:
+    """The backend's SSL context for SYNCHRONOUS urllib calls (built once).
+    Decky's bundled Python has no system CA bundle; a bare urlopen() fails
+    with CERTIFICATE_VERIFY_FAILED there, while this context finds certifi."""
+    global _shared_ssl_ctx
+    if _shared_ssl_ctx is None:
+        _shared_ssl_ctx = _make_ssl_context()
+    return _shared_ssl_ctx
+
+
 # ---------------------------------------------------------------------------
 # Main client
 # ---------------------------------------------------------------------------
