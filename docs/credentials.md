@@ -26,14 +26,20 @@ The key is stored in `api.json` as the Hubcap entry's `api_key`.
 
 A secondary provider ([generator.ryuu.lol](https://generator.ryuu.lol)). Its
 credential is a hidden `session` cookie, not a value shown on a page — so
-LumaDeck can import it for you, with **no DevTools and no copy/paste**:
+LumaDeck captures it for you, with **no DevTools and no copy/paste**:
 
-1. Tap **Open Ryuu (log in)** and sign in with Discord in the Steam browser.
-2. Back in LumaDeck, tap **Import cookie from Steam browser**.
+1. Tap **Log in with Discord**. The Steam browser opens Ryuu; sign in with
+   Discord there and finish the authorisation.
+2. LumaDeck watches the browser's cookie store and, as soon as the session is
+   **logged in**, saves it and closes the browser.
 
-LumaDeck reads Steam's in-client (CEF/Chromium) cookie store, decrypts the
-`session` cookie, and saves it. You can still paste a cookie manually into the
-field if you prefer.
+Ryuu hands out a `session` cookie before you log in (an anonymous one, valid
+30 days), so LumaDeck does not accept the first cookie it sees: it checks each
+new cookie against Ryuu's home page and only keeps the one that carries your
+user. While the session is anonymous the browser stays open for you to log in;
+after three minutes without a login it gives up ("Ryuu login timed out").
+**Import cookie from Steam browser** (manual) applies the same check and
+refuses an anonymous session. You can still paste a cookie by hand.
 
 > **How it works:** Steam's Game Mode browser stores cookies in a Chromium
 > SQLite DB. The value is `v10`-encrypted, which is decryptable with no OS

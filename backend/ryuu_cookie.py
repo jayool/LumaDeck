@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -381,6 +382,13 @@ def import_ryuu_cookie_from_browser() -> dict:
         if not value:
             last_reason = reason or last_reason
             continue
+        if _session_logged_in(value) is False:
+            return {
+                "success": False,
+                "error": "The Steam browser's Ryuu session is not logged in (Ryuu sets a "
+                         "cookie before the Discord login). Log in to Ryuu in the Steam "
+                         "browser, then import again.",
+            }
         from api_manifest import save_ryu_cookie, save_ryu_cookie_expiry
         # save_ryu_cookie prepends "session=" itself.
         save_ryu_cookie(value)
@@ -423,6 +431,50 @@ def import_ryuu_cookie_from_browser() -> dict:
 _ryuu_connect_state = {"status": "idle"}
 
 
+# ---------------------------------------------------------------------------
+# Is this session cookie LOGGED IN, or the anonymous one Ryuu hands out first?
+# ---------------------------------------------------------------------------
+# generator.ryuu.lol sets its `session` cookie on the first page load, before
+# any Discord login (a 30-day anonymous session). Capturing "a session cookie"
+# therefore captures nothing useful: measured 2026-10-07 on the codespace, the
+# cookie LumaDeck imported answered `/download` with 403 "You must be logged
+# in to download." and the home page rendered without the user marker. The
+# logged-in page carries the Discord user id as an HTML attribute, which the
+# page's own JS reads (`getAttribute('data-user-id')`); the anonymous page only
+# has that string inside the script. That attribute is the test.
+_RYUU_HOME = "https://generator.ryuu.lol/"
+_USER_MARKER = re.compile(r'data-user-id="([^"]+)"')
+
+
+def _html_shows_login(html: str) -> bool:
+    """True when the page carries a non-empty data-user-id attribute."""
+    m = _USER_MARKER.search(html or "")
+    return bool(m and m.group(1).strip())
+
+
+def _session_logged_in(value: str):
+    """GET Ryuu's home page with the cookie. True = logged in, False = anonymous,
+    None = could not tell (network); the caller decides what None means."""
+    import urllib.request
+    try:
+        from config import USER_AGENT
+    except Exception:
+        USER_AGENT = "lumadeck"
+    try:
+        req = urllib.request.Request(_RYUU_HOME, headers={
+            "Cookie": f"session={value}", "User-Agent": USER_AGENT,
+            "Referer": _RYUU_HOME, "Accept": "text/html",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status != 200:
+                return None
+            html = resp.read(2_000_000).decode("utf-8", errors="replace")
+        return _html_shows_login(html)
+    except Exception as exc:
+        logger.info(f"Ryuu: login check failed ({exc})")
+        return None
+
+
 def _harvest_ryuu_once():
     """Return (value, iso_expiry) for the ryuu.lol `session` cookie, or None if it
     isn't present yet. CDP first (live + decrypted), on-disk decrypt as fallback."""
@@ -456,6 +508,10 @@ async def connect_ryuu(timeout_s: int = 180) -> dict:
     _ryuu_connect_state = {"status": "waiting"}
     loop = asyncio.get_event_loop()
     deadline = time.time() + timeout_s
+    # Ryuu sets `session` BEFORE the Discord login (see _session_logged_in), so a
+    # cookie is not a login. Each new cookie value is checked once against the
+    # home page; an anonymous one keeps the browser open for the user to log in.
+    checked_value = None
     while time.time() < deadline:
         if _ryuu_connect_state.get("status") == "cancelled":
             return {"success": False, "cancelled": True}
@@ -466,12 +522,21 @@ async def connect_ryuu(timeout_s: int = 180) -> dict:
             res = None
         if res:
             value, iso = res
-            from api_manifest import save_ryu_cookie, save_ryu_cookie_expiry
-            save_ryu_cookie(value)          # prepends "session=" itself
-            save_ryu_cookie_expiry(iso)     # None clears the sidecar (session cookie)
-            _ryuu_connect_state = {"status": "connected"}
-            logger.info("Ryuu: session cookie captured from the Steam browser.")
-            return {"success": True}
+            if value != checked_value:
+                checked_value = value
+                verdict = await loop.run_in_executor(None, _session_logged_in, value)
+                if verdict is False:
+                    logger.info("Ryuu: the Steam browser holds an anonymous session; "
+                                "waiting for the Discord login to complete.")
+                else:
+                    if verdict is None:
+                        logger.warning("Ryuu: could not verify the session (network); saving it unverified.")
+                    from api_manifest import save_ryu_cookie, save_ryu_cookie_expiry
+                    save_ryu_cookie(value)          # prepends "session=" itself
+                    save_ryu_cookie_expiry(iso)     # None clears the sidecar (session cookie)
+                    _ryuu_connect_state = {"status": "connected"}
+                    logger.info("Ryuu: logged-in session cookie captured from the Steam browser.")
+                    return {"success": True}
         await asyncio.sleep(1)
     _ryuu_connect_state = {"status": "timeout"}
     return {"success": False, "error": "timeout"}
