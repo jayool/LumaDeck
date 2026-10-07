@@ -40,7 +40,8 @@ class OwnedUninstall(unittest.TestCase):
         self.stplug = os.path.join(self.root, "config", "stplug-in")
         self.depotcache = os.path.join(self.root, "depotcache")
         self.game = os.path.join(self.root, "steamapps", "common", "DarkestDungeon")
-        for d in (self.stplug, self.depotcache, os.path.join(self.game, ".DepotDownloader")):
+        self.shaders = os.path.join(self.root, "steamapps", "shadercache", str(APP))
+        for d in (self.stplug, self.depotcache, os.path.join(self.game, ".DepotDownloader"), self.shaders):
             os.makedirs(d)
         self.lua = os.path.join(self.stplug, f"{APP}.lua")
         with open(self.lua, "w") as fh:
@@ -121,6 +122,7 @@ class OwnedUninstall(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.game, "game.bin")))
         self.assertTrue(os.path.exists(self.acf))
         self.assertTrue(os.path.exists(self.manifest), "depotcache is Steam's: it needs the manifest to delete the DLC files")
+        self.assertTrue(os.path.isdir(self.shaders), "shader cache is Steam's for an owned game")
         self.assertNotIn("game_files", res["removed"])
         self.assertNotIn("appmanifest", res["removed"])
         self.assertNotIn("depot_manifests", res["removed"])
@@ -134,6 +136,16 @@ class OwnedUninstall(unittest.TestCase):
         self.assertIn("lumalinux_keys_retired", res["removed"])
         self.assertEqual(self.calls[-1], ("lua", APP))
         self.assertFalse(pins.is_owned(APP))
+
+    def test_added_game_uninstall_drops_the_shader_cache(self):
+        # The flow-E uninstall (lumalinux docs/owned-games-guide.md): Steam's
+        # own uninstall removes steamapps/shadercache/<appid>, so do we.
+        pins.set_owned(APP, False)
+        res = slssteam_ops.uninstall_game_full(APP)
+        self.assertTrue(res["success"], res)
+        self.assertFalse(os.path.exists(self.shaders))
+        self.assertIn("shadercache", res["removed"])
+        self.assertFalse(os.path.exists(self.game))
 
     def test_not_installed_needs_no_confirmation(self):
         self.installed = False

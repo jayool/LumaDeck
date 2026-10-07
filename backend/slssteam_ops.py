@@ -1166,6 +1166,26 @@ def uninstall_game_full(appid: int, remove_compatdata: bool = False, steam_dlc_d
             except Exception as e:
                 logger.warning(f"LumaDeck: Compatdata cleanup error: {e}")
 
+        # 1c. Shader cache: Steam's own uninstall drops steamapps/shadercache/<appid>
+        # (pipeline caches, often hundreds of MB; rebuilt on the next run). Not
+        # for an owned game, whose files are Steam's.
+        if not owned:
+            try:
+                from steam_utils import detect_steam_install_path
+                roots = [detect_steam_install_path(), library_path]
+                for root in [r for r in roots if r]:
+                    shader_path = os.path.join(root, "steamapps", "shadercache", str(appid))
+                    if os.path.isdir(shader_path):
+                        shutil.rmtree(shader_path, ignore_errors=True)
+                        if not os.path.exists(shader_path):
+                            if "shadercache" not in removed:
+                                removed.append("shadercache")
+                            logger.info(f"LumaDeck: Removed shader cache: {shader_path}")
+                        else:
+                            errors.append("Failed to fully remove shader cache")
+            except Exception as e:
+                logger.warning(f"LumaDeck: Shader cache cleanup error: {e}")
+
         # 2. Remove depotcache manifests for this game's depots. NOT for an
         # owned game: Steam deletes the unticked DLC's files by reading those
         # very manifests (with them gone it deleted nothing — 2026-10-06 10:23,
