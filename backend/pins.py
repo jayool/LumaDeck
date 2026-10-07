@@ -63,6 +63,12 @@ Two passes run from one background task started by main.py:
       the pin moves once EVERY changed depot resolved. Native games are left
       to Steam.
     - while any game is frozen by us: the provider probe described above.
+    - it records which app each depot belongs to (depot_apps in pins.json),
+      so that both passes can tell a depot the account has a REAL licence
+      for (a game or DLC bought after we added it, owned-games-guide.md flow
+      F/G): Steam updates those itself, so ensure_pinned never pins them and
+      releases a pin they had; the update pass ignores a bought DLC on any
+      game and, for an owned game, the base depots too.
 
 Frozen. `~/.config/lumadeck/pins.json` holds a per-app `frozen` flag (set by
 the Auto-update toggle, by installing a LuaTools version fix, which records
@@ -296,6 +302,63 @@ def set_owned(appid: int, owned: bool) -> None:
         entry.pop("owned", None)
     data["apps"][str(int(appid))] = entry
     _save_state(data)
+
+
+def depot_apps(appid: int) -> Dict[int, int]:
+    """{depot: app that owns it} as the update pass last saw it in appinfo:
+    the DLC's AppID for a DLC depot, the base AppID otherwise. Empty until
+    the first update pass of this game."""
+    raw = _load_state()["apps"].get(str(int(appid)), {}).get("depot_apps") or {}
+    out: Dict[int, int] = {}
+    for d, a in raw.items():
+        try:
+            out[int(d)] = int(a)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def set_depot_apps(appid: int, mapping: Dict[int, int]) -> None:
+    data = _load_state()
+    entry = data["apps"].get(str(int(appid)), {})
+    new = {str(int(d)): int(a) for d, a in mapping.items()}
+    if entry.get("depot_apps") == new:
+        return
+    entry["depot_apps"] = new
+    data["apps"][str(int(appid))] = entry
+    _save_state(data)
+
+
+def depot_owner_map(appid: int, valve: Dict[int, dict]) -> Dict[int, int]:
+    """depot -> owning app from steamcmd_app_info()["depots"]: the DLC's
+    AppID, the app a borrowed depot comes from, else the game itself."""
+    out: Dict[int, int] = {}
+    for d, v in valve.items():
+        if int(d) in REDIST_DEPOTS:
+            continue
+        out[int(d)] = int(v.get("dlcappid") or v.get("fromapp") or appid)
+    return out
+
+
+def licensed_depots(appid: int, depots) -> set:
+    """Of `depots` (keyed by us), those whose owning app the account has a
+    real licence for (owned-games-guide.md flow F/G): a game or DLC bought
+    after LumaDeck added it. Steam updates those with its own licence, so
+    nothing here may pin them. A depot the map does not know belongs to the
+    base game. Unreadable licences mean nothing is Steam's."""
+    try:
+        from steam_licenses import is_licensed
+    except Exception:
+        return set()
+    owners = depot_apps(appid)
+    out = set()
+    for d in depots:
+        try:
+            if is_licensed(owners.get(int(d), int(appid))):
+                out.add(int(d))
+        except Exception:
+            continue
+    return out
 
 
 def frozen_by_providers(appid: int) -> bool:
@@ -610,9 +673,23 @@ async def ensure_pinned(appid: int, allow_pin: bool = True) -> Dict[int, int]:
                            place_in_depotcache, validate_manifest)
 
     keyed = keyed_depots(appid)
+    steams = licensed_depots(appid, keyed)
+    if steams:
+        keyed = {d: k for d, k in keyed.items() if d not in steams}
+    mids = read_manifest_ids()
+    stale = sorted(d for d in steams if d in mids)
+    if stale:
+        # Pinned before the licence came (a game or DLC bought after its add):
+        # release Steam's depots, keep ours pinned.
+        keep = {d: mids[d] for d in keyed if d in mids}
+        if await unpin_game_depots(appid):
+            logger.info(f"LumaDeck: {appid}: depots {stale} are licensed now, pin released"
+                        + (f", ours kept {sorted(keep.items())}" if keep else ""))
+            if keep:
+                await set_pin(appid, keep)
+            mids = {d: g for d, g in mids.items() if d not in stale}
     if not keyed:
         return {}
-    mids = read_manifest_ids()
     pin = {d: mids[d] for d in keyed if d in mids}
     unpinned = [d for d in keyed if d not in mids] if allow_pin else []
 
@@ -824,9 +901,13 @@ async def check_update(appid: int, native: bool = False) -> str:
         if d not in REDIST_DEPOTS and not v["sharedinstall"]
         and v["oslist"] in ("", platform) and v["osarch"] in ("", "64")
     }
+    set_depot_apps(appid, depot_owner_map(appid, valve))
+    from steam_licenses import is_licensed
+    # A DLC the account bought after we added it is Steam's on any game.
+    relevant = {d: v for d, v in relevant.items()
+                if not (v.get("dlcappid") and is_licensed(int(v["dlcappid"])))}
     owned = is_owned(appid)
     if owned:
-        from steam_licenses import is_licensed
         relevant = _owned_relevant(relevant, is_licensed)
     new_depots = sorted(d for d in relevant if d not in keyed)
     if native:
