@@ -70,11 +70,12 @@ DLC you already own are left to Steam too. The card says so before you tap.
 
 - **Game not installed yet**: press Install in Steam as usual. It downloads
   the game with Steam's keys and the DLC with LumaDeck's.
-- **Game already installed**: Steam does not look for new DLC on its own
-  while it runs. LumaDeck ticks them in the game's own DLC list for you the
-  moment the add finishes, and Steam starts the download right away. If that
-  does not happen (the game was running, or Steam did not take it), a Steam
-  restart does the same.
+- **Game already installed**: the DLC install **the next time Steam
+  starts**. Steam plans every installed game against its licences at
+  startup; while it runs it does not pick up a licence LumaDeck added, and
+  neither launching the game nor opening its page makes it. The card says
+  so when the add finishes. (If you want them sooner: Properties → DLC on
+  the game and tick them, which downloads at once.)
 - **Uninstall** on such a game removes only the DLC: LumaDeck unticks them in
   Steam's DLC list (Steam deletes their files itself), then drops its own
   record. The game is never touched. A DLC you bought in the meantime is

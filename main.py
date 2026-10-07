@@ -553,9 +553,6 @@ class Plugin:
         from slssteam_ops import owned_dlc_to_disable
         return _j(owned_dlc_to_disable(appid))
 
-    async def take_owned_dlc_cycle(self, appid: int) -> str:
-        from downloads import take_owned_dlc_cycle
-        return _j(take_owned_dlc_cycle(appid))
 
     # ==========================================================================
     # Goldberg Steam Emulator

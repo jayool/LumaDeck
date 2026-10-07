@@ -3,8 +3,7 @@ lumalinux docs/owned-games-guide.md).
 
 Pure pieces, no Steam: the .lua filter that keeps only the DLC depots, the
 `owned` flag in pins.json that uninstall and the game page read, the
-three-way DLC-depot map, the owned plan (what gets added, what Steam must be
-told to fetch) and the one-shot hand-out of that DLC cycle.
+three-way DLC-depot map and the owned plan (what gets added).
 
     python -m unittest discover -s tests
 """
@@ -157,22 +156,12 @@ class OwnedPlan(unittest.TestCase):
         self.assertEqual(plan["flag_dlcs"], {999001})
         self.assertEqual(plan["add_dlcs"], [580100, 702540, 999001])
 
-    def test_cycle_only_for_unmounted_dlc(self):
-        # game installed with Crimson Court's Linux depot already mounted:
-        # Steam must be told about Shieldbreaker only; never cycle a mounted DLC
-        plan = downloads._owned_plan(self.LUA, APP, self.MAP, licensed={APP},
-                                     installed_depots={262065, 580102})
-        self.assertEqual(plan["cycle"], [445700, 702540])
-        plan = downloads._owned_plan(self.LUA, APP, self.MAP, licensed={APP}, installed_depots=set())
-        self.assertEqual(plan["cycle"], [445700, 580100, 702540])
-
     def test_flag_only_game_is_still_an_add(self):
         # no DLC depot at all (map {}): every keyed line is the base game's,
-        # the flag DLC are what gets registered, nothing to cycle
+        # the flag DLC are what gets registered
         plan = downloads._owned_plan(self.LUA, APP, {}, licensed={APP})
         self.assertEqual(plan["dlc_depots"], set())
         self.assertEqual(plan["add_dlcs"], [445700, 580100, 702540, 999001])
-        self.assertEqual(plan["cycle"], [])
         filtered, dropped = downloads._filter_lua_for_owned_base(self.LUA, APP, plan["dlc_depots"], plan["owned_dlc"])
         self.assertNotIn('addappid(580102,1', filtered)
         self.assertNotIn('addappid(262065,1', filtered)
@@ -183,66 +172,6 @@ class OwnedPlan(unittest.TestCase):
         lua = f"addappid({APP})\naddappid(445700)\naddappid(445702,1,\"{KEY}\")\n"
         plan = downloads._owned_plan(lua, APP, {445702: 445700}, licensed={APP, 445700})
         self.assertEqual(plan["add_dlcs"], [])
-
-
-class DlcCycleHandout(unittest.TestCase):
-    """take_owned_dlc_cycle waits for Steam's own record of the processed
-    licence (appinfo_log.txt) and hands the list out once."""
-    REQ = "[2026-10-06 19:28:49] RequestAppInfoUpdate: AppIDs 580100,702540,735730,4964110\n"
-    REQ_OTHER = "[2026-10-06 19:28:49] RequestAppInfoUpdate: AppIDs 999\n"
-    DONE = "[2026-10-06 19:28:49] UpdatesJob: finished OK, apps updated 0 (0 KB), packages updated 0 (0 KB)\n"
-
-    def setUp(self):
-        import time as _t
-        self.tmp = tempfile.mkdtemp()
-        self.log = os.path.join(self.tmp, "appinfo_log.txt")
-        open(self.log, "w").write("[2026-10-06 19:00:00] older stuff\n" + self.REQ + self.DONE)
-        self._orig = downloads._appinfo_log_path
-        downloads._appinfo_log_path = lambda: self.log
-        self.now = _t.time()
-
-    def tearDown(self):
-        downloads._appinfo_log_path = self._orig
-        downloads.DOWNLOAD_STATE.pop(APP, None)
-
-    def _state(self, since=None):
-        downloads.DOWNLOAD_STATE[APP] = {"status": "done", "ownedDlcCycle": [580100, 702540],
-                                         "ownedDlcCycleLogPos": os.path.getsize(self.log),
-                                         "ownedDlcCycleSince": self.now if since is None else since}
-
-    def test_signal_parser(self):
-        self.assertFalse(downloads._steam_took_licence("", [580100]))
-        self.assertFalse(downloads._steam_took_licence(self.REQ, [580100]), "request alone is not enough (16:45)")
-        self.assertFalse(downloads._steam_took_licence(self.DONE + self.REQ, [580100]), "job must follow the request")
-        self.assertFalse(downloads._steam_took_licence(self.REQ_OTHER + self.DONE, [580100]), "another app's request")
-        self.assertTrue(downloads._steam_took_licence(self.REQ + "noise\n" + self.DONE, [580100]))
-        self.assertTrue(downloads._steam_took_licence(self.REQ + self.DONE, [702540, 123]), "any of ours")
-
-    def test_pending_until_steam_logs_it_then_once(self):
-        self._state()
-        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"), "older lines before the add do not count")
-        with open(self.log, "a") as fh:
-            fh.write(self.REQ)
-        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"))
-        with open(self.log, "a") as fh:
-            fh.write(self.DONE)
-        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
-        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [])
-        self.assertEqual(downloads.DOWNLOAD_STATE[APP]["status"], "done")
-
-    def test_rotated_log_is_read_from_start(self):
-        self._state()
-        open(self.log, "w").write(self.REQ + self.DONE)   # Steam restarted: smaller file
-        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
-
-    def test_gives_up_after_a_while(self):
-        self._state(since=self.now - 30)
-        self.assertEqual(downloads.take_owned_dlc_cycle(APP)["dlc"], [580100, 702540])
-
-    def test_no_log_at_all_waits_then_gives_up(self):
-        self._state()
-        os.remove(self.log)
-        self.assertTrue(downloads.take_owned_dlc_cycle(APP).get("pending"))
 
 
 class AppRunning(unittest.TestCase):

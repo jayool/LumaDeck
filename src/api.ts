@@ -241,11 +241,6 @@ export const uninstallGameFull = async (
 export const ownedDlcToDisable = async (appid: number) =>
   parseResult(await call<[number], string>("owned_dlc_to_disable", appid));
 
-// Owned game that was already installed: the DLC the page must cycle in
-// Steam's DLC list so Steam downloads them. Handed out once per download.
-export const takeOwnedDlcCycle = async (appid: number) =>
-  parseResult(await call<[number], string>("take_owned_dlc_cycle", appid));
-
 // Goldberg Steam Emulator
 export const checkGoldbergStatus = async (installPath: string) =>
   parseResult(

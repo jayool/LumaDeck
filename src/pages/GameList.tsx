@@ -12,7 +12,6 @@ import {
 } from "@decky/ui";
 import {
   getDownloadStatus,
-  takeOwnedDlcCycle,
   getActiveDownloads,
   startDownload,
   detectStoreAppid,
@@ -45,7 +44,7 @@ import { useT } from "../i18n";
 import { toaster } from "@decky/api";
 
 import { isOwnedBySteam } from "../steamOwnership";
-import { runOwnedDlcCycle } from "../steamDlc";
+import { enableDlcs } from "../steamDlc";
 interface SearchResult {
   appid: number;
   name: string;
@@ -165,10 +164,15 @@ export function GameList() {
           if (phase === "done") {
             if (pollRef.current) clearInterval(pollRef.current);
             pollRef.current = null;
-            setAddStatus(t("doneRestartSteam"));
-            // Owned game that was already installed: cycle its new DLC in
-            // Steam's DLC list so Steam downloads them (steamDlc.ts).
-            runOwnedDlcCycle(id, takeOwnedDlcCycle).catch(() => { });
+            if (st.ownedInstalled) {
+              // Owned game that was already installed: Steam installs the DLC
+              // on its next start; tick them once so an earlier uninstall's
+              // mark does not hold that back (steamDlc.ts).
+              enableDlcs(id, st.ownedDlc || []);
+              setAddStatus(t("ownedDlcNextStart"));
+            } else {
+              setAddStatus(t("doneRestartSteam"));
+            }
             setActiveDownloadId(null);
             setActiveDownloadPhase("");
             setDownloadPct(0); setDownloadSpeed(0); setDownloadBytes({ read: 0, total: 0 });

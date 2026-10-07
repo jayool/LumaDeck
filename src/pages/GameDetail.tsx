@@ -43,7 +43,6 @@ import {
   computeFixLaunchOptions,
   uninstallGameFull,
   ownedDlcToDisable,
-  takeOwnedDlcCycle,
   fetchAppName,
   repairAppmanifest,
   reconfigureSlssteam,
@@ -68,7 +67,7 @@ import {
 import { errorText, useT } from "../i18n";
 
 import { isOwnedBySteam } from "../steamOwnership";
-import { disableDlcs, runOwnedDlcCycle } from "../steamDlc";
+import { disableDlcs, enableDlcs } from "../steamDlc";
 interface GameDetailProps {
   appid: number;
 }
@@ -327,12 +326,15 @@ export function GameDetail({ appid }: GameDetailProps) {
         setDownloadState(status.state);
         if (status.state.status === "done") {
           setHasLua(true);
-          toast(t("toastDownloadComplete"), gameName);
-          // Owned game that was already installed: Steam will not fetch the
-          // new DLC on its own — cycle them in its DLC list (steamDlc.ts).
-          // No notice when Steam does not take it: the user is long gone from
-          // this page by then, and a Steam restart plans the same thing.
-          runOwnedDlcCycle(appid, takeOwnedDlcCycle).catch(() => { });
+          // Owned game that was already installed: Steam installs the DLC on
+          // its next start; tick them once so an earlier uninstall's mark
+          // does not hold that back (steamDlc.ts).
+          if (status.state.ownedInstalled) {
+            enableDlcs(appid, status.state.ownedDlc || []);
+            toast(t("toastDownloadComplete"), t("ownedDlcNextStart"), 6000);
+          } else {
+            toast(t("toastDownloadComplete"), gameName);
+          }
         } else if (status.state.status === "failed") {
           toast(t("toastDownloadFailed"), status.state.error || gameName, 5000);
         }
