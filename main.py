@@ -239,11 +239,14 @@ class Plugin:
         return _j(read_cloudredirect_health())
 
     async def check_cloudredirect_update(self) -> str:
-        """{installed, latest, has_update, url} via GitHub Releases (cached 6h)."""
-        from paths import read_cloudredirect_health
-        from update_checks import has_update
-        installed = read_cloudredirect_health().get("version")
-        return _j(await has_update("Selectively11", "CloudRedirect", installed))
+        """{installed, latest, has_update, url}: the same check the components
+        panel runs (version compiled into the .so vs the newest release that
+        ships a Linux build). Measured 2026-10-07 on the Deck: the old check
+        read the version out of cr_debug.log, which CloudRedirect appends to
+        across Steam sessions, so it matched the OLDEST line (2.6.3 on a 2.6.5
+        install) and Settings and the panel disagreed."""
+        from components import check_cloudredirect_update
+        return _j(await check_cloudredirect_update())
 
     async def check_lumalinux_update(self) -> str:
         """{installed, latest, has_update, url} via GitHub Releases (cached 6h)."""
