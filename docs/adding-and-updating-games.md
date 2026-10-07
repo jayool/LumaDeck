@@ -108,8 +108,10 @@ manifests it holds, so Steam has nothing to ask for: installed games keep
 playing, a pending update is simply dropped. While that lasts, updates go the
 0.8 way: every **30 minutes** the job compares each pin with Valve's current
 build (`api.steamcmd.net`), fetches the new manifests from the
-`manifest.luastools.xyz` archive or Hubcap (once a day per game), and moves
-the pin only when it has **every** manifest. The job also probes a provider
+`manifest.luastools.xyz` archive, then one at a time from Hubcap's
+`/generate/manifest` (its daily single-manifest quota, one try per manifest
+per day, any build), then from the Hubcap zip (once a day per game, current
+build only), and moves the pin only when it has **every** manifest. The job also probes a provider
 every 30 minutes and, when one serves valid codes again, releases the pins
 it set. Nothing is shown to the user in either direction.
 

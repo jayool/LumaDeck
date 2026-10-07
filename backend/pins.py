@@ -58,7 +58,8 @@ Two passes run from one background task started by main.py:
       and installed through the normal install path, but only if the zip's
       gids are Valve's current ones (a stale zip would downgrade). Both models.
     - pinned model only: depots we hold keys for whose gid changed get their
-      manifests via manifests.py (archive, luastools, Hubcap if current) and
+      manifests via manifests.py (archive, luastools, a Hubcap single
+      manifest, the Hubcap zip if current) and
       the pin moves once EVERY changed depot resolved. Native games are left
       to Steam.
     - while any game is frozen by us: the provider probe described above.
@@ -855,8 +856,9 @@ async def check_update(appid: int, native: bool = False) -> str:
     if missing:
         return f"build {info.get('buildid')} not fully available: {missing}"
     # Steam diffs the installed manifest against the new one, so the installed
-    # build's manifests must be on disk too (archive, then the online sources;
-    # never Hubcap, which only has the current build). Moving the pin without
+    # build's manifests must be on disk too (archive, luastools, a Hubcap
+    # single manifest; never the Hubcap zip, which only has the current
+    # build). Moving the pin without
     # them leaves the game stuck on "Update" with 'Access Denied' on the old gid.
     installed = {d: g for d, g in installed_depots(appid).items()
                  if d in changed and g != changed[d]}

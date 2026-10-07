@@ -15,20 +15,25 @@ looked up in this order, stopping at the first hit:
      re-plans); this copy survives, so a Steam-side reinstall or re-validate
      never needs the network. Verified 2026-09-11: putting the file back in
      depotcache is enough, Steam picks it up on its next ~30 s retry.
-  3. GitHub P-ToyStore/SteamManifestCache_Pro, branch `<app>`, file
-     `<depot>_<gid>.manifest`: the CURRENT public build, pushed by a bot on
-     owning accounts within minutes of Valve. Fixed raw URL, no API, no key.
-  4. Same repo, tag `<depot>_<gid>`: older builds the bot has seen (partial).
-  5. manifest.luastools.xyz/m/<depot>/<gid>: the archive BetterSteamTools
+  3. manifest.luastools.xyz/m/<depot>/<gid>: the archive BetterSteamTools
      fills with request codes donated by owning accounts. No key, no quota,
      edge-cached; the one source seen to carry builds published after
      2026-09-09 (probed 2026-09-12: 17/17 current gids, 8/15 post-09-09 gids).
      A 404 means "not archived yet" and falls through.
-  6. Hubcap: the whole game zip (lua + keys + manifests). Only when the gid
+  4. Hubcap `/generate/manifest?depot_id&manifest_id`: ONE manifest, any gid
+     (Hubcap asks Steam live), the only online source left for an old build.
+     Needs the Hubcap key from api.json; counts against the `single` quota
+     (1,500/day, measured 2026-09-14), not the 25 zip downloads. Hubcap cannot
+     generate every gid, so one attempt per depot+gid per day.
+  5. Hubcap: the whole game zip (lua + keys + manifests). Only when the gid
      asked for is Valve's current one (Hubcap serves the current build) and at
-     most once per app per day, because the API key has a daily quota.
+     most once per app per day, because the zip quota is 25 a day.
 
-Files fetched over the network are inflated when they come in the repo's
+  (GitHub P-ToyStore/SteamManifestCache_Pro, a bot-pushed mirror of current
+  builds, sat between 2 and 3 until the org vanished: 404 measured
+  2026-10-07.)
+
+Files fetched over the network are inflated when they come in the old repo's
 "Pro" wrapper (10-byte header + raw deflate), checked for the depotcache magic
 and for the depot/gid stored INSIDE the manifest, archived, and only then
 copied into depotcache/. A file that fails any check is dropped.
@@ -65,9 +70,6 @@ except ImportError:
 # Locations
 # ---------------------------------------------------------------------------
 
-REPO_OWNER = "P-ToyStore"
-REPO_NAME = "SteamManifestCache_Pro"
-_REPO_RAW = "https://raw.githubusercontent.com/" + REPO_OWNER + "/" + REPO_NAME + "/{ref}/{name}"
 STEAMCMD_INFO = "https://api.steamcmd.net/v1/info/{appid}"
 LUASTOOLS_ARCHIVE = "https://manifest.luastools.xyz/m/{depot}/{gid}"
 
@@ -75,6 +77,7 @@ MANIFEST_MAGIC = b"\xd0\x17\xf6\x71"          # depotcache payload header
 _PRO_HEADER = b"\x78\xda\x08\x00\x00\x00\x00\x00\x02\x03"
 _HUBCAP_HOSTS = ("hubcapmanifest.com", "morrenus.xyz")
 HUBCAP_RETRY_SECONDS = 24 * 60 * 60           # one Hubcap attempt per app per day
+HUBCAP_SINGLE_PATH = "/api/v1/generate/manifest"   # one manifest, any gid; `single` quota
 
 _DATA_ROOT = os.path.join(real_home(), ".local", "share", "lumadeck")
 _CACHE_ROOT = os.path.join(real_home(), ".cache", "lumadeck")
@@ -303,29 +306,6 @@ def place_in_depotcache(depot: int, gid: int, data: bytes) -> Optional[str]:
     return path
 
 
-async def fetch_repo_manifest(appid: int, depot: int, gid: int) -> Optional[bytes]:
-    """Branch `<app>` first (current build), then tag `<depot>_<gid>` (history).
-    Returns validated plain manifest bytes or None."""
-    client = await ensure_http_client("manifests")
-    name = manifest_name(depot, gid)
-    for ref in (str(int(appid)), f"refs/tags/{int(depot)}_{int(gid)}"):
-        url = _REPO_RAW.format(ref=ref, name=name)
-        try:
-            resp = await client.get(url, timeout=60)
-        except Exception as exc:
-            logger.info(f"LumaDeck: repo fetch error {url}: {exc}")
-            continue
-        if resp.status_code != 200:
-            continue
-        plain = validate_manifest(resp.content, depot, gid)
-        if plain is None:
-            logger.warning(f"LumaDeck: repo file {ref}/{name} did not validate as depot {depot} gid {gid}")
-            continue
-        logger.info(f"LumaDeck: manifest {name} for {appid} from repo ({'branch' if ref.isdigit() else 'tag'})")
-        return plain
-    return None
-
-
 async def fetch_luastools_manifest(appid: int, depot: int, gid: int) -> Optional[bytes]:
     """BetterSteamTools' donated-code archive: one GET per (depot, gid), plain
     manifest bytes, 404 when nobody has donated a code for it yet. Returns
@@ -347,6 +327,59 @@ async def fetch_luastools_manifest(appid: int, depot: int, gid: int) -> Optional
     return plain
 
 
+def hubcap_single_request(depot: int, gid: int) -> Optional[Tuple[str, Dict[str, str]]]:
+    """(url, headers) for Hubcap's single-manifest endpoint, built from the
+    Hubcap entry of api.json (its host and key, via api_request, which moves
+    the key into an Authorization header). None without an enabled Hubcap
+    entry or without a key."""
+    from urllib.parse import urlencode, urlsplit
+    try:
+        from api_manifest import load_api_manifest
+        apis = load_api_manifest()
+    except Exception:
+        return None
+    for api in apis or []:
+        if not api.get("enabled", True):
+            continue
+        template = str(api.get("url", ""))
+        if not any(h in template for h in _HUBCAP_HOSTS):
+            continue
+        url, headers = api_request(template, 0)
+        if "Authorization" not in headers:
+            return None
+        parts = urlsplit(url)
+        query = urlencode({"depot_id": int(depot), "manifest_id": int(gid)})
+        return f"{parts.scheme}://{parts.netloc}{HUBCAP_SINGLE_PATH}?{query}", headers
+    return None
+
+
+async def fetch_hubcap_single_manifest(appid: int, depot: int, gid: int) -> Optional[bytes]:
+    """Hubcap `/generate/manifest`: plain manifest bytes for one depot+gid,
+    generated live (ASSella writes the body straight to `<depot>_<gid>.manifest`).
+    Returns validated manifest bytes or None. Records the attempt for the
+    per-depot+gid daily budget whether or not it succeeded."""
+    req = hubcap_single_request(depot, gid)
+    if req is None:
+        return None
+    url, headers = req
+    note_hubcap_single_attempt(depot, gid)
+    client = await ensure_http_client("manifests")
+    try:
+        resp = await client.get(url, headers=headers, timeout=120)
+    except Exception as exc:
+        logger.info(f"LumaDeck: Hubcap single-manifest error for depot {depot} gid {gid}: {exc}")
+        return None
+    if resp.status_code != 200:
+        logger.info(f"LumaDeck: Hubcap single-manifest HTTP {resp.status_code} for depot {depot} gid {gid}")
+        return None
+    plain = validate_manifest(resp.content, depot, gid)
+    if plain is None:
+        logger.warning(f"LumaDeck: Hubcap single-manifest for depot {depot} gid {gid} did not validate")
+        return None
+    logger.info(f"LumaDeck: manifest {manifest_name(depot, gid)} for {appid} from Hubcap (single)")
+    return plain
+
+
 def _hubcap_attempts() -> Dict[str, float]:
     try:
         with open(_HUBCAP_ATTEMPTS, "r", encoding="utf-8") as f:
@@ -364,6 +397,26 @@ def hubcap_budget_ok(appid: int) -> bool:
 def note_hubcap_attempt(appid: int) -> None:
     data = _hubcap_attempts()
     data[str(int(appid))] = time.time()
+    try:
+        _write_atomic(_HUBCAP_ATTEMPTS, json.dumps(data).encode("utf-8"))
+    except Exception:
+        pass
+
+
+def _single_key(depot: int, gid: int) -> str:
+    return f"single:{int(depot)}_{int(gid)}"
+
+
+def hubcap_single_budget_ok(depot: int, gid: int) -> bool:
+    """One `/generate/manifest` attempt per depot+gid per day: Hubcap cannot
+    generate every gid, and the `single` quota is shared by every game."""
+    last = _hubcap_attempts().get(_single_key(depot, gid), 0)
+    return (time.time() - float(last)) >= HUBCAP_RETRY_SECONDS
+
+
+def note_hubcap_single_attempt(depot: int, gid: int) -> None:
+    data = _hubcap_attempts()
+    data[_single_key(depot, gid)] = time.time()
     try:
         _write_atomic(_HUBCAP_ATTEMPTS, json.dumps(data).encode("utf-8"))
     except Exception:
@@ -450,8 +503,10 @@ async def resolve_manifest(
     allow_hubcap: bool = True, current_gid: Optional[int] = None,
 ) -> Tuple[Optional[str], str]:
     """Make `<depot>_<gid>.manifest` exist in depotcache/. Returns
-    (path, source) with source in {"depotcache", "archive", "repo", "luastools", "hubcap"},
-    or (None, reason). Hubcap is only tried when `gid == current_gid`."""
+    (path, source) with source in {"depotcache", "archive", "luastools",
+    "hubcap-single", "hubcap"}, or (None, reason). The single manifest is
+    tried for any gid (one attempt per depot+gid per day); `allow_hubcap`
+    gates only the zip, which is tried when `gid == current_gid`."""
     depot, gid = int(depot), int(gid)
     path = depotcache_path(depot, gid)
     if not path:
@@ -472,21 +527,28 @@ async def resolve_manifest(
         except OSError:
             pass
 
-    data = await fetch_repo_manifest(appid, depot, gid)
-    if data is not None:
-        archive_manifest(appid, depot, gid, data)
-        place_in_depotcache(depot, gid, data)
-        return path, "repo"
-
     data = await fetch_luastools_manifest(appid, depot, gid)
     if data is not None:
         archive_manifest(appid, depot, gid, data)
         place_in_depotcache(depot, gid, data)
         return path, "luastools"
 
+    single_note = ""
+    if hubcap_single_request(depot, gid) is None:
+        single_note = "no Hubcap key"
+    elif not hubcap_single_budget_ok(depot, gid):
+        single_note = "Hubcap single already tried today"
+    else:
+        data = await fetch_hubcap_single_manifest(appid, depot, gid)
+        if data is not None:
+            archive_manifest(appid, depot, gid, data)
+            place_in_depotcache(depot, gid, data)
+            return path, "hubcap-single"
+        single_note = "Hubcap could not generate it"
+
     if allow_hubcap and current_gid is not None and gid == int(current_gid):
         if not hubcap_budget_ok(appid):
-            return None, "not in repo/luastools; Hubcap already tried today"
+            return None, f"not in luastools; {single_note}; Hubcap zip already tried today"
         zip_path = await fetch_game_zip(appid)
         if zip_path:
             try:
@@ -498,10 +560,11 @@ async def resolve_manifest(
                     data = f.read()
                 place_in_depotcache(depot, gid, data)
                 return path, "hubcap"
-            return None, "Hubcap zip did not carry this manifest"
-        return None, "not in repo/luastools; Hubcap did not return a zip"
-    return None, "not in repo/luastools" + ("" if current_gid is None or gid == int(current_gid)
-                                  else " (old build, Hubcap only has the current one)")
+            return None, f"not in luastools; {single_note}; Hubcap zip did not carry this manifest"
+        return None, f"not in luastools; {single_note}; Hubcap did not return a zip"
+    return None, f"not in luastools; {single_note}" + (
+        "" if current_gid is None or gid == int(current_gid)
+        else " (old build, the Hubcap zip only has the current one)")
 
 
 async def resolve_all(
