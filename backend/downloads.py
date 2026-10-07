@@ -850,6 +850,23 @@ def _count_app_depot_keys(appid: int) -> int:
     return count
 
 
+def _app_line_first(lua_text: str, appid: int) -> str:
+    """steamidra_lite (SteaMidra verbatim) takes the FIRST addappid() in the
+    .lua as the game's AppID. Hubcap writes `addappid(<app>)` first; Ryuu
+    writes it LAST (measured 2026-10-07, app 2379780: steamidra took depot
+    2379781 for the game, wrote its keys under parent 2379781, put 2379781 in
+    AdditionalApps and stplug-in, and the post-check found no key for
+    2379780). Make line one name the app, whatever the hub's order."""
+    first = re.search(r'^\s*addappid\s*\(\s*(\d+)', lua_text, re.MULTILINE)
+    if first and int(first.group(1)) == int(appid):
+        return lua_text
+    keyless = re.compile(r'^\s*addappid\s*\(\s*' + str(int(appid)) + r'\s*\)\s*\n?', re.MULTILINE)
+    body = keyless.sub("", lua_text)
+    if body and not body.endswith("\n"):
+        body += "\n"
+    return f"addappid({int(appid)})\n" + body
+
+
 def _filter_lua_for_owned_base(lua_text: str, appid: int, dlc_depots: set,
                                owned_apps: set = frozenset()) -> tuple[str, list]:
     """The shape for a game the account OWNS (RESEARCH §21 run E): keep only
@@ -1147,6 +1164,11 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
             # account chose; no Linux-depot enrichment and no Proton forcing.
             _set_download_state(appid, {"hasLinuxDepot": True, "owned": True})
         else:
+            # The hub's line order is not ours to trust: the app line goes first.
+            ordered = _app_line_first(lua_text, appid)
+            if ordered != lua_text:
+                lua_text = ordered
+                lua_path.write_text(lua_text, encoding="utf-8")
             # Optional enrichment with Linux depot (consults PICS via
             # api.steamcmd.net). Updates the file in-place if it adds anything.
             enriched_text, has_linux_depot = await _enrich_lua_with_linux_depot(
