@@ -278,13 +278,42 @@ def load_ryu_cookie_expiry() -> str:
     return ""
 
 
+def remove_hubcap_key() -> dict:
+    """Forget the Hubcap API key: strip it from api.json, disable the Hubcap
+    entry (a keyless request only earns a 401), and drop it from the settings
+    store so the next plugin load does not restore it. Saving a key again
+    re-enables the entry (update_hubcap_key)."""
+    try:
+        path = data_path(API_JSON_FILE)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            try:
+                root_data = json.loads(content) if content.strip() else {"api_list": []}
+            except json.JSONDecodeError:
+                root_data = {"api_list": []}
+            for api in root_data.get("api_list", []):
+                name = api.get("name", "").lower()
+                url = api.get("url", "")
+                if ("morrenus" in name or "hubcap" in name
+                        or "morrenus.xyz" in url or "hubcapmanifest.com" in url):
+                    api["url"] = url.split("?api_key=")[0]
+                    api["enabled"] = False
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(root_data, f, indent=4)
+        _forget_cred("hubcap_key")
+        return {"success": True, "message": "Hubcap key removed", "removed": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def update_hubcap_key(key_content: str) -> dict:
-    """Update the Hubcap API key in api.json."""
+    """Update the Hubcap API key in api.json. An empty key removes it."""
     try:
         path = data_path(API_JSON_FILE)
         key_content = key_content.strip()
         if not key_content:
-            return {"success": False, "error": "Key cannot be empty"}
+            return remove_hubcap_key()
 
         root_data = {"api_list": []}
         if os.path.exists(path):

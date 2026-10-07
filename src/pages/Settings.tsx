@@ -483,7 +483,7 @@ export function Settings() {
   const handleSaveHubcapKey = async () => {
     const result = await updateHubcapKey(hubcapKey);
     if (result.success || result.message) {
-      toast(t("toastApiKeySaved"));
+      toast(result.removed ? t("toastApiKeyRemoved") : t("toastApiKeySaved"));
       refreshCred();
     } else {
       toast(t("toastError"), result.error || "", 4000);

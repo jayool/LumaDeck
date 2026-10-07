@@ -22,6 +22,12 @@ The primary provider ([hubcapmanifest.com](https://hubcapmanifest.com)).
 
 The key is stored in `api.json` as the Hubcap entry's `api_key`.
 
+To **remove** the key, clear the field and tap **Save Hubcap Key** again. That
+strips it from `api.json`, disables the Hubcap entry (without a key Hubcap only
+answers 401) and forgets the copy in the settings store, so a plugin reload
+does not bring it back. Adding and updating games keep working through Ryuu;
+search by name needs Hubcap and stops until you save a key again.
+
 ## Ryuu cookie
 
 A secondary provider ([generator.ryuu.lol](https://generator.ryuu.lol)). Its

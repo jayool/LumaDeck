@@ -1380,6 +1380,7 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
     for api in apis:
         name = api.get("name", "Unknown")
         template = api.get("url", "")
+        hubcap_key_sent = False
         success_code = int(api.get("success_code", 200))
         unavailable_code = int(api.get("unavailable_code", 404))
         url = template.replace("<appid>", str(appid))
@@ -1406,6 +1407,8 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
                         _hubcap_token = _v
                     else:
                         _remaining_qs.append((_k, _v))
+                # A placeholder (<moapikey>) or no key at all cannot "expire".
+                hubcap_key_sent = bool(_hubcap_token) and "<" not in _hubcap_token
                 url = urlunsplit((
                     _parts.scheme, _parts.netloc, _parts.path,
                     urlencode(_remaining_qs), _parts.fragment,
@@ -1443,8 +1446,11 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
                     if "ryuu.lol" in url and code in (401, 403):
                         logger.warning(f"LumaDeck: Ryuu access denied ({code}). Check if cookie expired.")
                     if ("hubcapmanifest.com" in url or "morrenus.xyz" in url) and code in (401, 403):
-                        hubcap_key_expired = True
-                        logger.warning(f"LumaDeck: Hubcap access denied ({code}). API key likely expired.")
+                        if hubcap_key_sent:
+                            hubcap_key_expired = True
+                            logger.warning(f"LumaDeck: Hubcap access denied ({code}). API key likely expired.")
+                        else:
+                            logger.warning(f"LumaDeck: Hubcap access denied ({code}) with no API key configured.")
                     continue
 
                 total = int(resp.headers.get("Content-Length", "0") or "0")
