@@ -707,13 +707,16 @@ def _remove_from_additional_apps(appid: int) -> None:
 
 
 def _find_game_dir_fallback(appid: int) -> str:
-    """Multi-strategy fallback to find a game's install directory when the ACF is missing.
+    """Find a game's install directory when the ACF is missing, by EXACT
+    folder name only, across every library folder:
 
-    Strategies (in order):
-    1. Steam API installdir — official directory name from Steam store
-    2. Lua file installdir hint — parsed from the download's lua script
-    3. Name match — fuzzy match game name against steamapps/common entries
-    4. All library folders — repeat strategies across all Steam library paths
+    1. Steam API installdir — the folder name Valve uses for this app
+    2. the game's name (lua / applist) as the folder name, case-insensitive
+
+    The result is deleted by uninstall_game_full, so no guessing: the old
+    prefix match (first 20 characters) and the "appid appears in the folder
+    name" scan could return ANOTHER game's folder. No exact match → "" and the
+    caller leaves the files alone.
     """
     from steam_utils import detect_steam_install_path
 
@@ -751,7 +754,7 @@ def _find_game_dir_fallback(appid: int) -> str:
     except Exception:
         pass
 
-    # Strategy 2: Lua file — extract game name from download log
+    # The game's name, for the exact-name match below
     game_name = ""
     try:
         from downloads import _get_loaded_app_name, _get_app_name_from_applist
@@ -759,7 +762,7 @@ def _find_game_dir_fallback(appid: int) -> str:
     except Exception:
         pass
 
-    # Strategy 3: Name match across all library folders
+    # Strategy 2: exact (case-insensitive) name match across all library folders
     if game_name:
         game_lower = game_name.lower()
         for lib in library_paths:
@@ -767,35 +770,13 @@ def _find_game_dir_fallback(appid: int) -> str:
             if not os.path.isdir(common_path):
                 continue
             try:
-                # Exact match first
                 for d in os.listdir(common_path):
                     if d.lower() == game_lower:
                         candidate = os.path.join(common_path, d)
                         if os.path.isdir(candidate):
                             return candidate
-                # Prefix match as fallback
-                for d in os.listdir(common_path):
-                    dl = d.lower()
-                    if dl.startswith(game_lower[:20]) or game_lower.startswith(dl[:20]):
-                        candidate = os.path.join(common_path, d)
-                        if os.path.isdir(candidate):
-                            return candidate
             except Exception:
                 continue
-
-    # Strategy 4: Scan for appid in directory names (e.g. "app_2417610")
-    for lib in library_paths:
-        common_path = os.path.join(lib, "steamapps", "common")
-        if not os.path.isdir(common_path):
-            continue
-        try:
-            for d in os.listdir(common_path):
-                if str(appid) in d:
-                    candidate = os.path.join(common_path, d)
-                    if os.path.isdir(candidate):
-                        return candidate
-        except Exception:
-            continue
 
     return ""
 
