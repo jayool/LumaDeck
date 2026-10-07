@@ -26,7 +26,7 @@ To **remove** the key, clear the field and tap **Save Hubcap Key** again. That
 strips it from `api.json`, disables the Hubcap entry (without a key Hubcap only
 answers 401) and forgets the copy in the settings store, so a plugin reload
 does not bring it back. Adding and updating games keep working through Ryuu;
-search by name needs Hubcap and stops until you save a key again.
+search by name uses Steam's store and needs no credential.
 
 ## Ryuu cookie
 
@@ -165,7 +165,16 @@ Both API credentials expire, so LumaDeck surfaces it — without nagging:
   only.
 
 Hubcap expiry comes from its free `/user/stats` endpoint (it doesn't cost you a
-request). Ryuu expiry is read from the cookie itself when you import it.
+request). Ryuu has two signals: the cookie's own expiry date (captured at
+login, 30 days) and a **live check**, a GET of Ryuu's home page with the
+cookie, once an hour per cookie, that looks for the logged-in marker. Ryuu can
+drop a session before its date (measured 2026-10-07), so a dead session reads
+as *expired* even when the date is fine, and a download that Ryuu answers with
+401/403 marks it dead at once. The live check costs no download.
+
+When a download fails because a credential was rejected, the game page shows a
+**Hubcap API key expired** and/or **Ryuu session expired** row with a shortcut
+to Settings instead of the generic failure.
 
 ## Where the values live
 

@@ -15,7 +15,7 @@ import {
   getActiveDownloads,
   startDownload,
   detectStoreAppid,
-  searchHubcap,
+  searchGames,
   getApiKeyStatus,
   getGameNotices,
   restartSteam,
@@ -379,7 +379,7 @@ export function GameList() {
     doStartDownload(id);
   };
 
-  const handleSearchHubcap = async () => {
+  const handleSearchGames = async () => {
     // Clear stale results FIRST, so a too-short query doesn't leave the previous
     // search's list on screen.
     setSearchResults([]);
@@ -391,7 +391,7 @@ export function GameList() {
     setSearching(true);
     setSearchError("");
     try {
-      const result = await searchHubcap(searchQuery.trim());
+      const result = await searchGames(searchQuery.trim());
       if (result.success) {
         setSearchResults(result.results || []);
         if ((result.results || []).length === 0) {
@@ -783,7 +783,7 @@ export function GameList() {
             so an in-flight download stays visible regardless of input mode. */}
           </>
         ) : (
-          /* By name (Hubcap search) */
+          /* By name (Steam store search, no credential) */
           <div>
         <PanelSectionRow>
           <TextField
@@ -825,10 +825,10 @@ export function GameList() {
             layout="below"
             highlightOnFocus={false}
             bottomSeparator="none"
-            onClick={handleSearchHubcap}
+            onClick={handleSearchGames}
             disabled={searching || !canAddGames}
           >
-            {searching ? t("searching") : t("searchHubcap")}
+            {searching ? t("searching") : t("searchGames")}
           </ButtonItem>
         </PanelSectionRow>
         {searchError && (

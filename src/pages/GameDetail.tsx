@@ -1281,10 +1281,11 @@ export function GameDetail({ appid }: GameDetailProps) {
             </Field>
           </PanelSectionRow>
         )}
-        {/* Hubcap key expired → native actionable row that navigates to the
-            Hubcap key in Settings. */}
+        {/* A dead credential → native actionable row that navigates to
+            Settings (renew the Hubcap key / log in to Ryuu again). Both rows
+            show when both credentials were rejected. */}
         {downloadState?.status === "failed" &&
-          downloadState.errorCode === "hubcap_key_expired" && (
+          (downloadState.hubcapExpired || downloadState.errorCode === "hubcap_key_expired") && (
             <PanelSectionRow>
               <ButtonItem
                 layout="below"
@@ -1298,7 +1299,22 @@ export function GameDetail({ appid }: GameDetailProps) {
             </PanelSectionRow>
           )}
         {downloadState?.status === "failed" &&
-          downloadState.errorCode !== "hubcap_key_expired" && (
+          (downloadState.ryuuExpired || downloadState.errorCode === "ryuu_session_expired") && (
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                icon={<FaExclamationTriangle color="#ff8c00" />}
+                label={t("ryuuSessionExpiredTitle")}
+                description={t("ryuuSessionExpiredBody")}
+                onClick={() => Navigation.Navigate(ROUTE_SETTINGS)}
+              >
+                {t("ryuuSessionExpiredButton")}
+              </ButtonItem>
+            </PanelSectionRow>
+          )}
+        {downloadState?.status === "failed" &&
+          downloadState.errorCode !== "hubcap_key_expired" &&
+          downloadState.errorCode !== "ryuu_session_expired" && (
             <PanelSectionRow>
               <Field
                 icon={<FaExclamationTriangle color="#ff4444" />}

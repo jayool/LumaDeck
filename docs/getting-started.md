@@ -50,7 +50,7 @@ There are **three ways** to pick a game, all on the main LumaDeck page:
 
 - **From its Steam store page** — open the store page and LumaDeck auto-detects
   the AppID (shown below).
-- **Search by name** — type a title under *Search by Name* (uses Hubcap).
+- **Search by name** — type a title under *Search by Name* (Steam store search, no credential).
 - **By AppID** — type the Steam AppID directly into *Add Game*.
 
 All three are covered in [Adding & updating games](adding-and-updating-games.md).

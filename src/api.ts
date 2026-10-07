@@ -94,8 +94,8 @@ export const updateHubcapKey = async (key: string) =>
 export const loadHubcapKey = async () =>
   parseResult(await call<[], string>("load_hubcap_key"));
 
-export const searchHubcap = async (query: string) =>
-  parseResult(await call<[string], string>("search_hubcap", query));
+export const searchGames = async (query: string) =>
+  parseResult(await call<[string], string>("search_games", query));
 
 // Hubcap key + Ryuu cookie expiry for the UI. Returns
 //   { success, hubcap: {state, days_left, expires_at, daily_usage, daily_limit},

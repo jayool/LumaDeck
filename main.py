@@ -364,9 +364,13 @@ class Plugin:
         from api_manifest import load_hubcap_key
         return _j({"success": True, "key": load_hubcap_key()})
 
+    async def search_games(self, query: str) -> str:
+        from api_manifest import search_games
+        return _j(await search_games(query))
+
     async def search_hubcap(self, query: str) -> str:
-        from api_manifest import search_hubcap
-        return _j(await search_hubcap(query))
+        from api_manifest import search_games
+        return _j(await search_games(query))
 
     async def get_credential_status(self) -> str:
         from api_manifest import get_credential_status

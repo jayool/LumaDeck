@@ -24,8 +24,8 @@ Every backend call goes through one pattern:
 
 - **Frontend** — `src/api.ts` wraps each backend method:
   ```ts
-  export const searchHubcap = async (query: string) =>
-    parseResult(await call<[string], string>("search_hubcap", query));
+  export const searchGames = async (query: string) =>
+    parseResult(await call<[string], string>("search_games", query));
   ```
   `call(...)` is Decky's RPC. Backend methods **always return a JSON string**;
   `parseResult()` deserialises it (and yields `{success:false}` on parse error).
@@ -34,9 +34,9 @@ Every backend call goes through one pattern:
   a thin wrapper that imports the relevant backend module and serialises the
   result with `_j(...)`:
   ```python
-  async def search_hubcap(self, query: str) -> str:
-      from api_manifest import search_hubcap
-      return _j(await search_hubcap(query))
+  async def search_games(self, query: str) -> str:
+      from api_manifest import search_games
+      return _j(await search_games(query))
   ```
 
 - **`backend/`** — the actual implementation. Modules are imported lazily inside

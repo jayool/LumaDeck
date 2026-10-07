@@ -20,8 +20,9 @@ The **Status** line reflects what's on disk:
 always downloaded by Steam natively afterwards, never by the plugin. Use it
 after a failed or partial install.
 
-If your Hubcap key is expired, this page shows a **Hubcap key expired** notice
-with a shortcut to fix it, instead of silently failing a re-download.
+If a re-download fails because a credential was rejected, this page shows a
+**Hubcap API key expired** or **Ryuu session expired** notice (both, when both
+were rejected) with a shortcut to Settings, instead of a generic failure.
 
 ## Auto-update
 

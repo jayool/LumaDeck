@@ -111,7 +111,7 @@ for unowned content and the services that minted those codes are gone
 Steam purged. LumaDeck's background job pins unpinned games to their installed
 build and puts missing manifests back within a minute; Steam picks the file up
 on its next retry (~30 s) and the loop ends by itself. If it persists, open the
-game page and use **Fix Update** (re-fetches the Hubcap zip and re-pins), then
+game page and use **Fix Update** (re-fetches the game zip from Hubcap or Ryuu and re-pins), then
 restart Steam.
 
 ## Still stuck?

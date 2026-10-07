@@ -17,11 +17,12 @@ natively. There are three ways to pick the game, all on the main QAM page.
 Type a Steam **AppID** directly into the *Add Game* field and tap **Download
 Manifest**.
 
-### By name (Hubcap search)
+### By name (Steam store search)
 
-Under **Search by Name**, type a game title and tap **Search Hubcap**. Results
-list matching games (soundtracks, demos and tools are filtered out); tap one to
-fill its AppID into the *Add Game* field. *Requires a valid Hubcap key.*
+Under **Search by Name**, type a game title and tap **Search**. Results come
+from Steam's own store search (soundtracks, demos and tools are filtered out);
+tap one to fill its AppID into the *Add Game* field. No credential needed.
+Whether a hub has the game is answered by the download itself, as for By AppID.
 
 ### Before you confirm
 
@@ -110,16 +111,17 @@ playing, a pending update is simply dropped. While that lasts, updates go the
 build (`api.steamcmd.net`), fetches the new manifests from the
 `manifest.luastools.xyz` archive, then one at a time from Hubcap's
 `/generate/manifest` (its daily single-manifest quota, one try per manifest
-per day, any build), then from the Hubcap zip (once a day per game, current
-build only), and moves the pin only when it has **every** manifest. The job also probes a provider
+per day, any build; needs a Hubcap key), then from a game zip (once a day per
+game, current build only; Hubcap or Ryuu, whichever `api.json` source answers
+first), and moves the pin only when it has **every** manifest. The job also probes a provider
 every 30 minutes and, when one serves valid codes again, releases the pins
 it set. Nothing is shown to the user in either direction.
 
 With an older lumalinux (no `gmrc.json`) LumaDeck stays in the pinned model.
 
 A build that adds a **new depot** (a new DLC, a restructure) needs its
-decryption key too, which only a fresh Hubcap zip carries. The job fetches that
-zip (same daily limit) and installs it through the normal path; until then a
+decryption key too, which only a fresh game zip carries (Hubcap or Ryuu). The
+job fetches that zip (same daily limit) and installs it through the normal path; until then a
 keyless DLC is simply invisible to Steam — no error.
 
 The per-game **auto-update** toggle (on the [game page](managing-a-game.md#auto-update))
@@ -139,8 +141,8 @@ a Steam-side uninstall/reinstall works offline.
 ### When an update gets stuck
 
 The **Update stuck** notice and **Fix Update** button remain as the manual way
-out: tap it and the plugin re-fetches the Hubcap zip (bringing any new key),
+out: tap it and the plugin re-fetches the game zip (bringing any new key),
 re-deploys `keys.txt` and the manifests, and re-pins. With the job above this
 should be rare — it never moves a pin without every key and manifest in hand —
 but it covers an update Steam had already started, or anything unforeseen.
-(Re-fetching needs a valid Hubcap key.)
+(Re-fetching needs a valid Hubcap key or Ryuu session.)

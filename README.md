@@ -31,7 +31,7 @@ Injection comes from a wrapper at `~/.local/share/SLSsteam/path/steam` (installe
 Before installing anything, set the API credentials so the plugin can fetch manifests:
 
 - Open LumaDeck → **Settings → API Credentials**.
-- Paste your **Hubcap API key** (and, if you use it, your **Ryuu cookie**) and save.
+- Set at least one provider: paste your **Hubcap API key**, or log in to **Ryuu** with Discord. Either one is enough to add and update games; search by name uses Steam's store and needs neither.
 
 To install a game:
 

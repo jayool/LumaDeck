@@ -5,7 +5,7 @@ through thin wrappers in `main.py` — see [Architecture](dev-architecture.md).
 
 | Module | Purpose |
 | --- | --- |
-| `api_manifest.py` | Manages the free-API manifest (`api.json`), the Hubcap key, the Ryuu cookie, Hubcap search, and credential-expiry status. |
+| `api_manifest.py` | Manages the free-API manifest (`api.json`), the Hubcap key, the Ryuu cookie, Steam store search (`search_games`), and credential status (Hubcap `/user/stats`; Ryuu cookie date plus a live home-page check once an hour). |
 | `ryuu_cookie.py` | Imports the Ryuu `session` cookie from Steam's CEF (Chromium) cookie store — finds the SQLite DB, decrypts the `v10`/`v11` value, captures its expiry. |
 | `cef_cdp.py` | Chrome DevTools Protocol client for Steam's CEF. Reads open store/library pages for AppID auto-detect, reads the LIVE cookie store (how the LuaTools login is captured the moment it lands, before CEF flushes it to disk), and deletes cookies on logout. Also `HiddenView`: an off-screen BrowserView created through SharedJSContext, found on the debug port by a placeholder URL, navigated and driven with `Runtime.evaluate` (`fetch_in_page` runs fetch() inside the page, as the browser); `navigate` + `wait_ready(expect_url)` wait for a real page load to land on the URL without a challenge, `html` reads the document. |
 | `downloads.py` | Game-manifest download flows and related utilities (async): the Hubcap zip install (always `steamidra_lite --pin`), the freeze toggle wrappers, and the orphan-`.acf` sweep that runs on plugin load (`sweep_orphan_stubs`, decision 20). |

@@ -1376,6 +1376,7 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
     # the terminal failure can surface a dedicated "renew your key" message + a
     # Settings link instead of the generic "Not available on any API" error (#21).
     hubcap_key_expired = False
+    ryuu_session_expired = False
 
     for api in apis:
         name = api.get("name", "Unknown")
@@ -1443,8 +1444,14 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
                 if code == unavailable_code:
                     continue
                 if code != success_code:
-                    if "ryuu.lol" in url and code in (401, 403):
-                        logger.warning(f"LumaDeck: Ryuu access denied ({code}). Check if cookie expired.")
+                    if "ryuu.lol" in url and code in (401, 403) and headers.get("Cookie"):
+                        ryuu_session_expired = True
+                        logger.warning(f"LumaDeck: Ryuu access denied ({code}). The session is no longer logged in.")
+                        try:
+                            from api_manifest import note_ryuu_rejected
+                            note_ryuu_rejected()
+                        except Exception:
+                            pass
                     if ("hubcapmanifest.com" in url or "morrenus.xyz" in url) and code in (401, 403):
                         if hubcap_key_sent:
                             hubcap_key_expired = True
@@ -1618,14 +1625,21 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
             logger.warning(f"LumaDeck: API '{name}' failed: {err}")
             continue
 
+    _set_download_state(appid, _terminal_failure(hubcap_key_expired, ryuu_session_expired))
+
+
+def _terminal_failure(hubcap_key_expired: bool, ryuu_session_expired: bool) -> dict:
+    """The state for "no source gave a zip". A dead credential gets its own
+    row in the game page (renew the key / log in again) instead of the
+    generic "Not available on any API"; both flags travel so the page can
+    show both rows when both are dead."""
+    state = {"status": "failed", "error": "Not available on any API",
+             "hubcapExpired": hubcap_key_expired, "ryuuExpired": ryuu_session_expired}
     if hubcap_key_expired:
-        _set_download_state(appid, {
-            "status": "failed",
-            "error": "Hubcap API key expired",
-            "errorCode": "hubcap_key_expired",
-        })
-    else:
-        _set_download_state(appid, {"status": "failed", "error": "Not available on any API"})
+        state.update({"error": "Hubcap API key expired", "errorCode": "hubcap_key_expired"})
+    elif ryuu_session_expired:
+        state.update({"error": "Ryuu session expired", "errorCode": "ryuu_session_expired"})
+    return state
 
 
 async def start_download(appid: int, target_library_path: str = "", owned: bool = False) -> dict:

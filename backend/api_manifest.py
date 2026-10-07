@@ -398,64 +398,60 @@ def load_hubcap_key() -> str:
     return _get_hubcap_key()
 
 
-async def search_hubcap(query: str) -> dict:
-    """Search for games by name using the Hubcap API."""
-    try:
-        key = _get_hubcap_key()
-        if not key:
-            return {"success": False, "error": "Hubcap API key not configured. Set it in Settings."}
+# Names that are not games: soundtracks, demos, tools... Store search lists
+# them next to the game they belong to.
+_SEARCH_BLACKLIST = [
+    "soundtrack", "ost", "original soundtrack", "artbook",
+    "graphic novel", "demo", "server", "dedicated server",
+    "tool", "sdk", "3d print model",
+]
 
+
+def _filter_search_results(items: list) -> list:
+    """[{appid, name}] from Steam store search items, non-games dropped."""
+    import re
+    out = []
+    for item in items or []:
+        if str(item.get("type") or "app") != "app":
+            continue
+        try:
+            appid = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        name = str(item.get("name") or f"Unknown ({appid})")
+        low = name.lower()
+        if any(re.search(r"\b" + kw + r"\b", low) for kw in _SEARCH_BLACKLIST):
+            continue
+        out.append({"appid": appid, "name": name})
+    return out
+
+
+async def search_games(query: str) -> dict:
+    """Search games by name with Steam's own store search. No credential: it
+    replaced Hubcap's /search (2026-10-07), which needed a valid Hubcap key and
+    was the one feature a Ryuu-only setup could not use. Whether a hub has the
+    game is answered by the download itself, as it always was for By AppID."""
+    try:
         if len(query.strip()) < 2:
             return {"success": False, "error": "Search query must be at least 2 characters"}
-
         from urllib.parse import urlencode
-        client = await ensure_http_client("HubcapSearch")
-        qs = urlencode({"q": query.strip(), "limit": 50})
-        # Morrenus → Hubcap rebrand. Endpoint still accepts Bearer auth (same
-        # mechanism SFF uses, see sff/lua/endpoints.py:181). Querystring api_key
-        # is the alternative the manifest endpoint accepts, but /search wants
-        # the header form.
+        client = await ensure_http_client("StoreSearch")
+        qs = urlencode({"term": query.strip(), "l": "english", "cc": "US"})
         resp = await client.get(
-            f"https://hubcapmanifest.com/api/v1/search?{qs}",
-            headers={"Authorization": f"Bearer {key}"},
-            timeout=15,
-        )
-
-        if resp.status_code == 401:
-            return {"success": False, "error": "Invalid API key. Check Settings."}
-        elif resp.status_code == 429:
-            return {"success": False, "error": "Daily API limit exceeded. Try again later."}
-        elif resp.status_code != 200:
-            try:
-                detail = resp.json().get("detail", resp.text)
-            except Exception:
-                detail = resp.text
-            return {"success": False, "error": f"API error ({resp.status_code}): {detail}"}
-
-        data = resp.json()
-        results = data.get("results", [])
-
-        # Filter out non-game results (soundtracks, demos, tools, etc.)
-        import re
-        blacklist = [
-            "soundtrack", "ost", "original soundtrack", "artbook",
-            "graphic novel", "demo", "server", "dedicated server",
-            "tool", "sdk", "3d print model",
-        ]
-        filtered = []
-        for game in results:
-            name = game.get("game_name", "")
-            name_lower = name.lower()
-            is_blacklisted = any(re.search(r'\b' + kw + r'\b', name_lower) for kw in blacklist)
-            if not is_blacklisted:
-                filtered.append({
-                    "appid": game.get("game_id"),
-                    "name": game.get("game_name", f"Unknown ({game.get('game_id', '?')})"),
-                })
-
-        return {"success": True, "results": filtered, "total": len(results), "filtered": len(filtered)}
+            f"https://store.steampowered.com/api/storesearch/?{qs}", timeout=15)
+        if resp.status_code != 200:
+            return {"success": False, "error": f"Steam store search failed ({resp.status_code})"}
+        data = resp.json() or {}
+        items = data.get("items") or []
+        filtered = _filter_search_results(items)
+        return {"success": True, "results": filtered, "total": len(items), "filtered": len(filtered)}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+async def search_hubcap(query: str) -> dict:
+    """Kept for callers of the old name."""
+    return await search_games(query)
 
 
 # Credential-expiry warning thresholds (days). Ryuu cookies live ~3 days, so a
@@ -528,8 +524,9 @@ async def get_credential_status() -> dict:
             logger.warning(f"Credential status: Hubcap stats failed: {exc}")
 
     # ---- Ryuu ----
-    ryuu = {"state": "none", "days_left": None, "expires_at": None}
-    if load_ryu_cookie():
+    ryuu = {"state": "none", "days_left": None, "expires_at": None, "live": None}
+    cookie = load_ryu_cookie()
+    if cookie:
         ryuu["state"] = "unknown"
         iso = load_ryu_cookie_expiry()
         if iso:
@@ -538,6 +535,66 @@ async def get_credential_status() -> dict:
             if state:
                 ryuu["state"] = state
                 ryuu["days_left"] = days
+        # The cookie's date says when Ryuu will drop the session; Ryuu can drop
+        # it earlier (measured 2026-10-07: a session Ryuu no longer honoured
+        # answered 403 "You must be logged in" long before its expiry).
+        live = await ryuu_session_live(cookie)
+        ryuu["live"] = live
+        if live is False:
+            ryuu["state"] = "expired"
+        elif live is True and ryuu["state"] == "unknown":
+            ryuu["state"] = "ok"
 
     return {"success": True, "hubcap": hubcap, "ryuu": ryuu}
+
+
+# ---------------------------------------------------------------------------
+# Ryuu: live session check
+# ---------------------------------------------------------------------------
+
+RYUU_LIVE_TTL_SECONDS = 60 * 60
+# {"value": <cookie value checked>, "at": <time>, "logged_in": True|False|None}
+_ryuu_live_cache: dict = {"value": None, "at": 0.0, "logged_in": None}
+
+
+def _ryuu_cookie_value(cookie: str) -> str:
+    """The bare `session` value out of a stored "session=<value>" cookie."""
+    cookie = (cookie or "").strip()
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.startswith("session="):
+            return part[len("session="):]
+    return cookie
+
+
+async def ryuu_session_live(cookie: str, force: bool = False):
+    """True = Ryuu still honours this session, False = it does not, None =
+    could not tell. One home-page GET per cookie per hour (no quota, no
+    download), the same check connect_ryuu runs before saving a cookie."""
+    import time as _time
+    value = _ryuu_cookie_value(cookie)
+    if not value:
+        return None
+    c = _ryuu_live_cache
+    if (not force and c["value"] == value and c["logged_in"] is not None
+            and _time.time() - c["at"] < RYUU_LIVE_TTL_SECONDS):
+        return c["logged_in"]
+    try:
+        import asyncio
+        from ryuu_cookie import _session_logged_in
+        verdict = await asyncio.get_running_loop().run_in_executor(None, _session_logged_in, value)
+    except Exception as exc:
+        logger.info(f"Ryuu: live session check failed ({exc})")
+        verdict = None
+    if verdict is not None:
+        c.update({"value": value, "at": _time.time(), "logged_in": verdict})
+    return verdict
+
+
+def note_ryuu_rejected() -> None:
+    """A download just got 401/403 from Ryuu with the stored cookie: remember
+    the session as dead until a new cookie is saved or the hour is up."""
+    import time as _time
+    _ryuu_live_cache.update({"value": _ryuu_cookie_value(load_ryu_cookie()),
+                             "at": _time.time(), "logged_in": False})
 
