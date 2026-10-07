@@ -706,11 +706,36 @@ def _remove_from_additional_apps(appid: int) -> None:
         pass
 
 
+def _installdir_from_appinfo(appid: int) -> str:
+    """Valve's folder name for `appid` (appinfo `config.installdir`), from
+    api.steamcmd.net, the PICS mirror pins.py already uses. Synchronous on
+    purpose: uninstall_game_full runs inside Decky's event loop, where an
+    awaited client cannot be driven from sync code (the old store-API call
+    raised "event loop is already running" and was swallowed; the store's
+    appdetails has no install_dir field anyway). "" on any failure."""
+    import json
+    import urllib.request
+    try:
+        from config import USER_AGENT
+        req = urllib.request.Request(
+            f"https://api.steamcmd.net/v1/info/{int(appid)}",
+            headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.load(resp)
+        app = (payload.get("data") or {}).get(str(int(appid))) or {}
+        installdir = str((app.get("config") or {}).get("installdir") or "").strip()
+        if installdir and "/" not in installdir and installdir not in (".", ".."):
+            return installdir
+    except Exception as exc:
+        logger.info(f"LumaDeck: installdir lookup failed for {appid}: {exc}")
+    return ""
+
+
 def _find_game_dir_fallback(appid: int) -> str:
     """Find a game's install directory when the ACF is missing, by EXACT
     folder name only, across every library folder:
 
-    1. Steam API installdir — the folder name Valve uses for this app
+    1. appinfo's config.installdir — the folder name Valve uses for this app
     2. the game's name (lua / applist) as the folder name, case-insensitive
 
     The result is deleted by uninstall_game_full, so no guessing: the old
@@ -740,19 +765,13 @@ def _find_game_dir_fallback(appid: int) -> str:
     except Exception:
         pass
 
-    # Strategy 1: Steam API installdir
-    try:
-        from downloads import _fetch_installdir_from_api
-        import asyncio
-        loop = asyncio.get_event_loop()
-        api_dir = loop.run_until_complete(_fetch_installdir_from_api(appid))
-        if api_dir:
-            for lib in library_paths:
-                candidate = os.path.join(lib, "steamapps", "common", api_dir)
-                if os.path.isdir(candidate):
-                    return candidate
-    except Exception:
-        pass
+    # Strategy 1: Valve's installdir (appinfo config.installdir)
+    api_dir = _installdir_from_appinfo(appid)
+    if api_dir:
+        for lib in library_paths:
+            candidate = os.path.join(lib, "steamapps", "common", api_dir)
+            if os.path.isdir(candidate):
+                return candidate
 
     # The game's name, for the exact-name match below
     game_name = ""

@@ -1255,23 +1255,6 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
             pass
 
 
-async def _fetch_installdir_from_api(appid: int) -> str:
-    """Fetch the official installdir from Steam's store API (like ACCELA does)."""
-    try:
-        client = await ensure_http_client("steam_api")
-        url = f"https://store.steampowered.com/api/appdetails?appids={appid}"
-        resp = await client.get(url, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            app_data = data.get(str(appid), {})
-            if app_data.get("success"):
-                install_dir = app_data.get("data", {}).get("install_dir")
-                if install_dir:
-                    logger.info(f"LumaDeck: installdir from Steam API: {install_dir}")
-                    return install_dir
-    except Exception as e:
-        logger.debug(f"LumaDeck: Failed to fetch installdir from API: {e}")
-    return ""
 def _parse_lua_depots(lua_path: str) -> list[dict]:
     """Parse a stplug-in lua file to extract depot/manifest info.
 
