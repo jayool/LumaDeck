@@ -114,6 +114,54 @@ def read_cloudredirect_version(so_path: str) -> Optional[str]:
     return result
 
 
+# --- lumalinux version from disk -------------------------------------------
+
+# liblumalinux.so embeds its version twice: the gmrc User-Agent
+# ("lumalinux/v0.22.1") and the preinit log line ("lumalinux v0.22.1 preinit").
+# Either anchors the compare. Reading the file means the update shows whether
+# or not Steam has loaded lumalinux; status.json (what the .so writes once it
+# is loaded) stays the health source and the fallback for a build without the
+# string.
+_LL_VERSION_RE = re.compile(rb"lumalinux[/ ]v?(\d+\.\d+\.\d+)")
+_ll_version_cache: dict = {}
+
+
+def read_lumalinux_version(so_path: str) -> Optional[str]:
+    """The version compiled into a liblumalinux.so, or None."""
+    try:
+        stat = os.stat(so_path)
+    except OSError:
+        return None
+    key = (so_path, stat.st_mtime_ns, stat.st_size)
+    if key in _ll_version_cache:
+        return _ll_version_cache[key]
+    try:
+        with open(so_path, "rb") as fh:
+            blob = fh.read()
+    except Exception as exc:
+        logger.info(f"components: cannot read {so_path} ({exc})")
+        return None
+    match = _LL_VERSION_RE.search(blob)
+    result = match.group(1).decode("ascii") if match else None
+    if result is None:
+        logger.info(f"components: no version string in {so_path}")
+    _ll_version_cache[key] = result
+    return result
+
+
+def installed_lumalinux_version(health_version: Optional[str] = None) -> Optional[str]:
+    """Disk first, status.json second."""
+    from paths import get_lumalinux_so_path
+    so_path = get_lumalinux_so_path()
+    from_disk = read_lumalinux_version(so_path) if so_path else None
+    return from_disk or health_version
+
+
+async def check_lumalinux_update(health_version: Optional[str] = None, force: bool = False) -> dict:
+    """lumalinux update = a newer release than the .so on disk."""
+    return await has_update("jayool", "lumalinux", installed_lumalinux_version(health_version), force=force)
+
+
 async def check_cloudredirect_update(force: bool = False) -> dict:
     """CloudRedirect update = a newer Linux release than the .so on disk.
 
@@ -210,7 +258,7 @@ async def get_components_status(force: bool = False) -> dict:
     sls_update = no_update if sls_forced else await _safe(
         check_slssteam_update(force=force), no_update)
     ll_update = no_update if ll_forced else await _safe(
-        has_update("jayool", "lumalinux", ll_health.get("version"), force=force), no_update)
+        check_lumalinux_update(ll_health.get("version"), force=force), no_update)
     cr_update = no_update if cr_forced else await _safe(
         check_cloudredirect_update(force=force), no_update)
 

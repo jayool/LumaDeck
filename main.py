@@ -249,11 +249,13 @@ class Plugin:
         return _j(await check_cloudredirect_update())
 
     async def check_lumalinux_update(self) -> str:
-        """{installed, latest, has_update, url} via GitHub Releases (cached 6h)."""
+        """{installed, latest, has_update, url}: the version compiled into
+        liblumalinux.so on disk (status.json as fallback), the same check the
+        components panel runs, so the update shows even while Steam has not
+        loaded lumalinux."""
+        from components import check_lumalinux_update
         from paths import read_lumalinux_health
-        from update_checks import has_update
-        installed = read_lumalinux_health().get("version")
-        return _j(await has_update("jayool", "lumalinux", installed))
+        return _j(await check_lumalinux_update(read_lumalinux_health().get("version")))
 
     async def get_components_status(self, force: bool = False) -> str:
         """Unified per-component health + update + headcrab gate + plugin, in one
