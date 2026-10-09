@@ -729,12 +729,11 @@ def _wrapper_coverage_present() -> bool:
 # The load-bearing lumalinux hooks: if one of THESE reports "failed", downloads
 # are genuinely broken (a real Steam-build mismatch). DepotKey serves the AES
 # keys, the package-0 finder surfaces the content depots. Everything else
-# (GMRC, BuildDep, ShaderDepot, the Sls* patches) is non-critical: GMRC is
-# opt-in and off by default since lumalinux 0.20.0 (the request-code providers
-# died on 2026-09-09; games install from pre-seeded manifests and never ask for
-# a code), BuildDep is pin-only AND disabled outright since SLSsteam 20260714
-# owns BuildDepotDependency. Neither "failed" must trip "Steam build not
-# supported". See lumalinux docs/RESEARCH.md §11.6.
+# (GMRC, BuildDep, ShaderDepot, the Sls* patches) is non-critical: GMRC is on
+# by default but a miss only loses the native fetch (games still install from
+# the manifests LumaDeck pre-seeds), BuildDep is pin-only AND disabled outright
+# since SLSsteam 20260714 owns BuildDepotDependency. Neither "failed" must trip
+# "Steam build not supported". See lumalinux docs/nosotros.md §2.1.
 _CRITICAL_LUMALINUX_HOOKS = {"DepotKey", "PackageZeroFinder"}
 
 
