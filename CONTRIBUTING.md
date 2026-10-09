@@ -97,12 +97,12 @@ main.py           Plugin entry point — exposes async methods to frontend
 python -m unittest discover -s tests     # backend unit tests, no Steam needed (399 on 2026-10-09)
 ```
 
-On-device validation of the whole stack (installs, updates, the pin / native
-switch) is written up once, in lumalinux's
-[`docs/design/update-testing.md`](https://github.com/jayool/lumalinux/blob/main/docs/design/update-testing.md):
-Part 1 is the pin → unpin → auto-update cycle, Part 4 the 0.9 native model
-(V1–V4). Run those on a SteamOS box or the codespace before a release that
-touches `pins.py` or `downloads.py`.
+Validating a lumalinux change on a real Steam is in lumalinux's
+[`docs/maintenance.md`](https://github.com/jayool/lumalinux/blob/main/docs/maintenance.md) §C.
+For a release that touches `pins.py` or `downloads.py`, the dated on-device
+tests in lumalinux's `docs/nosotros.md` §5.2 (F4 and F5: native install, pins
+released and re-applied when providers go down and come back) say what was
+checked and what to re-run on a SteamOS box or the codespace.
 
 ## Submitting a PR
 
