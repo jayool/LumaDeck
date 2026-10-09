@@ -34,13 +34,17 @@ pnpm run watch       # watch mode
 
 ### Deploy to Deck
 
-Edit `deploy.sh` with your Deck's IP, then:
+There is no deploy script in the repo. Build, then pack the same layout the
+release workflow does (`.github/workflows/release.yml`, "Create plugin zip"):
+`plugin.json`, `main.py`, `package.json`, `dist/` and `backend/` inside a
+`LumaDeck/` folder, zipped as `LumaDeck.zip`. Install it from Decky ▸ Settings ▸
+Developer ▸ Install Plugin from ZIP, or copy the folder to
+`~/homebrew/plugins/LumaDeck/` over SSH and restart Decky Loader.
 
-```bash
-bash deploy.sh
-```
-
-This copies the plugin to `/home/deck/homebrew/plugins/LumaDeck/` and restarts Decky Loader.
+The release zip also carries binaries that are not in git: Goldberg (gbe_fork)
+in `backend/deps/Goldberg` and the EOS proxy in `backend/deps/EosProxy`, both
+fetched by the workflow. A local build without them works except for
+**Apply Goldberg** and the EOS part of the Online toggle.
 
 ---
 
@@ -53,6 +57,8 @@ backend/          Python (async) — all plugin logic
   slssteam_ops.py SLSsteam configuration (tokens, DLCs, FakeAppId)
   installer.py    Runs lumalinux setup.sh (wrapper model): SLSsteam + CR + lumalinux + .NET
   desktop_handoff.py  Desktop hand-off (Steam downgrade / re-inject)
+  pins.py         Background job: native updates, pins, depotcache heal
+  manifests.py    Where a manifest comes from (archive, luastools, Hubcap)
   components.py   Per-component health + update status (Components panel)
   steam_utils.py  VDF parser, library detection, game path resolution
   fixes.py        Community fix download/apply/remove
@@ -65,8 +71,11 @@ src/              TypeScript + React — Decky frontend
     GameList.tsx  Main page
     GameDetail.tsx Game detail and actions
     Settings.tsx  Plugin settings
+    Library.tsx   Full-screen My Games
+    Help.tsx      In-plugin help
   api.ts          Frontend ↔ backend bridge (call())
   i18n.ts         Translations (EN + PT-BR)
+  features.ts     Feature flags (ACHIEVEMENTS_ENABLED)
 
 main.py           Plugin entry point — exposes async methods to frontend
 ```
@@ -76,19 +85,21 @@ main.py           Plugin entry point — exposes async methods to frontend
 - All Python methods in `main.py` must be `async` (Decky requirement)
 - Blocking I/O runs in executor via `loop.run_in_executor()`
 - Frontend calls backend via `@decky/api` `call()`
-- Steam Deck paths use `/home/deck/` explicitly (Decky runs as root)
+- Decky runs the backend as root: resolve the real user, home and uid through
+  `backend/platform_info.py`, never a hard-coded `/home/deck` (SteamOS still
+  resolves to `deck` / `/home/deck`)
 
 ---
 
 ## Testing
 
 ```bash
-python -m unittest discover -s tests     # backend unit tests, no Steam needed
+python -m unittest discover -s tests     # backend unit tests, no Steam needed (399 on 2026-10-09)
 ```
 
 On-device validation of the whole stack (installs, updates, the pin / native
 switch) is written up once, in lumalinux's
-[`docs/update-testing.md`](https://github.com/jayool/lumalinux/blob/main/docs/update-testing.md):
+[`docs/design/update-testing.md`](https://github.com/jayool/lumalinux/blob/main/docs/design/update-testing.md):
 Part 1 is the pin → unpin → auto-update cycle, Part 4 the 0.9 native model
 (V1–V4). Run those on a SteamOS box or the codespace before a release that
 touches `pins.py` or `downloads.py`.
@@ -116,7 +127,8 @@ To add a new language, duplicate one of the existing blocks and translate the va
 
 ## Licença / License
 
-By contributing, you agree your code will be released under the [MIT License](LICENSE).
+By contributing, you agree your code will be released under the MIT License,
+inherited from DeckTools (see the README).
 
 ---
 

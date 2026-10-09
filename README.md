@@ -2,21 +2,21 @@
 
 Decky Loader plugin for Steam Deck — game library and configuration manager with a **lumalinux backend**. Fork of [DeckTools](https://github.com/lopesleo/DeckTools) by lopesleo.
 
-> ⚠️ **Educational / research use only.** Use it with your own Steam account and content. The plugin does not host or distribute any third-party content; it only orchestrates installs around SLSsteam, lumalinux, Goldberg, Steamless and (optionally) CloudRedirect.
+> ⚠️ **Educational / research use only.** Use it with your own Steam account and content. The plugin does not host or distribute any third-party content; it only orchestrates installs around SLSsteam, lumalinux, CloudRedirect, Goldberg and Steamless.
 
 ## Installation
 
 1. **Download the latest LumaDeck zip** from the [releases page](https://github.com/jayool/LumaDeck/releases).
 
-2. **Install it in Decky Loader** as a custom plugin: in the Decky settings on the Deck, point it at the downloaded zip. Decky unpacks the plugin and restarts itself.
+2. **Install it in Decky Loader** as a custom plugin: Decky ▸ Settings ▸ Developer ▸ **Install Plugin from ZIP**, and pick the downloaded zip. Decky unpacks and loads the plugin.
 
-3. **Install the components from the QAM.** Open LumaDeck in the QAM. On a fresh setup (nothing installed yet) it shows a **Quick Install** button that installs and configures everything — SLSsteam + CloudRedirect, the .NET 9 runtime, and lumalinux — in the correct order in one tap. This is the recommended path.
+3. **Install the components from the QAM.** Open LumaDeck in the QAM. On a fresh setup (nothing installed yet) it shows a **Quick Install** button that installs and configures everything — SLSsteam, CloudRedirect, lumalinux, netsock and the .NET 9 runtime — in the correct order in one tap. This is the recommended path.
 
    To install or reapply components **individually**, use **Settings → Components**. You do **not** need to do this after a Steam update — launch coverage self-heals (see [After a Steam update](#after-a-steam-update)), and Settings → Components tells you when something genuinely needs a reinstall. The wiki documents each one: see [Getting started](docs/getting-started.md#2-install-the-components) and [Components & health](docs/components-and-health.md).
 
-4. **(Optional) Sign into your cloud provider.**
+4. **(Optional) Sign into your cloud provider** for cloud saves.
 
-   CloudRedirect is installed with the base dependencies in step 3, so the *library* is in place but no provider is signed in. The CloudRedirect Flatpak's sign-in opens a real browser, which gamemode can't drive — switch to desktop mode once, open the **CloudRedirect** app from the application menu, and sign into Google Drive / OneDrive / Dropbox. The Dependencies panel will then show *CloudRedirect provider: Configured* once tokens exist at `~/.config/CloudRedirect/tokens_<provider>.json`.
+   CloudRedirect is installed in step 3 but does nothing until a provider is signed in. Its sign-in opens a real browser, which Game Mode can't drive: switch to Desktop mode once, open the **CloudRedirect** app from the application menu, and sign into Google Drive or OneDrive (or set up S3, R2 or a folder). Settings → Components then shows CloudRedirect as configured. See [Cloud saves](docs/cloud-saves.md), including the games that can freeze Steam on exit.
 
 ### After a Steam update
 
@@ -47,21 +47,22 @@ For the full step-by-step of what the plugin does under the hood, see [How a gam
 This is what the plugin does end-to-end when you tap **Download Manifest** in the QAM:
 
 1. **Manifest fetch.** The backend queries the enabled APIs (Hubcap, Ryuu, etc.) listed in `api.json`, picks the first one that responds with a valid zip, and downloads it to a temp directory. Progress for *this* phase (a few MB) is shown in the plugin UI.
-2. **Process the zip.** The plugin extracts it, optionally enriches the `.lua` with a Linux depot from PICS (only if the corresponding `.manifest` is already in the extracted tree), and hands the result to `steamidra_lite.py` via subprocess. The plugin first keeps a copy of the zip and of every `.manifest` it carries under `~/.local/share/lumadeck/` (the archive it heals `depotcache/` from later). The script does the heavy lifting: extracts `.manifest` files into `depotcache/`, writes `keys.txt` for lumalinux, injects depot keys into `config.vdf`, adds the AppID to SLSsteam's `AdditionalApps`, **pins the game to the zip's build** in SLSsteam's `ManifestIds`, and copies the `.lua` to `stplug-in/` for ecosystem interop. It does **not** write an `appmanifest` — Steam creates that when you press Install, in whichever library you choose.
+2. **Process the zip.** The plugin extracts it, optionally enriches the `.lua` with a Linux depot from PICS (only if the corresponding `.manifest` is already in the extracted tree), and hands the result to `steamidra_lite.py` via subprocess. The plugin first keeps a copy of the zip and of every `.manifest` it carries under `~/.local/share/lumadeck/` (the archive it heals `depotcache/` from later). The script does the heavy lifting: extracts `.manifest` files into `depotcache/`, writes `keys.txt` for lumalinux, injects depot keys into `config.vdf`, adds the AppID to SLSsteam's `AdditionalApps`, and copies the `.lua` to `stplug-in/` for ecosystem interop. The game is left **unpinned** while a manifest-code provider answers (Steam installs Valve's current build), and **pinned to the zip's build** in SLSsteam's `ManifestIds` when none does. It does **not** write an `appmanifest` — Steam creates that when you press Install, in whichever library you choose.
 3. **Live refresh (no restart).** LumaDeck hot-reloads SLSsteam's config and lumalinux broadcasts a licence-reconcile so Steam re-reads ownership and appinfo **without a restart** — the game appears in your library right away. (Fallback: if lumalinux's reconcile hook isn't available on your Steam build, LumaDeck holds the game back and you **restart Steam manually** instead, which refreshes the config the slow way.)
-4. **Native download.** The game is in the library, ready to install. You press **Install** in Steam and it downloads like a normal owned title — the manifests are already in `depotcache/`, so Steam never asks Valve for a manifest request code (the services that used to mint those died on 2026-09-09), and the lumalinux DepotKey hook serves the keys so Steam can decrypt. **Progress for this phase (the GBs) is shown in the Steam library itself**, not in the plugin.
+4. **Native download.** The game is in the library, ready to install. You press **Install** in Steam and it downloads like a normal owned title. When Steam needs a manifest it does not have, lumalinux gets the request code from a provider and checks it against Valve's CDN first; when no provider answers, the pinned manifests already in `depotcache/` are what Steam installs. The lumalinux DepotKey hook serves the keys so Steam can decrypt. **Progress for this phase (the GBs) is shown in the Steam library itself**, not in the plugin.
 
 ## Update flow
 
-Every game LumaDeck adds is **pinned** to the build whose manifests are on
-disk, and LumaDeck keeps that pin current: a background job checks Valve's
-current build every 30 minutes and, when a hub has the new manifests (the
-GitHub manifest repo, else Hubcap), it seeds them and moves the pin. Steam then
-applies the update the next time you launch the game or restart Steam — exactly
-like an update of a game you own. Nothing to press. The per-game
-**auto-update** toggle turns that off and freezes the game at its build.
+Steam updates LumaDeck games itself, like games you own. While a manifest-code
+provider answers, a game carries **no pin** and Steam follows Valve's current
+build. If every provider goes down, a background job **pins each game to its
+installed build** within a minute, so installed games keep working; while that
+lasts it moves the pins every 30 minutes when it can get the new build's
+manifests (the `manifest.luastools.xyz` archive, else Hubcap), and it releases
+the pins when a provider comes back. Nothing to press. The per-game
+**auto-update** toggle turns all of this off and freezes the game at its build.
 
-**Change version** (game page → Updates) lists the game's last 10 builds from
+**Change version** on the game page lists the game's last 10 builds from
 SteamDB, with date and build id, marked when a LuaTools fix targets one; pick
 one, install, restart Steam, and Steam downloads that exact build. The game
 stays frozen there until you turn auto-update back on.
@@ -70,8 +71,7 @@ Occasionally an update gets stuck (a new depot needs a decryption key the game
 doesn't have yet). LumaDeck flags it and a **Fix Update** button re-deploys a
 fresh manifest to unblock it; your installed version keeps working meanwhile.
 
-Full mechanism (why pinning, how the pin moves, stuck-update handling):
-[Adding & updating games → Updating a game](docs/adding-and-updating-games.md#updating-a-game).
+Full mechanism: [Adding & updating games → Updating a game](docs/adding-and-updating-games.md#updating-a-game).
 
 ## What's different from DeckTools
 
@@ -80,7 +80,7 @@ DeckTools downloads game files via **DepotDownloaderMod** (a .NET CLI) running o
 |                            | DeckTools (DDL)              | LumaDeck (native + lumalinux) |
 | -------------------------- | ---------------------------- | ----------------------------- |
 | Download executor          | DepotDownloaderMod (.NET)    | Steam native                  |
-| External dependencies      | .NET 9 runtime, ACCELA       | lumalinux artifact, SLSsteam  |
+| External dependencies      | .NET 9 runtime, ACCELA       | lumalinux, SLSsteam, CloudRedirect (.NET 9 only for Steamless) |
 | Sensitive to Steam updates | No (DDL is independent)      | Yes (hooks may need new patterns) |
 
 Everything else (SLSsteam config management, Goldberg, community fixes, auto-detect AppID, search) is **kept from DeckTools** and continues to work the same way. (Achievements are now handled natively by SLSsteam; the old generator UI is hidden behind a flag.)
@@ -94,7 +94,7 @@ The native-Steam-download approach is a fundamental backend change that wouldn't
 - [**Wiki / docs**](docs/README.md) — task-oriented user & developer guides (credentials, managing games, troubleshooting, architecture, …)
 - [lumalinux README](https://github.com/jayool/lumalinux) — the hooks themselves, build flow, manual install steps
 - [lumalinux maintenance docs](https://github.com/jayool/lumalinux/blob/main/docs/maintenance.md) — what to do after a SteamOS / Steam client update
-- [lumalinux cloudredirect docs](https://github.com/jayool/lumalinux/blob/main/docs/cloudredirect.md) — running side by side with CloudRedirect's flatpak; `LD_PRELOAD` ordering
+- [CloudRedirect analysis](https://github.com/jayool/lumalinux/blob/main/docs/cloudredirect.md) (Spanish) — what CloudRedirect does inside Steam and the known risks
 - [DESIGN.md](DESIGN.md) — decision log: why LumaDeck is built the way it is
 - [DESIGN_UI.md](DESIGN_UI.md) — how each UI element is built, and the rules that keep the UI consistent
 
@@ -108,11 +108,14 @@ LumaDeck is a fork of [DeckTools](https://github.com/lopesleo/DeckTools) by **lo
 | [LuaToolsLinux](https://github.com/Star123451/LuaToolsLinux)               | Star123451        | Original project that inspired DeckTools                                      |
 | [SLSsteam](https://github.com/AceSLS/SLSsteam)                             | AceSLS            | Steam ownership / licensing layer                                             |
 | [lumalinux](https://github.com/jayool/lumalinux)                           | jayool            | Native depot-key / manifest hooks for `steamclient.so` (Linux i386)           |
-| [SLScheevo](https://github.com/xamionex/SLScheevo)                         | xamionex          | Achievement file generator for SLSsteam-managed games                         |
+| [SLScheevo](https://github.com/xamionex/SLScheevo)                         | xamionex          | Achievement file generator the old generator was first built on (no longer used) |
 | [ACCELA](https://github.com/nichelimux/ACCELA)                             | nichelimux        | Standalone desktop app — not a dependency, and no longer interoperated with (the marker writing was dropped with the `.acf` stub) |
 | [Goldberg (gbe_fork)](https://github.com/Detanup01/gbe_fork)               | Detanup01         | Steam API emulator (bundled from `Detanup01/gbe_fork`)                        |
+| [Steamless](https://github.com/atom0s/Steamless)                           | atom0s            | SteamStub DRM remover (bundled CLI)                                           |
+| [steamnetsock-patch](https://github.com/yesyes0649/steamnetsock-patch), [eos-proxy](https://github.com/yesyes0649/eos-proxy) | yesyes0649 | netsock fix and the EOS proxy behind the Online toggle |
 | [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)          | SteamDeckHomebrew | Plugin platform                                                               |
 | [Hubcap](https://hubcapmanifest.com)                                       | Hubcap            | Manifest API (formerly Morrenus)                                              |
+| [Ryuu](https://generator.ryuu.lol)                                         | Ryuu              | Manifest API (Discord login)                                                  |
 | [Headcrab / h3adcr-b](https://github.com/Deadboy666/h3adcr-b)              | Deadboy666        | Steam client-downgrade data (compat pin + sources) used by the break-recovery escape-hatch |
 | [CloudRedirect](https://github.com/Selectively11/CloudRedirect)            | Selectively11     | Cloud-save RPC redirector to third-party providers                            |
 
