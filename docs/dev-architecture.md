@@ -11,8 +11,8 @@ UI) talking to a **Python backend** (runs as a privileged process).
 
 ```
 src/ (frontend, React)                     main.py + backend/ (Python)
-  pages/  GameList, GameDetail,              Plugin class: one async method
-          Settings, Downloads, Help            per frontend call, each a thin
+  pages/  GameList, GameDetail, Library,     Plugin class: one async method
+          Settings, Help                       per frontend call, each a thin
   components/  banners, cards, modals          wrapper that imports a backend
   api.ts   ── call("method", args) ─────►       module and returns _j(result)
   i18n.ts                              ◄──    backend/*.py: the real logic
@@ -53,15 +53,18 @@ Every backend call goes through one pattern:
 
 `src/index.tsx` (`definePlugin`):
 
-- Registers routes for the sub-pages (`GameDetail`, `Settings`, `Downloads`).
+- Registers routes for the full-screen pages (`GameDetail`, `Settings`,
+  `Library`). `Help` is a Settings tab, not a route.
 - The QAM panel content is `<GameList />`.
 - Patches the Steam **library app page** to inject an "Added via LumaDeck"
   button (`patchLibraryApp`).
 
 ## Where state comes from
 
-Pages fetch on mount via `api.ts` and render. Health/update signals
-(`get_*_health`, `check_*_update`) drive the banners on `GameList`; the
+Pages fetch on mount via `api.ts` and render. One call,
+`get_components_status` (`backend/components.py`), returns every component's
+health and update state and drives the status list on `GameList`
+(`components/SystemStatus.tsx`); the
 Components panel in `Settings` polls a few times after mount because an
 install can restart Steam mid-flight and tear the UI down (see the comment on
 the retry timers in `Settings.tsx`).
