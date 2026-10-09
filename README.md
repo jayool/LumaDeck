@@ -37,14 +37,14 @@ To install a game:
 
 1. From Steam, open the **Store page** of the game you want.
 2. Open LumaDeck in the QAM. The plugin detects the AppID of the page you have open and **auto-fills it** in the "Add game" input.
-3. Tap **Download Manifest**. The plugin fetches the manifest and processes it. The game appears in your library **without a Steam restart** (if it doesn't show up, your Steam build may not support the live refresh — restart Steam once and it appears).
+3. Tap **Add game**. The plugin fetches the manifest and processes it. The game appears in your library **without a Steam restart** (if it doesn't show up, your Steam build may not support the live refresh — restart Steam once and it appears).
 4. The game is ready to install. Press **Install** on it in Steam and it downloads natively. **Progress shows in the Steam library**, not in the plugin.
 
 For the full step-by-step of what the plugin does under the hood, see [How a game install works](#how-a-game-install-works) below.
 
 ## How a game install works
 
-This is what the plugin does end-to-end when you tap **Download Manifest** in the QAM:
+This is what the plugin does end-to-end when you tap **Add game** in the QAM:
 
 1. **Manifest fetch.** The backend queries the enabled APIs (Hubcap, Ryuu, etc.) listed in `api.json`, picks the first one that responds with a valid zip, and downloads it to a temp directory. Progress for *this* phase (a few MB) is shown in the plugin UI.
 2. **Process the zip.** The plugin extracts it, optionally enriches the `.lua` with a Linux depot from PICS (only if the corresponding `.manifest` is already in the extracted tree), and hands the result to `steamidra_lite.py` via subprocess. The plugin first keeps a copy of the zip and of every `.manifest` it carries under `~/.local/share/lumadeck/` (the archive it heals `depotcache/` from later). The script does the heavy lifting: extracts `.manifest` files into `depotcache/`, writes `keys.txt` for lumalinux, injects depot keys into `config.vdf`, adds the AppID to SLSsteam's `AdditionalApps`, and copies the `.lua` to `stplug-in/` for ecosystem interop. The game is left **unpinned** while a manifest-code provider answers (Steam installs Valve's current build), and **pinned to the zip's build** in SLSsteam's `ManifestIds` when none does. It does **not** write an `appmanifest` — Steam creates that when you press Install, in whichever library you choose.

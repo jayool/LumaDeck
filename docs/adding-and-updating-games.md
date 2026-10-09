@@ -3,38 +3,44 @@
 ## Adding a game
 
 LumaDeck adds a game by fetching its **manifest** and letting Steam download it
-natively. There are three ways to pick the game, all on the main QAM page.
+natively. There are three ways to pick the game, all in the **Add Game**
+section of the main QAM page.
+
+Adding is available once SLSsteam and lumalinux are **Active** and a Hubcap key
+or Ryuu session works. Until then **Add game** and **Search** are greyed out and
+a ⚠ line above them says what to fix (*Fix the problem above to add games.* or
+*Set up a Hubcap or Ryuu key in Settings.*).
 
 ### By store page (auto-detect)
 
 1. In Steam, open the **store page** of the game.
 2. Open LumaDeck — the **AppID is auto-detected** and filled into the *Add
-   Game* field.
-3. Tap **Download Manifest**.
+   Game* field. (It also works from the game's page in your Steam library.)
+3. Tap **Add game**.
 
 ### By AppID
 
-Type a Steam **AppID** directly into the *Add Game* field and tap **Download
-Manifest**.
+Type a Steam **AppID** into the field under **Add Game ▸ By AppID** (the
+default) and tap **Add game**.
 
 ### By name (Steam store search)
 
-Under **Search by Name**, type a game title and tap **Search**. Results come
+Switch Add Game to **By name**, type a title and tap **Search**. Results come
 from Steam's own store search (soundtracks, demos and tools are filtered out);
-tap one to fill its AppID into the *Add Game* field. No credential needed.
-Whether a hub has the game is answered by the download itself, as for By AppID.
+the first 5 are shown, with **Show more** for up to 15. Tap one: its preview
+card appears and the button becomes **Add game**. Whether a hub has the game is
+answered by the download itself, as for By AppID.
 
 ### Before you confirm
 
 When a valid AppID is staged, LumaDeck shows a preview card with the game's
-name, developer, platforms, size, ProtonDB tier, achievement count and more. It
-also surfaces:
+name, developer, size, Metacritic score and ProtonDB tier. It also surfaces:
 
-- **Game notices** — DRM (e.g. Denuvo) or required third-party launchers.
-- **Credential warnings** — if your Hubcap key or Ryuu cookie is expired or
-  missing (see [Credentials](credentials.md#expiry-warnings)).
+- **Game notices** — DRM (e.g. *Uses Denuvo*, *Has extra DRM*) or a required
+  third-party launcher.
+- **Owned game** — *Only its DLC will be added* (see below).
 
-### What happens when you tap Download Manifest
+### What happens when you tap Add game
 
 The plugin fetches the manifest (a few MB — progress shows **in the plugin**)
 and processes it. When it finishes, the game appears in your library **without a
@@ -117,7 +123,8 @@ first), and moves the pin only when it has **every** manifest. The job also prob
 every 30 minutes and, when one serves valid codes again, releases the pins
 it set. Nothing is shown to the user in either direction.
 
-With an older lumalinux (no `gmrc.json`) LumaDeck stays in the pinned model.
+With an older lumalinux that has no request-code hook (or if the hook failed on
+your Steam build), LumaDeck stays in the pinned model.
 
 A build that adds a **new depot** (a new DLC, a restructure) needs its
 decryption key too, which only a fresh game zip carries (Hubcap or Ryuu). The
@@ -140,9 +147,15 @@ a Steam-side uninstall/reinstall works offline.
 
 ### When an update gets stuck
 
-The **Update stuck** notice and **Fix Update** button remain as the manual way
-out: tap it and the plugin re-fetches the game zip (bringing any new key),
-re-deploys `keys.txt` and the manifests, and re-pins. With the job above this
+A stuck game shows on the main QAM page as *{game} can't update* with an
+**Open game** button, and on its page as an **Update stuck** notice with a
+**Fix Update** button, the manual way out: tap it and the plugin re-fetches the
+game zip (bringing any new key), re-deploys `keys.txt` and the manifests, and
+(only while no provider is up) pins the game to that build. With the job above this
 should be rare — it never moves a pin without every key and manifest in hand —
 but it covers an update Steam had already started, or anything unforeseen.
 (Re-fetching needs a valid Hubcap key or Ryuu session.)
+
+The game page's **Updates** tab also holds **Re-download Manifest**, the
+**Auto-update** toggle and **Change version**; see
+[Managing a game](managing-a-game.md#change-version).

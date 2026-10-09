@@ -8,8 +8,8 @@ A **status line** under each credential shows its live state, and a warning
 appears at download time if a credential is dead.
 
 There is one more credential that is **not** a manifest provider: the
-[LuaTools account](#luatools-account), which game fixes need. It lives in its own
-Settings section and works differently — see below.
+[LuaTools account](#luatools-account), which game fixes need. It has its own
+section at the bottom of the same tab and works differently — see below.
 
 ## Hubcap API key
 
@@ -20,7 +20,9 @@ The primary provider ([hubcapmanifest.com](https://hubcapmanifest.com)).
 2. Log in with Discord, regenerate your key, and copy it.
 3. Paste it into the **Hubcap API Key** field and tap **Save Hubcap Key**.
 
-The key is stored in `api.json` as the Hubcap entry's `api_key`.
+The key is stored in `api.json`, inside the Hubcap entry's URL (the
+`?api_key=` part; the entry is still named *Morrenus*). At download time it is
+sent as an `Authorization: Bearer` header, so it never lands in a log.
 
 To **remove** the key, clear the field and tap **Save Hubcap Key** again. That
 strips it from `api.json`, disables the Hubcap entry (without a key Hubcap only
@@ -43,31 +45,31 @@ Ryuu hands out a `session` cookie before you log in (an anonymous one, valid
 30 days), so LumaDeck does not accept the first cookie it sees: it checks each
 new cookie against Ryuu's home page and only keeps the one that carries your
 user. While the session is anonymous the browser stays open for you to log in;
-after three minutes without a login it gives up ("Ryuu login timed out").
-**Import cookie from Steam browser** (manual) applies the same check and
-refuses an anonymous session. You can still paste a cookie by hand.
+after three minutes without a login it gives up ("Ryuu login timed out"). If
+Ryuu can't be reached to check, the session is saved unverified and checked
+later.
 
-> **How it works:** Steam's Game Mode browser stores cookies in a Chromium
-> SQLite DB. The value is `v10`-encrypted, which is decryptable with no OS
-> keyring (the `peanuts`/`saltysalt` scheme Chromium uses when no keyring is
-> present). If your cookie happens to be keyring-encrypted (`v11`), the import
-> can't decrypt it and you'll be asked to paste it manually instead.
+You can also paste a cookie by hand and tap **Save Cookie**. A pasted cookie is
+saved as-is, without the logged-in check.
 
-## Free APIs (no credential)
+> **How it works:** LumaDeck reads the live cookie through Steam's CEF debug
+> port, so it arrives already decrypted. If the debug port isn't reachable it
+> falls back to Steam's on-disk Chromium cookie store: `v10` values decrypt with
+> Chromium's fixed no-keyring key (`peanuts`/`saltysalt`), and `v11` values are
+> tried against the OS keyring. If neither works, paste the cookie by hand.
 
-Hubcap and Ryuu are the **keyed** providers, but LumaDeck also ships a list of
-**free, keyless manifest sources** in `api.json`. When you download a game, the
-backend tries every *enabled* provider in order and uses the first that returns
-a valid manifest zip — so even with no Hubcap key or Ryuu cookie, these can
-still serve some titles.
+## Other sources in `api.json`
 
-**Settings ▸ APIs ▸ Update Free APIs** refreshes that list from the upstream it's
-seeded from ([Star123451/LuaToolsLinux `api.json`](https://github.com/Star123451/LuaToolsLinux/blob/main/backend/api.json)).
-Run it if downloads start failing because a source moved or a new one was added.
-Your saved Hubcap key is preserved across the refresh.
+Besides Hubcap and Ryuu, `api.json` lists two free GitHub mirrors (Sushi,
+Spinoza), but they ship **disabled** because they lag behind new releases. When
+you add a game, the backend tries each *enabled* source in order (Hubcap first,
+then Ryuu) and uses the first that returns a valid manifest zip. In practice you
+need a Hubcap key or a Ryuu session.
 
-Each entry is a templated URL plus the HTTP codes that mean "got it"
-(`success_code`, default 200) and "not here — try the next one"
+The list is built into LumaDeck and rewritten on every plugin load, so every
+install uses the same order and the same enabled set. Your saved Hubcap key is
+kept across the rewrite. Each entry is a templated URL plus the HTTP codes that
+mean "got it" (`success_code`, default 200) and "not here — try the next one"
 (`unavailable_code`, default 404):
 
 ```json
@@ -77,15 +79,16 @@ Each entry is a templated URL plus the HTTP codes that mean "got it"
 
 ## LuaTools account
 
-Not a manifest provider — this one is for **game fixes**. It lives in its own
-**Settings ▸ LuaTools fixes** section, not under API Credentials.
+Not a manifest provider — this one is for **game fixes**. It has its own
+**LuaTools fixes** section at the bottom of **Settings ▸ API Credentials**,
+below Hubcap and Ryuu.
 
 Browsing the fix catalogue needs no account: **Check for Fixes** on a game's
-Fixes tab works logged out. An account is needed to actually **apply a fix** or to
+**Fixes & Repairs** tab works logged out. An account is needed to actually **apply a fix** or to
 **install the game build a fix needs** — without one those buttons stay greyed
 out, with a prompt to log in next to them.
 
-1. In **Settings ▸ LuaTools fixes**, tap **Log in with Discord**. LumaDeck opens
+1. In **Settings ▸ API Credentials ▸ LuaTools fixes**, tap **Log in with Discord**. LumaDeck opens
    lua.tools in the Steam browser.
 2. Sign in with Discord. LumaDeck captures the session and closes the browser for
    you — there is nothing to copy or paste.
@@ -154,27 +157,30 @@ session expires too, but it renews itself and reports differently — see
 Both API credentials expire, so LumaDeck surfaces it — without nagging:
 
 - **Settings status line (always shown).** Under each credential:
-  - 🟢 *valid — N days left (expires …)* — Hubcap also shows today's request usage.
-  - 🟡 *expires in N — regenerate / re-import soon*
-  - 🔴 *expired — regenerate / re-import it*
-  - grey *none saved* / *couldn't check*
-- **Download-time warning (only when adding a game).** If a credential is
-  **expired or missing** when you stage a game for download, a warning appears
-  above the **Download Manifest** button. "Expiring soon" is deliberately *not*
-  shown here — the current download would still work — so it stays in Settings
-  only.
+  - 🟢 *valid, N days left* (hours when under a day). Hubcap adds today's
+    request usage on the same line.
+  - 🟡 *expires in N*: regenerate the Hubcap key (shown 5 days ahead; a key
+    lasts 7 days) or log in to Ryuu again (shown 1 day ahead).
+  - 🔴 *expired*: regenerate the key, or log in with Discord again.
+  - grey *none saved*, or *couldn't check* (Hubcap) / *saved, not verified yet*
+    (Ryuu).
+- **When adding a game.** If neither Hubcap nor Ryuu is usable (both missing or
+  expired), the Add Game section shows *Set up a Hubcap or Ryuu key in
+  Settings.* and **Add game** is disabled. While at least one works, nothing is
+  shown there; Settings tells you about the other one.
 
 Hubcap expiry comes from its free `/user/stats` endpoint (it doesn't cost you a
 request). Ryuu has two signals: the cookie's own expiry date (captured at
-login, 30 days) and a **live check**, a GET of Ryuu's home page with the
+login, whatever date Ryuu set) and a **live check**, a GET of Ryuu's home page with the
 cookie, once an hour per cookie, that looks for the logged-in marker. Ryuu can
 drop a session before its date (measured 2026-10-07), so a dead session reads
 as *expired* even when the date is fine, and a download that Ryuu answers with
 401/403 marks it dead at once. The live check costs no download.
 
-When a download fails because a credential was rejected, the game page shows a
-**Hubcap API key expired** and/or **Ryuu session expired** row with a shortcut
-to Settings instead of the generic failure.
+When a download started from a game page (**Re-download Manifest**, **Fix
+Update**) fails because a credential was rejected, the page's **Updates** tab
+shows a **Hubcap API key expired** and/or **Ryuu session expired** row with an
+**Open Settings** button instead of the generic failure.
 
 ## Where the values live
 
@@ -189,8 +195,8 @@ All four are also **mirrored into the plugin's settings directory**, which Decky
 does not wipe when it replaces the plugin, and restored from there on the next
 load. That is why updating LumaDeck no longer signs you out of anything.
 
-LuaTools is the only one you can actively **log out** of — the other three you
-replace rather than delete. Logging out clears the mirror as well as the saved
+LuaTools has a **Log out** button, and the Hubcap key can be removed by saving
+an empty field. The Ryuu cookie can only be replaced. Logging out clears the mirror as well as the saved
 session; without that the next plugin load would restore the very session you
 just discarded, which is what happened in the release that first added LuaTools
 to the restore list.
