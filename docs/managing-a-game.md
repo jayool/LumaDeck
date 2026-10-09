@@ -2,31 +2,55 @@
 
 Tapping a game in **My Games** opens its detail page. Everything here is
 **per-game** and most of it is optional — a normally-installed game needs none
-of it. Groups are ordered from everyday to advanced.
+of it. The page has a sidebar with tabs, ordered from everyday to advanced:
+**Status**, **Updates**, **Fixes & Repairs**, **Online Fixes** and **Uninstall**.
 
-## Status & manifest
+For a game your Steam account **owns** (LumaDeck only added its DLC), several
+controls are hidden or disabled: Auto-update, Change version, Fix Update and
+Online don't apply to it.
 
-The **Status** line reflects what's on disk:
+## Status
 
-- **Installed** — the `.lua`/config *and* the game files are present.
-- **Manifest only** — the config is in place but the game files aren't
+The **Status** tab has one row labelled `AppID <id>`. Its coloured value is the
+game's state, and the install path sits underneath:
+
+- **Installed** — the `.lua`/config *and* the game files are present (the
+  game's size is shown next to it).
+- **Ready to download** — the config is in place but the game files aren't
   downloaded yet (**Install** the game in Steam to pull them; no restart needed
   in the normal case — restart only if the game isn't showing in your library).
-- **Not installed** — no `.lua` yet.
+- **DLC added (owned game)** — you own the game; LumaDeck added only its DLC.
 
-**Download Manifest** (shown as **Re-download Manifest** once the game has a
-`.lua`) re-runs the manifest fetch and processing — it rewrites the config
-(`keys.txt`, `config.vdf`, the SLSsteam entry, …). The game files themselves are
-always downloaded by Steam natively afterwards, never by the plugin. Use it
-after a failed or partial install.
+With no `.lua` yet the row shows only the AppID (for a game your account owns,
+an **Owned game** note appears instead: *Only its DLC will be added.*).
 
-If a re-download fails because a credential was rejected, this page shows a
+For an installed game a **Version** row shows its build: `Build N · Latest`
+while Auto-update is on, `Build N · Frozen` after a version change (see
+[Change version](#change-version)).
+
+## Updates
+
+On the **Updates** tab, **Download Manifest** (shown as **Re-download Manifest**
+once the game has a `.lua`) re-runs the manifest fetch and processing — it
+rewrites the config (`keys.txt`, `config.vdf`, the SLSsteam entry, …). The game
+files themselves are always downloaded by Steam natively afterwards, never by
+the plugin. Use it after a failed or partial install. While it runs, a progress
+bar replaces the button, with a **Cancel Download** button under it.
+
+If a re-download fails because a credential was rejected, this tab shows a
 **Hubcap API key expired** or **Ryuu session expired** notice (both, when both
-were rejected) with a shortcut to Settings, instead of a generic failure.
+were rejected) with an **Open Settings** shortcut, instead of a generic failure.
 
-## Auto-update
+If LumaDeck sees that Steam couldn't apply an update to this game, the tab also
+shows **Update stuck** with a **Fix Update** button. It re-fetches the game's
+manifest the same way as **Re-download Manifest**, so it needs a valid Hubcap
+key or Ryuu session. The QAM lists such a game as *<game> can't update*, with
+an **Open game** button that brings you here.
 
-A per-game toggle, **on by default**. It appears only for installed games.
+### Auto-update
+
+A per-game toggle on the Updates tab, **on by default**. It appears only for
+installed games LumaDeck added (not for a game your account owns).
 
 See [Adding & updating games → Updating a game](adding-and-updating-games.md#updating-a-game)
 for how updates reach a LumaDeck game.
@@ -35,12 +59,13 @@ for how updates reach a LumaDeck game.
   provider is up, through LumaDeck's pin otherwise.
 - **Off ("Stays on the installed version.")** — frozen to the installed build;
   nothing moves it.
-  Useful when a newer build breaks a fix or a mod. Installing the game version
-  a LuaTools fix needs switches this off for you; turning it back on lets the
-  job take the game to the current build again (which will undo the fix's
-  build).
+  Useful when a newer build breaks a fix or a mod. Anything LumaDeck writes
+  into the game's folder switches this off for you: installing the version a
+  LuaTools fix needs, applying a fix, Goldberg, Steam DRM removal, or the
+  Online toggle's EOS proxy. Turning it back on lets the job take the game to
+  the current build again (which can undo that fix).
 
-## Change version
+### Change version
 
 Under the Auto-update toggle, for installed games. **Change version** reads
 the game's build list from SteamDB (the last 10 public builds, ~1 s) and
@@ -51,59 +76,51 @@ the fix tags. **Install build N** pins every depot the build changed to
 its exact manifest (from that build's page on SteamDB), freezes the game
 (Auto-update goes off) and marks it so Steam re-plans it at its next
 start. Then **restart Steam**: it downloads that build like any update.
-A depot the build did not touch keeps the manifest it has.
+A depot the build did not change gets the last manifest it had before that
+build; only a depot SteamDB has no record for keeps the manifest it has.
 
 The **Status** tab shows the result: `Build N · Latest` while Auto-update
 is on, `Build N · Frozen` with the build's date and name after a change.
-Turning Auto-update back on takes the game to the current build at the
-next Steam restart.
+If you froze the game with the toggle instead, it reads
+`Frozen on the installed version`. Turning Auto-update back on takes the
+game to the current build at the next Steam restart.
 
 If SteamDB answers with a Cloudflare browser check the tab says so, with an
 **Open SteamDB** button: open it, wait for the page, go back and press
 Change version again. If it keeps failing, wait a few minutes; SteamDB
 rate-limits by address.
 
-## Game management (SLSsteam)
+## Fixes & Repairs
 
-These tell **SLSsteam** how to present the game to Steam. Each can be added or
-removed, with a live status. A normal install configures them automatically —
-reach for them to fix a game whose config drifted.
+The **Fixes & Repairs** tab holds, from top to bottom: the LuaTools fixes
+catalogue, the **Fixes** block (Steamless and Goldberg) and the **Repairs**
+block.
 
-- **FakeAppId** — makes the game present itself as Spacewar (AppID `480`) so its
-  Steam networking (lobbies, matchmaking, P2P) works, for playing **online** on
-  titles that use Steam's servers. It does **not** grant ownership — that's
-  AdditionalApps. SLSsteam tracks the real AppID per launch, so don't run two
-  FakeAppId-enabled games at once.
-- **Token** — writes the game's **app access token** into SLSsteam's
-  `AppTokens:`. SLSsteam uses it to query the app's product information from
-  Steam; in practice it mainly fixes the *"invalid configuration"* error on some
-  games. The token comes from a bundled list, or is read from the installed
-  `.lua`. (This is **not** a Denuvo unlock — see the note below.)
-- **DLCs** — looks up the game's DLCs from Steam's store API and marks them as
-  owned so they show up in Steam.
+### Fixes
 
-## Goldberg
+A *fix* is a community patch zip from the LuaTools catalogue, downloaded and
+extracted over the game's install folder, for titles that don't launch cleanly
+under SLSsteam. The catalogue is split over two tabs:
 
-**Apply / Remove Goldberg** swaps the game's `steam_api` libraries for the
-[Goldberg emulator (gbe_fork)](https://github.com/Detanup01/gbe_fork) and
-back. Use this for titles that expect an emulator rather than SLSsteam's
-ownership layer. *Apply* replaces the DLLs; *Remove* restores the originals.
+- **Check for Fixes** (under **LuaTools Fixes**, on this tab) lists the crack /
+  Denuvo fixes.
+- **Check for Online Fixes** (under **LuaTools Online Fixes**, on the
+  [Online Fixes](#online-fixes) tab) lists the online / co-op ones.
 
-## Fixes
+Listing is public, but applying needs a LuaTools login: if you aren't logged
+in, a **Log in with Discord** button appears in the list (see
+[Credentials → LuaTools account](credentials.md#luatools-account)). Each entry
+shows its name and tags, and:
 
-A *fix* is a community bypass/patch zip, downloaded and extracted over the
-game's install folder, for titles that don't launch cleanly under SLSsteam.
+- **Apply fix** — downloads the zip and extracts it into the install folder. A
+  game holds one fix at a time: if one is already installed, the button turns
+  into **Replace fix**; press it again to swap.
+- **Install the game version this fix needs** — shown when the fix targets a
+  specific build. It sets the game to that build; then restart Steam, let Steam
+  (re)download the game, and apply the fix.
 
-- **Check for Fixes** — checks which fixes exist for this game and shows what's
-  available:
-  - **Generic Fix** — a general bypass.
-  - **Online Fix** — a fix for online / multiplayer play.
-- **Apply Online Fix** / **Apply Generic Fix** — downloads the matching zip and
-  extracts it into the install folder.
-- **Linux-native Fix** — a local fix for native-Linux installs (nothing is
-  downloaded).
-- **Installed Fixes** — lists what's applied, with **Remove Fix** / **Remove
-  All Fixes** to revert.
+Applied fixes are listed under **Installed LuaTools Fixes** (or **Installed
+Online Fixes** on the Online Fixes tab), each with **Remove Fix** to revert it.
 
 > **Denuvo games:** lumalinux can download a Denuvo title and SLSsteam can fake
 > local ownership, but Denuvo validates the licence **server-side**, which needs
@@ -123,12 +140,77 @@ game's install folder, for titles that don't launch cleanly under SLSsteam.
 > from unlocking unless the SteamId matches, which keeps external activations
 > from breaking across accounts.
 
-## Remove DRM (Steamless)
+### Remove DRM (Steamless)
 
-**Remove DRM (Steamless)** strips SteamStub DRM from the game executable using
-[Steamless](https://github.com/atom0s/Steamless), which ships **bundled with the
-plugin**. It reports back if the executable has no DRM to remove. The only
-prerequisite is the .NET 9 runtime, installed on demand on first use.
+**Remove Steam DRM** (in the **Fixes** block) strips SteamStub DRM from the
+game's executables using [Steamless](https://github.com/atom0s/Steamless), which
+ships **bundled with the plugin**. The first time, press **Setup Steamless** to
+unpack the bundled copy. Each executable gets its own result line (including
+when it has no DRM to remove), and the original is kept next to it as `<name>.original.exe`.
+The only prerequisite is the .NET 9 runtime; if it's missing the button says
+so, and you install it from **Settings ▸ Components**.
+
+### Goldberg
+
+**Apply / Remove Goldberg** (in the **Fixes** block) swaps the game's
+`steam_api` libraries for the
+[Goldberg emulator (gbe_fork)](https://github.com/Detanup01/gbe_fork) and
+back. Use this for titles that expect an emulator rather than SLSsteam's
+ownership layer. *Apply* replaces the DLLs (and turns Auto-update off);
+*Remove* restores the originals.
+
+### Repairs
+
+- **Fix Linux Permissions** — fixes file ownership and permissions on a
+  native-Linux game that won't start because of a permissions error (nothing
+  is downloaded).
+- **Reconfigure SLSsteam** — re-runs this game's full SLSsteam setup at once:
+  AdditionalApps, the app access token (it mainly fixes the *"invalid
+  configuration"* error on some games; this is **not** a Denuvo unlock), the
+  depot **decryption keys** (read from the installed `.lua`) into `config.vdf`,
+  and the DLCs (looked up from Steam's store API and marked as owned so they
+  show up in Steam). A normal install does all of this automatically; use it
+  when the config has drifted out of sync.
+- **Repair Appmanifest** — **deletes** the game's `.acf` across every library so
+  Steam **regenerates** it on its next refresh. Use it when Steam has lost track
+  of an installed game. (It doesn't rebuild the `.acf` by hand or restart Steam
+  — pair it with **Restart Steam** when you're ready. It is refused for a game
+  your account owns.)
+
+## Online Fixes
+
+The **Online Fixes** tab has the online part of the LuaTools catalogue
+(**Check for Online Fixes**, then **Installed Online Fixes**; they work like
+the [Fixes](#fixes) above), and the **Online** toggle.
+
+### Online
+
+**Enable Online** makes the game present itself as Spacewar (AppID `480`) so
+its Steam networking (lobbies, matchmaking, P2P) works, for playing **online**
+on titles that use Steam's servers. When they apply, it also adds the
+steamnetsock patch and the EOS proxy (for games using Epic's online services).
+The line under the button lists what it will apply, or what is active; press
+**Disable Online** to undo it. It does **not** grant ownership — that's
+AdditionalApps. SLSsteam tracks the real AppID per launch, so don't run two
+online-enabled games at once.
+
+- It needs the game to be installed, and isn't available for a
+  Denuvo-activated game or a game your account owns.
+- **Don't use it with anti-cheat games.**
+- If you already have an online fix installed, try that first.
+
+## Uninstall
+
+The **Uninstall** tab first lists exactly what will be removed
+(**Permanently removes:**).
+
+- **Uninstall Game** — removes the game and all of LumaDeck's config for it.
+  Press it, then press **Confirm uninstall** to go ahead (it can't be undone).
+  Optional: **Also remove Proton prefix** (deletes the game's compatdata:
+  saves and per-game config). For a game the account **owns** (LumaDeck only
+  added its DLC) it removes the DLC and nothing else: Steam deletes their files
+  once LumaDeck unticks them in the game's DLC list; the game, its `.acf` and
+  prefix stay. For an owned game it is refused while the game is running.
 
 ## Achievements
 
@@ -156,22 +238,11 @@ there but its UI is hidden, because SLSsteam's own path made it redundant:
 export const ACHIEVEMENTS_ENABLED: boolean = false;
 ```
 
-Setting it to `true` brings back the per-game **Generate Achievements** panel,
-the **Steam Web API key** and **Sync All** in Settings, the QAM entry and the
-game-card marker. It needs a free, read-only Web API key
-(<https://steamcommunity.com/dev/apikey>), and achievements appear after a Steam
-restart.
-
-## Advanced options
-
-- **Reconfigure SLSsteam** — re-runs this game's full SLSsteam setup at once:
-  AdditionalApps, the app token, the depot **decryption keys** (read from the
-  installed `.lua`) into `config.vdf`, and the DLCs. Use it when the config has
-  drifted out of sync.
-- **Repair appmanifest** — **deletes** the game's `.acf` across every library so
-  Steam **regenerates** it on its next refresh. Use it when Steam has lost track
-  of an installed game. (It doesn't rebuild the `.acf` by hand or restart Steam
-  — pair it with **Restart Steam** when you're ready.)
+Setting it to `true` brings back the per-game **Achievements** tab (with
+**Generate Achievements**), the **Steam Web API key** and **Sync Achievements**
+in Settings, the QAM entry and the game-card marker. It needs a free, read-only
+Web API key (<https://steamcommunity.com/dev/apikey>), and achievements appear
+after a Steam restart.
 
 ## The leftover-manifest sweep (automatic)
 
@@ -211,15 +282,6 @@ justified it. It takes effect on the next Steam start.
 `LUMA_NO_ACF_SWEEP` in the environment. It's on by default and has its own switch,
 unrelated to any other.
 
-## Danger zone
-
-- **Full Uninstall** — removes the game and all of LumaDeck's config for it
-  (two-tap confirm). Optional extras: **delete compatdata** and **remove the
-  Proton prefix**. For a game the account **owns** (LumaDeck only added its
-  DLC) it removes the DLC and nothing else: Steam deletes their files once
-  LumaDeck unticks them in the game's DLC list; the game, its `.acf` and
-  prefix stay. Refused while the game is running.
-
-> Most users never touch the management/advanced/danger groups. Reach for them
-> only when a specific game misbehaves — and see [Troubleshooting](troubleshooting.md)
-> first.
+> Most users never touch the Fixes & Repairs, Online Fixes or Uninstall tabs.
+> Reach for them only when a specific game misbehaves — and see
+> [Troubleshooting](troubleshooting.md) first.
