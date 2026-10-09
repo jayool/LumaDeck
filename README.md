@@ -95,7 +95,7 @@ The native-Steam-download approach is a fundamental backend change that wouldn't
 - [lumalinux README](https://github.com/jayool/lumalinux) — the hooks themselves, build flow, manual install steps
 - [lumalinux maintenance docs](https://github.com/jayool/lumalinux/blob/main/docs/maintenance.md) — what to do after a SteamOS / Steam client update
 - [CloudRedirect analysis](https://github.com/jayool/lumalinux/blob/main/docs/cloudredirect.md) (Spanish) — what CloudRedirect does inside Steam and the known risks
-- [DESIGN.md](DESIGN.md) — decision log: why LumaDeck is built the way it is
+- [nosotros.md](https://github.com/jayool/lumalinux/blob/main/docs/nosotros.md) (lumalinux, Spanish) — how the whole stack works today, read from the code, with the design decisions and why
 - [DESIGN_UI.md](DESIGN_UI.md) — how each UI element is built, and the rules that keep the UI consistent
 
 ## Credits / notes

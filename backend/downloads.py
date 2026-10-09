@@ -98,15 +98,9 @@ async def _steamidra_supports_flag(python: str, script: str, flag: str) -> bool:
     return flag.encode() in await _steamidra_help(python, script)
 
 
-async def _steamidra_supports_name(python: str, script: str) -> bool:
-    """Whether the DEPLOYED steamidra_lite.py accepts --name (older lumalinux
-    builds don't)."""
-    return await _steamidra_supports_flag(python, script, "--name")
-
-
 async def _invoke_steamidra_lite(
     input_path: str, manifests_dir: str = "", appid_for_log: int = 0,
-    game_name: str = "", pin: bool = False, dlc_of_owned: bool = False,
+    pin: bool = False, dlc_of_owned: bool = False,
 ) -> tuple[bool, str]:
     """Run steamidra_lite.py on `input_path` (a Hubcap zip, or — when
     `manifests_dir` is supplied — a bare .lua file alongside an extracted
@@ -145,14 +139,6 @@ async def _invoke_steamidra_lite(
                 "(steamidra_lite has no --dlc-of-owned). Update lumalinux first."
             )
         cmd.append("--dlc-of-owned")
-    # --name is ACCEPTED AND IGNORED by steamidra since the .acf stub went away
-    # (#41): it fed that stub's installdir, and Steam now writes the manifest
-    # itself on Install, picking its own. We keep passing it, and keep gating it
-    # on the deployed steamidra advertising the flag, only because a Deck can be
-    # running a lumalinux old enough to predate --name — there argparse errors
-    # out (exit 2) and fails the install. Droppable once that floor is moot.
-    if game_name and await _steamidra_supports_name(python, script):
-        cmd.extend(["--name", game_name])
 
     logger.info(f"LumaDeck: invoking steamidra_lite: {' '.join(cmd)}")
     try:
@@ -1193,16 +1179,10 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
         # config.vdf, config.yaml, stplug-in lua. No appmanifest — Steam writes
         # that on Install.
         _set_download_state(appid, {"status": "installing"})
-        # Resolve the canonical name (local applist cache first, store API
-        # fallback) for --name. steamidra ignores it now (see the note in
-        # _invoke_steamidra_lite); this lookup outlives its purpose and is kept
-        # only to feed the flag we still pass for older deployed lumalinux.
-        game_name = await fetch_app_name(appid)
         ok, output = await _invoke_steamidra_lite(
             str(lua_path),
             manifests_dir=str(manifests_dir),
             appid_for_log=appid,
-            game_name=game_name or "",
             pin=pin,
             dlc_of_owned=owned,
         )
@@ -1825,7 +1805,7 @@ def sweep_orphan_stubs() -> dict:
     """One-off migration: remove .acf stubs lumalinux seeded before it stopped,
     but ONLY where the game is really installed in a different library.
 
-    Background (docs/dev-multi-library.md, defect D4 / issue #41). The seed went
+    Background (issue #41, defect D4). The seed went
     into the default library before the user picked a drive. Install anywhere
     else and it is orphaned: after the next Steam restart Steam honours the
     orphan, reports the game as not installed, and re-downloads the whole thing

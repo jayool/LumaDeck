@@ -64,7 +64,7 @@ backend/          Python (async) — all plugin logic
   fixes.py        Community fix download/apply/remove
   api_manifest.py API manifest management
   utils.py        File I/O helpers
-  ...             (full list in docs/dev-backend-reference.md)
+  ...             (full map in lumalinux's docs/nosotros.md §1.3)
 
 src/              TypeScript + React — Decky frontend
   pages/

@@ -1,6 +1,6 @@
 """The one-off sweep that removes orphan .acf stubs (issue #41).
 
-See docs/dev-multi-library.md, defect D4. An older lumalinux seeded a stub into
+Issue #41, defect D4. An older lumalinux seeded a stub into
 the DEFAULT library before the user picked a drive; installing anywhere else
 orphaned it, and after the next Steam restart Steam honoured the orphan and
 reported the game as not installed.

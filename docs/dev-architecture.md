@@ -1,8 +1,9 @@
 # Architecture (developer)
 
 A high-level map for contributors. For why things are built this way (the
-native-Steam download, the divergence from DeckTools) read the decision log in
-[DESIGN.md](../DESIGN.md); for how UI elements are built, [DESIGN_UI.md](../DESIGN_UI.md).
+native-Steam download, the divergence from DeckTools) read the design decisions in lumalinux's
+[nosotros.md](https://github.com/jayool/lumalinux/blob/main/docs/nosotros.md) §4.4 (Spanish); for how UI elements are built,
+[DESIGN_UI.md](../DESIGN_UI.md).
 
 ## Two halves
 
@@ -71,5 +72,5 @@ the retry timers in `Settings.tsx`).
 
 ## Backend module map
 
-See [Backend reference](dev-backend-reference.md) for a one-line purpose of
+See lumalinux's [nosotros.md](https://github.com/jayool/lumalinux/blob/main/docs/nosotros.md) §1.3 (Spanish) for a one-line purpose of
 every module.

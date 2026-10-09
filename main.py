@@ -111,7 +111,7 @@ class Plugin:
             # the game as not installed. Nothing produces these any more, so this
             # only has to run once per load; it is a no-op with one library, and
             # only ever removes a stub-shaped manifest whose game is provably
-            # installed elsewhere. See docs/dev-multi-library.md.
+            # installed elsewhere. See issue #41.
             try:
                 from downloads import sweep_orphan_stubs
                 sweep = sweep_orphan_stubs()

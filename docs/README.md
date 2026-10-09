@@ -7,7 +7,8 @@ turns Steam itself into the download engine for manifests, backed by the
 > These pages are **task-oriented guides**. For the project overview, the
 > install walkthrough and the under-the-hood "how a game install works"
 > narrative, see the root [README](../README.md). For internal architecture
-> decisions and their reasons see [DESIGN.md](../DESIGN.md); for the UI rules see
+> design decisions and the module map see lumalinux's
+> [nosotros.md](https://github.com/jayool/lumalinux/blob/main/docs/nosotros.md) (Spanish); for the UI rules see
 > [DESIGN_UI.md](../DESIGN_UI.md).
 
 ## For users
@@ -28,9 +29,7 @@ turns Steam itself into the download engine for manifests, backed by the
 | Page | What it covers |
 | --- | --- |
 | [Architecture](dev-architecture.md) | The frontend ⇄ backend bridge and the module layout. |
-| [Backend reference](dev-backend-reference.md) | One-line purpose of every `backend/` module. |
 | [Translations (i18n)](dev-i18n.md) | Adding a string or a new language. |
-| [Multi-library behaviour](dev-multi-library.md) | Why a game on a second drive used to break: the install root vs a library, the `.acf` stub we stopped writing, and the five defects it caused (issue #41). |
 
 ---
 

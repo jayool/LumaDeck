@@ -1,6 +1,6 @@
 """Multi-library (non-default drive) behaviour of the game list.
 
-See docs/dev-multi-library.md, defect D2.
+Issue #41, defect D2.
 
 `get_installed_lua_scripts()` computes `hasGameFiles` against the default Steam
 root only (downloads.py:1676), while `.acf` files live in the library the game was
