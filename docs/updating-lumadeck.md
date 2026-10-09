@@ -2,16 +2,19 @@
 
 ## The plugin itself
 
-LumaDeck is sideloaded, so it doesn't auto-update through Decky's store. Two
-ways to update it:
+LumaDeck is sideloaded, so it doesn't auto-update through Decky's store. To
+update it:
 
-- **In-plugin** — in **Settings ▸ About**, tap **Check for Updates**, then
-  **Update Now** if a newer release exists. It downloads the latest release,
-  overwrites the plugin on disk, and restarts Steam so the new version loads
-  (the running code stays in memory until then).
-- **Manually via Decky** — reinstall the latest `LumaDeck.zip` from Decky's
-  developer mode, the same way you first sideloaded it. Decky reloads the plugin
-  itself, so no Steam restart is needed.
+1. In **Settings ▸ About**, tap **Check for Updates**. If a newer release
+   exists, tap **Download update to Downloads**: LumaDeck saves the new
+   `LumaDeck.zip` to `~/Downloads`.
+2. Install that zip from Decky's developer mode (**Decky ▸ Settings ▸
+   Developer ▸ Install Plugin from ZIP**), the same way you first sideloaded
+   it. Decky reloads the plugin itself; no Steam restart is needed.
+
+You can also download `LumaDeck.zip` from the
+[releases page](https://github.com/jayool/LumaDeck/releases) and install it the
+same way.
 
 LumaDeck **never auto-installs**: it checks on its own and surfaces a notice (in
 the QAM update banner and Settings ▸ About), but applying an update is always a

@@ -132,9 +132,35 @@ prerequisite is the .NET 9 runtime, installed on demand on first use.
 
 ## Achievements
 
-Achievements work **natively** for games LumaDeck adds — SLSsteam handles them, so
-there's no per-game step here. (The old **Generate Achievements** generator is hidden
-behind a flag; see [Achievements](achievements.md).)
+**There is nothing to do for achievements.** They unlock and persist on their own
+for the games LumaDeck adds, the same as for a game you own:
+
+- **SLSsteam fetches each game's achievement list** (the schema) from Steam the
+  first time the game asks for it. lumalinux makes sure SLSsteam does this for
+  added games too.
+- **Across devices, CloudRedirect syncs them** when its stats sync is on
+  (`"stats_sync_enabled": true` in `~/.config/CloudRedirect/config.json`). An
+  achievement unlocked on the Deck shows on your other machine after you
+  **restart Steam there**: CloudRedirect downloads the synced copy once, when
+  Steam starts.
+
+A game with no achievements on Steam simply has none to show.
+
+**The old generator.** LumaDeck used to build the schema itself from the Steam
+Web API (`backend/achievements.py`, `GetSchemaForGame` → a
+`UserGameStatsSchema_<appid>.bin` in `appcache/stats`). The code is still
+there but its UI is hidden, because SLSsteam's own path made it redundant:
+
+```ts
+// src/features.ts
+export const ACHIEVEMENTS_ENABLED: boolean = false;
+```
+
+Setting it to `true` brings back the per-game **Generate Achievements** panel,
+the **Steam Web API key** and **Sync All** in Settings, the QAM entry and the
+game-card marker. It needs a free, read-only Web API key
+(<https://steamcommunity.com/dev/apikey>), and achievements appear after a Steam
+restart.
 
 ## Advanced options
 

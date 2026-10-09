@@ -1,8 +1,8 @@
 # Architecture (developer)
 
-A high-level map for contributors. For the rationale behind the native-Steam
-download approach and the divergence from DeckTools, read
-[DESIGN.md](../DESIGN.md) and [DESIGN_UI.md](../DESIGN_UI.md).
+A high-level map for contributors. For why things are built this way (the
+native-Steam download, the divergence from DeckTools) read the decision log in
+[DESIGN.md](../DESIGN.md); for how UI elements are built, [DESIGN_UI.md](../DESIGN_UI.md).
 
 ## Two halves
 

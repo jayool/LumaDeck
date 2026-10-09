@@ -1,5 +1,12 @@
 # Porting LumaDeck (+ lumalinux) to other distros — starting with CachyOS
 
+> **PAUSED (2026-10-09).** The port is on hold. Done: phases 0–2 below (platform
+> layer, environment generalisation, session layer), merged into `main` and
+> validated on a real CachyOS userland on 2026-08-04. Missing: the Game Mode
+> test on a real CachyOS handheld (issue #31). The lumalinux side is in
+> lumalinux's `docs/cachyos-port.md`. Read this document as the plan to resume
+> from, not as current status.
+
 > Status: **Phases 0–2 implemented on `claude/cachyos-support` and VALIDATED
 > LIVE on a real CachyOS userland (2026-08-04).** The platform layer, the
 > environment generalisation, and the session-layer fixes are done, unit-tested,
