@@ -14,9 +14,9 @@ code-level read of all of them.
 
 | Problem | Symptom | Tools that attack it |
 |---|---|---|
-| **A. Won't launch (ownership / DRM check)** | Crashes on start, "you don't own this" | Generic Fix (crack), Goldberg, Unsteam, Steamless (for SteamStub) |
+| **A. Won't launch (ownership / DRM check)** | Crashes on start, "you don't own this" | LuaTools catalogue crack, Goldberg, Unsteam, Steamless (for SteamStub) |
 | **B. Won't launch (.exe wrapped in SteamStub)** | "Application load error 6:0000065432" at launch, caused by Steam's own DRM shell | **Spliced tickets** (automatic, SLSsteam plugin), Steamless for the rest |
-| **C. Online doesn't connect** | Runs solo, multiplayer/co-op won't connect | **netsock** (native, no crack), Online Fix (Unsteam / OnlineFix), perondepot |
+| **C. Online doesn't connect** | Runs solo, multiplayer/co-op won't connect | **netsock** (native, no crack), LuaTools catalogue online fix (Unsteam / OnlineFix), perondepot |
 
 Everything else (Tested / Extra Steps / Unstable / voices38 / Ryuu) is a quality
 label or a source name, **not** a different kind of fix.
@@ -48,14 +48,23 @@ and setting an arbitrary FakeAppId lives in Settings.)
 
 Not fixed buttons — a **catalogue**, shown across the two tabs above (non-online
 here, online in the Online Fixes tab). "Check for Fixes" loads the public LuaTools
-listing for the appid; each entry then renders its own actions.
+listing for the appid; each entry then renders its own actions. A Denuvo entry's
+numeric title shows as "Build <n>", with "Needs build <n>", "⚠ This fix needs
+build <n>. Install the compatible version first" or "You're already on the build
+this fix needs" (its `onRequiredBuild`, from the fix's cached lua vs the .acf's
+`InstalledDepots`). Applying and installing a version need a LuaTools session:
+without one the section shows "Log in with Discord to install versions and apply
+fixes" (or "Your LuaTools session expired…") and a **Log in with Discord**
+button; a 401 on download marks the session rejected.
 
 | Control | What it does | Source / origin | File treatment |
 |---|---|---|---|
-| **Check for Fixes** | Loads the LuaTools catalogue for the appid (public; no login). Downloads nothing. | `list_luatools_fixes` → `/api/denuvo/fixes?appid=` | none |
-| **Apply fix** (per catalogue entry) | Downloads + applies that entry's zip (crack / online / Denuvo — problem A or C). **One LuaTools fix per game** (see below). | `download_luatools_fix` → the entry's signed URL → the same extract pipeline as `apply_game_fix` | extract into the game dir, overwriting; originals copied to `luatools-backup-{appid}/` first (first-time copy only). Logs a `[FIX]` block in `luatools-fix-log-{appid}.log`. **If the zip ships an `OnlineFix.ini` with a `FakeAppId`, it is an online fix → also registers the FakeAppId in SLSsteam and enables netsock (see below).** Freezes the game (see "Anything in the game dir freezes the game"). |
-| **Install the game version this fix needs** (per entry, when it has one) | Pins the SLSsteam ManifestId so Steam (re)downloads the build the fix targets. | `download_luatools_fix` slot=`manifest` | no game-dir writes; user restarts Steam + re-downloads |
-| **Installed Fixes** | Lists applied fixes (from the log) with per-fix / all remove. | `get_installed_fixes` | un-fix deletes the fix's added files, **copies** the originals back from the backup (the backup tree is only dropped when no fix remains), drops its `[FIX]` block, and removes any FakeAppId / netsock it set (see below) |
+| **Check for Fixes** | Loads the LuaTools catalogue for the appid (public; no login). With a LuaTools session it also fetches each version entry's small lua (cached) to tell whether the game is already on the build that fix needs. | `list_luatools_fixes` → `/api/denuvo/fixes?appid=` | none in the game dir |
+| **Apply fix** (per catalogue entry) | Downloads + applies that entry's zip (crack / online / Denuvo — problem A or C). **One LuaTools fix per game** (see below). Needs a LuaTools session (Log in with Discord) and an installed game; the listing itself is public. | `download_luatools_fix` → the entry's signed URL → the same extract pipeline as `apply_game_fix` | a non-zip download (an error page) is refused before the game dir is touched; extract into the game dir, overwriting (zip-slip blocked; a leading `/` in member names and a single top-level `{appid}/` folder are stripped; names match existing files case-insensitively, so a Windows-built zip overwrites `Game.exe` rather than landing beside it); originals copied to `luatools-backup-{appid}/` first (first-time copy only). Logs a `[FIX]` block in `luatools-fix-log-{appid}.log`, its `Fix Type:` being the entry's title (else its first tag, else "LuaTools Catalog"), plus an `Online: yes` line when the catalogue tags it online. **If the zip ships an `OnlineFix.ini` with a `FakeAppId`, it is an online fix → also registers the FakeAppId in SLSsteam and, when netsock is installed and the game shows no anti-cheat, enables netsock (see below).** Freezes the game (see "Anything in the game dir freezes the game"). |
+| **Install the game version this fix needs** (per entry, when it has one) | Sources the manifests of every depot the fix's lua pins (depotcache, LumaDeck's archive, the `manifest.luastools.xyz` archive, Hubcap; shared `depotfromapp` depots taken at their current gid), then pins and freezes the game to that build and flags an installed `.acf` so Steam re-plans. If a manifest is missing and no request-code provider is up, nothing is written. Needs a LuaTools session; disabled when the game is already on that build. | `download_luatools_fix` slot=`manifest` | no game-dir writes; user restarts Steam + re-downloads |
+| **Installed LuaTools Fixes** / **Installed Online Fixes** | Lists this game's applied fixes (from the log), each tab showing its own kind (online = a `FakeAppId:` or `Online: yes` line in the block), with a Remove Fix button per fix (no remove-all). A block whose files are all gone (Steam reinstall, manual delete) is dropped from the log when listed. | `get_installed_fixes` | un-fix deletes the fix's added files, **copies** the originals back from the backup (the backup tree is only dropped when no fix remains), drops its `[FIX]` block, and removes the FakeAppId / legacy netsock marker it set once no remaining block declares a FakeAppId (see below) |
+
+Leftovers the UI no longer calls: `fixes.check_for_fixes` (direct `files.luatools.work` probe) with the direct-URL `apply_game_fix` bridge, `cancel_apply_fix` (no Cancel on purpose), and the `unsteam.ini` `<appid>` substitution, keyed to a fix type the catalogue never records.
 
 #### One LuaTools fix per game
 
@@ -88,7 +97,7 @@ instead of deleting the file. The backup tree is removed with the last fix.
 
 | Button | What it does | Source / origin | File treatment |
 |---|---|---|---|
-| **Remove Steam DRM** (Steamless) | Unpacks the SteamStub DRM shell from the game's `.exe` (problem B). | `Steamless.CLI` (atom0s), bundled in the plugin (`backend/deps/Steamless/`); needs .NET | runs Steamless on each `.exe` (10 min cap each, killed + partial output removed past it), keeps `.original.exe`, swaps the unpacked exe in; one outcome per exe (below). Freezes the game when an exe was swapped. |
+| **Remove Steam DRM** (Steamless) | Unpacks the SteamStub DRM shell from the game's `.exe` (problem B). | `Steamless.CLI` (atom0s), bundled in the plugin (`backend/deps/Steamless/`); needs the .NET 9 runtime, which LumaDeck installs on first use (Microsoft's script, `dotnet.py`) | runs Steamless on every game `.exe` (installers, launchers, crash handlers, Unity helpers and files under 100 KB are skipped; likely main exes first; 10 min cap each, killed + partial output removed past it), keeps `.original.exe`, swaps the unpacked exe in; one outcome per exe (below). Freezes the game when an exe was swapped. |
 
 Steamless outcomes, per exe (`steamless._classify`, shown as one row each under
 the button): the CLI exits 0 when it wrote `<exe>.unpacked.exe` (→ `unpacked`,
@@ -97,7 +106,7 @@ not packed and when it recognised the stub and failed** — the two only differ
 in the text, "Failed to unpack file." → `unpack_failed`, else `no_drm` — and
 >1 → `error`; a killed run is `timeout`. The CLI's full output goes to the Decky
 log for every exe, whatever the code (rc 1 used to be discarded as "no DRM").
-| **Apply Goldberg** | Steam emulator: fakes ownership + offline achievements (problem A). Overlaps SLSsteam, so use only when SLSsteam isn't enough. | gbe_fork (Detanup01), bundled in the plugin (`backend/deps/Goldberg/`) | renames game `steam_api(64).dll` to `.valve`, drops Goldberg's + `steam_settings/` + `steam_appid.txt` |
+| **Apply Goldberg** | Steam emulator: fakes ownership + offline achievements (problem A). Overlaps SLSsteam, so use only when SLSsteam isn't enough. | gbe_fork (Detanup01), bundled in the plugin (`backend/deps/Goldberg/`) | in every directory holding a steam_api library, renames `steam_api(64).dll` / `libsteam_api.so` (arch-matched) to `.valve`, drops Goldberg's, a `steam_settings/` (with a `steam_interfaces.txt` scanned from the original) and `steam_appid.txt`. Remove puts the `.valve` files back and deletes those. |
 
 ### SteamStub, error 6:0000065432: spliced tickets first, Steamless second
 
@@ -123,8 +132,9 @@ How LumaDeck ships it (`installer._install_spliced_tickets`, run with the
 other SLSsteam flags on every plugin start):
 
 - bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`: a
-  credit header, then Ace's file byte for byte (the copy's sha256 starts
-  `62f377e3`). Not fetched from anywhere at runtime; updated by hand like the
+  credit header, then Ace's file byte for byte (the part below the header,
+  from `SplicedTickets = …` on, has sha256 starting `62f377e3`; the whole
+  shipped file, header included, `700b7953`). Not fetched from anywhere at runtime; updated by hand like the
   Steamless DLLs when Ace publishes a new one.
 - installed as `~/.config/SLSsteam/plugins/lumadeck-spliced-tickets.lua`
   (0600, owned by the real user) and `Plugins: yes` in SLSsteam's
@@ -168,13 +178,13 @@ route has the guard above instead. It also costs 40 lines instead of ~200.
 
 | Button | What it does | Source | Notes |
 |---|---|---|---|
-| **Fix Linux Permissions** | `chown deck:deck` + `chmod 755` over the game dir. For native Linux games that won't start (Decky downloads as root, Steam runs as deck). | ours | not Proton-related |
-| **Reconfigure SLSsteam** | Re-adds the game's token, DLCs and depot decryption keys to the SLSsteam config, read from the installed `.lua`. | ours | rescue when the config drifts from the installed Lua |
-| **Repair Appmanifest** | Deletes `appmanifest_{appid}.acf` across all libraries so Steam rebuilds it. | ours | does **not** restart Steam; user restarts afterwards |
+| **Fix Linux Permissions** | `chown -R <user>:` (the real Steam user, `deck` on a Deck) + `chmod 755` over the game dir. For native Linux games that won't start (Decky runs as root, Steam runs as the real user). | ours | not Proton-related |
+| **Reconfigure SLSsteam** | Re-adds the game to SLSsteam's AdditionalApps, restores its token (from the installed `.lua`) and, for games with over 64 DLCs, its DlcData (list fetched online); writes the lua's depot decryption keys into Steam's `config.vdf`. | ours | rescue when the config drifts from the installed Lua |
+| **Repair Appmanifest** | Deletes `appmanifest_{appid}.acf` across all libraries so Steam rebuilds it. Refused on games the account owns. | ours | does **not** restart Steam; user restarts afterwards |
 
 ## Override (Proton): how DLL fixes are made to load
 
-After applying **or** removing a fix, LumaDeck recomputes the game's launch
+After applying or removing a fix, and after each Online toggle, LumaDeck recomputes the game's launch
 options from the fix log and writes them via `SteamClient.Apps.SetAppLaunchOptions`:
 
 `_merge_launch_options` composes up to **two independent managed pieces** on the
@@ -197,7 +207,9 @@ is read by Proton/Wine inside it — different layers, same launch line.
 - **Removing** a fix drops its block from the log, so the override is recomputed
   down to the remaining fixes' DLLs (none left → stripped clean). The netsock
   `LD_AUDIT` is re-derived from its per-game marker so it survives the recompute.
-  User wrappers like `mangohud` are preserved.
+  User wrappers like `mangohud` and other options are preserved. Any existing
+  `WINEDLLOVERRIDES` is replaced by ours (or removed when no fix needs one), so
+  a hand-written one does not survive.
 
 Backend: `fixes.compute_fix_launch_options` + `steam_utils.get_app_launch_options`.
 Goldberg is intentionally NOT wired into the override (in-place steam_api64
@@ -216,7 +228,7 @@ build, with the same freeze the Auto-update toggle applies (`pins.freeze_for_fil
 
 | Operation | Freezes | Why / why not |
 |---|---|---|
-| Apply fix (generic, online, LuaTools catalogue) | yes, once files landed | its files replace the game's |
+| Apply fix (LuaTools catalogue, online or not) | yes, once files landed | its files replace the game's |
 | LuaTools version fix | yes (already did) | pins the build the fix needs |
 | Apply Goldberg | yes | replaces `steam_api` |
 | Steamless | yes, when at least one exe was swapped | replaces the exe |
@@ -227,7 +239,8 @@ A game the user already froze is left as is (its version-fix id survives); a
 providers freeze (the one the local pass lifts when a provider answers) is
 upgraded to the durable `files` freeze. The UI shows nothing new: the Auto-update
 toggle goes off and the version line reads "Frozen", as with a manual freeze.
-The frontend re-reads the pin after each of these operations (`refreshPin`).
+The frontend re-reads the pin after a fix, Goldberg, Steamless or Online enable
+(`refreshPin`); after a version install it shows on the next page load.
 
 ## Online multiplayer: 480, netsock, the EOS proxy, and the Online toggle
 
@@ -246,8 +259,8 @@ the Online toggle applies them together:
 We don't try to tell one native door from another: 480 is inert where unneeded,
 netsock **fails gracefully with `"pattern not found"`** on a non-SNS game, and
 the EOS proxy only exists where the game ships the Epic SDK. So the toggle
-applies **480 always, netsock when it is installed, the EOS proxy when the SDK
-is found**, and tells the user which of the three it applied.
+applies **480 always (unless the game already has a FakeAppId, which is kept),
+netsock when it is installed, the EOS proxy when the SDK is found**, and tells the user which of the three it applied.
 
 **netsock** = `yesyes0649/steamnetsock-patch`. `setup.sh` installs it on every run
 to `~/.config/SLSsteam/tools/netsock/netsock.so`; we do not bundle it. Launch
@@ -263,19 +276,23 @@ Epic product cannot be helped; the proxy writes `epic_proxy.log` beside the exe.
 
 ### The Online toggle (Online Fixes tab)
 
-One button per installed game, **Enable Online / Disable Online**, and one
+One button per installed game, **Enable Online / Disable Online** (disabled for
+owned games: "Disabled for owned games. Steam's own online services apply."), and one
 description line under it, naming each door by its real name: `Will apply:
 FakeAppId (480) · steamnetsock-patch · eos-proxy.` / `Active: FakeAppId (480) ·
 steamnetsock-patch.` Situational notes on the same line: steamnetsock-patch not
 installed (points to Install Dependencies), an online fix already installed
-("try it first"). The line always ends with steamnetsock-patch's own README
+("try it first"; this counts `[FIX]` blocks with a `FakeAppId:` or `Online: yes`
+line). Except on a Denuvo-blocked or owned game, the line always ends with steamnetsock-patch's own README
 warning, the only anti-cheat handling: **"Do not use with anti-cheat games."**
 — no detection, nobody else gates this either. Applying eos-proxy **freezes the
 game** (see "Anything in the game dir freezes the game" above); 480 and
 steamnetsock-patch live outside the game dir and do not.
 
-- **Enable** (`enable_online`): registers FakeAppId 480 (remembering whether the
-  entry was already there); sets the netsock leg when `netsock.so` is on disk
+- **Enable** (`enable_online`): registers FakeAppId 480, unless the game already
+  has a FakeAppId (a fix's or one set in Settings), which is kept as is
+  (remembering whether the entry was already there; the line still reads
+  "FakeAppId (480)"); sets the netsock leg when `netsock.so` is on disk
   (the launch-options recompute emits the `LD_AUDIT`); applies the EOS proxy
   when the game ships the SDK (`eos_proxy.apply_eos_proxy`: rename the SDK to
   `.yes`, copy the proxy, verify by hash; a `stale` location keeps the game's
@@ -307,7 +324,9 @@ steamnetsock-patch live outside the game dir and do not.
   block), and sets the legacy netsock marker `luatools-netsock-{appid}.on` when
   `netsock.so` is on disk and the install dir shows no anti-cheat markers
   (`_has_anticheat`). Denuvo / single-player / generic cracks have **no such
-  `.ini`** → only their files are copied.
+  `.ini`** → only their files are copied. EOS/EpicFix online fixes have no
+  such `.ini` either; the `Online: yes` line from the catalogue tag files them
+  under the Online Fixes tab instead.
 - Both markers feed the same launch-options recompute: netsock is on when either
   the toggle's marker or the legacy marker says so. Un-fixing an online fix drops
   its FakeAppId and its legacy marker; the toggle's marker is the toggle's own.
@@ -340,8 +359,10 @@ One library, several taps:
   ~500 games, badges: bypass / online / tested / extra_steps / unstable).
 - **lua.tools/fixes** (web for humans) + **files.luatools.work** (CDN for plugins)
   serve the same library; lua.tools tags some entries "sourced from Ryuu".
-- **LumaDeck** fetches fixes only from `files.luatools.work` by appid. It uses
-  Ryuu only as a **manifest** source (to add games), never for fixes.
+- **LumaDeck** fetches fixes only from the lua.tools API by appid: the public
+  listing `lua.tools/api/denuvo/fixes`, then a signed download URL from
+  `/api/denuvo/download` (needs a LuaTools login). It uses Ryuu only as a
+  **manifest** source (to add games), never for fixes.
 
 Note: `generator.ryuu.lol` serves two different things — `/fixes` (the crack
 catalogue, used by luatools-moon's crackfix) and `/download?...file_type=manifest`
@@ -351,8 +372,8 @@ catalogue, used by luatools-moon's crackfix) and `/download?...file_type=manifes
 
 | Our fix | luatools-moon | SteaMidra / SFF | ACCELA / ASSella | LuaToolsLinux |
 |---|---|---|---|---|
-| **Generic Fix** | same CDN + ryuu crackfix (`generator.ryuu.lol/fixes`) | "Fixes & Bypasses" → `KoriaPolis/CrakFiles` | — | same CDN (identical code) |
-| **Online Fix** | same CDN + perondepot (`api.perondepot.xyz`) | "Multiplayer Fix" (online-fix.me) + LC Online Fix | — | same CDN |
+| **LuaTools catalogue fix (crack / Denuvo)** | same CDN + ryuu crackfix (`generator.ryuu.lol/fixes`) | "Fixes & Bypasses" → `KoriaPolis/CrakFiles` | — | same CDN (identical code) |
+| **LuaTools catalogue fix (online)** | same CDN + perondepot (`api.perondepot.xyz`) | "Multiplayer Fix" (online-fix.me) + LC Online Fix | — | same CDN |
 | **Goldberg** | not a tool (only a DLL heuristic) | gbe_fork + gse_fork | **the source** (`deps/Goldberg`) | via ACCELA |
 | **Steamless** | — | `steamstub_unpacker.py` | **the source** (`steamless-aio.sh`) | via ACCELA |
 | **Spliced tickets** | — | — | ASSella `canary` deploys Ace's plugin per native download, then deletes it | — |
@@ -367,8 +388,7 @@ Uplay (SFF; mostly redundant with SLSsteam's DLC handling).
 
 ## Upstream origins
 
-- Generic Fix → luatools team (curated cracks on their CDN)
-- Online Fix → Unsteam (cs.rin.ru) / OnlineFix (online-fix.me)
+- LuaTools catalogue fixes → the luatools team's library (cracks, Unsteam (cs.rin.ru) / OnlineFix (online-fix.me) online fixes, some sourced from Ryuu)
 - Goldberg → gbe_fork (Detanup01)
 - Steamless → atom0s/Steamless
 - Fix Linux Permissions / Reconfigure SLSsteam / Repair Appmanifest → LumaDeck (the ACCELA/SLSsteam stack)
