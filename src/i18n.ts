@@ -653,8 +653,6 @@ const strings: Record<Lang, Record<string, string>> = {
     statusChecking: "Verificando",
     statusProcessing: "Processando manifesto...",
     statusConfiguring: "Configurando SLSsteam...",
-    statusDownloadingGame: "Baixando jogo",
-    statusDownloadingGameFiles: "Baixando arquivos do jogo...",
     statusInstalling: "Instalando...",
     statusQueued: "Iniciando download...",
     statusRestartingSteam: "Reiniciando Steam para começar o download…",

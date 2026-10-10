@@ -24,9 +24,18 @@ const strings: Record<Lang, Record<string, string>> = {
   ```ts
   t("pluginInstalled", version)   // "Installed: {0}"  -> "Installed: 1.2.3"
   ```
+- Each `{n}` is replaced once: a placeholder repeated in the same string is
+  filled only the first time.
 - The active language is detected from the Steam/browser locale (anything
   starting with `pt` → `pt-BR`, else `en`) and can be overridden in the
-  **Language / Idioma** section of **Settings**. `useT` re-renders components on change.
+  **Language / Idioma** section of **Settings** (`src/pages/Settings.tsx`).
+  The choice is saved in `localStorage` under `lumadeck_lang` and wins over
+  detection on the next load; an unreadable or unknown value falls back to
+  detection. `setLanguage()` saves it and re-renders every component using
+  `useT()`.
+- Backend error codes are not strings to translate directly: `errorText(code, t)`
+  maps them (`session_expired`, `api_error_<status>`) to keys and returns any
+  other text unchanged.
 
 ## Adding a string
 
@@ -42,11 +51,18 @@ const strings: Record<Lang, Record<string, string>> = {
 
 1. Extend the `Lang` type: `type Lang = "en" | "pt-BR" | "es"`.
 2. Add a full locale block to `strings` with every key translated.
-3. Update `detectLanguage()` so the new locale is auto-selected (and, if you
-   want it user-selectable, the toggle in `Settings.tsx`).
+3. Update `detectLanguage()` so the new locale is auto-selected, and the
+   saved-preference check next to it, which only accepts `en` and `pt-BR`.
+4. If it should be user-selectable, add it to the toggle in
+   `src/pages/Settings.tsx`.
 
 ## Conventions
 
 - Keys are `camelCase`, grouped by screen with a `// Section` comment.
 - Don't bake numbers/names into a string — pass them as `{0}` args so both
   locales share one template.
+
+## Current gaps
+
+- The Help page (`src/pages/Help.tsx`, opened from Settings) uses 14 `help*`
+  keys that exist only in `en`, so in `pt-BR` it shows in English.
