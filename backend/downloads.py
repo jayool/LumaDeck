@@ -716,88 +716,6 @@ def _zip_basename(name: str) -> str:
     return name.replace("\\", "/").split("/")[-1]
 
 
-async def _enrich_lua_with_linux_depot(appid: int, lua_text: str) -> tuple[str, bool]:
-    """Add Linux depot to lua if the manifest is already in the local depotcache.
-
-    Returns (lua_text, has_linux_depot). Only adds the depot if the manifest
-    binary was already extracted from the zip — avoids 401 errors trying to
-    fetch manifests anonymously from Steam CDN.
-    """
-    try:
-        for m in re.finditer(r'addappid\(\s*(\d+)\s*,\s*\d+\s*,', lua_text):
-            _ = m.group(1)  # windows depot present
-
-        if not re.search(r'addappid\(\s*\d+\s*,\s*\d+\s*,', lua_text):
-            return lua_text, False  # No depots to work with
-
-        steam_path = detect_steam_install_path()
-        depotcache_dir = os.path.join(steam_path or "", "depotcache")
-
-        try:
-            client = await ensure_http_client("EnrichLua")
-            resp = await client.get(f"https://api.steamcmd.net/v1/info/{appid}", timeout=10)
-            if resp.status_code != 200:
-                return lua_text, False
-
-            data = resp.json()
-            if data.get("status") != "success":
-                return lua_text, False
-
-            app_depots = data.get("data", {}).get(str(appid), {}).get("depots", {})
-
-            linux_depot_id = None
-            linux_manifest = None
-            linux_size = None
-
-            for depot_id, depot_info in app_depots.items():
-                if not depot_id.isdigit():
-                    continue
-                config = depot_info.get("config", {})
-                if config.get("oslist") == "linux" and config.get("osarch") == "64":
-                    linux_depot_id = depot_id
-                    public = depot_info.get("manifests", {}).get("public", {})
-                    if isinstance(public, dict):
-                        linux_manifest = public.get("gid")
-                        linux_size = public.get("size", 0)
-                    break
-
-            if not linux_depot_id or not linux_manifest:
-                return lua_text, False
-
-            # Only add the Linux depot if the manifest binary is already in depotcache
-            # (placed there when the API zip contained it). Without it, DDM gets 401.
-            manifest_file = os.path.join(depotcache_dir, f"{linux_depot_id}_{linux_manifest}.manifest")
-            if not os.path.exists(manifest_file):
-                logger.info(
-                    f"LumaDeck: Linux depot {linux_depot_id} found for {appid} "
-                    f"but manifest {linux_manifest} not in depotcache — skipping enrichment"
-                )
-                return lua_text, False
-
-            windows_token = None
-            for m in re.finditer(r'addappid\(\s*(\d+)\s*,\s*\d+\s*,\s*"([^"]+)"', lua_text):
-                windows_token = m.group(2)
-                if windows_token:
-                    break
-
-            if not windows_token:
-                return lua_text, False
-
-            linux_line = f'addappid({linux_depot_id},1,"{windows_token}")\n'
-            linux_manifest_line = f'--setManifestid({linux_depot_id},"{linux_manifest}",{linux_size})\n'
-            lua_text = lua_text.rstrip() + "\n" + linux_line + linux_manifest_line
-            logger.info(f"LumaDeck: Added Linux depot {linux_depot_id} (manifest in depotcache) for {appid}")
-            return lua_text, True
-
-        except Exception as exc:
-            logger.warning(f"LumaDeck: Failed to enrich lua with Linux depot: {exc}")
-            return lua_text, False
-
-    except Exception as exc:
-        logger.warning(f"LumaDeck: Error in _enrich_lua_with_linux_depot: {exc}")
-        return lua_text, False
-
-
 def _count_app_depot_keys(appid: int) -> int:
     """Count usable Extended depot-key entries in lumalinux's keys.txt whose
     parent_app_id == appid — i.e. content depots for which steamidra_lite wrote
@@ -994,13 +912,16 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
 
     Approach (LumaDeck flow):
       1. Extract the zip to a temp directory.
-      2. Locate the <appid>.lua and (optionally) enrich it with the Linux
-         depot — done in the plugin because steamidra_lite doesn't query
-         PICS. The enrichment runs ONLY if the corresponding .manifest is
-         already in the extracted tree (no point adding a depot we can't
-         decrypt).
-      3. Invoke steamidra_lite with the (possibly enriched) .lua and the
-         directory of extracted manifests. The script writes:
+      2. Locate the <appid>.lua. It goes to steamidra_lite as the hub shipped
+         it, app line first. No Linux-depot enrichment and no Proton forcing:
+         the hub's .lua already carries every platform depot the app has
+         (Vampire Survivors: 1794681/1794684/1794685), Steam picks the depot
+         by Valve's Deck recommendation whatever keys we hold, and runs the
+         Windows build under Proton on its own (measured 2026-10-13, apps
+         2379780 and 1794680). A CompatToolMapping written to localconfig.vdf
+         while Steam runs is lost on its next rewrite of the file.
+      3. Invoke steamidra_lite with the .lua and the directory of extracted
+         manifests. The script writes:
            - manifests into depotcache + config/depotcache
            - keys.txt for lumalinux
            - DecryptionKey entries into config.vdf
@@ -1146,23 +1067,13 @@ async def _process_and_install_lua(appid: int, zip_path: str, pin: bool = False,
                 "ownedDlc": plan["add_dlcs"],
                 "ownedInstalled": installed,
             })
-            # The base game is installed by Steam with whatever platform the
-            # account chose; no Linux-depot enrichment and no Proton forcing.
-            _set_download_state(appid, {"hasLinuxDepot": True, "owned": True})
+            _set_download_state(appid, {"owned": True})
         else:
             # The hub's line order is not ours to trust: the app line goes first.
             ordered = _app_line_first(lua_text, appid)
             if ordered != lua_text:
                 lua_text = ordered
                 lua_path.write_text(lua_text, encoding="utf-8")
-            # Optional enrichment with Linux depot (consults PICS via
-            # api.steamcmd.net). Updates the file in-place if it adds anything.
-            enriched_text, has_linux_depot = await _enrich_lua_with_linux_depot(
-                appid, lua_text,
-            )
-            if enriched_text != lua_text:
-                lua_path.write_text(enriched_text, encoding="utf-8")
-            _set_download_state(appid, {"hasLinuxDepot": has_linux_depot})
 
         if _is_download_cancelled(appid):
             raise RuntimeError("cancelled")
@@ -1573,17 +1484,6 @@ async def _download_zip_for_app(appid: int, target_library_path: str = "",
                     # except Exception as ach_exc:
                     #     logger.warning(f"LumaDeck: achievement auto-gen failed: {ach_exc}")
                     logger.info(f"LumaDeck: achievement auto-gen DISABLED (native test build) for {appid}")
-
-                    # Force Proton if no Linux depot was added during the
-                    # enrich pass — Steam wouldn't otherwise launch a Windows
-                    # binary on the Deck without explicit compat tool.
-                    if not owned and not _get_download_state(appid).get("hasLinuxDepot", False):
-                        try:
-                            from steam_utils import set_compat_tool_for_app
-                            if set_compat_tool_for_app(appid):
-                                logger.info(f"LumaDeck: Forced proton_experimental for {appid} (Windows-only depot)")
-                        except Exception as proton_exc:
-                            logger.warning(f"LumaDeck: set_compat_tool error: {proton_exc}")
 
                     # We do NOT auto-restart Steam. Everything is written to
                     # disk; Steam picks up the new game (and downloads it
