@@ -1148,7 +1148,7 @@ export function Settings() {
               {held && (
                 <PanelSectionRow>
                   <ButtonItem layout="below" disabled={applyingFix}
-                    description={steamHeldText(t, componentsStatus?.freeze).description} onClick={onUnpin}>
+                    description={steamHeldText(t, componentsStatus?.freeze, true).description} onClick={onUnpin}>
                     {applyingFix ? t("restartingSteam") : confirmUnpin ? t("confirmRestartsSteam") : t("sysLetSteamUpdate")}
                   </ButtonItem>
                 </PanelSectionRow>

@@ -60,21 +60,33 @@ export interface ComponentsStatus {
   quickInstall?: string | null;
 }
 
-// The "Let Steam update" row's title + description from the gate. Shared with
-// the Settings Steam row so both surfaces say the same thing.
+// The "Let Steam update" row's title + description from the gate. The QAM is
+// for everyone, so it speaks of "the components" like the Update row does;
+// Settings → Components (detailed) names the component, the tag and the build.
 export function steamHeldText(
   t: (k: string, ...a: any[]) => string,
   freeze: ComponentsStatus["freeze"] | undefined,
+  detailed = false,
 ): { label: string; description: string } {
   const g = freeze?.gate;
-  const build = g?.stable_build ?? "?";
   switch (g?.state) {
     case "ready":
-      return { label: t("sysSteamReady"), description: t("sysSteamReadyDesc", build) };
+      return {
+        label: t("sysSteamReady"),
+        description: detailed ? t("compSteamReadyDesc", g?.stable_build ?? "?") : t("sysSteamReadyDesc"),
+      };
     case "update_slssteam":
-      return { label: t("sysSteamHeld"), description: t("sysSteamHeldUpdateSlsDesc", g?.slssteam_required ?? "") };
+      return {
+        label: t("sysSteamHeld"),
+        description: detailed ? t("compSteamUpdateSlsDesc", g?.slssteam_required ?? "") : t("sysSteamHeldUpdateFirstDesc"),
+      };
     case "not_yet":
-      return { label: t("sysSteamHeld"), description: t("sysSteamHeldNotYetDesc", g?.blocker === "lumalinux" ? "lumalinux" : "SLSsteam") };
+      return {
+        label: t("sysSteamHeld"),
+        description: detailed
+          ? t("compSteamNotYetDesc", g?.blocker === "lumalinux" ? "lumalinux" : "SLSsteam")
+          : t("sysSteamHeldNotYetDesc"),
+      };
     default:
       return { label: t("sysSteamHeld"), description: t("sysSteamHeldUnknownDesc") };
   }
@@ -288,7 +300,10 @@ function buildRows(
     // ours — the user decides when the components are ready for the newer
     // Steam (the description says what may stop working until they are).
     const ourPin = !!status.freeze?.frozen && !!status.freeze?.mine;
-    if (ourPin) {
+    // When a component update is what the user must do first, the Update row
+    // (pushed below) goes ABOVE this one, so "first" reads top-down.
+    const heldAfterUpdate = ourPin && status.freeze?.gate?.state === "update_slssteam";
+    const pushHeldRow = () => {
       const txt = steamHeldText(t, status.freeze);
       rows.push({
         key: "steam-held", severity: "info",
@@ -297,7 +312,10 @@ function buildRows(
         onAction: actions.unpin,
         confirm: "restart", busyLabel: t("restartingSteam"),
       });
-    } else if (steamBehindPin && llReady === true) {
+    };
+    if (ourPin && !heldAfterUpdate) {
+      pushHeldRow();
+    } else if (!ourPin && steamBehindPin && llReady === true) {
       rows.push({
         key: "steam-update", severity: "info",
         label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),
@@ -323,6 +341,7 @@ function buildRows(
         confirm: "restart",
       });
     }
+    if (heldAfterUpdate) pushHeldRow();
   }
   if (status.plugin?.available) {
     rows.push({
