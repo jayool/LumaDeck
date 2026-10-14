@@ -189,7 +189,7 @@ export function Settings() {
       await restartSteam();
       await reloadStatus();
     } else {
-      toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
+      toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
     }
     setApplyingFix(false);
   };
@@ -1196,6 +1196,16 @@ export function Settings() {
             // for the new build: Update is the fix, not a downgrade.
             label = t("sysUpdate");
             fire = () => runFix(() => reinjectInstalled());
+          } else if (primary === "unpin") {
+            // Broken on a client nothing hooks while our pin holds it, and
+            // Valve's build is supported: let Steam update.
+            label = t("sysLetSteamUpdate");
+            busyLabel = t("restartingSteam");
+            fire = () => runFix(async () => {
+              const r: any = await liftSteamFreeze();
+              if (r?.success) toast(t("sysSteamHeld"), t("toastSteamUnpinned"), 6000);
+              return r;
+            });
           } else if (primary === "core") {
             // Partial install, Steam at the pin → install the missing core in
             // place (Game Mode safe), then restart.

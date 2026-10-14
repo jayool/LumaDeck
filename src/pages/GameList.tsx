@@ -473,7 +473,7 @@ export function GameList() {
     reinstallCore: () => runSysAction(async () => {
       const r = await applyComponent("core", "install");
       if (r?.success) await restartSteam();
-      else toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
+      else toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
     }),
     downgrade: () => runSysAction(async () => {
       // Arm the one-shot Desktop autostart (headcrab downgrade + lumalinux
@@ -566,7 +566,7 @@ export function GameList() {
       toast(t("toastQuickInstallDone"), "", 4000);
       await restartSteam();
     } else {
-      toast(t("toastQuickInstallFailed"), result.failedStep || "", 6000);
+      toast(t("toastQuickInstallFailed"), result.error || result.failedStep || "", 6000);
     }
   };
 

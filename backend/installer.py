@@ -706,7 +706,7 @@ async def quick_install(gamemode: bool = True) -> dict:
             logger.exception("LumaDeck: quick_install step %s crashed: %s", name, exc)
             QUICK_INSTALL_STATE["status"] = "failed"
             QUICK_INSTALL_STATE["error"] = f"{name} crashed: {exc}"
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
         if not (isinstance(result, dict) and result.get("success")):
             # Surface the sub-installer's own error/progress for context.
@@ -715,7 +715,7 @@ async def quick_install(gamemode: bool = True) -> dict:
             QUICK_INSTALL_STATE["error"] = sub.get("error") or f"{name} failed"
             QUICK_INSTALL_STATE["progress"] = sub.get("progress", "")
             logger.error("LumaDeck: quick_install failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
     QUICK_INSTALL_STATE["status"] = "done"
     QUICK_INSTALL_STATE["stepIndex"] = len(steps)
@@ -793,7 +793,7 @@ async def _run_install_steps(steps, verb: str = "Running") -> dict:
             logger.exception("LumaDeck: step %s crashed: %s", name, exc)
             QUICK_INSTALL_STATE["status"] = "failed"
             QUICK_INSTALL_STATE["error"] = f"{name} crashed: {exc}"
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
         if not (isinstance(result, dict) and result.get("success")):
             sub = status_getter()
@@ -801,7 +801,7 @@ async def _run_install_steps(steps, verb: str = "Running") -> dict:
             QUICK_INSTALL_STATE["error"] = sub.get("error") or f"{name} failed"
             QUICK_INSTALL_STATE["progress"] = sub.get("progress", "")
             logger.error("LumaDeck: failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
     QUICK_INSTALL_STATE["status"] = "done"
     QUICK_INSTALL_STATE["stepIndex"] = len(steps)

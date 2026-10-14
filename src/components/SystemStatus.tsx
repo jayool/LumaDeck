@@ -131,7 +131,16 @@ const INFO = "#5b9eff";
 //   retry     — crash guard latched: clear its state, then restart (label: Re-enable injection)
 //   reinject  — not_injected: re-patch steam.sh, then restart (label: Restart)
 //   restart   — not_loaded: plain restart (label: Restart)
-export type PrimaryAction = "downgrade" | "update" | "core" | "retry" | "reinject" | "restart" | null;
+export type PrimaryAction = "downgrade" | "update" | "unpin" | "core" | "retry" | "reinject" | "restart" | null;
+
+// Broken, no update fixes it, but Steam is held by OUR pin and the gate says the
+// build Valve serves now is hooked by the released components: the fix is to
+// let Steam update (the SteamOS-image client of 2026-10-14: nothing hooks it,
+// and the only way out is up). Downgrading would land on a client the latest
+// components no longer hook.
+export function unpinFixesBreak(status: ComponentsStatus | null): boolean {
+  return !!status?.freeze?.frozen && !!status?.freeze?.mine && status?.freeze?.gate?.state === "ready";
+}
 
 // A Steam update broke a component, and a RELEASED update of that component
 // hooks the client on disk: the fix is Update, not a downgrade. True only when
@@ -165,6 +174,7 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
       !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported"))
     return null;
   if (anyUnsupported && updateFixesBreak(status)) return "update";
+  if (anyUnsupported && unpinFixesBreak(status)) return "unpin";
   if (anyUnsupported) return "downgrade";
   if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
   // Guard latched: the not_loaded/not_injected below are its SYMPTOM, and their
@@ -228,6 +238,18 @@ function buildRows(
       actionLabel: t("sysUpdate"),
       onAction: actions.update,
       confirm: "restart",
+    });
+  } else if (anyUnsupported && unpinFixesBreak(status)) {
+    // Broken on a client nothing hooks, held by our pin, and Valve's current
+    // build is supported: let Steam update. Same row as the held row, as a
+    // problem (it is the fix, not a notice).
+    const txt = steamHeldText(t, status.freeze);
+    rows.push({
+      key: "steam-held", severity: "problem",
+      label: txt.label, description: txt.description,
+      actionLabel: t("sysLetSteamUpdate"),
+      onAction: actions.unpin,
+      confirm: "restart", busyLabel: t("restartingSteam"),
     });
   } else if (anyUnsupported) {
     // Steam moved off a build the hooks can handle. Only a Steam re-align fixes it,
@@ -353,7 +375,11 @@ function buildRows(
     // newer version of an installed component?".
     const llUpdate = !!ll?.installed && !!ll.update?.available;
     const crUpdate = !!cr?.installed && !!cr.update?.available;
-    const slsUpdate = !!sls?.installed && !!sls.update?.available;
+    // An SLSsteam release that no longer hooks the client on disk is not an
+    // update to offer: installing it is the 2026-10-14 crash loop. While our
+    // pin holds that client, the held row says to let Steam update first.
+    const slsUpdate = !!sls?.installed && !!sls.update?.available &&
+      sls.update?.supports_current_build !== false;
     if (llUpdate || crUpdate || slsUpdate) {
       rows.push({
         key: "update", severity: "info",
