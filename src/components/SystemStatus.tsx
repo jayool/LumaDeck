@@ -49,7 +49,9 @@ export interface ComponentsStatus {
   freeze?: {
     frozen: boolean; mine: boolean;
     // Only with our pin: is it safe to let Steam update? (backend/steam_update_gate.py)
-    // ready | update_slssteam | not_yet | unknown. Advice for the text, never a lock.
+    // ready | not_yet | unknown. Advice for the text, never a lock. (A released
+    // SLSsteam the user hasn't installed yet still reads ready: lift first, the
+    // old SLSsteam aborts cleanly on the new build, then Update is offered.)
     gate?: {
       state: string; blocker?: string | null;
       stable_build?: number | null; slssteam_required?: string | null;
@@ -74,11 +76,6 @@ export function steamHeldText(
       return {
         label: t("sysSteamReady"),
         description: detailed ? t("compSteamReadyDesc", g?.stable_build ?? "?") : t("sysSteamReadyDesc"),
-      };
-    case "update_slssteam":
-      return {
-        label: t("sysSteamHeld"),
-        description: detailed ? t("compSteamUpdateSlsDesc", g?.slssteam_required ?? "") : t("sysSteamHeldUpdateFirstDesc"),
       };
     case "not_yet":
       return {
@@ -324,9 +321,10 @@ function buildRows(
     // ours — the user decides when the components are ready for the newer
     // Steam (the description says what may stop working until they are).
     const ourPin = !!status.freeze?.frozen && !!status.freeze?.mine;
-    // When a component update is what the user must do first, the Update row
-    // (pushed below) goes ABOVE this one, so "first" reads top-down.
-    const heldAfterUpdate = ourPin && status.freeze?.gate?.state === "update_slssteam";
+    // (The gate no longer advises "update the components first": with a
+    // released SLSsteam for the new build the right order is Let Steam update,
+    // then Update, so the held row keeps its place.)
+    const heldAfterUpdate = false;
     const pushHeldRow = () => {
       const txt = steamHeldText(t, status.freeze);
       rows.push({
@@ -367,18 +365,18 @@ function buildRows(
     }
     if (heldAfterUpdate) pushHeldRow();
   }
-  // A LumaDeck update goes FIRST, above every problem and every other update:
-  // when Steam breaks something, the right advice usually ships in the plugin
-  // (2026-10-14: a user on 0.11.0 saw nothing useful until 0.11.2), and a user
-  // acting on an old plugin's rows acts on old advice. Orange while anything
-  // below is a problem (the fix may be here), blue when all is well.
+  // A LumaDeck update is the ONLY row while it is pending: when Steam breaks
+  // something, the right advice usually ships in the plugin (2026-10-14: a user
+  // on 0.11.0 saw nothing useful until 0.11.2), and every other row is an old
+  // plugin's advice. Orange when it hides a problem, blue when all is well.
+  // Settings ▸ Components keeps its button for whoever insists.
   if (status.plugin?.available) {
-    rows.unshift({
+    return [{
       key: "plugin", severity: rows.some((r) => r.severity === "problem") ? "problem" : "info",
       label: t("sysPluginUpdate"), description: t("sysPluginUpdateDesc"),
       actionLabel: t("sysPluginUpdateBtn"),
       onAction: actions.pluginUpdate,
-    });
+    }];
   }
 
   return rows;

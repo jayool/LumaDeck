@@ -101,10 +101,12 @@ class SupportRule(unittest.TestCase):
     def test_evaluate_with_the_real_feed(self):
         # Jayo's Deck 15:55: pinned on bc54101b, SLSsteam 20261001 -> update it.
         r = g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261001163836")
-        self.assertEqual(r["state"], "update_slssteam")
+        self.assertEqual(r["state"], "ready")
+        self.assertTrue(r["slssteam_update_pending"])
         self.assertEqual(r["slssteam_required"], "20261014151919")
-        # After the update: ready.
-        self.assertEqual(g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261014151919")["state"], "ready")
+        # After the update: ready, nothing pending.
+        r2 = g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261014151919")
+        self.assertEqual((r2["state"], r2["slssteam_update_pending"]), ("ready", False))
 
 
 class PlanSetup(unittest.TestCase):
@@ -114,23 +116,20 @@ class PlanSetup(unittest.TestCase):
         return g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261014151919")
 
     def test_no_pin_means_nothing_special(self):
-        p = g.plan_setup(False, SLS_REAL, OLD, self.ready())
-        self.assertEqual((p["lift_after"], p["refuse"]), (False, None))
+        self.assertIsNone(g.plan_setup(False, SLS_REAL, OLD, self.ready())["refuse"])
 
     def test_latest_still_hooks_the_pinned_client(self):
         # Hypothetical feed where the new release kept the old client.
         kept = SLS_REAL.replace(f"    - {NEW} #ubuntu12_32 & steamdeck_stable 20261014",
                                 f"    - {OLD}\n    - {NEW}")
         self.assertTrue(g.slssteam_latest_supports(kept, OLD))
-        p = g.plan_setup(True, kept, OLD, None)
-        self.assertEqual((p["lift_after"], p["refuse"]), (False, None))
+        self.assertIsNone(g.plan_setup(True, kept, OLD, None)["refuse"])
 
-    def test_todays_case_lifts_the_pin_with_the_install(self):
+    def test_todays_case_refuses_and_says_lift_first(self):
         # Pinned on bc54101b; latest SLSsteam dropped it but hooks 1791918634, as
-        # does lumalinux: install latest and lift the pin in the same step.
+        # does lumalinux: do NOT install it here; Let Steam update first.
         p = g.plan_setup(True, SLS_REAL, OLD, self.ready())
-        self.assertTrue(p["lift_after"])
-        self.assertIsNone(p["refuse"])
+        self.assertIn("Let Steam update first", p["refuse"])
 
     def test_new_build_not_ready_refuses(self):
         # Pinned on bc54101b; latest SLSsteam dropped it and lumalinux has no hash
@@ -138,18 +137,17 @@ class PlanSetup(unittest.TestCase):
         not_ready = g.evaluate(1799999999, LL_FEED, GROUP, SLS_REAL, "20261014151919")
         self.assertEqual(not_ready["state"], "not_yet")
         p = g.plan_setup(True, SLS_REAL, OLD, not_ready)
-        self.assertIsNotNone(p["refuse"])
-        self.assertFalse(p["lift_after"])
+        self.assertIn("wait", p["refuse"])
 
     def test_no_release_hooks_the_pinned_client_refuses(self):
         orphan = "ec96ee3c" + "0" * 56   # the SteamOS image client of 2026-10-14
         p = g.plan_setup(True, SLS_REAL, orphan, g.evaluate(1799999999, LL_FEED, GROUP, SLS_REAL, None))
         self.assertIsNotNone(p["refuse"])
 
-    def test_orphan_client_but_valves_build_ready_lifts(self):
+    def test_orphan_client_but_valves_build_ready_says_lift_first(self):
         orphan = "ec96ee3c" + "0" * 56
         p = g.plan_setup(True, SLS_REAL, orphan, self.ready())
-        self.assertTrue(p["lift_after"])
+        self.assertIn("Let Steam update first", p["refuse"])
 
     def test_feed_or_hash_unavailable_installs_latest(self):
         self.assertIsNone(g.plan_setup(True, None, OLD, None)["refuse"])
@@ -166,9 +164,11 @@ class Evaluate(unittest.TestCase):
         self.assertEqual(r["hash"], NEW)
         self.assertTrue(r["lumalinux_ready"])
 
-    def test_slssteam_released_but_not_installed(self):
+    def test_slssteam_released_but_not_installed_is_still_ready(self):
+        # Lift first (old SLSsteam aborts cleanly on the new build), then Update.
         r = g.evaluate(1791918634, LL_FEED, GROUP, SLS_FIXED, "20261001163836")
-        self.assertEqual(r["state"], "update_slssteam")
+        self.assertEqual(r["state"], "ready")
+        self.assertTrue(r["slssteam_update_pending"])
         self.assertEqual(r["slssteam_required"], "20261015120000")
 
     def test_everything_ready(self):

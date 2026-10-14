@@ -19,7 +19,7 @@ The result is advice, never a lock: the button stays available in every state,
 the description changes. A network failure or a format change on Ace's side
 reads as "unknown", so a user is never left without a way back up.
 
-States: ready | update_slssteam | not_yet | unknown (see evaluate()).
+States: ready | not_yet | unknown (see evaluate()); ready carries slssteam_update_pending.
 
 Support rule (2026-10-14, learned the hard way): an SLSsteam release hooks a
 client hash iff the hash is listed under the NEWEST SafeModeHashes group whose
@@ -258,12 +258,15 @@ def evaluate(stable_build: Optional[int], ll_text: Optional[str], ll_group: Opti
     """Pure decision. Returns {"state", "blocker", "stable_build", "hash",
     "slssteam_required", "slssteam_installed", "lumalinux_ready"}.
 
-    ready           — lumalinux's latest release and the INSTALLED SLSsteam both
-                      hook the build Steam would update to.
-    update_slssteam — a released SLSsteam hooks it, but the installed one's
-                      pattern group does not (slssteam_supports): update
-                      SLSsteam. Whether that update may run on the pinned client
-                      is plan_setup()'s question, not this one's.
+    ready           — lumalinux's latest release and a RELEASED SLSsteam both
+                      hook the build Steam would update to. When the installed
+                      SLSsteam is older than that release, lifting the pin is
+                      still the right first step: Steam updates, the old SLSsteam
+                      aborts cleanly on the new build, and the QAM then offers
+                      Update (SystemStatus.updateFixesBreak). The other order
+                      (update SLSsteam while pinned) was today's crash loop, so
+                      "update first" is never advised; slssteam_update_pending
+                      records that an update will follow.
     not_yet         — the build is not hooked by SLSsteam's releases (blocker
                       "slssteam"), or lumalinux's feed does not cover it yet
                       (blocker "lumalinux": no hash to check, or latest release
@@ -272,7 +275,8 @@ def evaluate(stable_build: Optional[int], ll_text: Optional[str], ll_group: Opti
     from headcrab_compat import _build_in_group, _hash_for_build
 
     out = {"state": "unknown", "blocker": None, "stable_build": stable_build, "hash": None,
-           "slssteam_required": None, "slssteam_installed": sls_installed, "lumalinux_ready": None}
+           "slssteam_required": None, "slssteam_installed": sls_installed, "lumalinux_ready": None,
+           "slssteam_update_pending": False}
     if stable_build is None or ll_text is None:
         return out
     sha = _hash_for_build(ll_text, stable_build)
@@ -298,9 +302,8 @@ def evaluate(stable_build: Optional[int], ll_text: Optional[str], ll_group: Opti
     # a newer release can drop a hash an older one carried. Unknown installed
     # (no recorded tag) stays "ready": we can't tell, and the user can update
     # by hand.
-    if sls_installed and slssteam_supports(sls_text, sls_installed, sha) is False:
-        out.update(state="update_slssteam", blocker="slssteam")
-        return out
+    out["slssteam_update_pending"] = bool(
+        sls_installed and slssteam_supports(sls_text, sls_installed, sha) is False)
     out.update(state="ready", blocker=None)
     return out
 
@@ -317,21 +320,22 @@ def plan_setup(freeze_mine: bool, sls_text: Optional[str], current_hash: Optiona
 
       latest hooks the pinned client      -> install latest, keep the pin.
       latest doesn't, but latest + lumalinux
-        hook Valve's current build         -> install latest and LIFT the pin:
-                                             on the restart Steam updates itself
-                                             before loading steamclient.so, and
-                                             SLSsteam attaches to the new build.
-                                             (The step the user did by hand today.)
+        hook Valve's current build         -> refuse: press Let Steam update
+                                             first. Steam updates, the old
+                                             SLSsteam aborts cleanly on the new
+                                             build, the QAM offers Update. The
+                                             other order (install, then hope the
+                                             restart updates Steam before
+                                             steamclient.so loads) has a window
+                                             that ends in today's crash loop.
       latest doesn't, current build not
-        ready either                       -> refuse: installing breaks Steam,
-                                             and an older SLSsteam would only
-                                             hide that the way out is waiting.
+        ready either                       -> refuse: wait for the components.
       can't tell (no feed / no hash)       -> install latest as before.
 
     `gate_for_latest` is evaluate() run with sls_installed = the latest group
     (i.e. "would the latest SLSsteam be ready for Valve's build?").
-    Returns {"lift_after", "refuse", "reason"}."""
-    plan = {"lift_after": False, "refuse": None, "reason": "no pin"}
+    Returns {"refuse", "reason"}; the pin is never lifted by an install."""
+    plan = {"refuse": None, "reason": "no pin"}
     if not freeze_mine:
         return plan
     supports = slssteam_latest_supports(sls_text, current_hash)
@@ -343,9 +347,9 @@ def plan_setup(freeze_mine: bool, sls_text: Optional[str], current_hash: Optiona
         return plan
     # Latest SLSsteam has dropped the pinned client.
     if gate_for_latest and gate_for_latest.get("state") == "ready":
-        plan.update(lift_after=True,
-                    reason=f"latest SLSsteam dropped the pinned client; it and lumalinux hook build "
-                           f"{gate_for_latest.get('stable_build')}, so the pin is lifted with this install")
+        plan.update(refuse="The latest SLSsteam no longer supports the Steam client this device is held at. "
+                           "Press Let Steam update first, then Update.",
+                    reason="latest SLSsteam dropped the pinned client; Valve's build is ready: lift first")
         return plan
     plan.update(refuse="The latest SLSsteam no longer supports the Steam client this device is held at, "
                        "and the newer Steam build is not supported yet. Installing it would break Steam; wait for the components.",

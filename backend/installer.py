@@ -521,12 +521,12 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             SETUP_INSTALL_STATE["error"] = f"Cannot read setup.sh: {read_exc}"
             return {"success": False}
 
-        # While OUR pin holds Steam at an older client, decide what this run may
-        # do (steam_update_gate.plan_setup): install latest if it hooks the
-        # pinned client; install latest and lift the pin when it and lumalinux
-        # hook Valve's current build instead; or refuse. Never the 2026-10-14
-        # combination (new SLSsteam on the pinned client), which crash-looped Steam.
-        plan = {"lift_after": False, "refuse": None, "reason": "not evaluated"}
+        # While OUR pin holds Steam at an older client, decide whether this run
+        # may install at all (steam_update_gate.plan_setup): only when the latest
+        # SLSsteam hooks the pinned client. Otherwise refuse and say what to do
+        # (Let Steam update first, or wait). Never the 2026-10-14 combination
+        # (new SLSsteam on the pinned client), which crash-looped Steam.
+        plan = {"refuse": None, "reason": "not evaluated"}
         try:
             plan = await _plan_this_run()
         except Exception as exc:
@@ -605,19 +605,14 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                     "(likely a transient network drop). Retry."
                 )
             else:
-                # The plan said the SLSsteam just installed no longer hooks the
-                # pinned client but hooks Valve's current build (and so does
-                # lumalinux): lift OUR pin now, so the restart that follows
-                # updates Steam BEFORE steamclient.so loads. A foreign (headcrab)
-                # pin is lifted on sight as before: not ours to keep.
+                # A foreign (headcrab) pin is lifted on sight, as before: not ours
+                # to keep. OUR pin is never lifted by an install: the user lifts
+                # it with Let Steam update (the gate says when).
                 try:
                     from steam_freeze import lift_freeze, read_freeze
                     fz = read_freeze()
                     if fz.get("frozen") and not fz.get("mine"):
                         logger.info("LumaDeck: lifting foreign (headcrab) pin: %s", lift_freeze())
-                    elif plan.get("lift_after"):
-                        logger.info("LumaDeck: lifting our pin with this install: %s", lift_freeze())
-                        SETUP_INSTALL_STATE["liftedPin"] = True
                 except Exception as exc:
                     logger.warning("LumaDeck: pin lift failed: %s", exc)
 
@@ -660,7 +655,7 @@ async def _plan_this_run() -> dict:
                                    slssteam_latest_group, slssteam_updates_text)
     fz = read_freeze()
     if not (fz.get("frozen") and fz.get("mine")):
-        return {"lift_after": False, "refuse": None, "reason": "no pin of ours"}
+        return {"refuse": None, "reason": "no pin of ours"}
     sls_text = await slssteam_updates_text()
     cur_hash = current_client_hash()
     gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(),
