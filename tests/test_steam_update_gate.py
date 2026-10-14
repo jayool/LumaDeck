@@ -62,6 +62,103 @@ class Parsing(unittest.TestCase):
         self.assertIsNone(g.slssteam_tag_for_hash(None, NEW))
 
 
+# SLSsteam's real feed on 2026-10-14 16:00: 20261014151919 opened a new group that
+# lists ONLY the new client. The old client bc54101b stays under 20260903114323.
+# (SLS_FIXED above is the hypothetical "both listed" shape; this is what shipped.)
+SLS_REAL = SLS_BROKEN + f"""
+  20261014151919: #tag 20261014151919
+    - {NEW} #ubuntu12_32 & steamdeck_stable 20261014
+"""
+
+
+class SupportRule(unittest.TestCase):
+    """A release hooks a hash iff the newest group tagged at or before the release
+    lists it. 20261001163836 (group 20260903114323) hooks bc54101b; 20261014151919
+    does not — that is the combination that crash-looped Steam today."""
+
+    def test_groups_parse_in_order(self):
+        tags = [t for t, _ in g.slssteam_groups(SLS_REAL)]
+        self.assertEqual(tags, ["20260815201341", "20260903114323", "20261014151919"])
+
+    def test_release_between_groups_uses_the_previous_group(self):
+        self.assertEqual(g.slssteam_group_for_release(SLS_REAL, "20261001163836"), "20260903114323")
+        self.assertEqual(g.slssteam_group_for_release(SLS_REAL, "20261014151919"), "20261014151919")
+        self.assertIsNone(g.slssteam_group_for_release(SLS_REAL, "20250101000000"))
+
+    def test_newer_release_can_drop_an_old_client(self):
+        self.assertTrue(g.slssteam_supports(SLS_REAL, "20261001163836", OLD))
+        self.assertFalse(g.slssteam_supports(SLS_REAL, "20261001163836", NEW))
+        self.assertFalse(g.slssteam_supports(SLS_REAL, "20261014151919", OLD))
+        self.assertTrue(g.slssteam_supports(SLS_REAL, "20261014151919", NEW))
+
+    def test_latest(self):
+        self.assertEqual(g.slssteam_latest_group(SLS_REAL), "20261014151919")
+        self.assertFalse(g.slssteam_latest_supports(SLS_REAL, OLD))
+        self.assertTrue(g.slssteam_latest_supports(SLS_REAL, NEW))
+        self.assertIsNone(g.slssteam_latest_supports(None, NEW))
+        self.assertIsNone(g.slssteam_latest_supports(SLS_REAL, None))
+
+    def test_evaluate_with_the_real_feed(self):
+        # Jayo's Deck 15:55: pinned on bc54101b, SLSsteam 20261001 -> update it.
+        r = g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261001163836")
+        self.assertEqual(r["state"], "update_slssteam")
+        self.assertEqual(r["slssteam_required"], "20261014151919")
+        # After the update: ready.
+        self.assertEqual(g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261014151919")["state"], "ready")
+
+
+class PlanSetup(unittest.TestCase):
+    """What a setup.sh run may install while our pin holds Steam at a client."""
+
+    def ready(self):
+        return g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261014151919")
+
+    def test_no_pin_means_nothing_special(self):
+        p = g.plan_setup(False, SLS_REAL, OLD, self.ready())
+        self.assertEqual((p["override_tag"], p["lift_after"], p["refuse"]), (None, False, None))
+
+    def test_latest_still_hooks_the_pinned_client(self):
+        # Hypothetical feed where the new release kept the old client.
+        kept = SLS_REAL.replace(f"    - {NEW} #ubuntu12_32 & steamdeck_stable 20261014",
+                                f"    - {OLD}\n    - {NEW}")
+        self.assertTrue(g.slssteam_latest_supports(kept, OLD))
+        p = g.plan_setup(True, kept, OLD, None)
+        self.assertEqual((p["override_tag"], p["lift_after"], p["refuse"]), (None, False, None))
+
+    def test_todays_case_lifts_the_pin_with_the_install(self):
+        # Pinned on bc54101b; latest SLSsteam dropped it but hooks 1791918634, as
+        # does lumalinux: install latest and lift the pin in the same step.
+        p = g.plan_setup(True, SLS_REAL, OLD, self.ready())
+        self.assertTrue(p["lift_after"])
+        self.assertIsNone(p["override_tag"])
+        self.assertIsNone(p["refuse"])
+
+    def test_new_build_not_ready_pins_slssteam_to_the_old_release(self):
+        # Pinned on bc54101b; latest SLSsteam dropped it and lumalinux has no hash
+        # for Valve's build yet: install the SLSsteam that still hooks bc54101b.
+        not_ready = g.evaluate(1799999999, LL_FEED, GROUP, SLS_REAL, "20261014151919")
+        self.assertEqual(not_ready["state"], "not_yet")
+        p = g.plan_setup(True, SLS_REAL, OLD, not_ready)
+        self.assertEqual(p["override_tag"], "20260903114323")
+        self.assertFalse(p["lift_after"])
+
+    def test_no_release_hooks_the_pinned_client_refuses(self):
+        orphan = "ec96ee3c" + "0" * 56   # the SteamOS image client of 2026-10-14
+        p = g.plan_setup(True, SLS_REAL, orphan, g.evaluate(1799999999, LL_FEED, GROUP, SLS_REAL, None))
+        self.assertIsNotNone(p["refuse"])
+
+    def test_orphan_client_but_valves_build_ready_lifts(self):
+        orphan = "ec96ee3c" + "0" * 56
+        p = g.plan_setup(True, SLS_REAL, orphan, self.ready())
+        self.assertTrue(p["lift_after"])
+
+    def test_feed_unavailable_pins_to_a_known_release_or_installs_latest(self):
+        self.assertIsNone(g.plan_setup(True, None, OLD, None)["override_tag"])
+        self.assertIsNone(g.plan_setup(True, None, OLD, None)["refuse"])
+        # Hash unknown (no steamclient.so?) with a feed: nothing to pin to, install latest.
+        self.assertIsNone(g.plan_setup(True, SLS_REAL, None, None)["override_tag"])
+
+
 class Evaluate(unittest.TestCase):
     """Today's Deck: pinned at 1788291500, Valve stable 1791918634."""
 
