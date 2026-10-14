@@ -49,4 +49,6 @@ See [Components & health](components-and-health.md).
 
 A client update can break the hooks (build-ID or byte-pattern mismatch), which
 shows as `not_supported`. Fix it with **Fix in Desktop**; if Game Mode blocks
-it, it runs from Desktop. Details in [Troubleshooting](troubleshooting.md).
+it, it runs from Desktop. After that fix Steam stays on the supported build
+until you press **Let Steam update** (the QAM tells you when the components are
+ready for the newer build). Details in [Troubleshooting](troubleshooting.md).

@@ -21,6 +21,12 @@ supported (target: M)* underneath when it isn't, or *Steam update available
 (N → M)* when a newer supported build is out (see
 [Steam build compatibility](#steam-build-compatibility)).
 
+After a **Fix in Desktop** the same row reads *Held at build N by LumaDeck
+(updates paused)*: LumaDeck has told Steam not to update itself, so the build
+the components work on stays put. A **Let Steam update** button appears under
+it, with one line saying whether that is a good idea yet (see
+[Letting Steam update again](#letting-steam-update-again)).
+
 Headcrab is not a component and not the launcher wrapper — LumaDeck only reads its
 published **compat pin** (the Steam build it supports) to check whether the current
 Steam client is one the stack can hook. The break-recovery downgrade itself is
@@ -67,7 +73,8 @@ action button** whose label follows the most urgent problem:
   it just isn't live in this session. A restart reloads it.
 - **Update in Desktop** — everything works, but Steam is behind a newer build
   the stack now supports. It switches to Desktop, updates Steam, and brings you
-  back.
+  back. (Only when the hold on Steam was not put there by LumaDeck; after a
+  Fix in Desktop you get **Let Steam update** instead, see below.)
 - **Install Components** / **Reinstall Components** — nothing is wrong; manual
   install on a fresh device, or a reinstall of the stack.
 
@@ -148,7 +155,15 @@ Below that it may list:
 - **<game> can't update** — one row per game whose Steam update is stuck, with
   **Open game** (the fix is on the game's page).
 - **Steam update available** → **Update in Desktop** — Steam can move up to a
-  newer supported build.
+  newer supported build (only when the hold on Steam is not LumaDeck's own).
+- **Steam updates paused** or **Steam update ready** → **Let Steam update** —
+  after a Fix in Desktop, Steam is held on the build the components work on.
+  The line under it says whether letting it update is safe yet:
+  *The components support the newer Steam build.* (go ahead), *The components
+  don't support the newer Steam build yet. Updating would break them.* (wait),
+  *Update the components first.* (press **Update** on the row above, then come
+  back), or *Couldn't check the newer Steam build yet.* (no network, or the
+  check hasn't run). The button is always there; the line is advice.
 - **Update available** → **Update** — a component update is ready. It re-runs
   `setup.sh` for the whole stack and restarts Steam.
 - **LumaDeck update available** → **Download update**.
@@ -166,6 +181,35 @@ The hooks patch specific byte patterns inside the Steam client, so a Steam
 update can outpace them. When that happens a component reads `not_supported` and
 the fix is **Fix in Desktop**, which downgrades Steam to a build the hooks know.
 This is the most common cause of a component breaking after a system update.
+
+**What Fix in Desktop does.** It switches to Desktop and runs lumalinux's
+`downgrade.sh` in a terminal: Steam is closed, the packages of the supported
+build are downloaded from Valve's own servers (Valve keeps old builds), Steam is
+started once just to install them (you see its usual "Updating Steam" window,
+then it closes), the installed client is checked by hash, and only then Steam
+is told not to update itself (a `steam.cfg` file).
+Then `setup.sh` re-establishes the components and you are back in Game Mode. It
+takes a few minutes. If anything fails it undoes itself and stays in Desktop so
+you can read the error. Nothing of yours is touched: games, saves and settings
+stay where they are.
+
+## Letting Steam update again
+
+While the hold is on, nothing breaks: Steam simply doesn't update. The
+Components tab shows *Held at build N by LumaDeck* on the Steam row and a
+**Let Steam update** button; the QAM shows the same as **Steam updates paused**
+or **Steam update ready**. The text under them tells you where things stand:
+
+| Text | Meaning | What to do |
+| --- | --- | --- |
+| The components support the newer Steam build. | SLSsteam and lumalinux both work on the build Steam wants to install. | Press **Let Steam update**, confirm. Steam restarts and updates itself. |
+| ... doesn't support the newer Steam build yet. Updating would break them. | At least one component would stop working on it. | Wait. The line changes on its own when support lands. |
+| Update the components first. | The component update that adds support is out but not installed. | Press **Update** on the row above (or in Components), then **Let Steam update**. |
+| Couldn't check the newer Steam build yet. | LumaDeck couldn't reach the servers to find out. | Try again later, or let it update if you know what you're doing. |
+
+The button never refuses: the line is advice. If you let Steam update onto a
+build the components don't support, they read `not_supported` again and
+**Fix in Desktop** takes you back.
 
 ## Game Mode vs Desktop
 

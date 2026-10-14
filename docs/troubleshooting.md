@@ -89,7 +89,38 @@ Settings.** instead, no usable key is configured — see [Credentials](credentia
 ### QAM shows "Steam update available"
 After a break, the stack now supports a newer Steam build than the one you're on.
 **Update in Desktop** switches to Desktop, updates Steam, and brings you back. Not
-urgent.
+urgent. (You only see this when the hold on Steam is not LumaDeck's own; after a
+**Fix in Desktop** the row is **Steam updates paused** instead, below.)
+
+### QAM shows "Steam updates paused" / "Steam update ready"
+You did a **Fix in Desktop** at some point, so LumaDeck is holding Steam on the
+build the components work on. Nothing is broken. The line under the row says
+whether it is safe to let Steam update yet:
+
+- *The components support the newer Steam build.* → press **Let Steam update**
+  and confirm. Steam restarts and updates itself.
+- *The components don't support the newer Steam build yet. Updating would break
+  them.* → wait. The line changes by itself once support arrives.
+- *Update the components first.* → press **Update** on the row above, then
+  **Let Steam update**.
+- *Couldn't check the newer Steam build yet.* → no network, or the check hasn't
+  run yet. Try again later.
+
+Details in [Components & health → Letting Steam update again](components-and-health.md#letting-steam-update-again).
+
+### A Steam update broke SLSsteam ("Steam build not supported")
+Valve shipped a Steam client the hooks don't work on. Owned games keep working;
+added games won't download or launch until the component is updated for it.
+Two ways out:
+
+- **Wait.** When the SLSsteam (or lumalinux) update lands, **Update** it from
+  the QAM or **Settings ▸ Components**. The row clears itself.
+- **Fix in Desktop now.** Press it on the QAM, confirm. It switches to Desktop,
+  downgrades Steam to the last supported build (a few minutes, the terminal
+  shows progress), re-establishes the components and comes back to Game Mode.
+  From then on Steam is held on that build and the QAM shows **Steam updates
+  paused**; when it turns into **Steam update ready**, press **Let Steam
+  update**.
 
 ### After a SteamOS / Steam client update
 A Steam self-update can regenerate its launcher `.desktop` (or a DE change drops the

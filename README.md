@@ -116,7 +116,7 @@ LumaDeck is a fork of [DeckTools](https://github.com/lopesleo/DeckTools) by **lo
 | [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)          | SteamDeckHomebrew | Plugin platform                                                               |
 | [Hubcap](https://hubcapmanifest.com)                                       | Hubcap            | Manifest API (formerly Morrenus)                                              |
 | [Ryuu](https://generator.ryuu.lol)                                         | Ryuu              | Manifest API (Discord login)                                                  |
-| [Headcrab / h3adcr-b](https://github.com/Deadboy666/h3adcr-b)              | Deadboy666        | Steam client-downgrade data (compat pin + sources) used by the break-recovery escape-hatch |
+| [Headcrab / h3adcr-b](https://github.com/Deadboy666/h3adcr-b)              | Deadboy666        | Compat pin (`HeadcrabCompatibleClientVer`) and the manifest of the supported Steam build, read by the break-recovery downgrade; the packages themselves come from Valve's CDN |
 | [CloudRedirect](https://github.com/Selectively11/CloudRedirect)            | Selectively11     | Cloud-save RPC redirector to third-party providers                            |
 
 Research / educational. Use with your own Steam account and content. Do not redistribute Valve binaries.

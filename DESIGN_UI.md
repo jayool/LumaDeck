@@ -217,6 +217,20 @@ constant. It's an *older stable* build supported by all three components
 lumalinux shares `steamclient.so` hashes with SLSsteam for that era), so even a
 slightly lagging component still supports it.
 
+Two details settled on 2026-10-14, the first day a Steam update actually broke
+SLSsteam in production (build 1791918634, "Failed to parse VFTables"):
+- **SLSsteam's `not_supported` covers all five of its fatal aborts**, not two.
+  `paths.read_slssteam_health` scans `~/.SLSsteam.log` for the five
+  `Aborting...` lines of its `main.cpp` (hash, exports, VFTables, patterns,
+  hooks); hash → cause `version`, the other four → cause `hooks`. Before this,
+  an SLSsteam that had aborted on VFTables still showed as healthy.
+- **Two build labels with the same binary are the same build.** headcrab's
+  manifest and its `headcrab.sh` can name different builds (1788291500 vs
+  1788652215) that are one `steamclient.so` (same SHA-256 in lumalinux's
+  `updates.yaml`). `headcrab_compat.builds_share_binary` normalises the target
+  to the installed build in that case, so a Deck that just downgraded is "at
+  the pin" and not "behind the target" (which would lift the pin at once).
+
 **Render:** each row is `icon` + `label` = the problem in plain words +
 `description` = the text below + the control. No component name and no impact
 suffix: the row is stack-wide.
@@ -239,7 +253,12 @@ suffix: the row is stack-wide.
   its busy label is "Working..." instead of "Restarting Steam...". No
   per-component ordering, and `steam.sh` is left vanilla.
 - **Fix in Desktop** → the Desktop hand-off (`runDesktopHandoffReal`, see
-  Component model action 3).
+  Component model action 3). Since 2026-10-14 that hand-off really downgrades:
+  `downgrade.sh` fetches the old packages from Valve's CDN, serves the old
+  manifest to Steam's bootstrapper from a local server, verifies the installed
+  `steamclient.so` by hash, and only then writes the signed pin (`steam.cfg`,
+  `# lumalinux`). The way back is the **Let Steam update** row (update track,
+  below), not a headcrab pin bump.
 - **Field** rows exist only for info states with no Game-Mode action; the
   instruction is in the `description`. CR sign-in is Desktop-only and is hidden
   while anything is `not_supported`.
@@ -1082,6 +1101,8 @@ kind of thing** — a *managed component* — so we unify them.
                 current_build_supported_by_latest }, // latest lumalinux still hooks this build?
   plugin:     { installed, latest, available },
   guard:      { active, fails, since, client_changed }, // launcher crash guard (row 6)
+  freeze:     { frozen, mine,                           // the Steam-update pin (steam.cfg); mine = signed by downgrade.sh
+                gate: { state, blocker, stable_build, slssteam_required } | null }, // only computed when mine
   quickInstall: "show" | "hide" | null,                 // dev preview override (backend/dev.py)
 }
 ```
@@ -1212,15 +1233,20 @@ it's **optional/info**, not a problem — so it renders as a distinct (blue) tra
 not as a ⚠ fix: `FaArrowCircleUp #5b9eff` icon (not the accent `#1a9fff`).
 
 Rows on this track, in order: **Steam update available** / **Update in Desktop**
-(align-up, below), **Update available** / **Update** (any component), **LumaDeck
-update available** / **Download update** (plugin, fires at once).
+(align-up, below; only when the pin is not ours), **Steam updates paused** /
+**Steam update ready** / **Let Steam update** (our pin, below), **Update
+available** / **Update** (any component), **LumaDeck update available** /
+**Download update** (plugin, fires at once). When the gate says "update the
+components first", the Let Steam update row is pushed *after* the component
+Update row so the order on screen is the order to act in.
 
 | Component | Update check | Apply | Weight |
 |---|---|---|---|
 | **lumalinux** | latest release of its repo vs installed | re-run `setup.sh` | light |
 | **SLSsteam** | release tag of the `latest` asset (**via AceSLS/SLSsteam**) vs recorded `.slssteam.version` | re-run `setup.sh` | heavy |
 | **CloudRedirect** | version string in the installed `.so` vs the newest **Selectively11/CloudRedirect** release that has a Linux `cloud_redirect.so` | re-run `setup.sh` | heavy |
-| **Steam** (align-up) | Steam build behind headcrab's pin and `lumalinux_ready === true` | Desktop Quick Install hand-off (`runDesktopHandoffQuickInstall`), which lifts the pin so Steam self-updates **up** | Desktop |
+| **Steam** (align-up) | Steam build behind headcrab's pin and `lumalinux_ready === true`, and the pin is **not** ours | Desktop Quick Install hand-off (`runDesktopHandoffQuickInstall`), which lifts the pin so Steam self-updates **up** | Desktop |
+| **Steam** (our pin) | `freeze.mine` (a `steam.cfg` signed `# lumalinux`, written by `downgrade.sh`) | **Let Steam update**: `lift_steam_freeze` deletes the pin, toast "Steam will update on its next start.", restart Steam. Two-tap confirm ("restarts Steam") | Game Mode |
 | **LumaDeck** | latest plugin release | download zip → message "Decky ▸ Developer ▸ Install from ZIP, then restart Steam" | manual |
 
 Rules:
@@ -1236,6 +1262,36 @@ Rules:
   row moves Steam **up** to a newer supported pin via the Desktop Quick Install
   hand-off (lifts the pin). Routing it to the downgrade would re-pin and freeze
   Steam on the old build.
+- **Our pin is lifted by the user, with advice, never by a headcrab bump**
+  (2026-10-14, v0.11.1/v0.11.2). While `freeze.mine` the QAM shows one info row
+  whose label and text come from `backend/steam_update_gate.py` via
+  `steamHeldText()` (`SystemStatus.tsx`), and the row's button is **Let Steam
+  update**. The gate is **advice, not a lock**: the button is always there.
+  States and texts (QAM speaks of "the components"; Settings ▸ Components names
+  the component, the tag and the build):
+
+  | `gate.state` | QAM label | QAM description | Settings description |
+  |---|---|---|---|
+  | `ready` | Steam update ready | The components support the newer Steam build. | The components support the newer Steam build (`stable_build`). |
+  | `not_yet` | Steam updates paused | The components don't support the newer Steam build yet. Updating would break them. | SLSsteam / lumalinux doesn't support the newer Steam build yet. Updating would break it. |
+  | `update_slssteam` | Steam updates paused | Update the components first. | SLSsteam `tag` supports the newer Steam build. Update SLSsteam first. |
+  | `unknown` / no gate | Steam updates paused | Couldn't check the newer Steam build yet. | same |
+
+  How the gate decides (`steam_update_gate.evaluate`, pure, unit-tested):
+  `stable_build` = Valve's current `steam_client_steamdeck_stable_ubuntu12`
+  manifest version (30-minute disk cache). lumalinux supports it when its
+  `res/updates.yaml` carries `# steam_version: <stable_build>` (dependency-free
+  text scan, upstream first, then the cached copy). SLSsteam supports it when
+  the `steamclient.so` hash annotated next to that build is listed under a tag
+  in AceSLS's `res/updates.yaml`; `slssteam_required` is the newest such tag,
+  and the installed SLSsteam must be at or past it, else `update_slssteam`.
+  Anything unfetchable → `unknown`. The Settings ▸ Components Steam row reads
+  "Held at build N by LumaDeck (updates paused)" while our pin is on.
+- The old catch-up lift (`steam_freeze.maybe_lift_freeze` after a successful
+  `install_via_setup`) still exists: it lifts a **foreign** pin (no `# lumalinux`
+  signature, i.e. headcrab's) on sight, and ours only when headcrab's target has
+  advanced past the installed build and lumalinux supports it. Driving that
+  lift from the gate instead of headcrab is pending (see lumalinux issue #26).
 - SLSsteam/CR "update" = re-running `setup.sh` (the wrapper-model installer), which
   is **safe in Game Mode when Steam is already at the pin** (no downgrade happens).
 
