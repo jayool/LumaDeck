@@ -114,7 +114,7 @@ class GetComponentsStatusTests(unittest.TestCase):
                     {"id", "name", "installed", "health", "cause", "action", "update"},
                 )
                 self.assertEqual(set(component["update"]),
-                                 {"installed", "latest", "available"})
+                                 {"installed", "latest", "available", "supports_current_build"})
                 self.assertIsInstance(component["update"]["available"], bool)
 
         self.assertEqual(set(result["plugin"]), {"installed", "latest", "available"})

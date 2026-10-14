@@ -183,7 +183,8 @@ async def check_cloudredirect_update(force: bool = False) -> dict:
 
 # --- The aggregate -----------------------------------------------------------
 
-def _component(id_: str, name: str, installed: bool, health: dict, update: dict) -> dict:
+def _component(id_: str, name: str, installed: bool, health: dict, update: dict,
+               supports_current_build=None) -> dict:
     return {
         "id": id_,
         "name": name,
@@ -195,8 +196,29 @@ def _component(id_: str, name: str, installed: bool, health: dict, update: dict)
             "installed": update.get("installed"),
             "latest": update.get("latest"),
             "available": bool(update.get("has_update")),
+            # Would the LATEST release of this component hook the Steam client
+            # installed right now? True/False/None(unknown). With the component
+            # not_supported, True means "Update fixes it" and the UI offers
+            # Update instead of Fix in Desktop (2026-10-14: SLSsteam
+            # 20261014151919 fixed 1791918634; downgrading was the wrong fix).
+            "supports_current_build": supports_current_build,
         },
     }
+
+
+def _sls_release_cache_stale(sls_text) -> bool:
+    """True when SLSsteam's feed names a newer pattern group than the release
+    our 6-hour cache knows about: Ace just shipped, the cache hasn't noticed.
+    Today's case: the gate said "update SLSsteam first" (fresh feed) while the
+    Update row stayed hidden (stale cache). One release fetch fixes it."""
+    from steam_update_gate import slssteam_latest_group
+    from update_checks import _read_cache_stale_ok
+    newest = slssteam_latest_group(sls_text)
+    if not newest:
+        return False
+    cached = _read_cache_stale_ok("AceSLS", "SLSsteam") or {}
+    known = cached.get("tag_normalised") or cached.get("tag")
+    return bool(known) and str(known) < newest
 
 
 async def get_components_status(force: bool = False) -> dict:
@@ -267,8 +289,17 @@ async def get_components_status(force: bool = False) -> dict:
     ll_forced = dev.get("lumalinux_health") is not None
     cr_forced = dev.get("cloudredirect_health") is not None
 
+    # SLSsteam's own feed, fetched fresh (cache fallback): decides whether the
+    # latest SLSsteam hooks the client on disk, and whether the release cache
+    # is behind Ace's newest pattern group.
+    from steam_update_gate import current_client_hash, slssteam_latest_supports, slssteam_updates_text
+    sls_text = await _safe(slssteam_updates_text(), None)
+    cur_hash = _safe_sync(current_client_hash, None)
+    sls_supports_current = slssteam_latest_supports(sls_text, cur_hash)
+    sls_force = force or _safe_sync(lambda: _sls_release_cache_stale(sls_text), False)
+
     sls_update = no_update if sls_forced else await _safe(
-        check_slssteam_update(force=force), no_update)
+        check_slssteam_update(force=sls_force), no_update)
     ll_update = no_update if ll_forced else await _safe(
         check_lumalinux_update(ll_health.get("version"), force=force), no_update)
     cr_update = no_update if cr_forced else await _safe(
@@ -287,9 +318,11 @@ async def get_components_status(force: bool = False) -> dict:
         return h.get("state") not in (None, "not_installed")
 
     components = [
-        _component("slssteam", "SLSsteam", _installed(sls_health), sls_health, sls_update),
+        _component("slssteam", "SLSsteam", _installed(sls_health), sls_health, sls_update,
+                   sls_supports_current),
         _component("cloudredirect", "CloudRedirect", _installed(cr_health), cr_health, cr_update),
-        _component("lumalinux", "lumalinux", _installed(ll_health), ll_health, ll_update),
+        _component("lumalinux", "lumalinux", _installed(ll_health), ll_health, ll_update,
+                   headcrab.get("current_build_supported_by_latest")),
     ]
 
     # Dev preview: force the Quick Install onboarding on/off without touching

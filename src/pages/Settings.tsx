@@ -1145,7 +1145,7 @@ export function Settings() {
                   </span>
                 </Field>
               </PanelSectionRow>
-              {held && (
+              {held && !(componentsStatus?.components || []).some((c: any) => c.installed && c.health === "not_supported") && (
                 <PanelSectionRow>
                   <ButtonItem layout="below" disabled={applyingFix}
                     description={steamHeldText(t, componentsStatus?.freeze, true).description} onClick={onUnpin}>
@@ -1191,6 +1191,11 @@ export function Settings() {
             desc = t("sysSteamTooNewFixDesc");
             confirmKind = "desktop";
             fire = () => fixInDesktop(runDesktopHandoffReal);
+          } else if (primary === "update") {
+            // Steam moved on and the broken component already shipped support
+            // for the new build: Update is the fix, not a downgrade.
+            label = t("sysUpdate");
+            fire = () => runFix(() => reinjectInstalled());
           } else if (primary === "core") {
             // Partial install, Steam at the pin → install the missing core in
             // place (Game Mode safe), then restart.

@@ -17,7 +17,7 @@ export interface Component {
   health: ComponentHealth;
   cause: string | null;
   action: string | null;
-  update: { installed: string | null; latest: string | null; available: boolean };
+  update: { installed: string | null; latest: string | null; available: boolean; supports_current_build?: boolean | null };
 }
 
 export interface ComponentsStatus {
@@ -134,7 +134,19 @@ const INFO = "#5b9eff";
 //   retry     — crash guard latched: clear its state, then restart (label: Re-enable injection)
 //   reinject  — not_injected: re-patch steam.sh, then restart (label: Restart)
 //   restart   — not_loaded: plain restart (label: Restart)
-export type PrimaryAction = "downgrade" | "core" | "retry" | "reinject" | "restart" | null;
+export type PrimaryAction = "downgrade" | "update" | "core" | "retry" | "reinject" | "restart" | null;
+
+// A Steam update broke a component, and a RELEASED update of that component
+// hooks the client on disk: the fix is Update, not a downgrade. True only when
+// every broken component can be fixed that way (one that can't still needs
+// Desktop). Backend: components[].update.supports_current_build, from the
+// components' own feeds against the sha256 of the installed steamclient.so.
+export function updateFixesBreak(status: ComponentsStatus | null): boolean {
+  const installed = (status?.components || []).filter((c) => c.installed);
+  const broken = installed.filter((c) => c.health === "not_supported");
+  if (broken.length === 0) return false;
+  return broken.every((c) => !!c.update?.available && c.update?.supports_current_build === true);
+}
 
 // The single highest-priority SYSTEM action for the current status, exported so
 // the Dependencies page drives its one morphing button from the same logic as
@@ -155,6 +167,7 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
       status.headcrab?.lumalinux_ready === false &&
       !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported"))
     return null;
+  if (anyUnsupported && updateFixesBreak(status)) return "update";
   if (anyUnsupported) return "downgrade";
   if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
   // Guard latched: the not_loaded/not_injected below are its SYMPTOM, and their
@@ -207,6 +220,17 @@ function buildRows(
     rows.push({
       key: "ll-not-ready", severity: "info",
       label: t("sysLumalinuxNotReady"), description: t("sysLumalinuxNotReadyDesc"),
+    });
+  } else if (anyUnsupported && updateFixesBreak(status)) {
+    // Steam moved on, and the component already shipped support for the new
+    // build: Update (one setup.sh run) is the fix. Downgrading here would pin
+    // Steam on an old client the updated component no longer hooks.
+    rows.push({
+      key: "update-fix", severity: "problem",
+      label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),
+      actionLabel: t("sysUpdate"),
+      onAction: actions.update,
+      confirm: "restart",
     });
   } else if (anyUnsupported) {
     // Steam moved off a build the hooks can handle. Only a Steam re-align fixes it,
