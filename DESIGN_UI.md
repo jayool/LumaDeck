@@ -1246,7 +1246,7 @@ Update row so the order on screen is the order to act in.
 | **SLSsteam** | release tag of the `latest` asset (**via AceSLS/SLSsteam**) vs recorded `.slssteam.version` | re-run `setup.sh` | heavy |
 | **CloudRedirect** | version string in the installed `.so` vs the newest **Selectively11/CloudRedirect** release that has a Linux `cloud_redirect.so` | re-run `setup.sh` | heavy |
 | **Steam** (align-up) | Steam build behind headcrab's pin and `lumalinux_ready === true`, and the pin is **not** ours | Desktop Quick Install hand-off (`runDesktopHandoffQuickInstall`), which lifts the pin so Steam self-updates **up** | Desktop |
-| **Steam** (our pin) | `freeze.mine` (a `steam.cfg` signed `# lumalinux`, written by `downgrade.sh`) | **Let Steam update**: `lift_steam_freeze` deletes the pin, toast "Steam will update on its next start.", restart Steam. Two-tap confirm ("restarts Steam") | Game Mode |
+| **Steam** (our pin) | `freeze.mine` (a `steam.cfg` signed `# lumalinux`, written by `downgrade.sh`) | **Let Steam update**: `lift_steam_freeze` strips the `BootStrapper*` lines from `steam.cfg` (the rest of the file stays), toast "Steam will update on its next start.", restart Steam. Two-tap confirm ("restarts Steam") | Game Mode |
 | **LumaDeck** | latest plugin release | download zip → message "Decky ▸ Developer ▸ Install from ZIP, then restart Steam" | manual |
 
 Rules:
