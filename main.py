@@ -833,7 +833,7 @@ class Plugin:
         if prep.get("error"):
             logger.warning("LumaDeck: Fix in Desktop refused: %s", prep["error"])
             return _j({"success": False, "armed": False, "error": prep["error"]})
-        return _j(run_desktop_handoff_real(prep.get("sls_env", "")))
+        return _j(run_desktop_handoff_real())
 
     async def run_desktop_handoff_quick_install(self) -> str:
         """Arm a Desktop hand-off that runs the FULL Quick Install (deps + CR +

@@ -1,5 +1,7 @@
-"""Fix in Desktop must install an SLSsteam that hooks the client it downgrades to
-(backend/desktop_handoff.slssteam_override_for_target). Real feed of 2026-10-14.
+"""Fix in Desktop is refused when the latest SLSsteam no longer hooks the client it
+would downgrade to (backend/desktop_handoff.downgrade_target_ok). Real feed of
+2026-10-14: 20261014151919 lists only 0d01ab4f, so downgrading to bc54101b and
+then installing the latest SLSsteam breaks Steam; the fix there is Update.
 """
 import os
 import sys
@@ -18,28 +20,27 @@ SafeModeHashes:
   20261014151919: #tag 20261014151919
     - {NEW} #ubuntu12_32 & steamdeck_stable 20261014
 """
+SLS_MORNING = SLS_REAL.split("  20261014151919")[0]   # before Ace's release
 
 
-class Pick(unittest.TestCase):
-    def test_target_hooked_by_latest_needs_no_override(self):
-        self.assertEqual(dh.slssteam_override_for_target(SLS_REAL, NEW), {"url": None, "tag": None})
+class Target(unittest.TestCase):
+    def test_before_aces_release_the_old_client_is_fine(self):
+        # This morning: latest SLSsteam (20260903 group) hooks bc54101b -> downgrade allowed.
+        self.assertIsNone(dh.downgrade_target_ok(SLS_MORNING, OLD))
 
-    def test_target_dropped_by_latest_pins_the_release_that_hooks_it(self):
-        p = dh.slssteam_override_for_target(SLS_REAL, OLD)
-        self.assertEqual(p["tag"], "20260903114323")
-        self.assertEqual(p["url"], "https://github.com/AceSLS/SLSsteam/releases/download/20260903114323/SLSsteam-Any-release.7z")
+    def test_after_aces_release_the_old_client_is_refused(self):
+        self.assertIn("update the components", dh.downgrade_target_ok(SLS_REAL, OLD))
 
-    def test_orphan_target_is_refused(self):
-        self.assertIn("error", dh.slssteam_override_for_target(SLS_REAL, "ec96ee3c" + "0" * 56))
+    def test_target_hooked_by_latest_is_fine(self):
+        self.assertIsNone(dh.downgrade_target_ok(SLS_REAL, NEW))
 
     def test_unknown_hash_or_feed_is_refused(self):
-        self.assertIn("error", dh.slssteam_override_for_target(SLS_REAL, None))
-        self.assertIn("error", dh.slssteam_override_for_target(None, OLD))
+        self.assertIsNotNone(dh.downgrade_target_ok(SLS_REAL, None))
+        self.assertIsNotNone(dh.downgrade_target_ok(None, OLD))
 
-    def test_payload_carries_the_env_only_when_pinned(self):
-        self.assertIn("| {sls_env} bash", dh._REAL_PAYLOAD)
-        self.assertIn("|  bash", dh._REAL_PAYLOAD.replace("{sls_env}", ""))
-        self.assertIn("| SLSSTEAM_7Z_URL=x bash", dh._REAL_PAYLOAD.replace("{sls_env}", "SLSSTEAM_7Z_URL=x"))
+    def test_payload_runs_setup_sh_plain(self):
+        self.assertIn("| bash", dh._REAL_PAYLOAD)
+        self.assertNotIn("sls_env", dh._REAL_PAYLOAD)
 
 
 if __name__ == "__main__":

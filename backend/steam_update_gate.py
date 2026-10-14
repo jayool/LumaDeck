@@ -323,30 +323,23 @@ def plan_setup(freeze_mine: bool, sls_text: Optional[str], current_hash: Optiona
                                              SLSsteam attaches to the new build.
                                              (The step the user did by hand today.)
       latest doesn't, current build not
-        ready either                       -> install the newest release that
-                                             still hooks the pinned client
-                                             (SLSSTEAM_7Z_URL), keep the pin.
-      no release hooks the pinned client   -> refuse: any install breaks Steam.
-      can't tell (no feed / no hash)       -> pin SLSsteam to a release known to
-                                             hook the client when one is known,
-                                             else install latest as before.
+        ready either                       -> refuse: installing breaks Steam,
+                                             and an older SLSsteam would only
+                                             hide that the way out is waiting.
+      can't tell (no feed / no hash)       -> install latest as before.
 
     `gate_for_latest` is evaluate() run with sls_installed = the latest group
     (i.e. "would the latest SLSsteam be ready for Valve's build?").
-    Returns {"override_tag", "lift_after", "refuse", "reason"}."""
-    plan = {"override_tag": None, "lift_after": False, "refuse": None, "reason": "no pin"}
+    Returns {"lift_after", "refuse", "reason"}."""
+    plan = {"lift_after": False, "refuse": None, "reason": "no pin"}
     if not freeze_mine:
         return plan
     supports = slssteam_latest_supports(sls_text, current_hash)
     if supports is True:
         plan["reason"] = "latest SLSsteam hooks the pinned client"
         return plan
-    fallback = slssteam_tag_for_hash(sls_text, current_hash)
     if supports is None:
-        if fallback:
-            plan.update(override_tag=fallback, reason="feed inconclusive; pinning SLSsteam to a release known to hook this client")
-        else:
-            plan["reason"] = "feed inconclusive and no release known for this client; installing latest"
+        plan["reason"] = "feed inconclusive; installing latest"
         return plan
     # Latest SLSsteam has dropped the pinned client.
     if gate_for_latest and gate_for_latest.get("state") == "ready":
@@ -354,14 +347,9 @@ def plan_setup(freeze_mine: bool, sls_text: Optional[str], current_hash: Optiona
                     reason=f"latest SLSsteam dropped the pinned client; it and lumalinux hook build "
                            f"{gate_for_latest.get('stable_build')}, so the pin is lifted with this install")
         return plan
-    if fallback:
-        plan.update(override_tag=fallback,
-                    reason=f"latest SLSsteam dropped the pinned client and Valve's build is not ready; "
-                           f"installing SLSsteam {fallback}, which still hooks it")
-        return plan
-    plan.update(refuse="No SLSsteam release hooks the Steam client this device is held at, "
-                       "and the newer Steam build is not supported yet. Installing would break Steam.",
-                reason="no safe SLSsteam for the pinned client")
+    plan.update(refuse="The latest SLSsteam no longer supports the Steam client this device is held at, "
+                       "and the newer Steam build is not supported yet. Installing it would break Steam; wait for the components.",
+                reason="latest SLSsteam dropped the pinned client and Valve's build is not ready")
     return plan
 
 

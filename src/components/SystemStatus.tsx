@@ -367,9 +367,14 @@ function buildRows(
     }
     if (heldAfterUpdate) pushHeldRow();
   }
+  // A LumaDeck update goes FIRST, above every problem and every other update:
+  // when Steam breaks something, the right advice usually ships in the plugin
+  // (2026-10-14: a user on 0.11.0 saw nothing useful until 0.11.2), and a user
+  // acting on an old plugin's rows acts on old advice. Orange while anything
+  // below is a problem (the fix may be here), blue when all is well.
   if (status.plugin?.available) {
-    rows.push({
-      key: "plugin", severity: "info",
+    rows.unshift({
+      key: "plugin", severity: rows.some((r) => r.severity === "problem") ? "problem" : "info",
       label: t("sysPluginUpdate"), description: t("sysPluginUpdateDesc"),
       actionLabel: t("sysPluginUpdateBtn"),
       onAction: actions.pluginUpdate,

@@ -522,12 +522,11 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             return {"success": False}
 
         # While OUR pin holds Steam at an older client, decide what this run may
-        # install (steam_update_gate.plan_setup): latest SLSsteam if it hooks the
-        # pinned client; latest + lift the pin when it and lumalinux hook Valve's
-        # current build instead; an older SLSsteam that still hooks the client
-        # otherwise; or refuse. Never the 2026-10-14 combination (new SLSsteam
-        # on the pinned client), which crash-looped Steam.
-        plan = {"override_tag": None, "lift_after": False, "refuse": None, "reason": "not evaluated"}
+        # do (steam_update_gate.plan_setup): install latest if it hooks the
+        # pinned client; install latest and lift the pin when it and lumalinux
+        # hook Valve's current build instead; or refuse. Never the 2026-10-14
+        # combination (new SLSsteam on the pinned client), which crash-looped Steam.
+        plan = {"lift_after": False, "refuse": None, "reason": "not evaluated"}
         try:
             plan = await _plan_this_run()
         except Exception as exc:
@@ -537,10 +536,6 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             SETUP_INSTALL_STATE["status"] = "failed"
             SETUP_INSTALL_STATE["error"] = plan["refuse"]
             return {"success": False}
-        sls_env = []
-        if plan.get("override_tag"):
-            sls_env = ["SLSSTEAM_7Z_URL=https://github.com/AceSLS/SLSsteam/releases/download/"
-                       f"{plan['override_tag']}/SLSsteam-Any-release.7z"]
 
         SETUP_INSTALL_STATE["progress"] = "Running installer..."
         # setup.sh is ENTIRELY $HOME-based (SLSsteam, config, wrapper, .dotnet,
@@ -573,16 +568,12 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 f"HOME={real_home()}",
                 f"XDG_RUNTIME_DIR={_runtime}",
                 f"DBUS_SESSION_BUS_ADDRESS=unix:path={_runtime}/bus",
-                *sls_env,
                 "bash", script_path,
             ]
             proc_env = clean_env()
         else:
             argv = ["bash", script_path]
             proc_env = clean_env(HOME=real_home())
-            for kv in sls_env:
-                k, v = kv.split("=", 1)
-                proc_env[k] = v
         process = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
@@ -669,7 +660,7 @@ async def _plan_this_run() -> dict:
                                    slssteam_latest_group, slssteam_updates_text)
     fz = read_freeze()
     if not (fz.get("frozen") and fz.get("mine")):
-        return {"override_tag": None, "lift_after": False, "refuse": None, "reason": "no pin of ours"}
+        return {"lift_after": False, "refuse": None, "reason": "no pin of ours"}
     sls_text = await slssteam_updates_text()
     cur_hash = current_client_hash()
     gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(),

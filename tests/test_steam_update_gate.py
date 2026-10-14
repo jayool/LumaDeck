@@ -115,7 +115,7 @@ class PlanSetup(unittest.TestCase):
 
     def test_no_pin_means_nothing_special(self):
         p = g.plan_setup(False, SLS_REAL, OLD, self.ready())
-        self.assertEqual((p["override_tag"], p["lift_after"], p["refuse"]), (None, False, None))
+        self.assertEqual((p["lift_after"], p["refuse"]), (False, None))
 
     def test_latest_still_hooks_the_pinned_client(self):
         # Hypothetical feed where the new release kept the old client.
@@ -123,23 +123,22 @@ class PlanSetup(unittest.TestCase):
                                 f"    - {OLD}\n    - {NEW}")
         self.assertTrue(g.slssteam_latest_supports(kept, OLD))
         p = g.plan_setup(True, kept, OLD, None)
-        self.assertEqual((p["override_tag"], p["lift_after"], p["refuse"]), (None, False, None))
+        self.assertEqual((p["lift_after"], p["refuse"]), (False, None))
 
     def test_todays_case_lifts_the_pin_with_the_install(self):
         # Pinned on bc54101b; latest SLSsteam dropped it but hooks 1791918634, as
         # does lumalinux: install latest and lift the pin in the same step.
         p = g.plan_setup(True, SLS_REAL, OLD, self.ready())
         self.assertTrue(p["lift_after"])
-        self.assertIsNone(p["override_tag"])
         self.assertIsNone(p["refuse"])
 
-    def test_new_build_not_ready_pins_slssteam_to_the_old_release(self):
+    def test_new_build_not_ready_refuses(self):
         # Pinned on bc54101b; latest SLSsteam dropped it and lumalinux has no hash
-        # for Valve's build yet: install the SLSsteam that still hooks bc54101b.
+        # for Valve's build yet: nothing safe to install, say so.
         not_ready = g.evaluate(1799999999, LL_FEED, GROUP, SLS_REAL, "20261014151919")
         self.assertEqual(not_ready["state"], "not_yet")
         p = g.plan_setup(True, SLS_REAL, OLD, not_ready)
-        self.assertEqual(p["override_tag"], "20260903114323")
+        self.assertIsNotNone(p["refuse"])
         self.assertFalse(p["lift_after"])
 
     def test_no_release_hooks_the_pinned_client_refuses(self):
@@ -152,11 +151,9 @@ class PlanSetup(unittest.TestCase):
         p = g.plan_setup(True, SLS_REAL, orphan, self.ready())
         self.assertTrue(p["lift_after"])
 
-    def test_feed_unavailable_pins_to_a_known_release_or_installs_latest(self):
-        self.assertIsNone(g.plan_setup(True, None, OLD, None)["override_tag"])
+    def test_feed_or_hash_unavailable_installs_latest(self):
         self.assertIsNone(g.plan_setup(True, None, OLD, None)["refuse"])
-        # Hash unknown (no steamclient.so?) with a feed: nothing to pin to, install latest.
-        self.assertIsNone(g.plan_setup(True, SLS_REAL, None, None)["override_tag"])
+        self.assertIsNone(g.plan_setup(True, SLS_REAL, None, None)["refuse"])
 
 
 class Evaluate(unittest.TestCase):
