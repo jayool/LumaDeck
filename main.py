@@ -266,11 +266,30 @@ class Plugin:
         return _j(await get_components_status(force))
 
     async def restart_steam(self) -> str:
-        """Shutdown Steam as the real user (Game Mode auto-restarts it). On
-        SteamOS the user is deck / home is /home/deck; elsewhere resolved via
-        platform_info."""
-        import subprocess, os
+        """Restart the machine. Every "restart Steam" button lands here.
+
+        A reboot instead of a Steam restart (2026-10-14): after an in-place
+        install from Game Mode, the Game Mode launcher drop-in can be correct on
+        disk while systemd still runs the vanilla launcher it has in memory, so
+        closing Steam only brings back vanilla Steam (every component "Installed",
+        none loaded; a user hit this on 2026-10-13). A reboot re-reads everything
+        and fixes that whatever its exact cause. In Game Mode a Steam restart and
+        a reboot look the same to the user anyway. Decky runs this as root, so
+        `systemctl reboot` needs no user-session crossing. Where there is no
+        systemd (a codespace), fall back to closing Steam as before."""
+        import subprocess, os, shutil
         from paths import real_home, real_user
+        systemctl = shutil.which("systemctl") or next(
+            (p for p in ("/usr/bin/systemctl", "/bin/systemctl") if os.path.exists(p)), None)
+        if systemctl and os.geteuid() == 0:
+            try:
+                subprocess.Popen([systemctl, "reboot"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                logger.info("LumaDeck: restart requested -> rebooting the machine")
+                return _j({"success": True, "reboot": True})
+            except Exception as exc:
+                logger.warning("LumaDeck: systemctl reboot failed (%s); closing Steam instead", exc)
+        else:
+            logger.info("LumaDeck: no systemd or not root; closing Steam instead of rebooting")
         _user = real_user()
         steam_bin = os.path.join(real_home(), ".local/share/Steam/ubuntu12_32/steam")
         # Try IPC shutdown as the real user first
