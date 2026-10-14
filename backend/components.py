@@ -244,6 +244,13 @@ async def get_components_status(force: bool = False) -> dict:
     # (signed `# lumalinux`), which is the only pin the UI offers to lift in
     # place: "Let Steam update" strips it and restarts, no Desktop needed.
     freeze = _safe_sync(read_freeze, {"frozen": False, "mine": False})
+    # Only while OUR pin is on does "is it safe to let Steam update?" matter
+    # (steam_update_gate: Valve's stable manifest + lumalinux's and SLSsteam's
+    # whitelists). Advice for the button's text, never a lock.
+    gate = None
+    if freeze.get("frozen") and freeze.get("mine"):
+        from steam_update_gate import steam_update_gate
+        gate = await _safe(steam_update_gate(force=force), {"state": "unknown", "blocker": None})
 
     # SLSsteam has no readable version on disk of its own (config.yaml is settings
     # only; the version is a build timestamp embedded inside the .so). setup.sh
@@ -317,6 +324,12 @@ async def get_components_status(force: bool = False) -> dict:
         "freeze": {
             "frozen": bool(freeze.get("frozen")),
             "mine": bool(freeze.get("mine")),
+            "gate": None if gate is None else {
+                "state": gate.get("state"),
+                "blocker": gate.get("blocker"),
+                "stable_build": gate.get("stable_build"),
+                "slssteam_required": gate.get("slssteam_required"),
+            },
         },
         "guard": {
             "active": bool(guard.get("active")),

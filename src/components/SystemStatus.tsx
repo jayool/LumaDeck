@@ -46,10 +46,38 @@ export interface ComponentsStatus {
   guard?: { active: boolean; fails: number; since: string | null; client_changed: boolean };
   // The Steam-update pin (steam.cfg). mine = written by our downgrade.sh after a
   // break-recovery downgrade; the only pin offered for lifting in place.
-  freeze?: { frozen: boolean; mine: boolean };
+  freeze?: {
+    frozen: boolean; mine: boolean;
+    // Only with our pin: is it safe to let Steam update? (backend/steam_update_gate.py)
+    // ready | update_slssteam | not_yet | unknown. Advice for the text, never a lock.
+    gate?: {
+      state: string; blocker?: string | null;
+      stable_build?: number | null; slssteam_required?: string | null;
+    } | null;
+  };
   // Dev preview override for the Quick Install onboarding (backend/dev.py):
   // "show" forces it on, "hide" forces it off, null/absent = real behaviour.
   quickInstall?: string | null;
+}
+
+// The "Let Steam update" row's title + description from the gate. Shared with
+// the Settings Steam row so both surfaces say the same thing.
+export function steamHeldText(
+  t: (k: string, ...a: any[]) => string,
+  freeze: ComponentsStatus["freeze"] | undefined,
+): { label: string; description: string } {
+  const g = freeze?.gate;
+  const build = g?.stable_build ?? "?";
+  switch (g?.state) {
+    case "ready":
+      return { label: t("sysSteamReady"), description: t("sysSteamReadyDesc", build) };
+    case "update_slssteam":
+      return { label: t("sysSteamHeld"), description: t("sysSteamHeldUpdateSlsDesc", g?.slssteam_required ?? "") };
+    case "not_yet":
+      return { label: t("sysSteamHeld"), description: t("sysSteamHeldNotYetDesc", g?.blocker === "lumalinux" ? "lumalinux" : "SLSsteam") };
+    default:
+      return { label: t("sysSteamHeld"), description: t("sysSteamHeldUnknownDesc") };
+  }
 }
 
 export interface SystemStatusActions {
@@ -261,9 +289,10 @@ function buildRows(
     // Steam (the description says what may stop working until they are).
     const ourPin = !!status.freeze?.frozen && !!status.freeze?.mine;
     if (ourPin) {
+      const txt = steamHeldText(t, status.freeze);
       rows.push({
         key: "steam-held", severity: "info",
-        label: t("sysSteamHeld"), description: t("sysSteamHeldDesc"),
+        label: txt.label, description: txt.description,
         actionLabel: t("sysLetSteamUpdate"),
         onAction: actions.unpin,
         confirm: "restart", busyLabel: t("restartingSteam"),

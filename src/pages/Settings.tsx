@@ -57,7 +57,7 @@ import {
   getSyncAllStatus,
 } from "../api";
 import { useT, getLanguage, setLanguage } from "../i18n";
-import { primarySystemAction, ComponentsStatus } from "../components/SystemStatus";
+import { primarySystemAction, ComponentsStatus, steamHeldText } from "../components/SystemStatus";
 
 export function Settings() {
   const t = useT();
@@ -1148,7 +1148,7 @@ export function Settings() {
               {held && (
                 <PanelSectionRow>
                   <ButtonItem layout="below" disabled={applyingFix}
-                    description={t("sysSteamHeldDesc")} onClick={onUnpin}>
+                    description={steamHeldText(t, componentsStatus?.freeze).description} onClick={onUnpin}>
                     {applyingFix ? t("restartingSteam") : confirmUnpin ? t("confirmRestartsSteam") : t("sysLetSteamUpdate")}
                   </ButtonItem>
                 </PanelSectionRow>
