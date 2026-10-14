@@ -521,6 +521,27 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             SETUP_INSTALL_STATE["error"] = f"Cannot read setup.sh: {read_exc}"
             return {"success": False}
 
+        # While OUR pin holds Steam at an older client, decide what this run may
+        # install (steam_update_gate.plan_setup): latest SLSsteam if it hooks the
+        # pinned client; latest + lift the pin when it and lumalinux hook Valve's
+        # current build instead; an older SLSsteam that still hooks the client
+        # otherwise; or refuse. Never the 2026-10-14 combination (new SLSsteam
+        # on the pinned client), which crash-looped Steam.
+        plan = {"override_tag": None, "lift_after": False, "refuse": None, "reason": "not evaluated"}
+        try:
+            plan = await _plan_this_run()
+        except Exception as exc:
+            logger.warning("LumaDeck: setup plan failed (%s); installing latest as before", exc)
+        logger.info("LumaDeck: setup plan: %s", plan)
+        if plan.get("refuse"):
+            SETUP_INSTALL_STATE["status"] = "failed"
+            SETUP_INSTALL_STATE["error"] = plan["refuse"]
+            return {"success": False}
+        sls_env = []
+        if plan.get("override_tag"):
+            sls_env = ["SLSSTEAM_7Z_URL=https://github.com/AceSLS/SLSsteam/releases/download/"
+                       f"{plan['override_tag']}/SLSsteam-Any-release.7z"]
+
         SETUP_INSTALL_STATE["progress"] = "Running installer..."
         # setup.sh is ENTIRELY $HOME-based (SLSsteam, config, wrapper, .dotnet,
         # systemd --user). Decky runs this backend as ROOT, so a plain `bash
@@ -552,12 +573,16 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 f"HOME={real_home()}",
                 f"XDG_RUNTIME_DIR={_runtime}",
                 f"DBUS_SESSION_BUS_ADDRESS=unix:path={_runtime}/bus",
+                *sls_env,
                 "bash", script_path,
             ]
             proc_env = clean_env()
         else:
             argv = ["bash", script_path]
             proc_env = clean_env(HOME=real_home())
+            for kv in sls_env:
+                k, v = kv.split("=", 1)
+                proc_env[k] = v
         process = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
@@ -589,24 +614,21 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                     "(likely a transient network drop). Retry."
                 )
             else:
-                # Catch-up lift: reconcile the Steam-update freeze now that fresh
-                # components are in place. maybe_lift_freeze lifts a FOREIGN pin
-                # (headcrab's — no `# lumalinux` signature; written on every headcrab
-                # install, so a migrating device arrives frozen with no break to
-                # recover from) ON SIGHT, and lifts OUR signed break-recovery pin only
-                # once the ecosystem has caught up (pin advanced past our build +
-                # latest lumalinux supports it). No-op when not pinned. This is the
-                # step that un-freezes every device migrating from headcrab.
+                # The plan said the SLSsteam just installed no longer hooks the
+                # pinned client but hooks Valve's current build (and so does
+                # lumalinux): lift OUR pin now, so the restart that follows
+                # updates Steam BEFORE steamclient.so loads. A foreign (headcrab)
+                # pin is lifted on sight as before: not ours to keep.
                 try:
-                    from steam_freeze import maybe_lift_freeze
-                    from headcrab_compat import check_headcrab_compat
-                    lift = maybe_lift_freeze(await check_headcrab_compat())
-                    if lift.get("lifted"):
-                        logger.info("LumaDeck: lifted Steam-update freeze (catch-up): %s", lift)
-                    elif not lift.get("success", True):
-                        logger.warning("LumaDeck: freeze lift failed: %s", lift)
+                    from steam_freeze import lift_freeze, read_freeze
+                    fz = read_freeze()
+                    if fz.get("frozen") and not fz.get("mine"):
+                        logger.info("LumaDeck: lifting foreign (headcrab) pin: %s", lift_freeze())
+                    elif plan.get("lift_after"):
+                        logger.info("LumaDeck: lifting our pin with this install: %s", lift_freeze())
+                        SETUP_INSTALL_STATE["liftedPin"] = True
                 except Exception as exc:
-                    logger.warning("LumaDeck: steam freeze lift check failed: %s", exc)
+                    logger.warning("LumaDeck: pin lift failed: %s", exc)
 
                 SETUP_INSTALL_STATE["status"] = "done"
                 SETUP_INSTALL_STATE["progress"] = "Stack installed!"
@@ -635,6 +657,24 @@ async def install_via_setup(gamemode: bool = True) -> dict:
 
 def get_setup_status() -> dict:
     return SETUP_INSTALL_STATE.copy()
+
+
+async def _plan_this_run() -> dict:
+    """Gather what steam_update_gate.plan_setup needs: our pin, SLSsteam's feed,
+    the installed client's hash, and whether the LATEST SLSsteam + lumalinux are
+    ready for Valve's current build."""
+    from headcrab_compat import _lumalinux_updates_text, latest_release_group
+    from steam_freeze import read_freeze
+    from steam_update_gate import (current_client_hash, evaluate, latest_stable_build, plan_setup,
+                                   slssteam_latest_group, slssteam_updates_text)
+    fz = read_freeze()
+    if not (fz.get("frozen") and fz.get("mine")):
+        return {"override_tag": None, "lift_after": False, "refuse": None, "reason": "no pin of ours"}
+    sls_text = await slssteam_updates_text()
+    cur_hash = current_client_hash()
+    gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(),
+                               await latest_release_group(), sls_text, slssteam_latest_group(sls_text))
+    return plan_setup(True, sls_text, cur_hash, gate_for_latest)
 
 
 async def quick_install(gamemode: bool = True) -> dict:
