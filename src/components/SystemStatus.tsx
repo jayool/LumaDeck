@@ -44,6 +44,9 @@ export interface ComponentsStatus {
   // While latched every hook component reads not_loaded and a plain restart
   // does nothing — so the UI shows Recovery mode + Retry instead. Stack-wide.
   guard?: { active: boolean; fails: number; since: string | null; client_changed: boolean };
+  // The Steam-update pin (steam.cfg). mine = written by our downgrade.sh after a
+  // break-recovery downgrade; the only pin offered for lifting in place.
+  freeze?: { frozen: boolean; mine: boolean };
   // Dev preview override for the Quick Install onboarding (backend/dev.py):
   // "show" forces it on, "hide" forces it off, null/absent = real behaviour.
   quickInstall?: string | null;
@@ -56,6 +59,7 @@ export interface SystemStatusActions {
   reinstallCore: () => void; // (unused since the 2-action model; kept for callers)
   downgrade: () => void;     // not_supported / partial install: hand off to Desktop (downgrade + pin)
   alignUp: () => void;       // steam-update align-up: Desktop quick_install (lifts the pin, Steam self-updates UP)
+  unpin: () => void;         // our steam.cfg pin: lift it in place, then restart (Steam self-updates)
   update: () => void;        // component update(s) available
   pluginUpdate: () => void;  // LumaDeck plugin update
   openGame: (appid: number) => void; // a stuck game
@@ -250,7 +254,21 @@ function buildRows(
     const target = status.headcrab?.target;
     const current = status.headcrab?.current;
     const steamBehindPin = target != null && current != null && current < target;
-    if (steamBehindPin && llReady === true) {
+    // OUR pin (downgrade.sh's, signed): Steam is held at an older build so the
+    // stack keeps working. Lifting it needs no Desktop: strip steam.cfg and
+    // restart, Steam self-updates on the way up. Offered whenever the pin is
+    // ours — the user decides when the components are ready for the newer
+    // Steam (the description says what may stop working until they are).
+    const ourPin = !!status.freeze?.frozen && !!status.freeze?.mine;
+    if (ourPin) {
+      rows.push({
+        key: "steam-held", severity: "info",
+        label: t("sysSteamHeld"), description: t("sysSteamHeldDesc"),
+        actionLabel: t("sysLetSteamUpdate"),
+        onAction: actions.unpin,
+        confirm: "restart", busyLabel: t("restartingSteam"),
+      });
+    } else if (steamBehindPin && llReady === true) {
       rows.push({
         key: "steam-update", severity: "info",
         label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),

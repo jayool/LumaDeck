@@ -27,6 +27,15 @@ export const getInjectionStatus = async () =>
 export const checkSlssteamHashStatus = async () =>
   parseResult(await call<[], string>("check_slssteam_hash_status"));
 
+// Steam-update pin (steam.cfg, written by lumalinux's downgrade.sh after a
+// break-recovery downgrade). liftSteamFreeze strips it so Steam self-updates
+// on its next start; the caller restarts Steam.
+export const getSteamFreezeStatus = async () =>
+  parseResult(await call<[], string>("get_steam_freeze_status"));
+
+export const liftSteamFreeze = async () =>
+  parseResult(await call<[], string>("lift_steam_freeze"));
+
 // Resolved SLSsteam state for the UI. Canonical state set (shared by all three
 // components). Returns:
 //   { state: "not_installed"|"not_loaded"|"not_injected"|"not_supported"|"healthy",

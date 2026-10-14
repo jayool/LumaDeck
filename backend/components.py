@@ -211,6 +211,7 @@ async def get_components_status(force: bool = False) -> dict:
         read_crash_guard,
     )
     from headcrab_compat import check_headcrab_compat
+    from steam_freeze import read_freeze
     from self_update import check_plugin_update
 
     def _safe_sync(fn, default):
@@ -239,6 +240,10 @@ async def get_components_status(force: bool = False) -> dict:
     # the UI shows "Recovery mode" + Retry instead of "Restart needed". Stack-wide
     # like headcrab, not per component. Inactive on any failure (safe default).
     guard = _safe_sync(read_crash_guard, {"active": False, "fails": 0, "since": None, "client_changed": False})
+    # The Steam-update pin (steam.cfg). `mine` = written by our downgrade.sh
+    # (signed `# lumalinux`), which is the only pin the UI offers to lift in
+    # place: "Let Steam update" strips it and restarts, no Desktop needed.
+    freeze = _safe_sync(read_freeze, {"frozen": False, "mine": False})
 
     # SLSsteam has no readable version on disk of its own (config.yaml is settings
     # only; the version is a build timestamp embedded inside the .so). setup.sh
@@ -308,6 +313,10 @@ async def get_components_status(force: bool = False) -> dict:
             "installed": plugin.get("installed"),
             "latest": plugin.get("latest"),
             "available": bool(plugin.get("has_update")),
+        },
+        "freeze": {
+            "frozen": bool(freeze.get("frozen")),
+            "mine": bool(freeze.get("mine")),
         },
         "guard": {
             "active": bool(guard.get("active")),

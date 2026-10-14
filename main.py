@@ -315,7 +315,7 @@ class Plugin:
         from headcrab_compat import check_headcrab_compat
         return _j(await check_headcrab_compat())
 
-    def get_steam_freeze_status(self) -> str:
+    async def get_steam_freeze_status(self) -> str:
         # Whether Steam auto-updates are currently frozen (steam.cfg /
         # BootStrapperInhibitAll), and whether the pin is ours. frozen==True means
         # updates are inhibited; mine==True means it carries our `# lumalinux`
@@ -323,6 +323,13 @@ class Plugin:
         # lifted on sight at the next catch-up). See steam_freeze.py.
         from steam_freeze import read_freeze
         return _j(read_freeze())
+
+    async def lift_steam_freeze(self) -> str:
+        """Let Steam update again: strip the BootStrapper* pin (and our
+        `# lumalinux` signature) from steam.cfg. Steam self-updates on its next
+        start. The caller restarts Steam. See steam_freeze.lift_freeze."""
+        from steam_freeze import lift_freeze
+        return _j(lift_freeze())
 
     async def repair_slssteam_headcrab(self) -> str:
         from slssteam_ops import repair_slssteam_headcrab

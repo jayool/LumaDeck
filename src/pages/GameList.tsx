@@ -31,6 +31,7 @@ import {
   runDesktopHandoffReal,
   runDesktopHandoffQuickInstall,
 } from "../api";
+import { liftSteamFreeze } from "../api";
 import { FaExclamationTriangle } from "react-icons/fa";
 import {
   SystemStatus,
@@ -450,6 +451,13 @@ export function GameList() {
   // which own the steam.sh ordering. Each refreshes the status afterwards.
   const sysActions: SystemStatusActions = {
     restart: () => runSysAction(async () => { await restartSteam(); }),
+    unpin: () => runSysAction(async () => {
+      // Our steam.cfg pin: strip it, then restart. Steam's bootstrapper updates
+      // the client on that start (the usual "Updating Steam" window).
+      const r = await liftSteamFreeze();
+      if (r?.success) { toast(t("sysSteamHeld"), t("toastSteamUnpinned"), 6000); await restartSteam(); }
+      else toast(t("toastError"), r?.error || "", 4000);
+    }),
     retry: () => runSysAction(async () => {
       // Crash guard latched: clear its state files, then restart so the
       // launcher injects again (a bare restart would go vanilla once more).

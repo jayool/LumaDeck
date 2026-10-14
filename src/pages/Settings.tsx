@@ -43,7 +43,7 @@ import {
   addFakeAppId,
   removeFakeAppId,
 } from "../api";
-import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall, runDesktopHandoffReal } from "../api";
+import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall, runDesktopHandoffReal, liftSteamFreeze } from "../api";
 import { getDevState, setDevState, clearDevState, devProbeVersions } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { closeLoginBrowser } from "../browserLogin";
@@ -73,6 +73,7 @@ export function Settings() {
   // tap, and the first tap names which ("Confirm (restarts Steam)" /
   // "Confirm (continues in Desktop)"). Same rule as the QAM rows and Quick Install.
   const [confirmFix, setConfirmFix] = useState(false);
+  const [confirmUnpin, setConfirmUnpin] = useState(false);
   // The achievements section's own Restart Steam button: same two-tap rule.
   const [confirmAchRestart, setConfirmAchRestart] = useState(false);
   const [achRestarting, setAchRestarting] = useState(false);
@@ -1112,19 +1113,47 @@ export function Settings() {
           const unsupported = headcrabCompat.current_build_supported_by_latest === false;
           const behindPin = b != null && tgt != null && b < tgt;
           const updateReady = behindPin && headcrabCompat.lumalinux_ready === true;
+          // Our steam.cfg pin (downgrade.sh's): Steam is held at this build on
+          // purpose. Say so, and offer to lift it in place (no Desktop).
+          const held = !!componentsStatus?.freeze?.frozen && !!componentsStatus?.freeze?.mine;
           const desc = unsupported
             ? warnDesc(t("steamBuildMismatch", b, tgt ?? "?"), "warn")
-            : updateReady
-              ? warnDesc(t("steamUpdateAvailableSub", b, tgt ?? "?"), "info")
-              : undefined;
+            : held
+              ? warnDesc(t("steamHeldSub", b), "info")
+              : updateReady
+                ? warnDesc(t("steamUpdateAvailableSub", b, tgt ?? "?"), "info")
+                : undefined;
+          const onUnpin = () => {
+            if (!confirmUnpin) {
+              setConfirmUnpin(true);
+              setTimeout(() => setConfirmUnpin(false), 5000);
+              return;
+            }
+            setConfirmUnpin(false);
+            runFix(async () => {
+              const r: any = await liftSteamFreeze();
+              if (r?.success) toast(t("sysSteamHeld"), t("toastSteamUnpinned"), 6000);
+              return r;
+            });
+          };
           return (
-            <PanelSectionRow>
-              <Field focusable highlightOnFocus={false} label="Steam" description={desc}>
-                <span style={{ color: unsupported ? "#ff8c00" : "#00cc00" }}>
-                  {unsupported ? t("statusNotSupported") : t("statusSupported")}
-                </span>
-              </Field>
-            </PanelSectionRow>
+            <>
+              <PanelSectionRow>
+                <Field focusable highlightOnFocus={false} label="Steam" description={desc}>
+                  <span style={{ color: unsupported ? "#ff8c00" : "#00cc00" }}>
+                    {unsupported ? t("statusNotSupported") : t("statusSupported")}
+                  </span>
+                </Field>
+              </PanelSectionRow>
+              {held && (
+                <PanelSectionRow>
+                  <ButtonItem layout="below" disabled={applyingFix}
+                    description={t("sysSteamHeldDesc")} onClick={onUnpin}>
+                    {applyingFix ? t("restartingSteam") : confirmUnpin ? t("confirmRestartsSteam") : t("sysLetSteamUpdate")}
+                  </ButtonItem>
+                </PanelSectionRow>
+              )}
+            </>
           );
         })()}
         {/* ONE morphing action button, same priority/dispatch as the QAM
