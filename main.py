@@ -823,11 +823,17 @@ class Plugin:
         return _j(await apply_component(component_id, op))
 
     async def run_desktop_handoff_real(self) -> str:
-        """Arm a one-shot Desktop autostart (REAL payload: headcrab Steam
-        downgrade + lumalinux re-inject) and switch to Desktop. It runs there and
-        returns to Game Mode on success; stays in Desktop on failure."""
-        from desktop_handoff import run_desktop_handoff_real
-        return _j(run_desktop_handoff_real())
+        """Arm a one-shot Desktop autostart (REAL payload: downgrade.sh + setup.sh)
+        and switch to Desktop. It runs there and returns to Game Mode on success;
+        stays in Desktop on failure. prepare_real() first picks the SLSsteam that
+        hooks the target client; when no release does, the hand-off is refused
+        (a downgrade would only break Steam)."""
+        from desktop_handoff import prepare_real, run_desktop_handoff_real
+        prep = await prepare_real()
+        if prep.get("error"):
+            logger.warning("LumaDeck: Fix in Desktop refused: %s", prep["error"])
+            return _j({"success": False, "armed": False, "error": prep["error"]})
+        return _j(run_desktop_handoff_real(prep.get("sls_env", "")))
 
     async def run_desktop_handoff_quick_install(self) -> str:
         """Arm a Desktop hand-off that runs the FULL Quick Install (deps + CR +

@@ -80,6 +80,14 @@ _DOWNGRADE_SH_URL = os.environ.get(
 # stays in Desktop (--hold) so the konsole shows the error.
 #   - `set +e`: never abort on a sub-command failure; branch on the exit codes.
 #   - downgrade FIRST (fix the Steam build), then setup.sh against the good build.
+# setup.sh installs the LATEST SLSsteam, which may have dropped the client the
+# downgrade lands on (2026-10-14: 20261014151919 only hooks 1791918634; on the
+# bc54101b client it crash-looped Steam and SteamOS re-bootstrapped the image's
+# client). So the hand-off pins SLSsteam to the newest release whose pattern
+# group lists the TARGET client's hash (SLSsteam's own res/updates.yaml), via
+# setup.sh's SLSSTEAM_7Z_URL. prepare_real() computes it; `{{sls_env}}` is
+# either empty or `SLSSTEAM_7Z_URL=https://...`.
+_SLS_ASSET_URL = "https://github.com/AceSLS/SLSsteam/releases/download/{tag}/SLSsteam-Any-release.7z"
 _REAL_PAYLOAD = f"""
 set +e
 # pipefail so `curl … | bash` reflects curl's exit, not bash's: without it a
@@ -97,7 +105,7 @@ if curl -fsSL {_DOWNGRADE_SH_URL} | bash; then
   echo
   echo ">>> Downgrade finished OK (Steam downgraded and pinned)."
   echo ">>> Re-establishing the injection wrapper via setup.sh..."
-  curl -fsSL {_SETUP_SH_URL} | bash
+  curl -fsSL {_SETUP_SH_URL} | {{sls_env}} bash
   echo ">>> setup.sh finished (exit $?)."
   echo
   echo " All done. Returning to Game Mode in 6s..."
@@ -307,13 +315,64 @@ def _run_handoff(payload: str) -> dict:
     return _dump(info)
 
 
-def run_desktop_handoff_real() -> dict:
+def slssteam_override_for_target(sls_text, target_hash) -> dict:
+    """Pure: which SLSsteam the downgrade hand-off must install for a client with
+    hash `target_hash`. {"url": None} when the latest release hooks it (setup.sh's
+    default is fine), {"url": <7z>} to pin an older release that does, or
+    {"error": ...} when no release hooks it (downgrading would only break Steam)
+    or the feed can't tell."""
+    from steam_update_gate import slssteam_latest_supports, slssteam_tag_for_hash
+    if not target_hash:
+        return {"error": "the target Steam build's client hash is unknown (lumalinux feed has no entry for it)"}
+    if slssteam_latest_supports(sls_text, target_hash) is True:
+        return {"url": None, "tag": None}
+    tag = slssteam_tag_for_hash(sls_text, target_hash)
+    if tag:
+        return {"url": _SLS_ASSET_URL.format(tag=tag), "tag": tag}
+    if not sls_text:
+        return {"error": "could not read SLSsteam's release feed to pick a matching SLSsteam"}
+    return {"error": "no SLSsteam release supports the Steam build the downgrade would install"}
+
+
+async def prepare_real() -> dict:
+    """Resolve the downgrade target the way downgrade.sh will (its manifest) and
+    pick the SLSsteam that hooks it. Returns {"sls_env": str} or {"error": str}."""
+    from headcrab_compat import _hash_for_build, _lumalinux_updates_text
+    from http_client import ensure_http_client
+    from steam_update_gate import _branch, parse_manifest_version, slssteam_updates_text
+    deck = _branch().startswith("steamdeck")
+    manifest_url = os.environ.get(
+        "DECK_MANIFEST_URL" if deck else "LINUX_MANIFEST_URL",
+        "https://raw.githubusercontent.com/Deadboy666/SteamTracking/refs/heads/headcrab/ClientManifest/"
+        + ("steam_client_steamdeck_stable_ubuntu12" if deck else "steam_client_ubuntu12"))
+    target = None
+    try:
+        client = await ensure_http_client(context="desktop_handoff")
+        resp = await client.get(manifest_url, timeout=10.0)
+        if resp.status_code == 200:
+            target = parse_manifest_version(resp.text)
+    except Exception as exc:
+        logger.info("desktop_handoff: target manifest fetch failed (%s)", exc)
+    if target is None:
+        return {"error": "could not read the downgrade target manifest"}
+    target_hash = _hash_for_build(await _lumalinux_updates_text(), target)
+    pick = slssteam_override_for_target(await slssteam_updates_text(), target_hash)
+    if pick.get("error"):
+        return {"error": f"downgrade to {target}: {pick['error']}"}
+    logger.info("desktop_handoff: downgrade target %s (%s) -> SLSsteam %s", target,
+                (target_hash or "?")[:12], pick.get("tag") or "latest")
+    env = f"SLSSTEAM_7Z_URL={shlex.quote(pick['url'])}" if pick.get("url") else ""
+    return {"sls_env": env, "target": target, "slssteam_tag": pick.get("tag")}
+
+
+def run_desktop_handoff_real(sls_env: str = "") -> dict:
     """Arm the REAL task — the break-recovery downgrade escape-hatch: downgrade.sh
     aligns Steam down to a supported build and pins it, then setup.sh re-establishes
     the injection wrapper — and switch to Desktop. Fully decoupled from headcrab.
     Returns to Game Mode only on success; stays in Desktop on failure so the error
-    is readable."""
-    return _run_handoff(_REAL_PAYLOAD)
+    is readable. `sls_env` comes from prepare_real() (SLSsteam pinned to a release
+    that hooks the target client)."""
+    return _run_handoff(_REAL_PAYLOAD.replace("{sls_env}", sls_env))
 
 
 def run_desktop_handoff_quick_install() -> dict:
