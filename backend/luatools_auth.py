@@ -30,7 +30,7 @@ from urllib.parse import quote
 
 from http_client import ensure_http_client
 from paths import data_path, real_home
-from utils import read_text, write_text
+from utils import read_text, write_private_text
 
 try:
     import decky  # type: ignore
@@ -81,7 +81,7 @@ _connect_state: dict = {"status": "idle"}
 # ---------------------------------------------------------------------------
 def _save_session(session: dict) -> None:
     try:
-        write_text(data_path(_SESSION_FILE), json.dumps(session))
+        write_private_text(data_path(_SESSION_FILE), json.dumps(session))
         try:
             from api_manifest import _mirror_cred
             _mirror_cred(luatools_session=json.dumps(session))
@@ -147,7 +147,7 @@ def restore_session(raw: str) -> bool:
         return False
     if not isinstance(session, dict) or not session.get("access_token"):
         return False
-    write_text(data_path(_SESSION_FILE), json.dumps(session))
+    write_private_text(data_path(_SESSION_FILE), json.dumps(session))
     return True
 
 

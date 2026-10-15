@@ -14,7 +14,10 @@ from config import (
 )
 from http_client import ensure_http_client
 from paths import data_path
-from utils import count_apis, normalize_manifest_text, read_text, write_text
+from utils import (
+    count_apis, make_private, normalize_manifest_text, read_text,
+    write_private_text,
+)
 
 try:
     import decky  # type: ignore
@@ -67,8 +70,7 @@ def _mirror_cred(**values: str) -> None:
             return
         p = _cred_store_path()
         os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(store, f, indent=2)
+        write_private_text(p, json.dumps(store, indent=2))
     except Exception:
         pass
 
@@ -90,16 +92,34 @@ def _forget_cred(*names: str) -> None:
             store.pop(n, None)
         p = _cred_store_path()
         os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(store, f, indent=2)
+        write_private_text(p, json.dumps(store, indent=2))
     except Exception:
         pass
+
+
+def credential_files() -> list:
+    """Every file on disk that carries a credential: the settings-dir mirror,
+    api.json (Hubcap key in the URL), the Ryuu cookie and the LuaTools session."""
+    return [
+        _cred_store_path(),
+        data_path(API_JSON_FILE),
+        data_path("ryuu_cookie.txt"),
+        data_path("luatools_session.json"),
+    ]
+
+
+def tighten_credential_files() -> int:
+    """chmod 0600 whatever credential files exist. Runs on every plugin load so
+    Decks that wrote them 0644 with an older build are fixed in place. Returns
+    how many files changed."""
+    return sum(1 for p in credential_files() if make_private(p))
 
 
 def restore_credentials_from_settings() -> None:
     """Re-apply credentials saved in the settings dir when the plugin-dir copies
     are missing (e.g. right after a reinstall wiped backend/data/). Idempotent,
     so it is safe to call on every plugin load."""
+    tighten_credential_files()
     store = _read_cred_store()
     if not store:
         return
@@ -177,7 +197,7 @@ async def init_apis() -> dict:
 
     try:
         root = {"api_list": [dict(a) for a in DEFAULT_API_LIST]}
-        write_text(api_json_path, json.dumps(root, indent=4))
+        write_private_text(api_json_path, json.dumps(root, indent=4))
         if saved_hubcap_key:
             update_hubcap_key(saved_hubcap_key)
         enabled = sum(1 for a in DEFAULT_API_LIST if a.get("enabled"))
@@ -206,7 +226,7 @@ def load_api_manifest() -> List[Dict[str, Any]]:
     normalized = normalize_manifest_text(text)
     if normalized and normalized != text:
         try:
-            write_text(path, normalized)
+            write_private_text(path, normalized)
         except Exception:
             pass
         text = normalized
@@ -228,8 +248,7 @@ def save_ryu_cookie(cookie_content: str) -> dict:
         clean_cookie = cookie_content.strip()
         if clean_cookie and not clean_cookie.startswith("session="):
             clean_cookie = f"session={clean_cookie}"
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(clean_cookie)
+        write_private_text(path, clean_cookie)
         # Mirror to the settings-dir store so a reinstall can restore it.
         _mirror_cred(ryuu_cookie=clean_cookie)
         return {"success": True, "message": "Cookie saved successfully"}
@@ -299,8 +318,7 @@ def remove_hubcap_key() -> dict:
                         or "morrenus.xyz" in url or "hubcapmanifest.com" in url):
                     api["url"] = url.split("?api_key=")[0]
                     api["enabled"] = False
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(root_data, f, indent=4)
+            write_private_text(path, json.dumps(root_data, indent=4))
         _forget_cred("hubcap_key")
         return {"success": True, "message": "Hubcap key removed", "removed": True}
     except Exception as e:
@@ -356,8 +374,7 @@ def update_hubcap_key(key_content: str) -> dict:
                 "enabled": True,
             })
 
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(root_data, f, indent=4)
+        write_private_text(path, json.dumps(root_data, indent=4))
 
         # Mirror to the settings-dir store so a reinstall can restore it.
         _mirror_cred(hubcap_key=key_content)

@@ -23,6 +23,35 @@ def write_text(path: str, text: str) -> None:
         handle.write(text)
 
 
+PRIVATE_MODE = 0o600
+
+
+def write_private_text(path: str, text: str) -> None:
+    """write_text for files that hold a credential (Hubcap key, Ryuu cookie,
+    LuaTools session). The file is created 0600 and, if it already exists with
+    looser permissions, tightened before it is rewritten. The backend runs as
+    root and is the only reader; anything running as `deck` (a game, a fix,
+    another plugin) could read a 0644 copy."""
+    make_private(path)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, PRIVATE_MODE)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def make_private(path: str) -> bool:
+    """chmod 0600 an existing credential file; True if it changed. Missing
+    file or any error: False, never raises (called on every plugin load)."""
+    try:
+        if not os.path.isfile(path):
+            return False
+        if (os.stat(path).st_mode & 0o777) == PRIVATE_MODE:
+            return False
+        os.chmod(path, PRIVATE_MODE)
+        return True
+    except Exception:
+        return False
+
+
 def read_json(path: str) -> Dict[str, Any]:
     try:
         with open(path, "r", encoding="utf-8") as handle:
