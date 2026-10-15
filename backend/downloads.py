@@ -26,7 +26,7 @@ from config import (
     GAMES_DB_URL,
 )
 from http_client import ensure_http_client
-from paths import backend_path, real_home
+from paths import backend_path, get_lumalinux_keys_path, get_slssteam_config_path, real_home
 from steam_utils import detect_steam_install_path, has_lua_for_app
 from utils import ensure_temp_download_dir
 
@@ -98,6 +98,20 @@ async def _steamidra_supports_flag(python: str, script: str, flag: str) -> bool:
     return flag.encode() in await _steamidra_help(python, script)
 
 
+def _steamidra_path_args() -> list[str]:
+    """The three paths steamidra_lite would otherwise derive from Path.home().
+    Decky runs as root: on SteamOS its HOME is /home/deck and the defaults
+    land right by luck; anywhere HOME stays /root the script would write
+    keys, config and manifests under /root. Passed on every invocation so the
+    script sees the same Steam root, SLSsteam config and keys.txt the rest of
+    the backend resolves (real user, not HOME)."""
+    return [
+        "--steam-root", detect_steam_install_path(),
+        "--sls-config", get_slssteam_config_path(),
+        "--luma-keys", get_lumalinux_keys_path(),
+    ]
+
+
 async def _invoke_steamidra_lite(
     input_path: str, manifests_dir: str = "", appid_for_log: int = 0,
     pin: bool = False, dlc_of_owned: bool = False,
@@ -118,7 +132,7 @@ async def _invoke_steamidra_lite(
         )
     python = _LUMALINUX_PYTHON
 
-    cmd = [python, script, input_path]
+    cmd = [python, script, input_path, *_steamidra_path_args()]
     if manifests_dir:
         cmd.extend(["--manifests-dir", manifests_dir])
     # --pin keeps the .lua's setManifestid pins and re-homes them onto SLSsteam's
@@ -182,7 +196,7 @@ async def _run_steamidra_mode(mode_args: list[str]) -> tuple[bool, str]:
     if not script:
         return False, "lumalinux not installed (steamidra_lite.py not found)."
     python = _LUMALINUX_PYTHON
-    cmd = [python, script, *mode_args]
+    cmd = [python, script, *_steamidra_path_args(), *mode_args]
     logger.info(f"LumaDeck: invoking steamidra_lite: {' '.join(cmd)}")
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -731,7 +745,7 @@ def _count_app_depot_keys(appid: int) -> int:
     Returns the count (>= 0), or -1 if keys.txt could not be read (so the
     caller can skip the guard instead of false-failing on our own read error).
     """
-    keys_path = os.path.expanduser("~/.config/lumalinux/keys.txt")
+    keys_path = get_lumalinux_keys_path()
     if not os.path.exists(keys_path):
         return 0
     target = str(appid)
