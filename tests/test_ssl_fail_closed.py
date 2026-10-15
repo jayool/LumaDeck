@@ -5,7 +5,7 @@ found anywhere, with a log warning nobody sees: zips, keys, the .so and fixes
 would then download from whoever answers. Measured 2026-10-15 in the
 codespace: Decky's bundled Python ships certifi and SteamOS has the system
 bundle, so that branch never ran there; now it fails closed instead
-(nosotros.md §4.1-6).
+(nosotros.md §2.12).
 
     python -m unittest discover -s tests
 """

@@ -4,7 +4,7 @@ It used to take the first `<appid>:` line anywhere in config.yaml and then
 swallow the lines after it until the next one at indent <= 2: the same appid
 under FakeAppIds: or AppTokens: would go instead, together with whatever
 followed it. uninstall_game_full only got away with it by calling
-remove_fake_app_id and remove_game_token first (nosotros.md §4.1-2).
+remove_fake_app_id and remove_game_token first (nosotros.md §2.3).
 
     python -m unittest discover -s tests
 """

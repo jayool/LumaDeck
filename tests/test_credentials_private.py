@@ -3,7 +3,7 @@
 credentials.json (Hubcap key, Ryuu cookie, LuaTools session), api.json (Hubcap
 key in the URL), ryuu_cookie.txt and luatools_session.json were written with
 open("w") by the backend, which runs as root: 0644 under the usual umask, so
-any process running as `deck` could read them (nosotros.md §4.1-30).
+any process running as `deck` could read them (nosotros.md §2.10).
 
     python -m unittest discover -s tests
 """
