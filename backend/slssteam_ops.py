@@ -614,27 +614,43 @@ def remove_game_dlcs(appid: int) -> dict:
             lines = f.readlines()
 
         new_lines = []
+        modified = False
+        target = str(appid)
+        # Scope the deletion to the DlcData: block only, like remove_fake_app_id
+        # and remove_game_token. A whole-file scan took the first `<appid>:`
+        # line wherever it lived (FakeAppIds:, AppTokens:) and then swallowed
+        # the lines after it until the next one at indent <= 2.
+        in_block = False
         in_target = False
-        target = f"{appid}:"
         for line in lines:
             stripped = line.strip()
-            if stripped.startswith(target):
-                in_target = True
-                continue
-            if in_target:
-                indent = len(line) - len(line.lstrip())
-                if indent <= 2 and stripped:
-                    in_target = False
-                    new_lines.append(line)
-                else:
-                    continue
-            else:
+            if stripped.lower().startswith("dlcdata:"):
+                in_block = True
                 new_lines.append(line)
+                continue
+            if in_block:
+                indent = len(line) - len(line.lstrip())
+                if stripped and not stripped.startswith("#") and indent == 0:
+                    in_block = False  # next top-level key ends the block
+                    in_target = False
+                elif (stripped.startswith(f"{target}:") or
+                      stripped.startswith(f"'{target}':") or
+                      stripped.startswith(f'"{target}":')):
+                    in_target = True   # the game's entry: drop it and its DLC lines
+                    modified = True
+                    continue
+                elif in_target:
+                    if stripped and indent <= 2:
+                        in_target = False  # another game's entry
+                    else:
+                        continue
+            new_lines.append(line)
 
-        tmp = config_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-        _commit_config(tmp, config_path)
+        if modified:
+            tmp = config_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            _commit_config(tmp, config_path)
         return {"success": True, "message": "DLCs removed"}
     except Exception as e:
         return {"success": False, "error": str(e)}
