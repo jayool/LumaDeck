@@ -295,6 +295,42 @@ def _supports_build(text: str | None, group: str | None, build: int | None) -> b
     return _build_in_group(text, group, build)
 
 
+_HASH_LINE_RE = re.compile(r"^\s*-\s*([0-9a-f]{64})\b")
+_STEAM_VERSION_RE = re.compile(r"^\s*#\s*steam_version:\s*(\d+)\b")
+
+
+def _hash_for_build(text: str | None, build: int | None) -> str | None:
+    """The steamclient.so SHA-256 res/updates.yaml records for `build`: the first
+    `- <64 hex>` entry after a `# steam_version: <build>` annotation. A hash can
+    carry several annotations (Valve relabels builds without changing the file:
+    1788291500 and 1788652215 are one binary), so an unrelated annotation between
+    the match and the hash does not clear the match. None when unknown. Same rule
+    as downgrade.sh's hash_for_build — keep the two in step."""
+    if text is None or build is None:
+        return None
+    want = False
+    for line in text.splitlines():
+        m = _STEAM_VERSION_RE.match(line)
+        if m:
+            if int(m.group(1)) == build:
+                want = True
+            continue
+        if want:
+            h = _HASH_LINE_RE.match(line)
+            if h:
+                return h.group(1)
+    return None
+
+
+def builds_share_binary(text: str | None, a: int | None, b: int | None) -> bool | None:
+    """Do builds `a` and `b` name the same steamclient.so per res/updates.yaml?
+    True / False when both hashes are known, None when either is not."""
+    ha, hb = _hash_for_build(text, a), _hash_for_build(text, b)
+    if ha is None or hb is None:
+        return None
+    return ha == hb
+
+
 async def lumalinux_supports_build(build: int | None) -> bool | None:
     """Whether the LATEST lumalinux release would hook Steam build `build`.
 
@@ -313,6 +349,20 @@ async def check_headcrab_compat() -> dict:
     # Fetch the two inputs once, then answer both questions against them.
     text = await _lumalinux_updates_text()
     group = await latest_release_group()
+    # Valve relabels a build without changing steamclient.so (1788291500 became
+    # 1788652215 on 2026-09-05), and headcrab's pinned MANIFEST can keep the old
+    # label while headcrab.sh carries the new one. A Deck downgrade.sh just put on
+    # that manifest then reads 1788291500 against a target of 1788652215: not
+    # "compatible", "behind the pin", and steam_freeze would lift the pin at the
+    # next setup.sh. When the whitelist says both labels are ONE binary, treat
+    # the pin as reached: report the current build as the target.
+    same_binary = builds_share_binary(text, build, target)
+    if same_binary and build is not None:
+        logger.info(
+            f"headcrab_compat: target {target} and installed {build} are the same "
+            f"steamclient.so — treating the pin as reached"
+        )
+        target = build
     return {
         "success": True,
         "current_build": build,

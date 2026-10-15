@@ -17,7 +17,7 @@ export interface Component {
   health: ComponentHealth;
   cause: string | null;
   action: string | null;
-  update: { installed: string | null; latest: string | null; available: boolean };
+  update: { installed: string | null; latest: string | null; available: boolean; supports_current_build?: boolean | null };
 }
 
 export interface ComponentsStatus {
@@ -44,18 +44,62 @@ export interface ComponentsStatus {
   // While latched every hook component reads not_loaded and a plain restart
   // does nothing — so the UI shows Recovery mode + Retry instead. Stack-wide.
   guard?: { active: boolean; fails: number; since: string | null; client_changed: boolean };
+  // The Steam-update pin (steam.cfg). mine = written by our downgrade.sh after a
+  // break-recovery downgrade; the only pin offered for lifting in place.
+  // Would Fix in Desktop help? possible === false -> the Wait row, no button.
+  downgrade?: { target: number | null; possible: boolean | null };
+  freeze?: {
+    frozen: boolean; mine: boolean;
+    // Our pin holds a client the latest SLSsteam no longer hooks: installing
+    // anything would break Steam, so Components hides Reinstall.
+    install_blocked?: boolean;
+    // Only with our pin: is it safe to let Steam update? (backend/steam_update_gate.py)
+    // ready | not_yet | unknown. Advice for the text, never a lock. (A released
+    // SLSsteam the user hasn't installed yet still reads ready: lift first, the
+    // old SLSsteam aborts cleanly on the new build, then Update is offered.)
+    gate?: {
+      state: string; blocker?: string | null;
+      stable_build?: number | null; slssteam_required?: string | null;
+    } | null;
+  };
   // Dev preview override for the Quick Install onboarding (backend/dev.py):
   // "show" forces it on, "hide" forces it off, null/absent = real behaviour.
   quickInstall?: string | null;
+}
+
+// The "Let Steam update" row's title + description from the gate. The QAM is
+// for everyone, so it speaks of "the components" like the Update row does;
+// Settings → Components (detailed) names the component, the tag and the build.
+export function steamHeldText(
+  t: (k: string, ...a: any[]) => string,
+  freeze: ComponentsStatus["freeze"] | undefined,
+  detailed = false,
+): { label: string; description: string } {
+  const g = freeze?.gate;
+  switch (g?.state) {
+    case "ready":
+      return {
+        label: t("sysSteamReady"),
+        description: detailed ? t("compSteamReadyDesc", g?.stable_build ?? "?") : t("sysSteamReadyDesc"),
+      };
+    case "not_yet":
+      return {
+        label: t("sysSteamHeld"),
+        description: detailed
+          ? t("compSteamNotYetDesc", g?.blocker === "lumalinux" ? "lumalinux" : "SLSsteam")
+          : t("sysSteamHeldNotYetDesc"),
+      };
+    default:
+      return { label: t("sysSteamHeld"), description: t("sysSteamHeldUnknownDesc") };
+  }
 }
 
 export interface SystemStatusActions {
   restart: () => void;       // not_loaded — plain Steam restart
   retry: () => void;         // crash guard latched — clear its state, then restart
   repair: () => void;        // not_injected — re-inject steam.sh, then restart
-  reinstallCore: () => void; // (unused since the 2-action model; kept for callers)
   downgrade: () => void;     // not_supported / partial install: hand off to Desktop (downgrade + pin)
-  alignUp: () => void;       // steam-update align-up: Desktop quick_install (lifts the pin, Steam self-updates UP)
+  unpin: () => void;         // our steam.cfg pin: lift it in place, then restart (Steam self-updates)
   update: () => void;        // component update(s) available
   pluginUpdate: () => void;  // LumaDeck plugin update
   openGame: (appid: number) => void; // a stuck game
@@ -90,7 +134,28 @@ const INFO = "#5b9eff";
 //   retry     — crash guard latched: clear its state, then restart (label: Re-enable injection)
 //   reinject  — not_injected: re-patch steam.sh, then restart (label: Restart)
 //   restart   — not_loaded: plain restart (label: Restart)
-export type PrimaryAction = "downgrade" | "core" | "retry" | "reinject" | "restart" | null;
+export type PrimaryAction = "downgrade" | "update" | "unpin" | "retry" | "reinject" | "restart" | null;
+
+// Broken, no update fixes it, but Steam is held by a pin (ours or headcrab's)
+// and the gate says the build Valve serves now is hooked by the released
+// components: the fix is to let Steam update (the SteamOS-image client of
+// 2026-10-14: nothing hooks it, and the only way out is up). Downgrading would
+// land on a client the latest components no longer hook.
+export function unpinFixesBreak(status: ComponentsStatus | null): boolean {
+  return !!status?.freeze?.frozen && status?.freeze?.gate?.state === "ready";
+}
+
+// A Steam update broke a component, and a RELEASED update of that component
+// hooks the client on disk: the fix is Update, not a downgrade. True only when
+// every broken component can be fixed that way (one that can't still needs
+// Desktop). Backend: components[].update.supports_current_build, from the
+// components' own feeds against the sha256 of the installed steamclient.so.
+export function updateFixesBreak(status: ComponentsStatus | null): boolean {
+  const installed = (status?.components || []).filter((c) => c.installed);
+  const broken = installed.filter((c) => c.health === "not_supported");
+  if (broken.length === 0) return false;
+  return broken.every((c) => !!c.update?.available && c.update?.supports_current_build === true);
+}
 
 // The single highest-priority SYSTEM action for the current status, exported so
 // the Dependencies page drives its one morphing button from the same logic as
@@ -105,18 +170,23 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
   const notComplete =
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
   const anyUnsupported = installed.some((c) => c.health === "not_supported");
+  // Same order as buildRows: a fix that exists outranks "wait".
+  if (anyUnsupported && updateFixesBreak(status)) return "update";
+  if (anyUnsupported && unpinFixesBreak(status)) return "unpin";
   // lumalinux with no support for the pinned build yet — aligning wouldn't help;
   // it self-heals. No button (the status row explains it).
   if (anyUnsupported && ll?.installed && ll.health === "not_supported" &&
       status.headcrab?.lumalinux_ready === false &&
       !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported"))
     return null;
+  if (anyUnsupported && status.downgrade?.possible === false) return null; // wait
   if (anyUnsupported) return "downgrade";
-  if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
   // Guard latched: the not_loaded/not_injected below are its SYMPTOM, and their
   // restart/repair can't lift it (the launcher goes vanilla again) — Retry can.
   if (status.guard?.active) return "retry";
-  if (installed.some((c) => c.health === "not_injected")) return "reinject";
+  // A core half-install (SLSsteam xor lumalinux) is the same repair as
+  // not_injected: one setup.sh run, then restart.
+  if (notComplete || installed.some((c) => c.health === "not_injected")) return "reinject";
   if (installed.some((c) => c.health === "not_loaded")) return "restart";
   return null;
 }
@@ -156,34 +226,49 @@ function buildRows(
     !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported");
 
   // ---- one system problem, by priority ----
-  //   Waiting > Steam-unsupported (Desktop) > incomplete install (in place) > Restart
-  if (waitingForSupport) {
-    // Nothing is broken and nothing to do — only new downloads are paused until
-    // lumalinux catches up with Steam, and it self-heals. Info track, not a warning.
+  //   Steam-unsupported (Update / Let Steam update / Wait / Desktop) > Recovery > Restart
+  // "A Steam update broke a component" is ONE row with one mould: the title is
+  // always "Steam build not supported"; the description names the button that
+  // fixes it (Update / Fix in Desktop / Let Steam update), or says to wait when
+  // nothing can. Orange in every case: adding games does not work.
+  if (anyUnsupported && updateFixesBreak(status)) {
+    // The component already shipped support for the new build: Update (one
+    // setup.sh run) is the fix. Downgrading here would pin Steam on an old
+    // client the updated component no longer hooks.
     rows.push({
-      key: "ll-not-ready", severity: "info",
-      label: t("sysLumalinuxNotReady"), description: t("sysLumalinuxNotReadyDesc"),
+      key: "update-fix", severity: "problem",
+      label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysUpdate")),
+      actionLabel: t("sysUpdate"),
+      onAction: actions.update,
+      confirm: "restart",
+    });
+  } else if (anyUnsupported && unpinFixesBreak(status)) {
+    // Broken on a client nothing hooks, held by our pin, and Valve's current
+    // build is supported: let Steam update.
+    rows.push({
+      key: "unpin-fix", severity: "problem",
+      label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysLetSteamUpdate")),
+      actionLabel: t("sysLetSteamUpdate"),
+      onAction: actions.unpin,
+      confirm: "restart", busyLabel: t("restartingSteam"),
+    });
+  } else if (waitingForSupport || (anyUnsupported && status.downgrade?.possible === false)) {
+    // Nothing can fix it from here: lumalinux has not published support for
+    // this build yet (it self-heals once the cron does), or the downgrade would
+    // land on a client the latest SLSsteam no longer hooks.
+    rows.push({
+      key: "wait", severity: "problem",
+      label: t("sysUnsupported"), description: t("sysUnsupportedWait"),
     });
   } else if (anyUnsupported) {
-    // Steam moved off a build the hooks can handle. Only a Steam re-align fixes it,
-    // and that can't run in Game Mode → hand off to Desktop. Two-tap confirm.
+    // Steam moved off a build the hooks can handle and the latest components
+    // still hook the downgrade target: hand off to Desktop. Two-tap confirm.
     rows.push({
       key: "desktop", severity: "problem",
-      label: t("sysUnsupported"), description: t("sysUnsupportedDesc"),
+      label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysFixInDesktop")),
       actionLabel: t("sysFixInDesktop"),
       onAction: actions.downgrade,
       confirm: "desktop",
-    });
-  } else if (notComplete) {
-    // A core component is missing. Steam is at the pin here (if it weren't, the
-    // installed component would be not_supported and the row above would win), so
-    // finishing the install is safe in Game Mode — no Desktop hand-off.
-    rows.push({
-      key: "incomplete", severity: "problem",
-      label: t("sysNotComplete"), description: t("sysNotCompleteDesc"),
-      actionLabel: t("sysFinishSetup"),
-      onAction: actions.reinstallCore,
-      confirm: "restart",
     });
   } else if (status.guard?.active) {
     // The launcher's crash guard is latched: Steam runs with NO injection until
@@ -198,16 +283,18 @@ function buildRows(
       onAction: actions.retry,
       confirm: "restart", busyLabel: t("restartingSteam"),
     });
-  } else if (anyInjectLost || anyNotLoaded) {
+  } else if (anyInjectLost || notComplete || anyNotLoaded) {
+    // not_injected and a core half-install (SLSsteam xor lumalinux) need
+    // setup.sh first (repair = one setup.sh run + restart); a plain not_loaded
+    // just needs the restart. Same row and button either way; the busy label
+    // tells them apart (setup.sh runs before the restart).
+    const needsSetup = anyInjectLost || notComplete;
     rows.push({
       key: "restart", severity: "problem",
       label: t("sysNeedsRestart"), description: t("sysNeedsRestartDesc"),
       actionLabel: t("restartSteam"),
-      // not_injected needs steam.sh re-patched first (repair = reinject + restart);
-      // a plain not_loaded just needs the restart. Same button label either way;
-      // the busy label tells them apart (setup.sh runs before the restart).
-      onAction: anyInjectLost ? actions.repair : actions.restart,
-      confirm: "restart", busyLabel: anyInjectLost ? undefined : t("restartingSteam"),
+      onAction: needsSetup ? actions.repair : actions.restart,
+      confirm: "restart", busyLabel: needsSetup ? undefined : t("restartingSteam"),
     });
   }
 
@@ -238,25 +325,22 @@ function buildRows(
   // the whole block is skipped (the downgrade row above owns that case), and
   // updates resume once the stack hooks the build again.
   if (!anyUnsupported) {
-    // Steam sits BEHIND Headcrab's pin (the pin was bumped forward) and lumalinux
-    // is confirmed ready for the new target — offer to move Steam up to the pin as
-    // a normal update (info, not a problem). Requires lumalinux_ready === true, not
-    // just "not false": pushing a WORKING user up to a build lumalinux can't hook
-    // yet would regress them, so only nudge when support is positively published.
-    // Aligning UP is NOT the downgrade: it hands off to quick_install (setup.sh),
-    // which LIFTS the pin (steam_freeze.maybe_lift_freeze) so Steam self-updates
-    // up to the now-supported build. Routing this to actions.downgrade would
-    // re-write the pin and freeze Steam on the OLD build forever — hence alignUp.
-    const target = status.headcrab?.target;
-    const current = status.headcrab?.current;
-    const steamBehindPin = target != null && current != null && current < target;
-    if (steamBehindPin && llReady === true) {
+    // A steam.cfg pin, whoever wrote it (our downgrade.sh signs it; headcrab's
+    // installer writes an unsigned one): Steam is held at an older build so the
+    // stack keeps working. Lifting it needs no Desktop: strip steam.cfg and
+    // restart, Steam self-updates on the way up. Offered whenever a pin is on;
+    // the gate (steamHeldText) says whether the released components are ready
+    // for Valve's build. Advice, never a lock. (The old "Steam update available /
+    // Update in Desktop" row for a headcrab pin went with lift-on-install,
+    // 2026-10-15.)
+    if (status.freeze?.frozen) {
+      const txt = steamHeldText(t, status.freeze);
       rows.push({
-        key: "steam-update", severity: "info",
-        label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),
-        actionLabel: t("sysSteamUpdateBtn"),
-        onAction: actions.alignUp,
-        confirm: "desktop",
+        key: "steam-held", severity: "info",
+        label: txt.label, description: txt.description,
+        actionLabel: t("sysLetSteamUpdate"),
+        onAction: actions.unpin,
+        confirm: "restart", busyLabel: t("restartingSteam"),
       });
     }
 
@@ -266,7 +350,11 @@ function buildRows(
     // newer version of an installed component?".
     const llUpdate = !!ll?.installed && !!ll.update?.available;
     const crUpdate = !!cr?.installed && !!cr.update?.available;
-    const slsUpdate = !!sls?.installed && !!sls.update?.available;
+    // An SLSsteam release that no longer hooks the client on disk is not an
+    // update to offer: installing it is the 2026-10-14 crash loop. While the
+    // pin holds that client, the held row says to let Steam update first.
+    const slsUpdate = !!sls?.installed && !!sls.update?.available &&
+      sls.update?.supports_current_build !== false;
     if (llUpdate || crUpdate || slsUpdate) {
       rows.push({
         key: "update", severity: "info",
@@ -277,13 +365,18 @@ function buildRows(
       });
     }
   }
+  // A LumaDeck update is the ONLY row while it is pending: when Steam breaks
+  // something, the right advice usually ships in the plugin (2026-10-14: a user
+  // on 0.11.0 saw nothing useful until 0.11.2), and every other row is an old
+  // plugin's advice. Orange when it hides a problem, blue when all is well.
+  // Settings ▸ Components keeps its button for whoever insists.
   if (status.plugin?.available) {
-    rows.push({
-      key: "plugin", severity: "info",
+    return [{
+      key: "plugin", severity: rows.some((r) => r.severity === "problem") ? "problem" : "info",
       label: t("sysPluginUpdate"), description: t("sysPluginUpdateDesc"),
       actionLabel: t("sysPluginUpdateBtn"),
       onAction: actions.pluginUpdate,
-    });
+    }];
   }
 
   return rows;

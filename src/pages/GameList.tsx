@@ -20,7 +20,6 @@ import {
   getGameNotices,
   restartSteam,
   getComponentsStatus,
-  applyComponent,
   downloadUpdateToDownloads,
   checkStuckUpdates,
   getCredentialStatus,
@@ -29,8 +28,8 @@ import {
   reinjectInstalled,
   retryInjection,
   runDesktopHandoffReal,
-  runDesktopHandoffQuickInstall,
 } from "../api";
+import { liftSteamFreeze } from "../api";
 import { FaExclamationTriangle } from "react-icons/fa";
 import {
   SystemStatus,
@@ -450,6 +449,13 @@ export function GameList() {
   // which own the steam.sh ordering. Each refreshes the status afterwards.
   const sysActions: SystemStatusActions = {
     restart: () => runSysAction(async () => { await restartSteam(); }),
+    unpin: () => runSysAction(async () => {
+      // Our steam.cfg pin: strip it, then restart. Steam's bootstrapper updates
+      // the client on that start (the usual "Updating Steam" window).
+      const r = await liftSteamFreeze();
+      if (r?.success) { toast(t("sysSteamHeld"), t("toastSteamUnpinned"), 6000); await restartSteam(); }
+      else toast(t("toastError"), r?.error || "", 4000);
+    }),
     retry: () => runSysAction(async () => {
       // Crash guard latched: clear its state files, then restart so the
       // launcher injects again (a bare restart would go vanilla once more).
@@ -462,11 +468,6 @@ export function GameList() {
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
     }),
-    reinstallCore: () => runSysAction(async () => {
-      const r = await applyComponent("core", "install");
-      if (r?.success) await restartSteam();
-      else toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
-    }),
     downgrade: () => runSysAction(async () => {
       // Arm the one-shot Desktop autostart (headcrab downgrade + lumalinux
       // re-inject) and switch to Desktop. The script runs there and returns to
@@ -475,17 +476,6 @@ export function GameList() {
       const r: any = await runDesktopHandoffReal();
       if (r?.switchLaunched) toast(t("sysSteamTooNew"), t("sysHandoffSwitching"), 8000);
       else if (r?.armed) toast(t("sysSteamTooNew"), t("sysHandoffManual"), 12000);
-      else toast(t("toastError"), r?.error || "", 6000);
-    }),
-    alignUp: () => runSysAction(async () => {
-      // Steam sits behind a newer SUPPORTED pin → move it UP. This is the
-      // "first update after a break": hand off to Desktop quick_install (setup.sh
-      // via install_via_setup), which LIFTS the pin (maybe_lift_freeze) so Steam
-      // self-updates up on the next launch, returning to the update-free state.
-      // NOT the downgrade hand-off — that would re-pin and freeze Steam.
-      const r: any = await runDesktopHandoffQuickInstall();
-      if (r?.switchLaunched) toast(t("sysSteamUpdateAvailable"), t("sysAlignUpSwitching"), 8000);
-      else if (r?.armed) toast(t("sysSteamUpdateAvailable"), t("sysAlignUpManual"), 12000);
       else toast(t("toastError"), r?.error || "", 6000);
     }),
     update: () => runSysAction(async () => {
@@ -518,21 +508,11 @@ export function GameList() {
     }
     setConfirmQuickInstall(false);
 
-    // Off-pin (Steam newer than the headcrab pin): the install includes a Steam
-    // downgrade, which can't run in Game Mode (gamescope crash-loop wipe). Hand
-    // off to Desktop, where the SAME quick_install runs (gamemode=false) and
-    // returns to Game Mode on success. Nothing is re-implemented — it's the real
-    // installer code.
-    const compatible = compStatus?.headcrab?.compatible === true;
-    if (!compatible) {
-      const r: any = await runDesktopHandoffQuickInstall();
-      if (r?.switchLaunched) toast(t("quickInstallDesktop"), t("quickInstallDesktopSwitching"), 9000);
-      else if (r?.armed) toast(t("quickInstallDesktop"), t("quickInstallDesktopManual"), 12000);
-      else toast(t("toastError"), r?.error || "", 6000);
-      return;
-    }
-
-    // At the pin: no downgrade needed, safe to run in Game Mode.
+    // One setup.sh run in place (no Steam downgrade, no pin), then the machine
+    // restart. Whatever build Steam is on: if the components hook it, they load
+    // on the way back; if not, the QAM's "Steam build not supported" row names
+    // the fix. (Until 2026-10-15 an off-pin Deck was sent to Desktop to run the
+    // same setup.sh there, for a downgrade that path no longer includes.)
     setQuickInstalling(true);
     setQuickProgress(t("quickInstallStarting"));
 
@@ -558,7 +538,7 @@ export function GameList() {
       toast(t("toastQuickInstallDone"), "", 4000);
       await restartSteam();
     } else {
-      toast(t("toastQuickInstallFailed"), result.failedStep || "", 6000);
+      toast(t("toastQuickInstallFailed"), result.error || result.failedStep || "", 6000);
     }
   };
 
@@ -579,12 +559,6 @@ export function GameList() {
     if (cs.quickInstall === "hide") return false;
     return (cs.components || []).every((c) => !c.installed);
   })();
-
-  // Off-pin = Steam newer than the headcrab pin → Quick Install routes to
-  // Desktop (see handleQuickInstall). Mirror its exact test so the confirm text
-  // matches what will actually happen (Desktop hand-off, not an in-place Steam
-  // restart).
-  const quickInstallOffPin = compStatus?.headcrab?.compatible !== true;
 
   // A missing/expired provider key is surfaced ONLY through the top "blocked"
   // row (addBlockedReason) + the disabled Add-game button — no separate
@@ -695,9 +669,7 @@ export function GameList() {
               {quickInstalling
                 ? t("quickInstalling")
                 : confirmQuickInstall
-                  ? quickInstallOffPin
-                    ? t("confirmContinuesDesktop")
-                    : t("confirmRestartsSteam")
+                  ? t("confirmRestartsSteam")
                   : t("quickInstall")}
             </ButtonItem>
           </PanelSectionRow>

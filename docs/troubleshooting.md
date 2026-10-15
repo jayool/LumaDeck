@@ -62,7 +62,7 @@ session, but it can't renew one with no network either. See
 [Credentials](credentials.md#luatools-account).
 
 ### "Switch to Desktop Mode now"
-Some repairs (**Fix in Desktop**, **Update in Desktop**) run in Desktop Mode.
+One repair (**Fix in Desktop**) runs in Desktop Mode.
 LumaDeck switches there for you, runs the task, and returns to Game Mode when it
 succeeds. If the switch can't start on its own, the toast asks you to switch to
 Desktop Mode yourself; the task is already armed and runs when you get there. If
@@ -75,10 +75,11 @@ restart doesn't lift it. Press **Re-enable injection** (on the QAM row, or in
 **Settings ▸ Components**). If Steam keeps crashing, the guard latches again;
 see [Components & health → Recovery mode](components-and-health.md#recovery-mode-crash-guard).
 
-### QAM shows "Adding games unavailable"
-lumalinux doesn't support the current Steam build yet. Nothing is broken and there
-is nothing to press: wait for a lumalinux update, and the row clears itself. Until
-then adding games is paused.
+### QAM shows "Steam build not supported" with no button ("Wait for an update.")
+Nothing available can fix it yet: usually lumalinux hasn't published support for
+this Steam build (its daily check does that on its own), or the only downgrade
+would land on a build the newest SLSsteam no longer supports. Wait; the row
+changes by itself when an update lands, and then names the button to press.
 
 ### "Fix the problem above to add games."
 The Add game controls are greyed out because SLSsteam or lumalinux isn't
@@ -86,10 +87,36 @@ The Add game controls are greyed out because SLSsteam or lumalinux isn't
 **Settings ▸ Components**). If the line says **Set up a Hubcap or Ryuu key in
 Settings.** instead, no usable key is configured — see [Credentials](credentials.md).
 
-### QAM shows "Steam update available"
-After a break, the stack now supports a newer Steam build than the one you're on.
-**Update in Desktop** switches to Desktop, updates Steam, and brings you back. Not
-urgent.
+### QAM shows "Steam updates paused" / "Steam update ready"
+Steam is being held on one build: by a **Fix in Desktop** you did at some point,
+or by a hold left behind by headcrab if you used it before LumaDeck. Nothing is
+broken. The line under the row says
+whether it is safe to let Steam update yet:
+
+- *The components support the newer Steam build.* → press **Let Steam update**
+  and confirm. Steam restarts and updates itself.
+- *The components don't support the newer Steam build yet. Updating would break
+  them.* → wait. The line changes by itself once support arrives.
+- *Update the components first.* → press **Update** on the row above, then
+  **Let Steam update**.
+- *Couldn't check the newer Steam build yet.* → no network, or the check hasn't
+  run yet. Try again later.
+
+Details in [Components & health → Letting Steam update again](components-and-health.md#letting-steam-update-again).
+
+### A Steam update broke SLSsteam ("Steam build not supported")
+Valve shipped a Steam client the hooks don't work on. Owned games keep working;
+added games won't download or launch until the component is updated for it.
+Two ways out:
+
+- **Wait.** When the SLSsteam (or lumalinux) update lands, **Update** it from
+  the QAM or **Settings ▸ Components**. The row clears itself.
+- **Fix in Desktop now.** Press it on the QAM, confirm. It switches to Desktop,
+  downgrades Steam to the last supported build (a few minutes, the terminal
+  shows progress), re-establishes the components and comes back to Game Mode.
+  From then on Steam is held on that build and the QAM shows **Steam updates
+  paused**; when it turns into **Steam update ready**, press **Let Steam
+  update**.
 
 ### After a SteamOS / Steam client update
 A Steam self-update can regenerate its launcher `.desktop` (or a DE change drops the

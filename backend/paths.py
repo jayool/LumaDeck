@@ -1201,14 +1201,32 @@ def _slssteam_log_path() -> Optional[str]:
     return None
 
 
+# Every fatal line SLSsteam's load() can print before giving up (src/main.cpp,
+# upstream main@049bbdd), with the cause name read_slssteam_health maps to a UI
+# state. Only the hash abort is a *version* cause (it is the SafeMode gate, which
+# we set to `no`, so in practice it never fires on our installs); everything else
+# is the hooking work itself failing on a client SLSsteam cannot handle yet, so
+# it is a *hooks* cause ("Steam build not supported", fixed by an SLSsteam
+# release). Until 2026-10-14 only the first two were recognised: on the
+# 1791918634 client SLSsteam aborted with "Failed to parse VFTables!" and LumaDeck
+# reported it healthy because that line matched nothing here.
+_SLSSTEAM_ABORT_MARKERS = (
+    ("Unknown steamclient.so hash! Aborting...", "hash"),
+    ("Failed to find all patterns! Aborting...", "patterns"),
+    ("Failed to parse VFTables! Aborting...", "vftables"),
+    ("Failed to setup & place hooks! Aborting...", "hooks"),
+    ("Failed to find steam exports!", "exports"),
+)
+
+
 def _slssteam_log_abort_cause() -> Optional[str]:
     """Inspect the current-session log for a fatal abort line.
 
-    Returns "patterns" (byte patterns no longer match — the common breakage
-    after a Steam update, fatal regardless of config), "hash" (unknown
-    steamclient.so hash with SafeMode on), or None (no fatal line). The soft
+    Returns the cause name from _SLSSTEAM_ABORT_MARKERS ("hash" for the SafeMode
+    abort; "patterns" / "vftables" / "hooks" / "exports" when SLSsteam could not
+    hook this steamclient.so), or None when no fatal line is present. The soft
     "hash missmatch! Please update :)" warning is intentionally NOT treated as
-    fatal — SLSsteam keeps loading after it, so it isn't a broken state.
+    fatal: SLSsteam keeps loading after it, so it isn't a broken state.
     """
     log = _slssteam_log_path()
     if not log:
@@ -1218,10 +1236,9 @@ def _slssteam_log_abort_cause() -> Optional[str]:
             content = f.read()
     except Exception:
         return None
-    if "Failed to find all patterns! Aborting..." in content:
-        return "patterns"
-    if "Unknown steamclient.so hash! Aborting..." in content:
-        return "hash"
+    for marker, cause in _SLSSTEAM_ABORT_MARKERS:
+        if marker in content:
+            return cause
     return None
 
 

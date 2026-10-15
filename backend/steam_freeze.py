@@ -24,13 +24,13 @@ This distinction is load-bearing: headcrab writes steam.cfg on EVERY install (no
 just downgrades), so a device migrating from headcrab arrives frozen with no break
 to recover from. Treating that as "our recovery" would keep the user pinned forever
 (headcrab's pin == our inherited target, so the catch-up gate never fires). Instead
-maybe_lift_freeze lifts a foreign pin ON SIGHT during the next catch-up install,
+installer.install_via_setup lifts a foreign pin ON SIGHT during the next install,
 and holds only OUR signed pin until the ecosystem catches up (the pinned target
 advanced past our build AND the latest lumalinux release supports it — the "update
 available" signal check_headcrab_compat() computes).
 
 This module only READS the freeze (read_freeze) and LIFTS it (lift_freeze /
-maybe_lift_freeze). Lifting = Steam self-updates back up to the now-supported latest
+steam_update_gate.plan_setup). Lifting = Steam self-updates back up to the now-supported latest
 on next launch; the fresh components installed by the same catch-up run hook it.
 Lift strips ONLY the two BootStrapper* lines and our signature, keeping any user
 content, and drops the file if nothing else remains — verified.
@@ -143,47 +143,3 @@ def lift_freeze() -> dict:
         return {"success": False, "error": "steam.cfg still frozen after lift"}
     logger.info("steam_freeze: lifted Steam-update freeze at %s", path)
     return {"success": True, "lifted": True, "path": path}
-
-
-def maybe_lift_freeze(compat: dict) -> dict:
-    """Lift the freeze when appropriate. Called as the closing step of a catch-up
-    install (installer.install_via_setup), AFTER the fresh components are in place,
-    so when Steam self-updates up it hooks the new build.
-
-    Two cases, split on the pin's origin (read_freeze()["mine"]):
-
-    * FOREIGN pin (no `# lumalinux` signature) — headcrab's. headcrab writes
-      steam.cfg on EVERY install, not just downgrades, so a device migrating from
-      headcrab arrives pinned with no break to recover from. In the free-update
-      model we own the update policy (crash-guard is the safety net, not a standing
-      freeze), so a foreign freeze is lifted ON SIGHT — no gate. This is what
-      un-freezes every migrating user; without it they'd stay pinned forever, since
-      headcrab's own pin == our inherited target (target > current never holds).
-
-    * OUR pin (`# lumalinux` signature) — an active break-recovery downgrade. Hold
-      until the ecosystem has caught up:
-          target > current_build  AND  lumalinux_ready is True
-      i.e. the pin has advanced past the build we downgraded to and the latest
-      lumalinux release supports it — the "update available" signal the QAM
-      surfaces. No-op right after a break downgrade, where current == pin.
-
-    `compat` is a check_headcrab_compat() result. No-op (lifted=False) when not
-    frozen, or (for our pin) when build/target are unknown or not caught up yet."""
-    st = read_freeze()
-    if not st.get("frozen"):
-        return {"success": True, "lifted": False, "reason": "not frozen"}
-
-    # Foreign (headcrab) freeze: not ours to keep — lift on sight.
-    if not st.get("mine"):
-        logger.info("steam_freeze: lifting foreign (headcrab) freeze on migration")
-        return lift_freeze()
-
-    current = compat.get("current_build")
-    target = compat.get("target")
-    ready = compat.get("lumalinux_ready")
-    if current is None or target is None:
-        return {"success": True, "lifted": False, "reason": "build/target unknown"}
-    if not (target > current and ready is True):
-        return {"success": True, "lifted": False, "reason": "ecosystem not caught up yet"}
-
-    return lift_freeze()
