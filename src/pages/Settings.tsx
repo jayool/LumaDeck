@@ -554,13 +554,22 @@ export function Settings() {
   // Steam" and "Fix in Desktop", so a broken component only ever says one of
   // those. healthy / not_installed / not_authed / disabled are handled elsewhere.
   const guardActive = !!componentsStatus?.guard?.active;
+  // The one fix the page offers for a Steam-broken component; the health line
+  // under the component names the same button (one mould, i18n healthUnsupportedFix).
+  const primaryNow = primarySystemAction(componentsStatus);
+  const unsupportedFixLabel =
+    primaryNow === "update" ? t("sysUpdate")
+    : primaryNow === "unpin" ? t("sysLetSteamUpdate")
+    : primaryNow === "downgrade" ? t("sysFixInDesktop")
+    : null;
   const healthLine = (state: string): string | null => {
     switch (state) {
       // Crash guard latched: not_loaded / not_injected are its symptom, and the
       // restart / repair those lines name can't lift it — Retry can.
       case "not_loaded":    return guardActive ? t("healthPausedByGuard") : t("healthNotLoaded");
       case "not_injected":  return guardActive ? t("healthPausedByGuard") : t("healthNotInjected");
-      case "not_supported": return t("healthNeedsDesktop");
+      case "not_supported": return unsupportedFixLabel
+        ? t("healthUnsupportedFix", unsupportedFixLabel) : t("healthUnsupportedWait");
       default:              return null;
     }
   };
@@ -1110,7 +1119,10 @@ export function Settings() {
           // (current_build_supported_by_latest === false) is amber "Not supported".
           const b = headcrabCompat.current_build;
           const tgt = headcrabCompat.target;
-          const unsupported = headcrabCompat.current_build_supported_by_latest === false;
+          // "Not supported" as soon as ANY installed component is broken by this
+          // Steam build, so the row agrees with the component lines below it.
+          const unsupported = headcrabCompat.current_build_supported_by_latest === false ||
+            (componentsStatus?.components || []).some((c: any) => c.installed && c.health === "not_supported");
           const behindPin = b != null && tgt != null && b < tgt;
           const updateReady = behindPin && headcrabCompat.lumalinux_ready === true;
           // Our steam.cfg pin (downgrade.sh's): Steam is held at this build on
@@ -1249,6 +1261,10 @@ export function Settings() {
             fire = () => runFix(() =>
               coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
           }
+          // Reinstalling while our pin holds a client the latest SLSsteam no
+          // longer hooks would break Steam (plan_setup refuses it): no button;
+          // the Let Steam update button above says what to do.
+          if (primary === null && !steamUpdate && componentsStatus?.freeze?.install_blocked) return null;
           // First tap arms (auto-reverts in 5 s), second tap fires.
           const onClick = () => {
             if (!confirmFix) {

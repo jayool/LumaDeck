@@ -75,10 +75,11 @@ restart doesn't lift it. Press **Re-enable injection** (on the QAM row, or in
 **Settings ▸ Components**). If Steam keeps crashing, the guard latches again;
 see [Components & health → Recovery mode](components-and-health.md#recovery-mode-crash-guard).
 
-### QAM shows "Adding games unavailable"
-lumalinux doesn't support the current Steam build yet. Nothing is broken and there
-is nothing to press: wait for a lumalinux update, and the row clears itself. Until
-then adding games is paused.
+### QAM shows "Steam build not supported" with no button ("Wait for an update.")
+Nothing available can fix it yet: usually lumalinux hasn't published support for
+this Steam build (its daily check does that on its own), or the only downgrade
+would land on a build the newest SLSsteam no longer supports. Wait; the row
+changes by itself when an update lands, and then names the button to press.
 
 ### "Fix the problem above to add games."
 The Add game controls are greyed out because SLSsteam or lumalinux isn't

@@ -46,8 +46,13 @@ export interface ComponentsStatus {
   guard?: { active: boolean; fails: number; since: string | null; client_changed: boolean };
   // The Steam-update pin (steam.cfg). mine = written by our downgrade.sh after a
   // break-recovery downgrade; the only pin offered for lifting in place.
+  // Would Fix in Desktop help? possible === false -> the Wait row, no button.
+  downgrade?: { target: number | null; possible: boolean | null };
   freeze?: {
     frozen: boolean; mine: boolean;
+    // Our pin holds a client the latest SLSsteam no longer hooks: installing
+    // anything would break Steam, so Components hides Reinstall.
+    install_blocked?: boolean;
     // Only with our pin: is it safe to let Steam update? (backend/steam_update_gate.py)
     // ready | not_yet | unknown. Advice for the text, never a lock. (A released
     // SLSsteam the user hasn't installed yet still reads ready: lift first, the
@@ -175,6 +180,7 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
     return null;
   if (anyUnsupported && updateFixesBreak(status)) return "update";
   if (anyUnsupported && unpinFixesBreak(status)) return "unpin";
+  if (anyUnsupported && status.downgrade?.possible === false) return null; // wait
   if (anyUnsupported) return "downgrade";
   if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
   // Guard latched: the not_loaded/not_injected below are its SYMPTOM, and their
@@ -221,42 +227,46 @@ function buildRows(
 
   // ---- one system problem, by priority ----
   //   Waiting > Steam-unsupported (Desktop) > incomplete install (in place) > Restart
-  if (waitingForSupport) {
-    // Nothing is broken and nothing to do — only new downloads are paused until
-    // lumalinux catches up with Steam, and it self-heals. Info track, not a warning.
+  // "A Steam update broke a component" is ONE row with one mould: the title is
+  // always "Steam build not supported"; the description names the button that
+  // fixes it (Update / Fix in Desktop / Let Steam update), or says to wait when
+  // nothing can. Orange in every case: adding games does not work.
+  if (waitingForSupport || (anyUnsupported && !updateFixesBreak(status) && !unpinFixesBreak(status)
+                            && status.downgrade?.possible === false)) {
+    // Nothing can fix it from here: lumalinux has not published support for
+    // this build yet (it self-heals once the cron does), or the downgrade would
+    // land on a client the latest SLSsteam no longer hooks.
     rows.push({
-      key: "ll-not-ready", severity: "info",
-      label: t("sysLumalinuxNotReady"), description: t("sysLumalinuxNotReadyDesc"),
+      key: "wait", severity: "problem",
+      label: t("sysUnsupported"), description: t("sysUnsupportedWait"),
     });
   } else if (anyUnsupported && updateFixesBreak(status)) {
-    // Steam moved on, and the component already shipped support for the new
-    // build: Update (one setup.sh run) is the fix. Downgrading here would pin
-    // Steam on an old client the updated component no longer hooks.
+    // The component already shipped support for the new build: Update (one
+    // setup.sh run) is the fix. Downgrading here would pin Steam on an old
+    // client the updated component no longer hooks.
     rows.push({
       key: "update-fix", severity: "problem",
-      label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),
+      label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysUpdate")),
       actionLabel: t("sysUpdate"),
       onAction: actions.update,
       confirm: "restart",
     });
   } else if (anyUnsupported && unpinFixesBreak(status)) {
     // Broken on a client nothing hooks, held by our pin, and Valve's current
-    // build is supported: let Steam update. Same row as the held row, as a
-    // problem (it is the fix, not a notice).
-    const txt = steamHeldText(t, status.freeze);
+    // build is supported: let Steam update.
     rows.push({
-      key: "steam-held", severity: "problem",
-      label: txt.label, description: txt.description,
+      key: "unpin-fix", severity: "problem",
+      label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysLetSteamUpdate")),
       actionLabel: t("sysLetSteamUpdate"),
       onAction: actions.unpin,
       confirm: "restart", busyLabel: t("restartingSteam"),
     });
   } else if (anyUnsupported) {
-    // Steam moved off a build the hooks can handle. Only a Steam re-align fixes it,
-    // and that can't run in Game Mode → hand off to Desktop. Two-tap confirm.
+    // Steam moved off a build the hooks can handle and the latest components
+    // still hook the downgrade target: hand off to Desktop. Two-tap confirm.
     rows.push({
       key: "desktop", severity: "problem",
-      label: t("sysUnsupported"), description: t("sysUnsupportedDesc"),
+      label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysFixInDesktop")),
       actionLabel: t("sysFixInDesktop"),
       onAction: actions.downgrade,
       confirm: "desktop",

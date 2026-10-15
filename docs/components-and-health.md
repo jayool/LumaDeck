@@ -94,11 +94,13 @@ The three components share one state vocabulary, keyed by cause and solution.
 | `not_installed` | The component isn't on disk. | Install from Components. |
 | `not_loaded` | Installed and injected, just not live this session. | Restart Steam. |
 | `not_injected` | Installed, but the wrapper's launch coverage was lost (e.g. a Steam update regenerated its `.desktop`, or the Game Mode `steam-launcher.service` drop-in was dropped). | **Repair** (re-runs `setup.sh` to rewrite the wrapper + coverage, then restarts). The QAM shows it as **Restart needed**. |
-| `not_supported` | Steam updated past a build the hooks support. Cause `version` = Steam's client isn't one the component recognises; cause `hooks` = a load-bearing hook couldn't attach. (A non-critical lumalinux hook failing does not count.) | Fix in Desktop. |
+| `not_supported` | Steam updated past a build the hooks support. Cause `version` = Steam's client isn't one the component recognises; cause `hooks` = a load-bearing hook couldn't attach. (A non-critical lumalinux hook failing does not count.) | One of **Update** (a newer release of the component already supports this Steam), **Let Steam update** (Steam is held by LumaDeck on a build nothing supports and the newer Steam is supported), **Fix in Desktop** (downgrade Steam to a build the components support), or wait. The line under the component names the button. |
 
-Exception for `not_supported`: if only lumalinux is affected and it doesn't
-support that Steam build yet, there is nothing to fix. The QAM says **Adding
-games unavailable** until a lumalinux update arrives.
+Which fix shows depends on what the components' own release lists say, in that
+order: if updating the broken component fixes it, that is the button, and a
+downgrade is never offered instead. If nothing can fix it yet (for example
+lumalinux hasn't published support for this build, which the daily check does
+on its own), the line says **Wait for an update.** and there is no button.
 
 CloudRedirect adds two of its own:
 
@@ -136,10 +138,10 @@ The Quick Access Menu never names a specific component. It collapses component
 problems into at most one row with one action:
 
 - If any component is `not_supported`, the QAM shows **Steam build not
-  supported** and a **Fix in Desktop** action. (If only lumalinux is affected
-  and it doesn't support the current Steam build yet, it shows **Adding games
-  unavailable** instead: an info line with no action, which clears itself once
-  lumalinux catches up.)
+  supported** with one line that names the fix: *A Steam update broke LumaDeck.
+  Press Update / Let Steam update / Fix in Desktop to fix it.*, and that button.
+  When nothing can fix it yet the line reads *Wait for an update.* and there is
+  no button (lumalinux alone catches up on its own once support is published).
 - If setup is only half done (a core piece missing while Steam is on a supported
   build), it shows **Setup incomplete** and a **Finish setup** action.
 - If Steam crashed at startup and the launcher fell back to plain Steam, it

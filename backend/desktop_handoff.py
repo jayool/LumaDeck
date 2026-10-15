@@ -329,12 +329,26 @@ def downgrade_target_ok(sls_text, target_hash) -> Optional[str]:
     return "the latest SLSsteam no longer supports the Steam build the downgrade would install; update the components instead"
 
 
-async def prepare_real() -> dict:
-    """Resolve the downgrade target the way downgrade.sh will (its manifest) and
-    check the latest SLSsteam hooks it. Returns {"target": int} or {"error": str}."""
-    from headcrab_compat import _hash_for_build, _lumalinux_updates_text
+_TARGET_CACHE = os.path.join(_HOME, ".cache", "lumadeck", "downgrade_target.json")
+_TARGET_TTL = 30 * 60
+
+
+async def downgrade_target(force: bool = False):
+    """The build downgrade.sh would install: the version in the same manifest it
+    reads (headcrab's SteamTracking branch). Cached 30 minutes like Valve's
+    manifest in steam_update_gate. None when unreachable and no cache."""
+    import json
+    import time
     from http_client import ensure_http_client
-    from steam_update_gate import _branch, parse_manifest_version, slssteam_updates_text
+    from steam_update_gate import _branch, parse_manifest_version
+    if not force:
+        try:
+            with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            if time.time() - float(cached.get("at", 0)) < _TARGET_TTL and cached.get("target"):
+                return int(cached["target"])
+        except Exception:
+            pass
     deck = _branch().startswith("steamdeck")
     manifest_url = os.environ.get(
         "DECK_MANIFEST_URL" if deck else "LINUX_MANIFEST_URL",
@@ -348,15 +362,48 @@ async def prepare_real() -> dict:
             target = parse_manifest_version(resp.text)
     except Exception as exc:
         logger.info("desktop_handoff: target manifest fetch failed (%s)", exc)
+    if target:
+        try:
+            os.makedirs(os.path.dirname(_TARGET_CACHE), exist_ok=True)
+            with open(_TARGET_CACHE, "w", encoding="utf-8") as f:
+                json.dump({"target": target, "at": time.time()}, f)
+        except Exception:
+            pass
+        return target
+    try:
+        with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
+            return int(json.load(f).get("target") or 0) or None
+    except Exception:
+        return None
+
+
+async def downgrade_check(force: bool = False) -> dict:
+    """Would Fix in Desktop help right now? {"target": int|None, "possible":
+    True/False/None, "error": str|None}. possible is False when the latest
+    SLSsteam no longer hooks the target client (downgrading would break Steam;
+    the fix is Update or waiting), None when the feeds can't tell. The status
+    payload carries it so the QAM offers the button only when it can work."""
+    from headcrab_compat import _hash_for_build, _lumalinux_updates_text
+    from steam_update_gate import slssteam_latest_supports, slssteam_updates_text
+    target = await downgrade_target(force=force)
     if target is None:
-        return {"error": "could not read the downgrade target manifest"}
+        return {"target": None, "possible": None, "error": "could not read the downgrade target manifest"}
     target_hash = _hash_for_build(await _lumalinux_updates_text(), target)
-    why = downgrade_target_ok(await slssteam_updates_text(), target_hash)
-    if why:
-        return {"error": f"downgrade to {target}: {why}"}
-    logger.info("desktop_handoff: downgrade target %s (%s): latest SLSsteam hooks it", target,
-                (target_hash or "?")[:12])
-    return {"target": target}
+    sls_text = await slssteam_updates_text()
+    why = downgrade_target_ok(sls_text, target_hash)
+    ok = slssteam_latest_supports(sls_text, target_hash)
+    return {"target": target, "possible": (None if ok is None else not why),
+            "error": f"downgrade to {target}: {why}" if why else None}
+
+
+async def prepare_real() -> dict:
+    """Resolve the downgrade target the way downgrade.sh will (its manifest) and
+    check the latest SLSsteam hooks it. Returns {"target": int} or {"error": str}."""
+    chk = await downgrade_check(force=True)
+    if chk.get("error"):
+        return {"error": chk["error"]}
+    logger.info("desktop_handoff: downgrade target %s: latest SLSsteam hooks it", chk["target"])
+    return {"target": chk["target"]}
 
 
 def run_desktop_handoff_real() -> dict:

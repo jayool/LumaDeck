@@ -140,8 +140,8 @@ Principles are **derived** from these entries as patterns emerge (see
     glyph, `label` = the problem, `description` = the explanation, children =
     the action. Native focus; the whole row is the button.
   - A row **without one** is a `Field` (`icon` + `label` + `description`). Only
-    info states with no Game-Mode action use it (Adding games unavailable,
-    CloudRedirect sign-in). Display-only — **no dead button**.
+    states with no Game-Mode action use it (the Wait variant of "Steam build
+    not supported", CloudRedirect sign-in). Display-only — **no dead button**.
   - A Steam-unsupported state is **not** a `Field`: it is an actionable
     `ButtonItem` **"Fix in Desktop"** (the Desktop hand-off *is* the action
     from Game Mode).
@@ -235,12 +235,55 @@ SLSsteam in production (build 1791918634, "Failed to parse VFTables"):
 `description` = the text below + the control. No component name and no impact
 suffix: the row is stack-wide.
 
-**State → row** (`buildRows()` in `SystemStatus.tsx`; strings in `i18n.ts`):
+**The mould for "a Steam update broke a component" (2026-10-15).** One title,
+one description with the fixing button's name in `{0}`, and one Wait variant,
+used identically in the QAM and under the component in Settings ▸ Components:
+
+| i18n key | text |
+|---|---|
+| `sysUnsupported` | Steam build not supported |
+| `sysUnsupportedFix` | A Steam update broke LumaDeck. Press {0} to fix it. |
+| `sysUnsupportedWait` | A Steam update broke LumaDeck. Wait for an update. |
+| `healthUnsupportedFix` | Steam build not supported. Press "{0}" to fix. |
+| `healthUnsupportedWait` | Steam build not supported. Wait for an update. |
+
+`{0}` is **Update** (the component's latest release hooks the client on disk:
+`update.supports_current_build`), **Let Steam update** (our pin holds a client
+nothing hooks and the gate reads `ready`), or **Fix in Desktop** (the latest
+components still hook the downgrade target: `downgrade.possible`). When none
+applies the Wait variant shows with no button. Always orange: adding games does
+not work, whether or not there is a button. The Steam row in Components reads
+"Not supported" as soon as any installed component is broken by the build.
+
+**Every situation, by Steam state** (the 12 cases agreed on 2026-10-15; strings
+in `i18n.ts`, rows in `buildRows()`, Components in `Settings.tsx`):
+
+| # | Situation | QAM title | QAM description | Button | Components |
+|---|---|---|---|---|---|
+| 1 | Steam loose (Valve's build), all healthy | (none) | | | all Active; Steam "Supported"; button Reinstall Components |
+| 2 | Loose, a component broken, a release hooks this client | Steam build not supported | sysUnsupportedFix{Update} | **Update** | healthUnsupportedFix{Update}; Steam "Not supported"; button Update |
+| 3 | Loose, broken, no release, downgrade target hooked by the latest components | Steam build not supported | sysUnsupportedFix{Fix in Desktop} | **Fix in Desktop** | healthUnsupportedFix{Fix in Desktop}; Steam "Not supported"; button Fix in Desktop |
+| 4 | Loose, only lumalinux broken, no release yet (self-heals when the cron publishes) | Steam build not supported | sysUnsupportedWait | (none) | healthUnsupportedWait; Steam "Not supported"; button Reinstall Components |
+| 5 | Loose, broken, no release, downgrade target not hooked either | Steam build not supported | sysUnsupportedWait | (none) | healthUnsupportedWait; Steam "Not supported"; no fix button |
+| 6 | Our pin, all healthy, Valve's new build not yet supported | Steam updates paused | The components don't support the newer Steam build yet. Updating would break them. | Let Steam update | Steam "Held at build N by LumaDeck (updates paused)"; Let Steam update with the detailed line; Reinstall only when installing cannot break (`freeze.install_blocked` false) |
+| 7 | Our pin, all healthy, Valve's new build supported by the released components | Steam update ready | The components support the newer Steam build. | Let Steam update | as 6 with "The components support the newer Steam build (N)." |
+| 8 | Our pin, broken, a release hooks the pinned client | as 2 | | **Update** | as 2, Steam row "Held at build N…" |
+| 9 | Our pin, broken, no release, Valve's new build supported | Steam build not supported | sysUnsupportedFix{Let Steam update} | **Let Steam update** | healthUnsupportedFix{Let Steam update}; button Let Steam update |
+| 10 | Our pin, broken, no release, Valve's new build not supported | as 3 if the downgrade target is hooked, else as 5 | | | |
+| 11 | A LumaDeck update is pending | LumaDeck update available (the ONLY row) | Download it, then install it from Decky's Developer menu. | Download update | unchanged |
+| 12 | A foreign (headcrab) pin | as today: "Steam update available / Update in Desktop" when Steam sits behind a supported target; the pin is lifted on sight by the next install | | | |
+
+Order of the fix rows: Update > Let Steam update > Fix in Desktop > Wait. "Update
+the components first" is never advised: the safe order under our pin is Let
+Steam update, then Update (the old SLSsteam aborts cleanly on the new build; the
+new SLSsteam on the old build crash-loops Steam, 2026-10-14). An install under
+our pin that would break Steam is refused by the backend (`plan_setup`) and the
+Reinstall button is hidden.
+
+**Other rows (unchanged):**
 
 | State (backend) | label | description | control |
 |---|---|---|---|
-| any installed component `not_supported` | "Steam build not supported" | "A Steam update broke LumaDeck. Press Fix in Desktop to repair it." | 🔘 **Fix in Desktop** (confirm "continues in Desktop") |
-| only lumalinux `not_supported` and `headcrab.lumalinux_ready === false` | "Adding games unavailable" (info ↑) | "This Steam build doesn't support adding games through LumaDeck. Wait for an update." | 📄 Field |
 | core half-installed (SLSsteam xor lumalinux) | "Setup incomplete" | "LumaDeck isn't fully set up. Press to finish." | 🔘 **Finish setup** |
 | `guard.active` (crash guard latched) | "Recovery mode" | "Steam crashed at startup. Running without injection." | 🔘 **Re-enable injection** |
 | any `not_injected` or `not_loaded` | "Restart needed" | "LumaDeck needs a restart to work." | 🔘 **Restart Steam** |
@@ -1142,13 +1185,15 @@ layers:
 
 ---
 
-### ERRORS → the user can only ever do 6 things
+### ERRORS → the user can only ever do 8 things
 
 | # | User action | Backend states it covers | Where |
 |---|---|---|---|
 | 1 | **Restart Steam** | `not_loaded` (any component) | Game Mode |
 | 2 | **Repair** (re-run `setup.sh` + restart) | `not_injected` (any component) — not a separate visible row: it shows as **Restart needed / Restart Steam** and runs repair + restart underneath; core half-installed is its own **Setup incomplete / Finish setup** row (`apply_component("core","install")` + restart) | Game Mode |
-| 3 | **Downgrade Steam** ("Fix in Desktop") | "Steam too new": `not_supported` (any cause) | Desktop |
+| 3 | **Downgrade Steam** ("Fix in Desktop") | "Steam too new": `not_supported`, when neither an update nor a pin lift fixes it and the latest components still hook the downgrade target (`downgrade.possible`) | Desktop |
+| 7 | **Update** (re-run `setup.sh` + restart) | `not_supported` while the broken component's latest release hooks the client on disk (`update.supports_current_build`); also the plain update track | Game Mode |
+| 8 | **Let Steam update** (strip our `steam.cfg` pin + restart) | our pin, when Valve's current build is supported by the released components (`freeze.gate.state === "ready"`): as the fix when something is broken on the pinned client, as the held row otherwise | Game Mode |
 | 4 | **Configure cloud provider** | CR `not_authed` — an **info** (blue ↑) `Field`, not a ⚠ problem | Desktop |
 | 5 | **Install LumaDeck manually** | plugin needs the zip | manual |
 | 6 | **Re-enable injection** (clear the crash guard + restart) | `guard.active` — the launcher's crash guard latched safe mode (3 startup crashes, or 1 right after a Steam update); every hook component reads `not_loaded` and Steam runs with **no** injection until the guard's state files go | Game Mode |
@@ -1178,10 +1223,10 @@ plugin's job is to say what happened, not to second-guess the guard.
 Silent: `healthy`, CR `disabled` (`~/.config/CloudRedirect/disable`, a
 deliberate opt-out the plugin only *detects*, never creates), CR `not_installed`.
 
-Info, no action: **Adding games unavailable** — only lumalinux is
-`not_supported` and `headcrab.lumalinux_ready === false` (lumalinux has no
-support for the pinned build yet; aligning Steam would not help, it self-heals
-once support ships).
+No action: **Steam build not supported / Wait for an update** — only lumalinux
+is `not_supported` and `headcrab.lumalinux_ready === false` (it self-heals once
+the cron publishes support), or no update, pin lift or downgrade can fix the
+break (`downgrade.possible === false`). Orange, not info: adding games is down.
 
 **Collapse / cross-reference rules (why the user sees little):**
 - **"Steam too new" is ONE row** even when 3 components report it (three
@@ -1195,11 +1240,12 @@ once support ships).
   restart / repair cannot lift it. Order: waiting-for-support > downgrade >
   finish setup > **re-enable injection** > repair > restart.
   (Repair and restart share the one **Restart needed** row.)
-- **lumalinux `not_supported` is conditional:** if lumalinux is the only
-  unsupported component and `headcrab.lumalinux_ready === false`, it is not a
-  downgrade: the row is the info **Adding games unavailable** ("wait for an
-  update", no action — lumalinux self-heals once support ships). Otherwise it
-  joins the downgrade group (Fix in Desktop).
+- **`not_supported` picks its fix from the feeds:** Update when the broken
+  component's latest release hooks the client on disk; Let Steam update when our
+  pin holds a client nothing hooks and Valve's build is supported; Fix in Desktop
+  when the latest components still hook the downgrade target; otherwise the Wait
+  variant (lumalinux alone with no published support self-heals once the cron
+  publishes). See the 12-case table in §3c.
 
 **Confirm rule (2026-09-23).** Every button that restarts Steam or leaves
 Game Mode asks for a second tap, and the first tap says which: **"Confirm

@@ -306,6 +306,13 @@ async def get_components_status(force: bool = False) -> dict:
         check_cloudredirect_update(force=force), no_update)
 
     headcrab = await _safe(check_headcrab_compat(), {"compatible": None, "target": None, "current_build": None})
+    # Would Fix in Desktop help? Only asked while something is not_supported
+    # (the one state that offers it). possible False -> the QAM shows the Wait
+    # row instead of a button that would be refused.
+    downgrade = {"target": None, "possible": None, "error": None}
+    if any(h.get("state") == "not_supported" for h in (sls_health, ll_health, cr_health)):
+        from desktop_handoff import downgrade_check
+        downgrade = await _safe(downgrade_check(force=force), downgrade)
     plugin = await _safe(check_plugin_update(), {"installed": None, "latest": None, "has_update": False})
 
     # `installed` is derived from the (dev-aware) health state, NOT a raw disk
@@ -357,12 +364,21 @@ async def get_components_status(force: bool = False) -> dict:
         "freeze": {
             "frozen": bool(freeze.get("frozen")),
             "mine": bool(freeze.get("mine")),
+            # Our pin holds a client the latest SLSsteam no longer hooks: any
+            # install would break Steam (plan_setup refuses it), so Components
+            # hides Reinstall and the held row says what to do instead.
+            "install_blocked": bool(freeze.get("frozen") and freeze.get("mine")
+                                    and sls_supports_current is False),
             "gate": None if gate is None else {
                 "state": gate.get("state"),
                 "blocker": gate.get("blocker"),
                 "stable_build": gate.get("stable_build"),
                 "slssteam_required": gate.get("slssteam_required"),
             },
+        },
+        "downgrade": {
+            "target": downgrade.get("target"),
+            "possible": downgrade.get("possible"),
         },
         "guard": {
             "active": bool(guard.get("active")),
