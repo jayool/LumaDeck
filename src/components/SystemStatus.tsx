@@ -172,14 +172,15 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
   const notComplete =
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
   const anyUnsupported = installed.some((c) => c.health === "not_supported");
+  // Same order as buildRows: a fix that exists outranks "wait".
+  if (anyUnsupported && updateFixesBreak(status)) return "update";
+  if (anyUnsupported && unpinFixesBreak(status)) return "unpin";
   // lumalinux with no support for the pinned build yet — aligning wouldn't help;
   // it self-heals. No button (the status row explains it).
   if (anyUnsupported && ll?.installed && ll.health === "not_supported" &&
       status.headcrab?.lumalinux_ready === false &&
       !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported"))
     return null;
-  if (anyUnsupported && updateFixesBreak(status)) return "update";
-  if (anyUnsupported && unpinFixesBreak(status)) return "unpin";
   if (anyUnsupported && status.downgrade?.possible === false) return null; // wait
   if (anyUnsupported) return "downgrade";
   if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
@@ -231,16 +232,7 @@ function buildRows(
   // always "Steam build not supported"; the description names the button that
   // fixes it (Update / Fix in Desktop / Let Steam update), or says to wait when
   // nothing can. Orange in every case: adding games does not work.
-  if (waitingForSupport || (anyUnsupported && !updateFixesBreak(status) && !unpinFixesBreak(status)
-                            && status.downgrade?.possible === false)) {
-    // Nothing can fix it from here: lumalinux has not published support for
-    // this build yet (it self-heals once the cron does), or the downgrade would
-    // land on a client the latest SLSsteam no longer hooks.
-    rows.push({
-      key: "wait", severity: "problem",
-      label: t("sysUnsupported"), description: t("sysUnsupportedWait"),
-    });
-  } else if (anyUnsupported && updateFixesBreak(status)) {
+  if (anyUnsupported && updateFixesBreak(status)) {
     // The component already shipped support for the new build: Update (one
     // setup.sh run) is the fix. Downgrading here would pin Steam on an old
     // client the updated component no longer hooks.
@@ -260,6 +252,14 @@ function buildRows(
       actionLabel: t("sysLetSteamUpdate"),
       onAction: actions.unpin,
       confirm: "restart", busyLabel: t("restartingSteam"),
+    });
+  } else if (waitingForSupport || (anyUnsupported && status.downgrade?.possible === false)) {
+    // Nothing can fix it from here: lumalinux has not published support for
+    // this build yet (it self-heals once the cron does), or the downgrade would
+    // land on a client the latest SLSsteam no longer hooks.
+    rows.push({
+      key: "wait", severity: "problem",
+      label: t("sysUnsupported"), description: t("sysUnsupportedWait"),
     });
   } else if (anyUnsupported) {
     // Steam moved off a build the hooks can handle and the latest components
