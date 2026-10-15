@@ -308,15 +308,16 @@ def evaluate(stable_build: Optional[int], ll_text: Optional[str], ll_group: Opti
     return out
 
 
-def plan_setup(freeze_mine: bool, sls_text: Optional[str], current_hash: Optional[str],
+def plan_setup(frozen: bool, sls_text: Optional[str], current_hash: Optional[str],
                gate_for_latest: Optional[dict]) -> dict:
     """What a setup.sh run must do so SLSsteam and the Steam client it runs on
     never end up mismatched. Pure; see install_via_setup for the live wiring.
 
-    setup.sh installs the LATEST SLSsteam. While OUR pin holds Steam at an older
-    client, that can be the one combination that crash-loops Steam (2026-10-14:
-    SLSsteam 20261014151919 on bc54101b; three startup crashes and SteamOS
-    re-bootstrapped the client from its image). So, with our pin on:
+    setup.sh installs the LATEST SLSsteam. While a pin (ours or headcrab's)
+    holds Steam at an older client, that can be the one combination that
+    crash-loops Steam (2026-10-14: SLSsteam 20261014151919 on bc54101b; three
+    startup crashes and SteamOS re-bootstrapped the client from its image). So,
+    with a pin on:
 
       latest hooks the pinned client      -> install latest, keep the pin.
       latest doesn't, but latest + lumalinux
@@ -336,7 +337,7 @@ def plan_setup(freeze_mine: bool, sls_text: Optional[str], current_hash: Optiona
     (i.e. "would the latest SLSsteam be ready for Valve's build?").
     Returns {"refuse", "reason"}; the pin is never lifted by an install."""
     plan = {"refuse": None, "reason": "no pin"}
-    if not freeze_mine:
+    if not frozen:
         return plan
     supports = slssteam_latest_supports(sls_text, current_hash)
     if supports is True:

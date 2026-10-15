@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 from typing import Optional
 import pwd
-import shlex
 import shutil
 import subprocess
 
@@ -414,48 +413,6 @@ def run_desktop_handoff_real() -> dict:
     is readable. prepare_real() must have passed first (the latest SLSsteam hooks
     the target client)."""
     return _run_handoff(_REAL_PAYLOAD)
-
-
-def run_desktop_handoff_quick_install() -> dict:
-    """Arm a Desktop hand-off that runs the FULL Quick Install in Desktop, then
-    returns to Game Mode on success.
-
-    WS2: quick_install now runs lumalinux/setup.sh (wrapper model) — SLSsteam +
-    CloudRedirect + netsock + lumalinux + .NET, no Steam downgrade, no freeze. So
-    this hand-off is no longer downgrade-related; it just runs the installer in a
-    visible Desktop konsole (handy for a first setup / seeing progress).
-
-    It runs quick_install_cli.py (which calls installer.quick_install(
-    gamemode=False)) under the system Python — the real installer code, nothing
-    re-implemented, so no step is forgotten. On failure it stays in Desktop with
-    the konsole held; the launcher also writes ~/lumadeck-quickinstall.json."""
-    launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quick_install_cli.py")
-    if not os.path.isfile(launcher):
-        return {"success": False, "error": f"launcher not found: {launcher}"}
-    qlauncher = shlex.quote(launcher)
-    payload = (
-        'echo "================================================================"\n'
-        'echo " LumaDeck - Full setup in Desktop (Quick Install)"\n'
-        'echo " Installs SLSsteam + CloudRedirect + lumalinux and aligns Steam."\n'
-        'echo " This can take a few minutes and Steam may restart. Do NOT close"\n'
-        'echo " this window."\n'
-        'echo "================================================================"\n'
-        'echo\n'
-        'PY="$(command -v python3 || echo /usr/bin/python3)"\n'
-        f'"$PY" {qlauncher}\n'
-        'rc=$?\n'
-        'if [ "$rc" -eq 0 ]; then\n'
-        '  echo\n'
-        '  echo " All done. Returning to Game Mode in 8s..."\n'
-        '  sleep 8\n'
-        f'  steamos-session-select {_GAMEMODE_ARG}\n'
-        'else\n'
-        '  echo\n'
-        '  echo "!! Setup failed (exit $rc). Staying in Desktop so you can read it."\n'
-        '  echo "!! Details: ~/lumadeck-quickinstall.json"\n'
-        'fi\n'
-    )
-    return _run_handoff(payload)
 
 
 # Full diagnostic written to a file so a tiny toast doesn't truncate it: the user

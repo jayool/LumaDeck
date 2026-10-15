@@ -43,7 +43,7 @@ import {
   addFakeAppId,
   removeFakeAppId,
 } from "../api";
-import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall, runDesktopHandoffReal, liftSteamFreeze } from "../api";
+import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffReal, liftSteamFreeze } from "../api";
 import { getDevState, setDevState, clearDevState, devProbeVersions } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { closeLoginBrowser } from "../browserLogin";
@@ -1113,28 +1113,23 @@ export function Settings() {
         )}
         {headcrabCompat && headcrabCompat.current_build != null && (() => {
           // Steam as a first-class component row, aligned with the QAM: what
-          // matters is whether the CURRENT build is SUPPORTED, not whether it
-          // equals the pin. Behind the pin but supported = green "Supported" + an
-          // "update available" info line; only a genuinely unsupported build
-          // (current_build_supported_by_latest === false) is amber "Not supported".
+          // matters is whether the CURRENT build is SUPPORTED. Only a genuinely
+          // unsupported build (current_build_supported_by_latest === false, or
+          // any installed component not_supported) is amber "Not supported".
           const b = headcrabCompat.current_build;
-          const tgt = headcrabCompat.target;
           // "Not supported" as soon as ANY installed component is broken by this
           // Steam build, so the row agrees with the component lines below it.
           const unsupported = headcrabCompat.current_build_supported_by_latest === false ||
             (componentsStatus?.components || []).some((c: any) => c.installed && c.health === "not_supported");
-          const behindPin = b != null && tgt != null && b < tgt;
-          const updateReady = behindPin && headcrabCompat.lumalinux_ready === true;
-          // Our steam.cfg pin (downgrade.sh's): Steam is held at this build on
-          // purpose. Say so, and offer to lift it in place (no Desktop).
-          const held = !!componentsStatus?.freeze?.frozen && !!componentsStatus?.freeze?.mine;
+          // A steam.cfg pin, whoever wrote it (our downgrade.sh or headcrab's
+          // installer): Steam is held at this build. Say so, and offer to lift
+          // it in place (no Desktop).
+          const held = !!componentsStatus?.freeze?.frozen;
           const desc = unsupported
-            ? warnDesc(t("steamBuildMismatch", b, tgt ?? "?"), "warn")
+            ? warnDesc(t("steamBuildMismatch", b), "warn")
             : held
               ? warnDesc(t("steamHeldSub", b), "info")
-              : updateReady
-                ? warnDesc(t("steamUpdateAvailableSub", b, tgt ?? "?"), "info")
-                : undefined;
+              : undefined;
           const onUnpin = () => {
             if (!confirmUnpin) {
               setConfirmUnpin(true);
@@ -1178,14 +1173,6 @@ export function Settings() {
         {(() => {
           const coreInstalled = !!(slssPresent && llPresent);
           const primary = primarySystemAction(componentsStatus);
-          // Steam BEHIND the pin but on a SUPPORTED build → a normal "move up to
-          // the pin" update, NOT a downgrade fix. Only a genuinely unsupported
-          // build reaches primary==="downgrade" (Fix in Desktop). Aligned with the
-          // QAM — we no longer treat !compatible as "off-pin".
-          const sBuild = headcrabCompat?.current_build;
-          const sTarget = headcrabCompat?.target;
-          const steamUpdate = sBuild != null && sTarget != null && sBuild < sTarget &&
-            headcrabCompat?.lumalinux_ready === true;
           let label = t("installReinstallDeps");
           let desc: string | undefined;
           let fire: () => any;
@@ -1234,20 +1221,6 @@ export function Settings() {
             label = t("restartSteam");
             busyLabel = t("restartingSteam");
             fire = () => runFix(async () => ({ success: true })); // restart + refresh
-          } else if (steamUpdate) {
-            // Healthy, but Steam sits behind a newer SUPPORTED build → offer the
-            // align-up as an UPDATE (not a fix). This is the "first update after a
-            // break" the QAM surfaces: quick_install re-establishes the wrapper
-            // and, via install_via_setup, lifts the pin (steam_freeze) now that the
-            // ecosystem caught up, so Steam self-updates UP on the next launch —
-            // back to the update-free state. Opposite direction to the downgrade,
-            // and deliberately NOT the downgrade machinery (no pin written here).
-            label = t("sysSteamUpdateBtn");
-            desc = t("sysSteamUpdateAvailableDesc");
-            confirmKind = "desktop";
-            fire = () => fixInDesktop(
-              runDesktopHandoffQuickInstall,
-              "sysSteamUpdateAvailable", "sysAlignUpSwitching", "sysAlignUpManual");
           } else {
             // healthy on-pin: manual maintenance. Reflect the real state in the
             // label — "Reinstall" when the core is already there (nothing is
@@ -1256,10 +1229,10 @@ export function Settings() {
             fire = () => runFix(() =>
               coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
           }
-          // Reinstalling while our pin holds a client the latest SLSsteam no
+          // Reinstalling while the pin holds a client the latest SLSsteam no
           // longer hooks would break Steam (plan_setup refuses it): no button;
           // the Let Steam update button above says what to do.
-          if (primary === null && !steamUpdate && componentsStatus?.freeze?.install_blocked) return null;
+          if (primary === null && componentsStatus?.freeze?.install_blocked) return null;
           // First tap arms (auto-reverts in 5 s), second tap fires.
           const onClick = () => {
             if (!confirmFix) {

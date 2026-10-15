@@ -62,7 +62,7 @@ session, but it can't renew one with no network either. See
 [Credentials](credentials.md#luatools-account).
 
 ### "Switch to Desktop Mode now"
-Some repairs (**Fix in Desktop**, **Update in Desktop**) run in Desktop Mode.
+One repair (**Fix in Desktop**) runs in Desktop Mode.
 LumaDeck switches there for you, runs the task, and returns to Game Mode when it
 succeeds. If the switch can't start on its own, the toast asks you to switch to
 Desktop Mode yourself; the task is already armed and runs when you get there. If
@@ -87,15 +87,10 @@ The Add game controls are greyed out because SLSsteam or lumalinux isn't
 **Settings ▸ Components**). If the line says **Set up a Hubcap or Ryuu key in
 Settings.** instead, no usable key is configured — see [Credentials](credentials.md).
 
-### QAM shows "Steam update available"
-After a break, the stack now supports a newer Steam build than the one you're on.
-**Update in Desktop** switches to Desktop, updates Steam, and brings you back. Not
-urgent. (You only see this when the hold on Steam is not LumaDeck's own; after a
-**Fix in Desktop** the row is **Steam updates paused** instead, below.)
-
 ### QAM shows "Steam updates paused" / "Steam update ready"
-You did a **Fix in Desktop** at some point, so LumaDeck is holding Steam on the
-build the components work on. Nothing is broken. The line under the row says
+Steam is being held on one build: by a **Fix in Desktop** you did at some point,
+or by a hold left behind by headcrab if you used it before LumaDeck. Nothing is
+broken. The line under the row says
 whether it is safe to let Steam update yet:
 
 - *The components support the newer Steam build.* → press **Let Steam update**

@@ -835,14 +835,6 @@ class Plugin:
             return _j({"success": False, "armed": False, "error": prep["error"]})
         return _j(run_desktop_handoff_real())
 
-    async def run_desktop_handoff_quick_install(self) -> str:
-        """Arm a Desktop hand-off that runs the FULL Quick Install (deps + CR +
-        lumalinux, incl. the Steam downgrade) in Desktop, then returns to Game
-        Mode. For a fresh Deck whose Steam is newer than the headcrab pin, where
-        the downgrade can't run in Game Mode."""
-        from desktop_handoff import run_desktop_handoff_quick_install
-        return _j(run_desktop_handoff_quick_install())
-
     async def disarm_desktop_handoff(self) -> str:
         from desktop_handoff import disarm_desktop_handoff
         return _j(disarm_desktop_handoff())

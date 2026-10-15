@@ -610,17 +610,10 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                     "(likely a transient network drop). Retry."
                 )
             else:
-                # A foreign (headcrab) pin is lifted on sight, as before: not ours
-                # to keep. OUR pin is never lifted by an install: the user lifts
-                # it with Let Steam update (the gate says when).
-                try:
-                    from steam_freeze import lift_freeze, read_freeze
-                    fz = read_freeze()
-                    if fz.get("frozen") and not fz.get("mine"):
-                        logger.info("LumaDeck: lifting foreign (headcrab) pin: %s", lift_freeze())
-                except Exception as exc:
-                    logger.warning("LumaDeck: pin lift failed: %s", exc)
-
+                # The pin (steam.cfg), ours or headcrab's, is never lifted by an
+                # install: the user lifts it with Let Steam update, and the gate
+                # says when that is safe. (Lifting on install was the
+                # lift-and-install move that crash-looped Steam, 2026-10-14.)
                 SETUP_INSTALL_STATE["status"] = "done"
                 SETUP_INSTALL_STATE["progress"] = "Stack installed!"
         else:
@@ -651,7 +644,7 @@ def get_setup_status() -> dict:
 
 
 async def _plan_this_run() -> dict:
-    """Gather what steam_update_gate.plan_setup needs: our pin, SLSsteam's feed,
+    """Gather what steam_update_gate.plan_setup needs: the pin, SLSsteam's feed,
     the installed client's hash, and whether the LATEST SLSsteam + lumalinux are
     ready for Valve's current build."""
     from headcrab_compat import _lumalinux_updates_text, latest_release_group
@@ -659,8 +652,8 @@ async def _plan_this_run() -> dict:
     from steam_update_gate import (current_client_hash, evaluate, latest_stable_build, plan_setup,
                                    slssteam_latest_group, slssteam_updates_text)
     fz = read_freeze()
-    if not (fz.get("frozen") and fz.get("mine")):
-        return {"refuse": None, "reason": "no pin of ours"}
+    if not fz.get("frozen"):
+        return {"refuse": None, "reason": "no pin"}
     sls_text = await slssteam_updates_text()
     cur_hash = current_client_hash()
     gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(),

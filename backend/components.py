@@ -279,15 +279,17 @@ async def get_components_status(force: bool = False) -> dict:
     # the UI shows "Recovery mode" + Retry instead of "Restart needed". Stack-wide
     # like headcrab, not per component. Inactive on any failure (safe default).
     guard = _safe_sync(read_crash_guard, {"active": False, "fails": 0, "since": None, "client_changed": False})
-    # The Steam-update pin (steam.cfg). `mine` = written by our downgrade.sh
-    # (signed `# lumalinux`), which is the only pin the UI offers to lift in
-    # place: "Let Steam update" strips it and restarts, no Desktop needed.
+    # The Steam-update pin (steam.cfg). Any pin is THE pin, whoever wrote it
+    # (our downgrade.sh signs it `# lumalinux`; headcrab's installer writes an
+    # unsigned one): the UI offers to lift it in place with "Let Steam update",
+    # and an install never lifts it (2026-10-15; the old lift-on-sight of a
+    # headcrab pin was the lift-and-install move that crash-looped Steam).
     freeze = _safe_sync(read_freeze, {"frozen": False, "mine": False})
-    # Only while OUR pin is on does "is it safe to let Steam update?" matter
+    # While a pin is on, "is it safe to let Steam update?" matters
     # (steam_update_gate: Valve's stable manifest + lumalinux's and SLSsteam's
     # whitelists). Advice for the button's text, never a lock.
     gate = None
-    if freeze.get("frozen") and freeze.get("mine"):
+    if freeze.get("frozen"):
         from steam_update_gate import steam_update_gate
         gate = await _safe(steam_update_gate(force=force), {"state": "unknown", "blocker": None})
 
@@ -390,11 +392,10 @@ async def get_components_status(force: bool = False) -> dict:
         "freeze": {
             "frozen": bool(freeze.get("frozen")),
             "mine": bool(freeze.get("mine")),
-            # Our pin holds a client the latest SLSsteam no longer hooks: any
+            # The pin holds a client the latest SLSsteam no longer hooks: any
             # install would break Steam (plan_setup refuses it), so Components
             # hides Reinstall and the held row says what to do instead.
-            "install_blocked": bool(freeze.get("frozen") and freeze.get("mine")
-                                    and sls_supports_current is False),
+            "install_blocked": bool(freeze.get("frozen") and sls_supports_current is False),
             "gate": None if gate is None else {
                 "state": gate.get("state"),
                 "blocker": gate.get("blocker"),

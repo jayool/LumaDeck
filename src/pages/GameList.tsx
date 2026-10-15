@@ -28,7 +28,6 @@ import {
   reinjectInstalled,
   retryInjection,
   runDesktopHandoffReal,
-  runDesktopHandoffQuickInstall,
 } from "../api";
 import { liftSteamFreeze } from "../api";
 import { FaExclamationTriangle } from "react-icons/fa";
@@ -477,17 +476,6 @@ export function GameList() {
       const r: any = await runDesktopHandoffReal();
       if (r?.switchLaunched) toast(t("sysSteamTooNew"), t("sysHandoffSwitching"), 8000);
       else if (r?.armed) toast(t("sysSteamTooNew"), t("sysHandoffManual"), 12000);
-      else toast(t("toastError"), r?.error || "", 6000);
-    }),
-    alignUp: () => runSysAction(async () => {
-      // Steam sits behind a newer SUPPORTED pin → move it UP. This is the
-      // "first update after a break": hand off to Desktop quick_install (setup.sh
-      // via install_via_setup), which LIFTS the pin (maybe_lift_freeze) so Steam
-      // self-updates up on the next launch, returning to the update-free state.
-      // NOT the downgrade hand-off — that would re-pin and freeze Steam.
-      const r: any = await runDesktopHandoffQuickInstall();
-      if (r?.switchLaunched) toast(t("sysSteamUpdateAvailable"), t("sysAlignUpSwitching"), 8000);
-      else if (r?.armed) toast(t("sysSteamUpdateAvailable"), t("sysAlignUpManual"), 12000);
       else toast(t("toastError"), r?.error || "", 6000);
     }),
     update: () => runSysAction(async () => {

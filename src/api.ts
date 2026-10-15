@@ -484,9 +484,3 @@ export const applyComponent = async (
 // Arms a one-shot autostart + switches to Desktop; returns to Game Mode on success.
 export const runDesktopHandoffReal = async () =>
   parseResult(await call<[], string>("run_desktop_handoff_real"));
-
-// Desktop hand-off that runs the FULL Quick Install (deps + CR + lumalinux,
-// incl. the Steam downgrade) in Desktop, then returns to Game Mode on success.
-// For a fresh Deck whose Steam is newer than the headcrab pin.
-export const runDesktopHandoffQuickInstall = async () =>
-  parseResult(await call<[], string>("run_desktop_handoff_quick_install"));

@@ -72,10 +72,6 @@ action button** whose label follows the most urgent problem:
   it just isn't live in this session. The button restarts the device (the same
   as Power > Restart): in Game Mode closing Steam alone brings it back without
   the components.
-- **Update in Desktop** — everything works, but Steam is behind a newer build
-  the stack now supports. It switches to Desktop, updates Steam, and brings you
-  back. (Only when the hold on Steam was not put there by LumaDeck; after a
-  Fix in Desktop you get **Let Steam update** instead, see below.)
 - **Install Components** / **Reinstall Components** — nothing is wrong; manual
   install on a fresh device, or a reinstall of the stack.
 
@@ -156,11 +152,9 @@ Below that it may list:
   not an error.
 - **<game> can't update** — one row per game whose Steam update is stuck, with
   **Open game** (the fix is on the game's page).
-- **Steam update available** → **Update in Desktop** — Steam can move up to a
-  newer supported build (only when the hold on Steam is not LumaDeck's own).
 - **Steam updates paused** or **Steam update ready** → **Let Steam update** —
-  after a Fix in Desktop, Steam is held on the build the components work on.
-  The line under it says whether letting it update is safe yet:
+  Steam is held on one build, by a Fix in Desktop or by a hold headcrab left
+  behind. The line under it says whether letting it update is safe yet:
   *The components support the newer Steam build.* (go ahead), *The components
   don't support the newer Steam build yet. Updating would break them.* (wait),
   *Update the components first.* (press **Update** on the row above, then come
@@ -215,8 +209,7 @@ build the components don't support, they read `not_supported` again and
 
 ## Game Mode vs Desktop
 
-Some repairs need a real desktop session. For **Fix in Desktop** (and the Steam
-update **Update in Desktop**) the plugin opens the Desktop hand-off for you and
-returns to Game Mode when done. CloudRedirect sign-in you do yourself, from its
+One repair needs a real desktop session. For **Fix in Desktop** the plugin
+opens the Desktop hand-off for you and returns to Game Mode when done. CloudRedirect sign-in you do yourself, from its
 app in Desktop Mode. Everything else (install, Restart Steam, Repair) runs in
 place. See [Troubleshooting](troubleshooting.md).

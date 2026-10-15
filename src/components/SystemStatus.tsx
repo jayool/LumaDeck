@@ -99,7 +99,6 @@ export interface SystemStatusActions {
   retry: () => void;         // crash guard latched — clear its state, then restart
   repair: () => void;        // not_injected — re-inject steam.sh, then restart
   downgrade: () => void;     // not_supported / partial install: hand off to Desktop (downgrade + pin)
-  alignUp: () => void;       // steam-update align-up: Desktop quick_install (lifts the pin, Steam self-updates UP)
   unpin: () => void;         // our steam.cfg pin: lift it in place, then restart (Steam self-updates)
   update: () => void;        // component update(s) available
   pluginUpdate: () => void;  // LumaDeck plugin update
@@ -137,13 +136,13 @@ const INFO = "#5b9eff";
 //   restart   — not_loaded: plain restart (label: Restart)
 export type PrimaryAction = "downgrade" | "update" | "unpin" | "retry" | "reinject" | "restart" | null;
 
-// Broken, no update fixes it, but Steam is held by OUR pin and the gate says the
-// build Valve serves now is hooked by the released components: the fix is to
-// let Steam update (the SteamOS-image client of 2026-10-14: nothing hooks it,
-// and the only way out is up). Downgrading would land on a client the latest
-// components no longer hook.
+// Broken, no update fixes it, but Steam is held by a pin (ours or headcrab's)
+// and the gate says the build Valve serves now is hooked by the released
+// components: the fix is to let Steam update (the SteamOS-image client of
+// 2026-10-14: nothing hooks it, and the only way out is up). Downgrading would
+// land on a client the latest components no longer hook.
 export function unpinFixesBreak(status: ComponentsStatus | null): boolean {
-  return !!status?.freeze?.frozen && !!status?.freeze?.mine && status?.freeze?.gate?.state === "ready";
+  return !!status?.freeze?.frozen && status?.freeze?.gate?.state === "ready";
 }
 
 // A Steam update broke a component, and a RELEASED update of that component
@@ -326,29 +325,15 @@ function buildRows(
   // the whole block is skipped (the downgrade row above owns that case), and
   // updates resume once the stack hooks the build again.
   if (!anyUnsupported) {
-    // Steam sits BEHIND Headcrab's pin (the pin was bumped forward) and lumalinux
-    // is confirmed ready for the new target — offer to move Steam up to the pin as
-    // a normal update (info, not a problem). Requires lumalinux_ready === true, not
-    // just "not false": pushing a WORKING user up to a build lumalinux can't hook
-    // yet would regress them, so only nudge when support is positively published.
-    // Aligning UP is NOT the downgrade: it hands off to quick_install (setup.sh),
-    // which LIFTS the pin (steam_freeze.maybe_lift_freeze) so Steam self-updates
-    // up to the now-supported build. Routing this to actions.downgrade would
-    // re-write the pin and freeze Steam on the OLD build forever — hence alignUp.
-    const target = status.headcrab?.target;
-    const current = status.headcrab?.current;
-    const steamBehindPin = target != null && current != null && current < target;
-    // OUR pin (downgrade.sh's, signed): Steam is held at an older build so the
+    // A steam.cfg pin, whoever wrote it (our downgrade.sh signs it; headcrab's
+    // installer writes an unsigned one): Steam is held at an older build so the
     // stack keeps working. Lifting it needs no Desktop: strip steam.cfg and
-    // restart, Steam self-updates on the way up. Offered whenever the pin is
-    // ours — the user decides when the components are ready for the newer
-    // Steam (the description says what may stop working until they are).
-    const ourPin = !!status.freeze?.frozen && !!status.freeze?.mine;
-    // (The gate no longer advises "update the components first": with a
-    // released SLSsteam for the new build the right order is Let Steam update,
-    // then Update, so the held row keeps its place.)
-    const heldAfterUpdate = false;
-    const pushHeldRow = () => {
+    // restart, Steam self-updates on the way up. Offered whenever a pin is on;
+    // the gate (steamHeldText) says whether the released components are ready
+    // for Valve's build. Advice, never a lock. (The old "Steam update available /
+    // Update in Desktop" row for a headcrab pin went with lift-on-install,
+    // 2026-10-15.)
+    if (status.freeze?.frozen) {
       const txt = steamHeldText(t, status.freeze);
       rows.push({
         key: "steam-held", severity: "info",
@@ -356,17 +341,6 @@ function buildRows(
         actionLabel: t("sysLetSteamUpdate"),
         onAction: actions.unpin,
         confirm: "restart", busyLabel: t("restartingSteam"),
-      });
-    };
-    if (ourPin && !heldAfterUpdate) {
-      pushHeldRow();
-    } else if (!ourPin && steamBehindPin && llReady === true) {
-      rows.push({
-        key: "steam-update", severity: "info",
-        label: t("sysSteamUpdateAvailable"), description: t("sysSteamUpdateAvailableDesc"),
-        actionLabel: t("sysSteamUpdateBtn"),
-        onAction: actions.alignUp,
-        confirm: "desktop",
       });
     }
 
@@ -377,7 +351,7 @@ function buildRows(
     const llUpdate = !!ll?.installed && !!ll.update?.available;
     const crUpdate = !!cr?.installed && !!cr.update?.available;
     // An SLSsteam release that no longer hooks the client on disk is not an
-    // update to offer: installing it is the 2026-10-14 crash loop. While our
+    // update to offer: installing it is the 2026-10-14 crash loop. While the
     // pin holds that client, the held row says to let Steam update first.
     const slsUpdate = !!sls?.installed && !!sls.update?.available &&
       sls.update?.supports_current_build !== false;
@@ -390,7 +364,6 @@ function buildRows(
         confirm: "restart",
       });
     }
-    if (heldAfterUpdate) pushHeldRow();
   }
   // A LumaDeck update is the ONLY row while it is pending: when Steam breaks
   // something, the right advice usually ships in the plugin (2026-10-14: a user
