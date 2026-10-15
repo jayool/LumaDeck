@@ -63,18 +63,15 @@ action button** whose label follows the most urgent problem:
   to the current build. This repair needs a real desktop session (it downgrades
   Steam to a build the hooks know), so it can't run in Game Mode. The button
   opens the Desktop hand-off.
-- **Finish setup** — only part of the core (SLSsteam / lumalinux) is installed.
-  It installs the rest in place, then restarts.
 - **Re-enable injection** — Steam is in [Recovery mode](#recovery-mode-crash-guard).
-- **Repair** — a component is `not_injected`. Repair re-runs `setup.sh` first —
-  rewriting the wrapper and re-affirming `.desktop`/Game-Mode coverage — then
-  restarts.
+- **Repair** — a component is `not_injected`, or only part of the core
+  (SLSsteam / lumalinux) is installed. Repair re-runs `setup.sh` first —
+  rewriting the wrapper and re-affirming `.desktop`/Game-Mode coverage, and
+  installing whatever is missing — then restarts.
 - **Restart Steam** — a component is installed and injection coverage is fine,
-  it just isn't live in this session. A restart reloads it.
-- **Update in Desktop** — everything works, but Steam is behind a newer build
-  the stack now supports. It switches to Desktop, updates Steam, and brings you
-  back. (Only when the hold on Steam was not put there by LumaDeck; after a
-  Fix in Desktop you get **Let Steam update** instead, see below.)
+  it just isn't live in this session. The button restarts the device (the same
+  as Power > Restart): in Game Mode closing Steam alone brings it back without
+  the components.
 - **Install Components** / **Reinstall Components** — nothing is wrong; manual
   install on a fresh device, or a reinstall of the stack.
 
@@ -93,12 +90,14 @@ The three components share one state vocabulary, keyed by cause and solution.
 | `healthy` | Working. | Nothing. |
 | `not_installed` | The component isn't on disk. | Install from Components. |
 | `not_loaded` | Installed and injected, just not live this session. | Restart Steam. |
-| `not_injected` | Installed, but the wrapper's launch coverage was lost (e.g. a Steam update regenerated its `.desktop`, or the Game Mode `steam-launcher.service` drop-in was dropped). | **Repair** (re-runs `setup.sh` to rewrite the wrapper + coverage, then restarts). The QAM shows it as **Restart needed**. |
-| `not_supported` | Steam updated past a build the hooks support. Cause `version` = Steam's client isn't one the component recognises; cause `hooks` = a load-bearing hook couldn't attach. (A non-critical lumalinux hook failing does not count.) | Fix in Desktop. |
+| `not_injected` | Installed, but the wrapper's launch coverage was lost (e.g. a Steam update regenerated its `.desktop`, or the Game Mode `steam-launcher.service` drop-in was dropped). A core half-install (SLSsteam without lumalinux or the reverse) is treated the same way. | **Repair** (re-runs `setup.sh` to rewrite the wrapper + coverage, then restarts). The QAM shows it as **Restart needed**. |
+| `not_supported` | Steam updated past a build the hooks support. Cause `version` = Steam's client isn't one the component recognises; cause `hooks` = a load-bearing hook couldn't attach. (A non-critical lumalinux hook failing does not count.) For SLSsteam, when it is not loaded at all, the installed release's own support list decides: a release that does not list the current Steam client reads `not_supported` here rather than `not_loaded`. | One of **Update** (a newer release of the component already supports this Steam), **Let Steam update** (Steam is held by LumaDeck on a build nothing supports and the newer Steam is supported), **Fix in Desktop** (downgrade Steam to a build the components support), or wait. The line under the component names the button. |
 
-Exception for `not_supported`: if only lumalinux is affected and it doesn't
-support that Steam build yet, there is nothing to fix. The QAM says **Adding
-games unavailable** until a lumalinux update arrives.
+Which fix shows depends on what the components' own release lists say, in that
+order: if updating the broken component fixes it, that is the button, and a
+downgrade is never offered instead. If nothing can fix it yet (for example
+lumalinux hasn't published support for this build, which the daily check does
+on its own), the line says **Wait for an update.** and there is no button.
 
 CloudRedirect adds two of its own:
 
@@ -136,15 +135,14 @@ The Quick Access Menu never names a specific component. It collapses component
 problems into at most one row with one action:
 
 - If any component is `not_supported`, the QAM shows **Steam build not
-  supported** and a **Fix in Desktop** action. (If only lumalinux is affected
-  and it doesn't support the current Steam build yet, it shows **Adding games
-  unavailable** instead: an info line with no action, which clears itself once
-  lumalinux catches up.)
-- If setup is only half done (a core piece missing while Steam is on a supported
-  build), it shows **Setup incomplete** and a **Finish setup** action.
+  supported** with one line that names the fix: *A Steam update broke LumaDeck.
+  Press Update / Let Steam update / Fix in Desktop to fix it.*, and that button.
+  When nothing can fix it yet the line reads *Wait for an update.* and there is
+  no button (lumalinux alone catches up on its own once support is published).
 - If Steam crashed at startup and the launcher fell back to plain Steam, it
   shows **Recovery mode** and a **Re-enable injection** action.
-- If something just needs reloading (`not_loaded` / `not_injected`), it shows
+- If something just needs reloading (`not_loaded` / `not_injected`, or a core
+  piece missing), it shows
   **Restart needed** and a **Restart Steam** action (for `not_injected` it
   re-runs `setup.sh` before restarting).
 
@@ -154,11 +152,9 @@ Below that it may list:
   not an error.
 - **<game> can't update** — one row per game whose Steam update is stuck, with
   **Open game** (the fix is on the game's page).
-- **Steam update available** → **Update in Desktop** — Steam can move up to a
-  newer supported build (only when the hold on Steam is not LumaDeck's own).
 - **Steam updates paused** or **Steam update ready** → **Let Steam update** —
-  after a Fix in Desktop, Steam is held on the build the components work on.
-  The line under it says whether letting it update is safe yet:
+  Steam is held on one build, by a Fix in Desktop or by a hold headcrab left
+  behind. The line under it says whether letting it update is safe yet:
   *The components support the newer Steam build.* (go ahead), *The components
   don't support the newer Steam build yet. Updating would break them.* (wait),
   *Update the components first.* (press **Update** on the row above, then come
@@ -213,8 +209,7 @@ build the components don't support, they read `not_supported` again and
 
 ## Game Mode vs Desktop
 
-Some repairs need a real desktop session. For **Fix in Desktop** (and the Steam
-update **Update in Desktop**) the plugin opens the Desktop hand-off for you and
-returns to Game Mode when done. CloudRedirect sign-in you do yourself, from its
+One repair needs a real desktop session. For **Fix in Desktop** the plugin
+opens the Desktop hand-off for you and returns to Game Mode when done. CloudRedirect sign-in you do yourself, from its
 app in Desktop Mode. Everything else (install, Restart Steam, Repair) runs in
 place. See [Troubleshooting](troubleshooting.md).

@@ -521,6 +521,22 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             SETUP_INSTALL_STATE["error"] = f"Cannot read setup.sh: {read_exc}"
             return {"success": False}
 
+        # While OUR pin holds Steam at an older client, decide whether this run
+        # may install at all (steam_update_gate.plan_setup): only when the latest
+        # SLSsteam hooks the pinned client. Otherwise refuse and say what to do
+        # (Let Steam update first, or wait). Never the 2026-10-14 combination
+        # (new SLSsteam on the pinned client), which crash-looped Steam.
+        plan = {"refuse": None, "reason": "not evaluated"}
+        try:
+            plan = await _plan_this_run()
+        except Exception as exc:
+            logger.warning("LumaDeck: setup plan failed (%s); installing latest as before", exc)
+        logger.info("LumaDeck: setup plan: %s", plan)
+        if plan.get("refuse"):
+            SETUP_INSTALL_STATE["status"] = "failed"
+            SETUP_INSTALL_STATE["error"] = plan["refuse"]
+            return {"success": False}
+
         SETUP_INSTALL_STATE["progress"] = "Running installer..."
         # setup.sh is ENTIRELY $HOME-based (SLSsteam, config, wrapper, .dotnet,
         # systemd --user). Decky runs this backend as ROOT, so a plain `bash
@@ -571,7 +587,12 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 line = await process.stdout.readline()
                 if not line:
                     break
-                SETUP_INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
+                text = line.decode("utf-8", errors="replace").rstrip()
+                SETUP_INSTALL_STATE["progress"] = text.strip()
+                # The script's own output is the only record of what it did
+                # (which release it fetched, which step failed): keep it in the
+                # plugin log, not just on screen for a second.
+                logger.info("setup.sh: %s", text)
 
         asyncio.create_task(_read_output())
         await process.wait()
@@ -589,25 +610,10 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                     "(likely a transient network drop). Retry."
                 )
             else:
-                # Catch-up lift: reconcile the Steam-update freeze now that fresh
-                # components are in place. maybe_lift_freeze lifts a FOREIGN pin
-                # (headcrab's — no `# lumalinux` signature; written on every headcrab
-                # install, so a migrating device arrives frozen with no break to
-                # recover from) ON SIGHT, and lifts OUR signed break-recovery pin only
-                # once the ecosystem has caught up (pin advanced past our build +
-                # latest lumalinux supports it). No-op when not pinned. This is the
-                # step that un-freezes every device migrating from headcrab.
-                try:
-                    from steam_freeze import maybe_lift_freeze
-                    from headcrab_compat import check_headcrab_compat
-                    lift = maybe_lift_freeze(await check_headcrab_compat())
-                    if lift.get("lifted"):
-                        logger.info("LumaDeck: lifted Steam-update freeze (catch-up): %s", lift)
-                    elif not lift.get("success", True):
-                        logger.warning("LumaDeck: freeze lift failed: %s", lift)
-                except Exception as exc:
-                    logger.warning("LumaDeck: steam freeze lift check failed: %s", exc)
-
+                # The pin (steam.cfg), ours or headcrab's, is never lifted by an
+                # install: the user lifts it with Let Steam update, and the gate
+                # says when that is safe. (Lifting on install was the
+                # lift-and-install move that crash-looped Steam, 2026-10-14.)
                 SETUP_INSTALL_STATE["status"] = "done"
                 SETUP_INSTALL_STATE["progress"] = "Stack installed!"
         else:
@@ -635,6 +641,24 @@ async def install_via_setup(gamemode: bool = True) -> dict:
 
 def get_setup_status() -> dict:
     return SETUP_INSTALL_STATE.copy()
+
+
+async def _plan_this_run() -> dict:
+    """Gather what steam_update_gate.plan_setup needs: the pin, SLSsteam's feed,
+    the installed client's hash, and whether the LATEST SLSsteam + lumalinux are
+    ready for Valve's current build."""
+    from headcrab_compat import _lumalinux_updates_text, latest_release_group
+    from steam_freeze import read_freeze
+    from steam_update_gate import (current_client_hash, evaluate, latest_stable_build, plan_setup,
+                                   slssteam_latest_group, slssteam_updates_text)
+    fz = read_freeze()
+    if not fz.get("frozen"):
+        return {"refuse": None, "reason": "no pin"}
+    sls_text = await slssteam_updates_text()
+    cur_hash = current_client_hash()
+    gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(),
+                               await latest_release_group(), sls_text, slssteam_latest_group(sls_text))
+    return plan_setup(True, sls_text, cur_hash, gate_for_latest)
 
 
 async def quick_install(gamemode: bool = True) -> dict:
@@ -680,7 +704,7 @@ async def quick_install(gamemode: bool = True) -> dict:
             logger.exception("LumaDeck: quick_install step %s crashed: %s", name, exc)
             QUICK_INSTALL_STATE["status"] = "failed"
             QUICK_INSTALL_STATE["error"] = f"{name} crashed: {exc}"
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
         if not (isinstance(result, dict) and result.get("success")):
             # Surface the sub-installer's own error/progress for context.
@@ -689,7 +713,7 @@ async def quick_install(gamemode: bool = True) -> dict:
             QUICK_INSTALL_STATE["error"] = sub.get("error") or f"{name} failed"
             QUICK_INSTALL_STATE["progress"] = sub.get("progress", "")
             logger.error("LumaDeck: quick_install failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
     QUICK_INSTALL_STATE["status"] = "done"
     QUICK_INSTALL_STATE["stepIndex"] = len(steps)
@@ -767,7 +791,7 @@ async def _run_install_steps(steps, verb: str = "Running") -> dict:
             logger.exception("LumaDeck: step %s crashed: %s", name, exc)
             QUICK_INSTALL_STATE["status"] = "failed"
             QUICK_INSTALL_STATE["error"] = f"{name} crashed: {exc}"
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
         if not (isinstance(result, dict) and result.get("success")):
             sub = status_getter()
@@ -775,7 +799,7 @@ async def _run_install_steps(steps, verb: str = "Running") -> dict:
             QUICK_INSTALL_STATE["error"] = sub.get("error") or f"{name} failed"
             QUICK_INSTALL_STATE["progress"] = sub.get("progress", "")
             logger.error("LumaDeck: failed at %s: %s", name, QUICK_INSTALL_STATE["error"])
-            return {"success": False, "failedStep": name}
+            return {"success": False, "failedStep": name, "error": QUICK_INSTALL_STATE.get("error")}
 
     QUICK_INSTALL_STATE["status"] = "done"
     QUICK_INSTALL_STATE["stepIndex"] = len(steps)

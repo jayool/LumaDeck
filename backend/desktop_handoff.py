@@ -16,8 +16,8 @@ NOT return when the downgrade fails.
 from __future__ import annotations
 
 import os
+from typing import Optional
 import pwd
-import shlex
 import shutil
 import subprocess
 
@@ -80,6 +80,12 @@ _DOWNGRADE_SH_URL = os.environ.get(
 # stays in Desktop (--hold) so the konsole shows the error.
 #   - `set +e`: never abort on a sub-command failure; branch on the exit codes.
 #   - downgrade FIRST (fix the Steam build), then setup.sh against the good build.
+# setup.sh installs the LATEST SLSsteam. If that release no longer hooks the
+# client the downgrade lands on (2026-10-14: 20261014151919 only hooks
+# 1791918634; on the bc54101b client it crash-looped Steam and SteamOS
+# re-bootstrapped the image's client), downgrading only breaks Steam, and the
+# right fix is Update (SystemStatus.updateFixesBreak). prepare_real() checks
+# that against SLSsteam's own res/updates.yaml and refuses the hand-off.
 _REAL_PAYLOAD = f"""
 set +e
 # pipefail so `curl … | bash` reflects curl's exit, not bash's: without it a
@@ -307,55 +313,106 @@ def _run_handoff(payload: str) -> dict:
     return _dump(info)
 
 
+def downgrade_target_ok(sls_text, target_hash) -> Optional[str]:
+    """Pure: None when the LATEST SLSsteam (what setup.sh installs after the
+    downgrade) hooks the client with hash `target_hash`; else the reason the
+    hand-off must be refused."""
+    from steam_update_gate import slssteam_latest_supports
+    if not target_hash:
+        return "the target Steam build's client hash is unknown (lumalinux feed has no entry for it)"
+    ok = slssteam_latest_supports(sls_text, target_hash)
+    if ok is True:
+        return None
+    if ok is None:
+        return "could not read SLSsteam's release feed to check the target build"
+    return "the latest SLSsteam no longer supports the Steam build the downgrade would install; update the components instead"
+
+
+_TARGET_CACHE = os.path.join(_HOME, ".cache", "lumadeck", "downgrade_target.json")
+_TARGET_TTL = 30 * 60
+
+
+async def downgrade_target(force: bool = False):
+    """The build downgrade.sh would install: the version in the same manifest it
+    reads (headcrab's SteamTracking branch). Cached 30 minutes like Valve's
+    manifest in steam_update_gate. None when unreachable and no cache."""
+    import json
+    import time
+    from http_client import ensure_http_client
+    from steam_update_gate import _branch, parse_manifest_version
+    if not force:
+        try:
+            with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            if time.time() - float(cached.get("at", 0)) < _TARGET_TTL and cached.get("target"):
+                return int(cached["target"])
+        except Exception:
+            pass
+    deck = _branch().startswith("steamdeck")
+    manifest_url = os.environ.get(
+        "DECK_MANIFEST_URL" if deck else "LINUX_MANIFEST_URL",
+        "https://raw.githubusercontent.com/Deadboy666/SteamTracking/refs/heads/headcrab/ClientManifest/"
+        + ("steam_client_steamdeck_stable_ubuntu12" if deck else "steam_client_ubuntu12"))
+    target = None
+    try:
+        client = await ensure_http_client(context="desktop_handoff")
+        resp = await client.get(manifest_url, timeout=10.0)
+        if resp.status_code == 200:
+            target = parse_manifest_version(resp.text)
+    except Exception as exc:
+        logger.info("desktop_handoff: target manifest fetch failed (%s)", exc)
+    if target:
+        try:
+            os.makedirs(os.path.dirname(_TARGET_CACHE), exist_ok=True)
+            with open(_TARGET_CACHE, "w", encoding="utf-8") as f:
+                json.dump({"target": target, "at": time.time()}, f)
+        except Exception:
+            pass
+        return target
+    try:
+        with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
+            return int(json.load(f).get("target") or 0) or None
+    except Exception:
+        return None
+
+
+async def downgrade_check(force: bool = False) -> dict:
+    """Would Fix in Desktop help right now? {"target": int|None, "possible":
+    True/False/None, "error": str|None}. possible is False when the latest
+    SLSsteam no longer hooks the target client (downgrading would break Steam;
+    the fix is Update or waiting), None when the feeds can't tell. The status
+    payload carries it so the QAM offers the button only when it can work."""
+    from headcrab_compat import _hash_for_build, _lumalinux_updates_text
+    from steam_update_gate import slssteam_latest_supports, slssteam_updates_text
+    target = await downgrade_target(force=force)
+    if target is None:
+        return {"target": None, "possible": None, "error": "could not read the downgrade target manifest"}
+    target_hash = _hash_for_build(await _lumalinux_updates_text(), target)
+    sls_text = await slssteam_updates_text()
+    why = downgrade_target_ok(sls_text, target_hash)
+    ok = slssteam_latest_supports(sls_text, target_hash)
+    return {"target": target, "possible": (None if ok is None else not why),
+            "error": f"downgrade to {target}: {why}" if why else None}
+
+
+async def prepare_real() -> dict:
+    """Resolve the downgrade target the way downgrade.sh will (its manifest) and
+    check the latest SLSsteam hooks it. Returns {"target": int} or {"error": str}."""
+    chk = await downgrade_check(force=True)
+    if chk.get("error"):
+        return {"error": chk["error"]}
+    logger.info("desktop_handoff: downgrade target %s: latest SLSsteam hooks it", chk["target"])
+    return {"target": chk["target"]}
+
+
 def run_desktop_handoff_real() -> dict:
     """Arm the REAL task — the break-recovery downgrade escape-hatch: downgrade.sh
     aligns Steam down to a supported build and pins it, then setup.sh re-establishes
     the injection wrapper — and switch to Desktop. Fully decoupled from headcrab.
     Returns to Game Mode only on success; stays in Desktop on failure so the error
-    is readable."""
+    is readable. prepare_real() must have passed first (the latest SLSsteam hooks
+    the target client)."""
     return _run_handoff(_REAL_PAYLOAD)
-
-
-def run_desktop_handoff_quick_install() -> dict:
-    """Arm a Desktop hand-off that runs the FULL Quick Install in Desktop, then
-    returns to Game Mode on success.
-
-    WS2: quick_install now runs lumalinux/setup.sh (wrapper model) — SLSsteam +
-    CloudRedirect + netsock + lumalinux + .NET, no Steam downgrade, no freeze. So
-    this hand-off is no longer downgrade-related; it just runs the installer in a
-    visible Desktop konsole (handy for a first setup / seeing progress).
-
-    It runs quick_install_cli.py (which calls installer.quick_install(
-    gamemode=False)) under the system Python — the real installer code, nothing
-    re-implemented, so no step is forgotten. On failure it stays in Desktop with
-    the konsole held; the launcher also writes ~/lumadeck-quickinstall.json."""
-    launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quick_install_cli.py")
-    if not os.path.isfile(launcher):
-        return {"success": False, "error": f"launcher not found: {launcher}"}
-    qlauncher = shlex.quote(launcher)
-    payload = (
-        'echo "================================================================"\n'
-        'echo " LumaDeck - Full setup in Desktop (Quick Install)"\n'
-        'echo " Installs SLSsteam + CloudRedirect + lumalinux and aligns Steam."\n'
-        'echo " This can take a few minutes and Steam may restart. Do NOT close"\n'
-        'echo " this window."\n'
-        'echo "================================================================"\n'
-        'echo\n'
-        'PY="$(command -v python3 || echo /usr/bin/python3)"\n'
-        f'"$PY" {qlauncher}\n'
-        'rc=$?\n'
-        'if [ "$rc" -eq 0 ]; then\n'
-        '  echo\n'
-        '  echo " All done. Returning to Game Mode in 8s..."\n'
-        '  sleep 8\n'
-        f'  steamos-session-select {_GAMEMODE_ARG}\n'
-        'else\n'
-        '  echo\n'
-        '  echo "!! Setup failed (exit $rc). Staying in Desktop so you can read it."\n'
-        '  echo "!! Details: ~/lumadeck-quickinstall.json"\n'
-        'fi\n'
-    )
-    return _run_handoff(payload)
 
 
 # Full diagnostic written to a file so a tiny toast doesn't truncate it: the user

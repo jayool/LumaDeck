@@ -73,14 +73,9 @@ class TestTerminalResolver(unittest.TestCase):
 
 
 class TestGameModeArg(unittest.TestCase):
-    def test_gamemode_arg_is_gamescope_and_used_in_both_payloads(self):
+    def test_gamemode_arg_is_gamescope_and_used_in_the_payload(self):
         self.assertEqual(dh._GAMEMODE_ARG, "gamescope")
         self.assertIn("steamos-session-select gamescope", dh._REAL_PAYLOAD)
-        # The quick-install payload is built in run_desktop_handoff_quick_install;
-        # its game-mode line uses the same constant.
-        import inspect
-        src = inspect.getsource(dh.run_desktop_handoff_quick_install)
-        self.assertIn("steamos-session-select {_GAMEMODE_ARG}", src)
 
 
 class TestSessionFamilyPublic(unittest.TestCase):

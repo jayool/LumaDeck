@@ -43,7 +43,7 @@ import {
   addFakeAppId,
   removeFakeAppId,
 } from "../api";
-import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffQuickInstall, runDesktopHandoffReal, liftSteamFreeze } from "../api";
+import { checkPluginUpdate, downloadUpdateToDownloads, runDesktopHandoffReal, liftSteamFreeze } from "../api";
 import { getDevState, setDevState, clearDevState, devProbeVersions } from "../api";
 import { useLuatoolsConnect } from "../hooks/useLuatoolsConnect";
 import { closeLoginBrowser } from "../browserLogin";
@@ -189,7 +189,7 @@ export function Settings() {
       await restartSteam();
       await reloadStatus();
     } else {
-      toast(t("toastError"), r?.failedStep || r?.error || "", 4000);
+      toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
     }
     setApplyingFix(false);
   };
@@ -554,13 +554,22 @@ export function Settings() {
   // Steam" and "Fix in Desktop", so a broken component only ever says one of
   // those. healthy / not_installed / not_authed / disabled are handled elsewhere.
   const guardActive = !!componentsStatus?.guard?.active;
+  // The one fix the page offers for a Steam-broken component; the health line
+  // under the component names the same button (one mould, i18n healthUnsupportedFix).
+  const primaryNow = primarySystemAction(componentsStatus);
+  const unsupportedFixLabel =
+    primaryNow === "update" ? t("sysUpdate")
+    : primaryNow === "unpin" ? t("sysLetSteamUpdate")
+    : primaryNow === "downgrade" ? t("sysFixInDesktop")
+    : null;
   const healthLine = (state: string): string | null => {
     switch (state) {
       // Crash guard latched: not_loaded / not_injected are its symptom, and the
       // restart / repair those lines name can't lift it — Retry can.
       case "not_loaded":    return guardActive ? t("healthPausedByGuard") : t("healthNotLoaded");
       case "not_injected":  return guardActive ? t("healthPausedByGuard") : t("healthNotInjected");
-      case "not_supported": return t("healthNeedsDesktop");
+      case "not_supported": return unsupportedFixLabel
+        ? t("healthUnsupportedFix", unsupportedFixLabel) : t("healthUnsupportedWait");
       default:              return null;
     }
   };
@@ -1104,25 +1113,23 @@ export function Settings() {
         )}
         {headcrabCompat && headcrabCompat.current_build != null && (() => {
           // Steam as a first-class component row, aligned with the QAM: what
-          // matters is whether the CURRENT build is SUPPORTED, not whether it
-          // equals the pin. Behind the pin but supported = green "Supported" + an
-          // "update available" info line; only a genuinely unsupported build
-          // (current_build_supported_by_latest === false) is amber "Not supported".
+          // matters is whether the CURRENT build is SUPPORTED. Only a genuinely
+          // unsupported build (current_build_supported_by_latest === false, or
+          // any installed component not_supported) is amber "Not supported".
           const b = headcrabCompat.current_build;
-          const tgt = headcrabCompat.target;
-          const unsupported = headcrabCompat.current_build_supported_by_latest === false;
-          const behindPin = b != null && tgt != null && b < tgt;
-          const updateReady = behindPin && headcrabCompat.lumalinux_ready === true;
-          // Our steam.cfg pin (downgrade.sh's): Steam is held at this build on
-          // purpose. Say so, and offer to lift it in place (no Desktop).
-          const held = !!componentsStatus?.freeze?.frozen && !!componentsStatus?.freeze?.mine;
+          // "Not supported" as soon as ANY installed component is broken by this
+          // Steam build, so the row agrees with the component lines below it.
+          const unsupported = headcrabCompat.current_build_supported_by_latest === false ||
+            (componentsStatus?.components || []).some((c: any) => c.installed && c.health === "not_supported");
+          // A steam.cfg pin, whoever wrote it (our downgrade.sh or headcrab's
+          // installer): Steam is held at this build. Say so, and offer to lift
+          // it in place (no Desktop).
+          const held = !!componentsStatus?.freeze?.frozen;
           const desc = unsupported
-            ? warnDesc(t("steamBuildMismatch", b, tgt ?? "?"), "warn")
+            ? warnDesc(t("steamBuildMismatch", b), "warn")
             : held
               ? warnDesc(t("steamHeldSub", b), "info")
-              : updateReady
-                ? warnDesc(t("steamUpdateAvailableSub", b, tgt ?? "?"), "info")
-                : undefined;
+              : undefined;
           const onUnpin = () => {
             if (!confirmUnpin) {
               setConfirmUnpin(true);
@@ -1145,7 +1152,7 @@ export function Settings() {
                   </span>
                 </Field>
               </PanelSectionRow>
-              {held && (
+              {held && !(componentsStatus?.components || []).some((c: any) => c.installed && c.health === "not_supported") && (
                 <PanelSectionRow>
                   <ButtonItem layout="below" disabled={applyingFix}
                     description={steamHeldText(t, componentsStatus?.freeze, true).description} onClick={onUnpin}>
@@ -1166,14 +1173,6 @@ export function Settings() {
         {(() => {
           const coreInstalled = !!(slssPresent && llPresent);
           const primary = primarySystemAction(componentsStatus);
-          // Steam BEHIND the pin but on a SUPPORTED build → a normal "move up to
-          // the pin" update, NOT a downgrade fix. Only a genuinely unsupported
-          // build reaches primary==="downgrade" (Fix in Desktop). Aligned with the
-          // QAM — we no longer treat !compatible as "off-pin".
-          const sBuild = headcrabCompat?.current_build;
-          const sTarget = headcrabCompat?.target;
-          const steamUpdate = sBuild != null && sTarget != null && sBuild < sTarget &&
-            headcrabCompat?.lumalinux_ready === true;
           let label = t("installReinstallDeps");
           let desc: string | undefined;
           let fire: () => any;
@@ -1191,11 +1190,21 @@ export function Settings() {
             desc = t("sysSteamTooNewFixDesc");
             confirmKind = "desktop";
             fire = () => fixInDesktop(runDesktopHandoffReal);
-          } else if (primary === "core") {
-            // Partial install, Steam at the pin → install the missing core in
-            // place (Game Mode safe), then restart.
-            label = t("sysFinishSetup");
-            fire = () => runFix(() => applyComponent("core", "install"));
+          } else if (primary === "update") {
+            // Steam moved on and the broken component already shipped support
+            // for the new build: Update is the fix, not a downgrade.
+            label = t("sysUpdate");
+            fire = () => runFix(() => reinjectInstalled());
+          } else if (primary === "unpin") {
+            // Broken on a client nothing hooks while our pin holds it, and
+            // Valve's build is supported: let Steam update.
+            label = t("sysLetSteamUpdate");
+            busyLabel = t("restartingSteam");
+            fire = () => runFix(async () => {
+              const r: any = await liftSteamFreeze();
+              if (r?.success) toast(t("sysSteamHeld"), t("toastSteamUnpinned"), 6000);
+              return r;
+            });
           } else if (primary === "retry") {
             // Crash guard latched: Steam runs with no injection until its state
             // is cleared. Retry removes the guard's state files and restarts.
@@ -1203,29 +1212,15 @@ export function Settings() {
             busyLabel = t("restartingSteam");
             fire = () => runFix(() => retryInjection());
           } else if (primary === "reinject") {
-            // not_injected: the wrapper interposition was lost, so a plain restart
-            // won't help. Repair re-runs setup.sh (reinject) and restarts. "Repair",
-            // not "Restart Steam", because a manual restart genuinely doesn't fix it.
+            // not_injected, or a core half-install: a plain restart won't help.
+            // Repair re-runs setup.sh (reinject / finish the install) and restarts.
+            // "Repair", not "Restart Steam", because a manual restart doesn't fix it.
             label = t("repair");
             fire = () => runFix(() => reinjectInstalled());
           } else if (primary === "restart") {
             label = t("restartSteam");
             busyLabel = t("restartingSteam");
             fire = () => runFix(async () => ({ success: true })); // restart + refresh
-          } else if (steamUpdate) {
-            // Healthy, but Steam sits behind a newer SUPPORTED build → offer the
-            // align-up as an UPDATE (not a fix). This is the "first update after a
-            // break" the QAM surfaces: quick_install re-establishes the wrapper
-            // and, via install_via_setup, lifts the pin (steam_freeze) now that the
-            // ecosystem caught up, so Steam self-updates UP on the next launch —
-            // back to the update-free state. Opposite direction to the downgrade,
-            // and deliberately NOT the downgrade machinery (no pin written here).
-            label = t("sysSteamUpdateBtn");
-            desc = t("sysSteamUpdateAvailableDesc");
-            confirmKind = "desktop";
-            fire = () => fixInDesktop(
-              runDesktopHandoffQuickInstall,
-              "sysSteamUpdateAvailable", "sysAlignUpSwitching", "sysAlignUpManual");
           } else {
             // healthy on-pin: manual maintenance. Reflect the real state in the
             // label — "Reinstall" when the core is already there (nothing is
@@ -1234,6 +1229,10 @@ export function Settings() {
             fire = () => runFix(() =>
               coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
           }
+          // Reinstalling while the pin holds a client the latest SLSsteam no
+          // longer hooks would break Steam (plan_setup refuses it): no button;
+          // the Let Steam update button above says what to do.
+          if (primary === null && componentsStatus?.freeze?.install_blocked) return null;
           // First tap arms (auto-reverts in 5 s), second tap fires.
           const onClick = () => {
             if (!confirmFix) {
