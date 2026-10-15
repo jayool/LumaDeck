@@ -206,6 +206,23 @@ def _component(id_: str, name: str, installed: bool, health: dict, update: dict,
     }
 
 
+def _slssteam_health_from_feed(health: dict, sls_text, cur_hash) -> dict:
+    """not_loaded / not_injected -> not_supported when the installed SLSsteam
+    release's SafeModeHashes group lacks the client on disk. Any other state,
+    an unknown installed tag, a missing feed or an unreadable client hash
+    leave `health` as is."""
+    if health.get("state") not in ("not_loaded", "not_injected"):
+        return health
+    from slssteam_version import read_recorded_version
+    from steam_update_gate import slssteam_supports
+    tag = read_recorded_version()
+    if not tag or slssteam_supports(sls_text, tag, cur_hash) is not False:
+        return health
+    logger.info("components: SLSsteam %s does not list client %s; not_supported",
+                tag, (cur_hash or "")[:8])
+    return {"state": "not_supported", "cause": "version", "action": "downgrade"}
+
+
 def _sls_release_cache_stale(sls_text) -> bool:
     """True when SLSsteam's feed names a newer pattern group than the release
     our 6-hour cache knows about: Ace just shipped, the cache hasn't noticed.
@@ -296,6 +313,15 @@ async def get_components_status(force: bool = False) -> dict:
     sls_text = await _safe(slssteam_updates_text(), None)
     cur_hash = _safe_sync(current_client_hash, None)
     sls_supports_current = slssteam_latest_supports(sls_text, cur_hash)
+    # SLSsteam not mapped in Steam reads not_loaded / not_injected from the
+    # process alone. When the INSTALLED release's own list says it does not
+    # hook the client on disk, that is the real cause (a crash-guarded or
+    # aborted load), and the fix is the not_supported row (Update / Let Steam
+    # update / Wait / Fix in Desktop), not a restart. Loaded + log still wins;
+    # a Dev-forced state is left alone; no feed or no record -> unchanged.
+    if not sls_forced:
+        sls_health = _safe_sync(
+            lambda: _slssteam_health_from_feed(sls_health, sls_text, cur_hash), sls_health)
     sls_force = force or _safe_sync(lambda: _sls_release_cache_stale(sls_text), False)
 
     sls_update = no_update if sls_forced else await _safe(

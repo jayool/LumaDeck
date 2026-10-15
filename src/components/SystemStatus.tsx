@@ -98,7 +98,6 @@ export interface SystemStatusActions {
   restart: () => void;       // not_loaded — plain Steam restart
   retry: () => void;         // crash guard latched — clear its state, then restart
   repair: () => void;        // not_injected — re-inject steam.sh, then restart
-  reinstallCore: () => void; // (unused since the 2-action model; kept for callers)
   downgrade: () => void;     // not_supported / partial install: hand off to Desktop (downgrade + pin)
   alignUp: () => void;       // steam-update align-up: Desktop quick_install (lifts the pin, Steam self-updates UP)
   unpin: () => void;         // our steam.cfg pin: lift it in place, then restart (Steam self-updates)
@@ -136,7 +135,7 @@ const INFO = "#5b9eff";
 //   retry     — crash guard latched: clear its state, then restart (label: Re-enable injection)
 //   reinject  — not_injected: re-patch steam.sh, then restart (label: Restart)
 //   restart   — not_loaded: plain restart (label: Restart)
-export type PrimaryAction = "downgrade" | "update" | "unpin" | "core" | "retry" | "reinject" | "restart" | null;
+export type PrimaryAction = "downgrade" | "update" | "unpin" | "retry" | "reinject" | "restart" | null;
 
 // Broken, no update fixes it, but Steam is held by OUR pin and the gate says the
 // build Valve serves now is hooked by the released components: the fix is to
@@ -183,11 +182,12 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
     return null;
   if (anyUnsupported && status.downgrade?.possible === false) return null; // wait
   if (anyUnsupported) return "downgrade";
-  if (notComplete) return "core"; // at-pin (else it'd be not_supported) → in place
   // Guard latched: the not_loaded/not_injected below are its SYMPTOM, and their
   // restart/repair can't lift it (the launcher goes vanilla again) — Retry can.
   if (status.guard?.active) return "retry";
-  if (installed.some((c) => c.health === "not_injected")) return "reinject";
+  // A core half-install (SLSsteam xor lumalinux) is the same repair as
+  // not_injected: one setup.sh run, then restart.
+  if (notComplete || installed.some((c) => c.health === "not_injected")) return "reinject";
   if (installed.some((c) => c.health === "not_loaded")) return "restart";
   return null;
 }
@@ -227,7 +227,7 @@ function buildRows(
     !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported");
 
   // ---- one system problem, by priority ----
-  //   Waiting > Steam-unsupported (Desktop) > incomplete install (in place) > Restart
+  //   Steam-unsupported (Update / Let Steam update / Wait / Desktop) > Recovery > Restart
   // "A Steam update broke a component" is ONE row with one mould: the title is
   // always "Steam build not supported"; the description names the button that
   // fixes it (Update / Fix in Desktop / Let Steam update), or says to wait when
@@ -271,17 +271,6 @@ function buildRows(
       onAction: actions.downgrade,
       confirm: "desktop",
     });
-  } else if (notComplete) {
-    // A core component is missing. Steam is at the pin here (if it weren't, the
-    // installed component would be not_supported and the row above would win), so
-    // finishing the install is safe in Game Mode — no Desktop hand-off.
-    rows.push({
-      key: "incomplete", severity: "problem",
-      label: t("sysNotComplete"), description: t("sysNotCompleteDesc"),
-      actionLabel: t("sysFinishSetup"),
-      onAction: actions.reinstallCore,
-      confirm: "restart",
-    });
   } else if (status.guard?.active) {
     // The launcher's crash guard is latched: Steam runs with NO injection until
     // its state is cleared. A restart alone cannot lift it, so the restart row
@@ -295,16 +284,18 @@ function buildRows(
       onAction: actions.retry,
       confirm: "restart", busyLabel: t("restartingSteam"),
     });
-  } else if (anyInjectLost || anyNotLoaded) {
+  } else if (anyInjectLost || notComplete || anyNotLoaded) {
+    // not_injected and a core half-install (SLSsteam xor lumalinux) need
+    // setup.sh first (repair = one setup.sh run + restart); a plain not_loaded
+    // just needs the restart. Same row and button either way; the busy label
+    // tells them apart (setup.sh runs before the restart).
+    const needsSetup = anyInjectLost || notComplete;
     rows.push({
       key: "restart", severity: "problem",
       label: t("sysNeedsRestart"), description: t("sysNeedsRestartDesc"),
       actionLabel: t("restartSteam"),
-      // not_injected needs steam.sh re-patched first (repair = reinject + restart);
-      // a plain not_loaded just needs the restart. Same button label either way;
-      // the busy label tells them apart (setup.sh runs before the restart).
-      onAction: anyInjectLost ? actions.repair : actions.restart,
-      confirm: "restart", busyLabel: anyInjectLost ? undefined : t("restartingSteam"),
+      onAction: needsSetup ? actions.repair : actions.restart,
+      confirm: "restart", busyLabel: needsSetup ? undefined : t("restartingSteam"),
     });
   }
 

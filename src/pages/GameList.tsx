@@ -20,7 +20,6 @@ import {
   getGameNotices,
   restartSteam,
   getComponentsStatus,
-  applyComponent,
   downloadUpdateToDownloads,
   checkStuckUpdates,
   getCredentialStatus,
@@ -469,11 +468,6 @@ export function GameList() {
       const r = await reinjectInstalled();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
-    }),
-    reinstallCore: () => runSysAction(async () => {
-      const r = await applyComponent("core", "install");
-      if (r?.success) await restartSteam();
-      else toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
     }),
     downgrade: () => runSysAction(async () => {
       // Arm the one-shot Desktop autostart (headcrab downgrade + lumalinux

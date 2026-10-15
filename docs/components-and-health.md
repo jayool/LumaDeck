@@ -63,12 +63,11 @@ action button** whose label follows the most urgent problem:
   to the current build. This repair needs a real desktop session (it downgrades
   Steam to a build the hooks know), so it can't run in Game Mode. The button
   opens the Desktop hand-off.
-- **Finish setup** — only part of the core (SLSsteam / lumalinux) is installed.
-  It installs the rest in place, then restarts.
 - **Re-enable injection** — Steam is in [Recovery mode](#recovery-mode-crash-guard).
-- **Repair** — a component is `not_injected`. Repair re-runs `setup.sh` first —
-  rewriting the wrapper and re-affirming `.desktop`/Game-Mode coverage — then
-  restarts.
+- **Repair** — a component is `not_injected`, or only part of the core
+  (SLSsteam / lumalinux) is installed. Repair re-runs `setup.sh` first —
+  rewriting the wrapper and re-affirming `.desktop`/Game-Mode coverage, and
+  installing whatever is missing — then restarts.
 - **Restart Steam** — a component is installed and injection coverage is fine,
   it just isn't live in this session. A restart reloads it.
 - **Update in Desktop** — everything works, but Steam is behind a newer build
@@ -93,8 +92,8 @@ The three components share one state vocabulary, keyed by cause and solution.
 | `healthy` | Working. | Nothing. |
 | `not_installed` | The component isn't on disk. | Install from Components. |
 | `not_loaded` | Installed and injected, just not live this session. | Restart Steam. |
-| `not_injected` | Installed, but the wrapper's launch coverage was lost (e.g. a Steam update regenerated its `.desktop`, or the Game Mode `steam-launcher.service` drop-in was dropped). | **Repair** (re-runs `setup.sh` to rewrite the wrapper + coverage, then restarts). The QAM shows it as **Restart needed**. |
-| `not_supported` | Steam updated past a build the hooks support. Cause `version` = Steam's client isn't one the component recognises; cause `hooks` = a load-bearing hook couldn't attach. (A non-critical lumalinux hook failing does not count.) | One of **Update** (a newer release of the component already supports this Steam), **Let Steam update** (Steam is held by LumaDeck on a build nothing supports and the newer Steam is supported), **Fix in Desktop** (downgrade Steam to a build the components support), or wait. The line under the component names the button. |
+| `not_injected` | Installed, but the wrapper's launch coverage was lost (e.g. a Steam update regenerated its `.desktop`, or the Game Mode `steam-launcher.service` drop-in was dropped). A core half-install (SLSsteam without lumalinux or the reverse) is treated the same way. | **Repair** (re-runs `setup.sh` to rewrite the wrapper + coverage, then restarts). The QAM shows it as **Restart needed**. |
+| `not_supported` | Steam updated past a build the hooks support. Cause `version` = Steam's client isn't one the component recognises; cause `hooks` = a load-bearing hook couldn't attach. (A non-critical lumalinux hook failing does not count.) For SLSsteam, when it is not loaded at all, the installed release's own support list decides: a release that does not list the current Steam client reads `not_supported` here rather than `not_loaded`. | One of **Update** (a newer release of the component already supports this Steam), **Let Steam update** (Steam is held by LumaDeck on a build nothing supports and the newer Steam is supported), **Fix in Desktop** (downgrade Steam to a build the components support), or wait. The line under the component names the button. |
 
 Which fix shows depends on what the components' own release lists say, in that
 order: if updating the broken component fixes it, that is the button, and a
@@ -142,11 +141,10 @@ problems into at most one row with one action:
   Press Update / Let Steam update / Fix in Desktop to fix it.*, and that button.
   When nothing can fix it yet the line reads *Wait for an update.* and there is
   no button (lumalinux alone catches up on its own once support is published).
-- If setup is only half done (a core piece missing while Steam is on a supported
-  build), it shows **Setup incomplete** and a **Finish setup** action.
 - If Steam crashed at startup and the launcher fell back to plain Steam, it
   shows **Recovery mode** and a **Re-enable injection** action.
-- If something just needs reloading (`not_loaded` / `not_injected`), it shows
+- If something just needs reloading (`not_loaded` / `not_injected`, or a core
+  piece missing), it shows
   **Restart needed** and a **Restart Steam** action (for `not_injected` it
   re-runs `setup.sh` before restarting).
 

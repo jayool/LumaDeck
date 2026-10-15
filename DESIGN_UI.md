@@ -182,9 +182,9 @@ that single run:
 **Rule:** a `not_injected` / "coverage lost" repair re-runs `setup.sh` (rewrites
 the wrapper and re-affirms `.desktop`/Game-Mode coverage), then restarts Steam. A
 `not_loaded` fix is a plain **Restart Steam** — coverage is fine, the stack just
-isn't live this session. **Finish setup** (core half-installed) runs
-`apply_component("core","install")` then restarts Steam — the same single
-`setup.sh` run. The break-recovery **Steam downgrade** (`downgrade.sh`,
+isn't live this session. A core half-install (SLSsteam xor lumalinux) is the
+same repair as `not_injected`: the Restart needed row runs the one `setup.sh`
+then restarts Steam (no separate row since 2026-10-15). The break-recovery **Steam downgrade** (`downgrade.sh`,
 Desktop-only) is a separate escape-hatch — see §3c. (The other actions in the
 map, `retry` for the crash guard and `alignUp` for moving Steam up to a newer
 pin, are covered in the Component model.)
@@ -284,15 +284,14 @@ Reinstall button is hidden.
 
 | State (backend) | label | description | control |
 |---|---|---|---|
-| core half-installed (SLSsteam xor lumalinux) | "Setup incomplete" | "LumaDeck isn't fully set up. Press to finish." | 🔘 **Finish setup** |
 | `guard.active` (crash guard latched) | "Recovery mode" | "Steam crashed at startup. Running without injection." | 🔘 **Re-enable injection** |
-| any `not_injected` or `not_loaded` | "Restart needed" | "LumaDeck needs a restart to work." | 🔘 **Restart Steam** |
+| any `not_injected` or `not_loaded`, or core half-installed (SLSsteam xor lumalinux) | "Restart needed" | "LumaDeck needs a restart to work." | 🔘 **Restart Steam** |
 | CR `not_authed` | "Cloud saves need sign-in" (info ↑) | "Open the CloudRedirect app in Desktop Mode to sign in." | 📄 Field |
 
 **Wiring notes:**
 - **Restart Steam** → `restart_steam` (clean `steam -shutdown`, GM auto-restarts).
-  When the cause is `not_injected` the same button runs `reinjectInstalled`
-  first (re-runs `setup.sh`, the wrapper-model installer, then restarts), and
+  When the cause is `not_injected` or a core half-install the same button runs
+  `reinjectInstalled` first (re-runs `setup.sh`, the wrapper-model installer, then restarts), and
   its busy label is "Working..." instead of "Restarting Steam...". No
   per-component ordering, and `steam.sh` is left vanilla.
 - **Fix in Desktop** → the Desktop hand-off (`runDesktopHandoffReal`, see
@@ -935,8 +934,8 @@ The dense "advanced 1%" per-component breakdown, one untitled `PanelSection`.
   shown.
 - **One morphing action `ButtonItem`** below the rows, driven by
   `primarySystemAction()` (shared with the QAM, same priority): **Fix in
-  Desktop** / **Finish setup** / **Re-enable injection** / **Repair**
-  (`not_injected`; the only place "Repair" is a visible label) / **Restart
+  Desktop** / **Re-enable injection** / **Repair**
+  (`not_injected` or core half-installed; the only place "Repair" is a visible label) / **Restart
   Steam** / **Update in Desktop** (Steam align-up) / **Install** or
   **Reinstall** (healthy, manual maintenance). Standard two-tap confirm:
   "Confirm (restarts Steam)" or "Confirm (continues in Desktop)", 5 s revert.
@@ -1153,6 +1152,13 @@ kind of thing** — a *managed component* — so we unify them.
 `not_supported` / `not_authed` / `disabled` / `healthy` (`not_authed` and
 `disabled` are CloudRedirect-only); `cause` carries the detail (e.g. `version` /
 `hooks` for `not_supported`), `action` the backend's suggested fix.
+SLSsteam's `not_supported` comes from its log while it is mapped in Steam. When
+it is NOT mapped (it would read `not_loaded` / `not_injected`), the backend asks
+the installed release's own list (`SafeModeHashes` in Ace's `updates.yaml`,
+fetched fresh, else our cache, else SLSsteam's copy): a release that does not
+list the client on disk is `not_supported` (cause `version`), so a crash-guarded
+or aborted load shows the fix row instead of "Restart needed". No list, no
+recorded release tag or no readable client hash leave the state as read.
 New real check: `check_slssteam_update` (vs **AceSLS/SLSsteam** releases) + a CR
 semver check (the version compiled into the installed `.so` vs the newest
 **Selectively11/CloudRedirect** release that ships a `cloud_redirect.so` asset)
@@ -1190,7 +1196,7 @@ layers:
 | # | User action | Backend states it covers | Where |
 |---|---|---|---|
 | 1 | **Restart Steam** | `not_loaded` (any component) | Game Mode |
-| 2 | **Repair** (re-run `setup.sh` + restart) | `not_injected` (any component) — not a separate visible row: it shows as **Restart needed / Restart Steam** and runs repair + restart underneath; core half-installed is its own **Setup incomplete / Finish setup** row (`apply_component("core","install")` + restart) | Game Mode |
+| 2 | **Repair** (re-run `setup.sh` + restart) | `not_injected` (any component) and core half-installed (SLSsteam xor lumalinux) — not a separate visible row: it shows as **Restart needed / Restart Steam** and runs repair + restart underneath | Game Mode |
 | 3 | **Downgrade Steam** ("Fix in Desktop") | "Steam too new": `not_supported`, when neither an update nor a pin lift fixes it and the latest components still hook the downgrade target (`downgrade.possible`) | Desktop |
 | 7 | **Update** (re-run `setup.sh` + restart) | `not_supported` while the broken component's latest release hooks the client on disk (`update.supports_current_build`); also the plain update track | Game Mode |
 | 8 | **Let Steam update** (strip our `steam.cfg` pin + restart) | our pin, when Valve's current build is supported by the released components (`freeze.gate.state === "ready"`): as the fix when something is broken on the pinned client, as the held row otherwise | Game Mode |
@@ -1249,7 +1255,7 @@ break (`downgrade.possible === false`). Orange, not info: adding games is down.
 
 **Confirm rule (2026-09-23).** Every button that restarts Steam or leaves
 Game Mode asks for a second tap, and the first tap says which: **"Confirm
-(restarts Steam)"** for Restart Steam, Repair, Finish setup, Update,
+(restarts Steam)"** for Restart Steam, Repair, Update,
 Reinstall, Re-enable injection, Quick Install at the pin and the achievements section's
 Restart Steam; **"Confirm (continues in Desktop)"** for Fix in Desktop,
 Update in Desktop and Quick Install off-pin. The armed state auto-reverts
@@ -1345,7 +1351,7 @@ Rules:
 
 ### Two tracks the user sees
 - **"Something's wrong" (⚠):** at most one system fix, by priority — Fix in
-  Desktop / Finish setup / Re-enable injection / Restart Steam — plus one row
+  Desktop / Re-enable injection / Restart Steam — plus one row
   per stuck game (Open game).
 - **"Something's new" (info):** the update track.
 

@@ -1218,11 +1218,6 @@ export function Settings() {
               if (r?.success) toast(t("sysSteamHeld"), t("toastSteamUnpinned"), 6000);
               return r;
             });
-          } else if (primary === "core") {
-            // Partial install, Steam at the pin → install the missing core in
-            // place (Game Mode safe), then restart.
-            label = t("sysFinishSetup");
-            fire = () => runFix(() => applyComponent("core", "install"));
           } else if (primary === "retry") {
             // Crash guard latched: Steam runs with no injection until its state
             // is cleared. Retry removes the guard's state files and restarts.
@@ -1230,9 +1225,9 @@ export function Settings() {
             busyLabel = t("restartingSteam");
             fire = () => runFix(() => retryInjection());
           } else if (primary === "reinject") {
-            // not_injected: the wrapper interposition was lost, so a plain restart
-            // won't help. Repair re-runs setup.sh (reinject) and restarts. "Repair",
-            // not "Restart Steam", because a manual restart genuinely doesn't fix it.
+            // not_injected, or a core half-install: a plain restart won't help.
+            // Repair re-runs setup.sh (reinject / finish the install) and restarts.
+            // "Repair", not "Restart Steam", because a manual restart doesn't fix it.
             label = t("repair");
             fire = () => runFix(() => reinjectInstalled());
           } else if (primary === "restart") {

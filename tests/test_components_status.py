@@ -69,6 +69,7 @@ class GetComponentsStatusTests(unittest.TestCase):
             ("dev", {"get": lambda key: None}),
             ("slssteam_version", {
                 "SOURCE_UNKNOWN": "unknown",
+                "read_recorded_version": lambda: "20260820085507",
                 "resolve_installed_version": self._async_const(("20260820085507", "recorded")),
             }),
         ):
@@ -157,3 +158,59 @@ class GetComponentsStatusTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Ace's feed shape (see test_steam_update_gate): one group per release tag, the
+# newest group at or before the installed release decides what it hooks.
+_OLD = "bc54101b" + "0" * 56
+_NEW = "0d01ab4f" + "0" * 56
+_FEED = f"""SafeModeHashes:
+  20260903114323: #tag
+    - {_OLD} #ubuntu12_32
+  20261014151919: #tag
+    - {_NEW} #ubuntu12_32
+"""
+NOT_LOADED = {"state": "not_loaded", "cause": None, "action": "restart"}
+NOT_INJECTED = {"state": "not_injected", "cause": "wrapper", "action": "install"}
+NOT_SUPPORTED = {"state": "not_supported", "cause": "version", "action": "downgrade"}
+
+
+class SlssteamHealthFromFeedTests(unittest.TestCase):
+    """SLSsteam not mapped reads not_loaded / not_injected from the process
+    alone. When the INSTALLED release's list lacks the client on disk, the real
+    cause is a Steam build it does not hook: not_supported, whose row names the
+    fix. Anything the feed cannot answer leaves the state alone."""
+
+    def setUp(self):
+        self._real = sys.modules.get("slssteam_version")
+        self.addCleanup(lambda: sys.modules.__setitem__("slssteam_version", self._real)
+                        if self._real is not None else sys.modules.pop("slssteam_version", None))
+
+    def _recorded(self, tag):
+        module = types.ModuleType("slssteam_version")
+        module.read_recorded_version = lambda: tag
+        sys.modules["slssteam_version"] = module
+
+    def test_installed_release_lacking_the_client_is_not_supported(self):
+        # 20261014151919 on the old client: the crash-loop combination.
+        self._recorded("20261014151919")
+        for h in (NOT_LOADED, NOT_INJECTED):
+            self.assertEqual(components._slssteam_health_from_feed(dict(h), _FEED, _OLD), NOT_SUPPORTED)
+
+    def test_installed_release_listing_the_client_is_left_alone(self):
+        self._recorded("20261001163836")  # group 20260903114323 lists OLD
+        self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), _FEED, _OLD), NOT_LOADED)
+        self._recorded("20261014151919")
+        self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), _FEED, _NEW), NOT_LOADED)
+
+    def test_unanswerable_feed_leaves_the_state_alone(self):
+        self._recorded("20261014151919")
+        for text, sha in ((None, _OLD), (_FEED, None), ("junk", _OLD)):
+            self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), text, sha), NOT_LOADED)
+        self._recorded(None)  # install predating the recorded tag
+        self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), _FEED, _OLD), NOT_LOADED)
+
+    def test_only_the_not_mapped_states_are_rewritten(self):
+        self._recorded("20261014151919")
+        for h in (HEALTHY, NOT_SUPPORTED, {"state": "not_installed", "cause": None, "action": "install"}):
+            self.assertEqual(components._slssteam_health_from_feed(dict(h), _FEED, _OLD), h)
