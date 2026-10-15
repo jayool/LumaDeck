@@ -69,7 +69,9 @@ action button** whose label follows the most urgent problem:
   rewriting the wrapper and re-affirming `.desktop`/Game-Mode coverage, and
   installing whatever is missing — then restarts.
 - **Restart Steam** — a component is installed and injection coverage is fine,
-  it just isn't live in this session. A restart reloads it.
+  it just isn't live in this session. The button restarts the device (the same
+  as Power > Restart): in Game Mode closing Steam alone brings it back without
+  the components.
 - **Update in Desktop** — everything works, but Steam is behind a newer build
   the stack now supports. It switches to Desktop, updates Steam, and brings you
   back. (Only when the hold on Steam was not put there by LumaDeck; after a

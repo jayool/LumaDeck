@@ -75,8 +75,23 @@ export const checkHeadcrabCompat = async () =>
 export const getComponentsStatus = async (force = false) =>
   parseResult(await call<[boolean], string>("get_components_status", force));
 
-export const restartSteam = async () =>
-  parseResult(await call<[], string>("restart_steam"));
+// Every "restart Steam" button lands here. In Game Mode closing Steam is not
+// enough: gamescope-session relaunches it with the launcher it already has in
+// memory, so a fresh install comes back as vanilla Steam (nothing injected). A
+// machine restart is the one thing that re-reads everything, and the Power
+// menu's own Restart is the proven way to get it: SteamClient.System.RestartPC
+// (the call behind Power > Restart; Steam shuts down cleanly first). The
+// backend's systemctl reboot stays as the fallback when the API is missing.
+export const restartSteam = async () => {
+  try {
+    const sc: any = (window as any).SteamClient;
+    if (typeof sc?.System?.RestartPC === "function") {
+      sc.System.RestartPC();
+      return { success: true, reboot: true };
+    }
+  } catch { /* fall through to the backend */ }
+  return parseResult(await call<[], string>("restart_steam"));
+};
 
 export const saveRyuCookie = async (cookie: string) =>
   parseResult(await call<[string], string>("save_ryu_cookie", cookie));

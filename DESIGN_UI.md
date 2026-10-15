@@ -109,9 +109,8 @@ Principles are **derived** from these entries as patterns emerge (see
   `ButtonItem layout="below"` that mirrors the SystemStatus row model:
   `label` = the section title (bold, uppercase span, `quickInstallSectionTitle`
   "Welcome"), `description` = `quickInstallIntro`, children = the action
-  (`⚡ Quick Install` → first press **"Confirm (restarts Steam)"** at the pin or
-  **"Confirm (continues in Desktop)"** off-pin, auto-reverting after 5 s →
-  `Setting up...` while running). The focus band wraps title, blurb and action
+  (`⚡ Quick Install` → first press **"Confirm (restarts Steam)"**,
+  auto-reverting after 5 s → `Setting up...` while running). The focus band wraps title, blurb and action
   as one unit (a `PanelSection` title would sit outside the focus). While
   installing, a step progress `<div>` follows.
 - **Native or custom:** 🟢 native skeleton. The only raw `<div>` is the progress
@@ -289,7 +288,14 @@ Reinstall button is hidden.
 | CR `not_authed` | "Cloud saves need sign-in" (info ↑) | "Open the CloudRedirect app in Desktop Mode to sign in." | 📄 Field |
 
 **Wiring notes:**
-- **Restart Steam** → `restart_steam` (clean `steam -shutdown`, GM auto-restarts).
+- **Restart Steam** → `restartSteam()` (`api.ts`): a machine restart, since
+  2026-10-14. Closing Steam in Game Mode is not enough: gamescope-session
+  relaunches it with the launcher it already has in memory, so a fresh install
+  came back as vanilla Steam (every component "Installed", none loaded,
+  2026-10-13). The frontend calls `SteamClient.System.RestartPC()`, the call
+  behind Power > Restart (Steam shuts down cleanly first); the backend's
+  `restart_steam` (`systemctl reboot` as root, else the old `steam -shutdown`)
+  is the fallback when that API is missing.
   When the cause is `not_injected` or a core half-install the same button runs
   `reinjectInstalled` first (re-runs `setup.sh`, the wrapper-model installer, then restarts), and
   its busy label is "Working..." instead of "Restarting Steam...". No
@@ -1072,30 +1078,19 @@ If per-disk install is ever wanted, it's a backend feature (make
 
 ---
 
-### Off-pin onboarding → Desktop Quick Install — ✅ built (v0.3.61)
+### Onboarding Quick Install runs in place — ✅ (2026-10-15; off-pin Desktop detour removed)
 
-A fresh Deck's Steam is almost always **newer** than headcrab's (lagging) pin, so
-`headcrab.compatible` is false and the QAM **Quick Install was hidden from exactly
-the people who need it**. Fixed:
-
-- `showQuickInstall` no longer requires `headcrab.compatible` — it shows whenever
-  no component is installed. (Quick Install is the action that *makes* you
-  compatible; gating it on "already compatible" was backwards.)
-- `handleQuickInstall` branches on `compatible`:
-  - **at pin** → the existing Game-Mode `quick_install()` (no downgrade).
-  - **off pin** → arms a Desktop hand-off (`runDesktopHandoffQuickInstall`).
-- The hand-off runs `backend/quick_install_cli.py`, which calls the REAL
-  `installer.quick_install(gamemode=False)` under the system Python in Desktop —
-  no bash re-implementation, so **no install step is forgotten**. Today that is
-  one step: a single `setup.sh` run (`install_via_setup`) for the whole stack
-  (no Steam downgrade, no freeze, no `steam.sh` patch inside it). It streams
-  progress to Konsole and writes `~/lumadeck-quickinstall.json` for debugging;
-  returns to Game Mode on success, stays in Desktop on failure.
-- `gamemode` is kept for a uniform step signature; `setup.sh` handles both modes
-  itself. (The old headcrab-script patching is gone.)
-- ⚠️ Needs on-device validation: the launcher relies on the system `python3`
-  importing the backend (Decky doesn't run in Desktop). The diagnostic file makes
-  a failure (e.g. a missing import) debuggable.
+`showQuickInstall` shows whenever no component is installed, whatever Steam's
+build (Quick Install is the action that *makes* you compatible). Since
+2026-10-15 it always runs the Game-Mode `quick_install()` in place: one
+`setup.sh` run for the whole stack (no Steam downgrade, no pin, no `steam.sh`
+patch), then the machine restart. If the components hook the build on disk
+they load on the way back; if not, the QAM's "Steam build not supported" row
+names the fix. (From v0.3.61 to then an off-pin Deck, i.e. one whose Steam
+differed from headcrab's pin, was handed off to Desktop to run the SAME
+`setup.sh` through `quick_install_cli.py`, a detour kept from when that path
+included a downgrade. `runDesktopHandoffQuickInstall` / `quick_install_cli.py`
+remain for the align-up row, which goes with the foreign-pin model.)
 
 ---
 
@@ -1256,9 +1251,9 @@ break (`downgrade.possible === false`). Orange, not info: adding games is down.
 **Confirm rule (2026-09-23).** Every button that restarts Steam or leaves
 Game Mode asks for a second tap, and the first tap says which: **"Confirm
 (restarts Steam)"** for Restart Steam, Repair, Update,
-Reinstall, Re-enable injection, Quick Install at the pin and the achievements section's
-Restart Steam; **"Confirm (continues in Desktop)"** for Fix in Desktop,
-Update in Desktop and Quick Install off-pin. The armed state auto-reverts
+Reinstall, Re-enable injection, Quick Install and the achievements section's
+Restart Steam; **"Confirm (continues in Desktop)"** for Fix in Desktop and
+Update in Desktop. The armed state auto-reverts
 after 5 s. Actions that do neither (open a stuck game, download the plugin
 zip) fire at once. While running, a button that *only* restarts says
 **"Restarting Steam..."**; anything that runs `setup.sh` first says

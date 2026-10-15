@@ -520,21 +520,11 @@ export function GameList() {
     }
     setConfirmQuickInstall(false);
 
-    // Off-pin (Steam newer than the headcrab pin): the install includes a Steam
-    // downgrade, which can't run in Game Mode (gamescope crash-loop wipe). Hand
-    // off to Desktop, where the SAME quick_install runs (gamemode=false) and
-    // returns to Game Mode on success. Nothing is re-implemented — it's the real
-    // installer code.
-    const compatible = compStatus?.headcrab?.compatible === true;
-    if (!compatible) {
-      const r: any = await runDesktopHandoffQuickInstall();
-      if (r?.switchLaunched) toast(t("quickInstallDesktop"), t("quickInstallDesktopSwitching"), 9000);
-      else if (r?.armed) toast(t("quickInstallDesktop"), t("quickInstallDesktopManual"), 12000);
-      else toast(t("toastError"), r?.error || "", 6000);
-      return;
-    }
-
-    // At the pin: no downgrade needed, safe to run in Game Mode.
+    // One setup.sh run in place (no Steam downgrade, no pin), then the machine
+    // restart. Whatever build Steam is on: if the components hook it, they load
+    // on the way back; if not, the QAM's "Steam build not supported" row names
+    // the fix. (Until 2026-10-15 an off-pin Deck was sent to Desktop to run the
+    // same setup.sh there, for a downgrade that path no longer includes.)
     setQuickInstalling(true);
     setQuickProgress(t("quickInstallStarting"));
 
@@ -581,12 +571,6 @@ export function GameList() {
     if (cs.quickInstall === "hide") return false;
     return (cs.components || []).every((c) => !c.installed);
   })();
-
-  // Off-pin = Steam newer than the headcrab pin → Quick Install routes to
-  // Desktop (see handleQuickInstall). Mirror its exact test so the confirm text
-  // matches what will actually happen (Desktop hand-off, not an in-place Steam
-  // restart).
-  const quickInstallOffPin = compStatus?.headcrab?.compatible !== true;
 
   // A missing/expired provider key is surfaced ONLY through the top "blocked"
   // row (addBlockedReason) + the disabled Add-game button — no separate
@@ -697,9 +681,7 @@ export function GameList() {
               {quickInstalling
                 ? t("quickInstalling")
                 : confirmQuickInstall
-                  ? quickInstallOffPin
-                    ? t("confirmContinuesDesktop")
-                    : t("confirmRestartsSteam")
+                  ? t("confirmRestartsSteam")
                   : t("quickInstall")}
             </ButtonItem>
           </PanelSectionRow>

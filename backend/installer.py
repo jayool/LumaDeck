@@ -587,7 +587,12 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 line = await process.stdout.readline()
                 if not line:
                     break
-                SETUP_INSTALL_STATE["progress"] = line.decode("utf-8", errors="replace").strip()
+                text = line.decode("utf-8", errors="replace").rstrip()
+                SETUP_INSTALL_STATE["progress"] = text.strip()
+                # The script's own output is the only record of what it did
+                # (which release it fetched, which step failed): keep it in the
+                # plugin log, not just on screen for a second.
+                logger.info("setup.sh: %s", text)
 
         asyncio.create_task(_read_output())
         await process.wait()
