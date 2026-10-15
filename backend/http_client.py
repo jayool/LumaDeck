@@ -215,11 +215,13 @@ def _make_ssl_context() -> ssl.SSLContext:
     except Exception:
         pass
 
-    # Absolute last resort — disable verification with loud warning
-    logger.warning("SSL: SECURITY WARNING — no system CA certs found, disabling verification. HTTPS connections are vulnerable to MITM attacks.")
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    # No CA bundle anywhere: fail closed. The context keeps verification on
+    # with an empty store, so every HTTPS request fails with
+    # CERTIFICATE_VERIFY_FAILED instead of silently trusting anything
+    # (zips, keys, the .so and fixes all come through here). Not seen on
+    # SteamOS: Decky's bundled Python ships certifi and the system bundle is
+    # there too (measured 2026-10-15, nosotros.md §5.2 F10).
+    logger.error("SSL: no CA certificates found (certifi, system bundle, OpenSSL defaults); HTTPS requests will fail until one is available")
     return ctx
 
 
