@@ -15,7 +15,7 @@ import os
 import re
 from typing import Optional
 
-from update_checks import get_latest_release_with_asset, has_update, has_update_from
+from update_checks import has_update, has_update_from
 
 try:
     import decky  # type: ignore
@@ -52,19 +52,16 @@ async def check_slssteam_update(force: bool = False) -> dict:
 
 # --- CloudRedirect update ----------------------------------------------------
 
-# CloudRedirect ships its Linux build as a `cloud_redirect.so` asset on its own
-# semver releases (alongside the Windows .exe/.dll and the flatpak). That is the
-# channel we track. Two things about it are easy to get wrong:
-#
-#  * Not every release has a Linux build. v2.1.9, v2.2.4, v2.5.3, v2.6.1 and
-#    v2.6.2 are Windows-only, so /releases/latest regularly names a version that
-#    does not exist for Linux — hence get_latest_release_with_asset().
-#  * Selectively11/h3adcr-b's `linux-test` tag mirrors the same .so (it is what
-#    headcrab's crinstall() wgets, and what LumaDeck used to hash). It is a
-#    rolling tag on a fork whose script has been frozen since May: the file is
-#    replaced in place, carries no version, and has lagged the real releases. It
-#    is not a version channel and is not used here.
-_CR_SO_ASSET = "cloud_redirect.so"
+# CloudRedirect's upstream (Selectively11/CloudRedirect) was deleted on
+# 2026-10-16 together with its author's account, and nobody expects it back. The
+# last Linux build, 2.6.6, is what lumalinux's setup.sh now ships from its own
+# release assets (lumalinux docs/cloudredirect.md §0, docs/maintenance.md). So
+# "latest" is a constant: there is no feed to ask, and asking the dead repo on
+# every status refresh was a 404 per refresh. The compare stays — the sign-in
+# app deploys its own older .so (2.6.5), and Update (one setup.sh run) is how
+# it gets back to 2.6.6.
+_CR_SHIPPED_VERSION = "2.6.6"
+_CR_SHIPPED_URL = "https://github.com/jayool/lumalinux/releases/tag/v0.22.3"
 
 # The .so states its own version. This is deliberate upstream, not incidental log
 # text: CloudRedirect's CMakeLists reads <ReleaseVersion> out of Version.props,
@@ -163,21 +160,17 @@ async def check_lumalinux_update(health_version: Optional[str] = None, force: bo
 
 
 async def check_cloudredirect_update(force: bool = False) -> dict:
-    """CloudRedirect update = a newer Linux release than the .so on disk.
+    """CloudRedirect update = the .so on disk is older than the build we ship.
 
-    Both sides are semver, so this is the same comparison lumalinux gets: the
-    version compiled into the installed .so against the tag of the newest release
-    that ships one.
-
-    This replaced a plain content-hash diff against the rolling `linux-test`
-    asset. That fired on any byte difference, so every upstream rebuild of an
-    unchanged version announced an update that installing could not clear.
-    Unknown on either side means no update, the safe default."""
+    The version compiled into the installed .so against _CR_SHIPPED_VERSION. No
+    network: upstream is gone (see above). `force` is accepted for the uniform
+    signature and has nothing to bypass. Unknown installed means no update, the
+    safe default."""
     from paths import get_cloudredirect_so_path
     local_path = get_cloudredirect_so_path()
     installed = read_cloudredirect_version(local_path) if local_path else None
-    latest = await get_latest_release_with_asset(
-        "Selectively11", "CloudRedirect", _CR_SO_ASSET, force=force)
+    latest = {"tag": f"v{_CR_SHIPPED_VERSION}", "tag_normalised": _CR_SHIPPED_VERSION,
+              "url": _CR_SHIPPED_URL}
     return await has_update_from(installed, latest)
 
 
@@ -242,7 +235,7 @@ async def get_components_status(force: bool = False) -> dict:
     """One uniform payload for the system-status surface — per-component health +
     update, plus the headcrab compat gate and the plugin. Wraps existing
     detection; nothing here re-implements it. force=True bypasses the update
-    caches (lumalinux release + CloudRedirect hash) for a manual refresh."""
+    caches (SLSsteam + lumalinux releases) for a manual refresh."""
     from paths import (
         read_slssteam_health,
         read_lumalinux_health,

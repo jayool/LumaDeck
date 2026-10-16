@@ -307,6 +307,7 @@ const strings: Record<Lang, Record<string, string>> = {
     healthUnsupportedFix: "Steam build not supported. Press \"{0}\" to fix.",
     healthUnsupportedWait: "Steam build not supported. Wait for an update.",
     healthDisabled: "Disabled by user. Re-enable in Desktop.",
+    crUnmaintained: "No longer maintained upstream. LumaDeck ships its last build; a Steam update may stop it for good.",
     statusDisabled: "Disabled",
     // Steam component row (Dependencies) — build-support status, right-aligned
     statusSupported: "Supported",
@@ -707,6 +708,7 @@ const strings: Record<Lang, Record<string, string>> = {
     healthUnsupportedFix: "Build da Steam não suportada. Toque em \"{0}\" para corrigir.",
     healthUnsupportedWait: "Build da Steam não suportada. Aguarde uma atualização.",
     healthDisabled: "Desabilitado pelo usuário. Reative no Desktop.",
+    crUnmaintained: "Sem manutenção upstream. O LumaDeck inclui a última versão; uma atualização da Steam pode pará-lo de vez.",
     statusDisabled: "Desabilitado",
     statusSupported: "Suportado",
     statusNotSupported: "Não suportado",

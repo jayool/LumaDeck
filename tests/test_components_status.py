@@ -53,12 +53,8 @@ class GetComponentsStatusTests(unittest.TestCase):
         async def _has_update(owner, repo, installed, force=False):
             return {"installed": installed, "latest": None, "has_update": False, "url": None}
 
-        async def _latest_with_asset(owner, repo, asset, force=False):
-            return None
-
         patch(update_checks, "has_update", _has_update)
         patch(components, "has_update", _has_update)
-        patch(components, "get_latest_release_with_asset", _latest_with_asset)
 
         for name, attrs in (
             ("headcrab_compat", {"check_headcrab_compat": self._async_const({
@@ -144,9 +140,12 @@ class GetComponentsStatusTests(unittest.TestCase):
         self.assertFalse(result["guard"]["active"])
 
     def test_a_failing_subcheck_does_not_blank_the_payload(self):
-        async def boom(*args, **kwargs):
-            raise RuntimeError("network down")
-        self.patch(components, "get_latest_release_with_asset", boom)
+        import paths
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("disk read failed")
+        self.patch(paths, "get_cloudredirect_so_path", lambda: "/nonexistent/cloud_redirect.so")
+        self.patch(components, "read_cloudredirect_version", boom)
 
         result = asyncio.run(components.get_components_status())
         self.assertTrue(result["success"])

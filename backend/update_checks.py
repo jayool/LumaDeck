@@ -148,80 +148,6 @@ async def get_latest_release(owner: str, repo: str, force: bool = False) -> Opti
     return None
 
 
-# How many releases back to look for one that ships the asset. CloudRedirect's
-# longest observed run of consecutive Windows-only releases is two (v2.6.1 and
-# v2.6.2); ten leaves a wide margin without paging.
-_RELEASES_PAGE_SIZE = 10
-
-
-async def get_latest_release_with_asset(
-    owner: str, repo: str, asset_name: str, force: bool = False,
-) -> Optional[dict]:
-    """Newest release that actually publishes `asset_name`.
-
-    /releases/latest is the wrong question for a repo whose releases are not all
-    for every platform. CloudRedirect cuts Windows-only releases — v2.1.9,
-    v2.2.4, v2.5.3, v2.6.1 and v2.6.2 carry CloudRedirect.exe but no
-    cloud_redirect.so — so "latest" regularly names a version that has no Linux
-    build at all. Announcing it would nag forever: applying the update installs
-    the same .so it already had, and the offer comes straight back.
-
-    Same {"tag", "tag_normalised", "url"} shape and same caching behaviour as
-    get_latest_release, under a cache key of its own. None when unreachable and
-    no cache exists, which callers treat as "no update".
-
-    A successful fetch that matches nothing falls back to the stale cache too,
-    not just a failed one: if the newest Linux release has scrolled past the page
-    (a long run of Windows-only releases), the last one we saw is a better answer
-    than None — None would read as "up to date" and hide a real update.
-    """
-    cached = None if force else _read_cache(owner, repo, asset_name)
-    if cached and cached.get("tag"):
-        return {
-            "tag": cached["tag"],
-            "tag_normalised": cached.get("tag_normalised") or _normalise(cached["tag"]),
-            "url": cached.get("url", ""),
-        }
-
-    url = f"https://api.github.com/repos/{owner}/{repo}/releases?per_page={_RELEASES_PAGE_SIZE}"
-    try:
-        client = await ensure_http_client(context="update_checks")
-        resp = await client.get(url, timeout=_FETCH_TIMEOUT,
-                                headers={"Accept": "application/vnd.github+json"})
-        if resp.status_code == 200:
-            # The API returns releases newest-first, so the first match wins.
-            # Drafts and prereleases are skipped to match /releases/latest, which
-            # is what every other component here is compared against.
-            for release in resp.json() or []:
-                if release.get("draft") or release.get("prerelease"):
-                    continue
-                names = {a.get("name") for a in release.get("assets") or []}
-                if asset_name not in names:
-                    continue
-                tag = release.get("tag_name") or ""
-                payload = {"tag": tag, "tag_normalised": _normalise(tag),
-                           "url": release.get("html_url") or ""}
-                _write_cache(owner, repo, payload, asset_name)
-                return payload
-            logger.info(
-                f"update_checks: no release in the last {_RELEASES_PAGE_SIZE} of "
-                f"{owner}/{repo} ships {asset_name}"
-            )
-        else:
-            logger.info(f"update_checks: HTTP {resp.status_code} from {url}, using stale cache")
-    except Exception as exc:
-        logger.info(f"update_checks: live fetch failed ({exc}), using stale cache")
-
-    stale = _read_cache_stale_ok(owner, repo, asset_name)
-    if stale and stale.get("tag"):
-        return {
-            "tag": stale["tag"],
-            "tag_normalised": stale.get("tag_normalised") or _normalise(stale["tag"]),
-            "url": stale.get("url", ""),
-        }
-    return None
-
-
 async def has_update(owner: str, repo: str, installed_version: Optional[str],
                      force: bool = False) -> dict:
     """Compare an installed version string against the latest release tag.
@@ -238,10 +164,9 @@ async def has_update_from(installed_version: Optional[str],
                           latest: Optional[dict]) -> dict:
     """The comparison half of has_update, against an already-resolved release.
 
-    Split out for callers that do not want "the latest release" — CloudRedirect
-    needs the latest release that ships a Linux asset, which is a different
-    release (see get_latest_release_with_asset). The verdict must stay identical
-    either way, so both paths share this.
+    Split out for callers whose "latest" does not come from a release lookup —
+    CloudRedirect compares against the build lumalinux ships (components.py).
+    The verdict must stay identical either way, so both paths share this.
     """
     if not latest or not installed_version:
         return {

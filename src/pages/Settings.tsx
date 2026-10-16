@@ -641,10 +641,14 @@ export function Settings() {
   };
 
   // CloudRedirect: a hook warning (if the hooks broke) and/or a sign-in warning
-  // (provider not configured). Nothing when healthy + signed in.
+  // (provider not configured), and always the upstream notice: the project was
+  // discontinued in Oct 2026 and lumalinux ships its last build, so the user
+  // knows a Steam client update can take it away with no fix coming.
   const crHealthDesc = () => {
     if (!crPresent) return undefined;
     const lines: any[] = [];
+    const notice = warnDesc(t("crUnmaintained"), "muted");
+    if (notice) lines.push(notice);
     if (crHealth && crHealth.state !== "healthy" && crHealth.state !== "not_authed") {
       // disabled is a deliberate opt-out → muted grey line, no warning. Every
       // other non-healthy state maps to the shared restart/desktop wording.

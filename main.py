@@ -240,8 +240,8 @@ class Plugin:
 
     async def check_cloudredirect_update(self) -> str:
         """{installed, latest, has_update, url}: the same check the components
-        panel runs (version compiled into the .so vs the newest release that
-        ships a Linux build). Measured 2026-10-07 on the Deck: the old check
+        panel runs (version compiled into the .so vs the build lumalinux ships;
+        upstream is gone). Measured 2026-10-07 on the Deck: the old check
         read the version out of cr_debug.log, which CloudRedirect appends to
         across Steam sessions, so it matched the OLDEST line (2.6.3 on a 2.6.5
         install) and Settings and the panel disagreed."""
