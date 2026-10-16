@@ -2,7 +2,7 @@
 
 After a break-recovery downgrade (lumalinux's downgrade.sh) Steam is pinned at an
 older build. The user needs to know WHEN lifting the pin is safe, and only the
-plugin can know: headcrab's pin says nothing reliable (nosotros.md §4.1-31), so
+plugin can know: headcrab's pin says nothing reliable (nosotros.md §4.1-30), so
 this asks the three sources that actually decide it, with no headcrab anywhere:
 
   1. Valve's public client manifest for the Deck stable branch — the build Steam
