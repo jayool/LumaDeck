@@ -115,7 +115,6 @@ LumaDeck is a fork of [DeckTools](https://github.com/lopesleo/DeckTools) by **lo
 | [LuaToolsLinux](https://github.com/Star123451/LuaToolsLinux)               | Star123451        | Original project that inspired DeckTools                                      |
 | [SLSsteam](https://github.com/AceSLS/SLSsteam)                             | AceSLS            | Steam ownership / licensing layer                                             |
 | [lumalinux](https://github.com/jayool/lumalinux)                           | jayool            | Native depot-key / manifest hooks for `steamclient.so` (Linux i386)           |
-| [ACCELA](https://github.com/nichelimux/ACCELA)                             | nichelimux        | Standalone desktop app — not a dependency, and no longer interoperated with (the marker writing was dropped with the `.acf` stub) |
 | [Goldberg (gbe_fork)](https://github.com/Detanup01/gbe_fork)               | Detanup01         | Steam API emulator (bundled from `Detanup01/gbe_fork`)                        |
 | [Steamless](https://github.com/atom0s/Steamless)                           | atom0s            | SteamStub DRM remover (bundled CLI)                                           |
 | [steamnetsock-patch](https://github.com/yesyes0649/steamnetsock-patch), [eos-proxy](https://github.com/yesyes0649/eos-proxy) | yesyes0649 | netsock fix and the EOS proxy behind the Online toggle |
