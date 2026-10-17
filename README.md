@@ -1,5 +1,8 @@
 # LumaDeck
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/VC3WU7gC2z)
+[![Latest release](https://img.shields.io/github/v/release/jayool/LumaDeck?label=Release)](https://github.com/jayool/LumaDeck/releases)
+
 Decky Loader plugin for Steam Deck — game library and configuration manager with a **lumalinux backend**. Fork of [DeckTools](https://github.com/lopesleo/DeckTools) by lopesleo.
 
 > ⚠️ **Educational / research use only.** Use it with your own Steam account and content. The plugin does not host or distribute any third-party content; it only orchestrates installs around SLSsteam, lumalinux, CloudRedirect, Goldberg and Steamless.
@@ -97,6 +100,10 @@ The native-Steam-download approach is a fundamental backend change that wouldn't
 - [CloudRedirect analysis](https://github.com/jayool/lumalinux/blob/main/docs/cloudredirect.md) (Spanish) — what CloudRedirect does inside Steam and the known risks
 - [nosotros.md](https://github.com/jayool/lumalinux/blob/main/docs/nosotros.md) (lumalinux, Spanish) — how the whole stack works today, read from the code, with the design decisions and why
 - [DESIGN_UI.md](DESIGN_UI.md) — how each UI element is built, and the rules that keep the UI consistent
+
+## Community & support
+
+Questions, bug reports and release announcements live on the **LumaDeck Discord**: https://discord.gg/VC3WU7gC2z
 
 ## Credits / notes
 
