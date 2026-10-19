@@ -1528,3 +1528,30 @@ code fixes. Line numbers as of 2026-10-09.
   - `ownedDlcNextStart` (a success message) renders grey in the QAM status line,
     because the green test is `addStatus === t("doneRestartSteam")` only
     (`GameList.tsx:902`).
+
+## Announcements and release notes
+
+One shape for every post in the Discord announcements channel and every
+GitHub release, so a reader who only looks at the first and the last line
+knows whether it affects them and what to do. Agreed 2026-10-19; earlier posts
+were rewritten to it.
+
+1. **`@everyone`** only when the reader has to do something (a release to
+   install). An informational post has no ping.
+2. **Title as `#`**, always: the version(s) for a release (`LumaDeck v0.11.4 +
+   lumalinux v0.22.4` when they pair), the topic for news.
+3. **First line**: one sentence saying what this is and whether action is
+   needed. `Fixes only, no new features.` / `Nothing to update.` A release
+   that needs context (a Steam update broke something) gets one short
+   paragraph here, not more.
+4. **Body**: bullets, each opening with a bold lead and finishing in one
+   sentence, in the user's words (what they saw, what changes), never the
+   technical cause. Sections as `##` only when there are more than four or
+   five bullets; otherwise one flat list.
+5. **Closing `## What to do`**, always, even when it is one line: the install
+   steps (QAM → Decky → Developer → Install Plugin from ZIP; then Settings →
+   Components for lumalinux), or `No action needed`.
+
+GitHub release notes are the same bullets without the ping and without "What
+to do" (the assets sit right under them), opened by the first line. No "Full
+Changelog" link.
