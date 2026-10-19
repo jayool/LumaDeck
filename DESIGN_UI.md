@@ -268,7 +268,7 @@ in `i18n.ts`, rows in `buildRows()`, Components in `Settings.tsx`):
 | 8 | Our pin, broken, a release hooks the pinned client | as 2 | | **Update** | as 2, Steam row "Held at build N…" |
 | 9 | Our pin, broken, no release, Valve's new build supported | Steam build not supported | sysUnsupportedFix{Let Steam update} | **Let Steam update** | healthUnsupportedFix{Let Steam update}; button Let Steam update |
 | 10 | Our pin, broken, no release, Valve's new build not supported | as 3 if the downgrade target is hooked, else as 5 | | | |
-| 11 | A LumaDeck update is pending | LumaDeck update available (the ONLY row) | Download it, then install it from Decky's Developer menu. | Download update | unchanged |
+| 11 | A LumaDeck update is pending | LumaDeck update available (first row; hides the feed-based advice rows — Steam build not supported, Steam held, component updates — and keeps the fact rows below: Restart, Recovery, stuck games, cloud login) | Download it, then install it from Decky's Developer menu. | Download update | unchanged |
 | 12 | A headcrab pin (unsigned `steam.cfg`, from its installer) | as 6 to 10: any `steam.cfg` pin is THE pin (2026-10-15). Held row, gate, Let Steam update; never lifted by an install | | | the Steam row reads "Held at build N by LumaDeck" either way |
 
 Order of the fix rows: Update > Let Steam update > Fix in Desktop > Wait. "Update
@@ -1280,7 +1280,7 @@ not as a ⚠ fix: `FaArrowCircleUp #5b9eff` icon (not the accent `#1a9fff`).
 Rows on this track, in order: **Steam updates paused** / **Steam update
 ready** / **Let Steam update** (any `steam.cfg` pin, below), **Update
 available** / **Update** (any component), **LumaDeck update available** /
-**Download update** (plugin, fires at once; the ONLY row while pending).
+**Download update** (plugin, fires at once; first row while pending: the feed-based advice rows are hidden behind it, the fact rows stay below).
 
 | Component | Update check | Apply | Weight |
 |---|---|---|---|

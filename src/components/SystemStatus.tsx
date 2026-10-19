@@ -123,6 +123,15 @@ type Row = {
   // Label while the action runs. Default "Working..." (setup.sh + restart);
   // actions that ONLY restart Steam say so ("Restarting Steam...").
   busyLabel?: string;
+  // Advice derived from what THIS plugin version knows about Steam (the
+  // components' client lists, the update gate): every "Steam build not
+  // supported" variant, the held-Steam advice, the component update offer.
+  // An older plugin can get these wrong after a Steam change (2026-10-14: a
+  // user on 0.11.0 saw nothing useful until 0.11.2), so while a LumaDeck update
+  // is pending they are hidden behind the update row. Rows without this flag
+  // are facts the plugin version cannot change (not loaded, guard latched, a
+  // stuck game, cloud login) and stay visible.
+  feedAdvice?: boolean;
 };
 
 const WARN = "#ff8c00";
@@ -236,7 +245,7 @@ function buildRows(
     // setup.sh run) is the fix. Downgrading here would pin Steam on an old
     // client the updated component no longer hooks.
     rows.push({
-      key: "update-fix", severity: "problem",
+      key: "update-fix", feedAdvice: true, severity: "problem",
       label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysUpdate")),
       actionLabel: t("sysUpdate"),
       onAction: actions.update,
@@ -246,7 +255,7 @@ function buildRows(
     // Broken on a client nothing hooks, held by our pin, and Valve's current
     // build is supported: let Steam update.
     rows.push({
-      key: "unpin-fix", severity: "problem",
+      key: "unpin-fix", feedAdvice: true, severity: "problem",
       label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysLetSteamUpdate")),
       actionLabel: t("sysLetSteamUpdate"),
       onAction: actions.unpin,
@@ -257,14 +266,14 @@ function buildRows(
     // this build yet (it self-heals once the cron does), or the downgrade would
     // land on a client the latest SLSsteam no longer hooks.
     rows.push({
-      key: "wait", severity: "problem",
+      key: "wait", feedAdvice: true, severity: "problem",
       label: t("sysUnsupported"), description: t("sysUnsupportedWait"),
     });
   } else if (anyUnsupported) {
     // Steam moved off a build the hooks can handle and the latest components
     // still hook the downgrade target: hand off to Desktop. Two-tap confirm.
     rows.push({
-      key: "desktop", severity: "problem",
+      key: "desktop", feedAdvice: true, severity: "problem",
       label: t("sysUnsupported"), description: t("sysUnsupportedFix", t("sysFixInDesktop")),
       actionLabel: t("sysFixInDesktop"),
       onAction: actions.downgrade,
@@ -336,7 +345,7 @@ function buildRows(
     if (status.freeze?.frozen) {
       const txt = steamHeldText(t, status.freeze);
       rows.push({
-        key: "steam-held", severity: "info",
+        key: "steam-held", feedAdvice: true, severity: "info",
         label: txt.label, description: txt.description,
         actionLabel: t("sysLetSteamUpdate"),
         onAction: actions.unpin,
@@ -357,7 +366,7 @@ function buildRows(
       sls.update?.supports_current_build !== false;
     if (llUpdate || crUpdate || slsUpdate) {
       rows.push({
-        key: "update", severity: "info",
+        key: "update", feedAdvice: true, severity: "info",
         label: t("sysUpdateAvailable"), description: t("sysUpdateAvailableDesc"),
         actionLabel: t("sysUpdate"),
         onAction: actions.update,
@@ -365,18 +374,21 @@ function buildRows(
       });
     }
   }
-  // A LumaDeck update is the ONLY row while it is pending: when Steam breaks
-  // something, the right advice usually ships in the plugin (2026-10-14: a user
-  // on 0.11.0 saw nothing useful until 0.11.2), and every other row is an old
-  // plugin's advice. Orange when it hides a problem, blue when all is well.
-  // Settings ▸ Components keeps its button for whoever insists.
+  // A pending LumaDeck update goes first and hides the feedAdvice rows (see
+  // Row): when Steam breaks something, the right advice usually ships in the
+  // plugin, and an old plugin's reading of the feeds is what went wrong on
+  // 2026-10-14. The fact rows stay below it — a Restart or a stuck game is
+  // true whatever the plugin version, and hiding them for days while the
+  // update waits cost more than it protected. Orange when a hidden row was a
+  // problem, blue otherwise. Settings ▸ Components keeps its button.
   if (status.plugin?.available) {
+    const hidesProblem = rows.some((r) => r.feedAdvice && r.severity === "problem");
     return [{
-      key: "plugin", severity: rows.some((r) => r.severity === "problem") ? "problem" : "info",
+      key: "plugin", severity: hidesProblem ? "problem" : "info",
       label: t("sysPluginUpdate"), description: t("sysPluginUpdateDesc"),
       actionLabel: t("sysPluginUpdateBtn"),
       onAction: actions.pluginUpdate,
-    }];
+    }, ...rows.filter((r) => !r.feedAdvice)];
   }
 
   return rows;
