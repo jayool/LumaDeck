@@ -29,9 +29,6 @@ import {
   getSlssteamHealth,
   getLumalinuxHealth,
   getCloudredirectHealth,
-  checkCloudredirectUpdate,
-  checkLumalinuxUpdate,
-  checkHeadcrabCompat,
   getComponentsStatus,
   reinjectInstalled,
   retryInjection,
@@ -121,7 +118,7 @@ export function Settings() {
   const [headcrabCompat, setHeadcrabCompat] = useState<{
     current_build: number | null;
     target: number | null;
-    compatible: boolean;
+    compatible: boolean | null;
     lumalinux_ready?: boolean | null;
     current_build_supported_by_latest?: boolean | null;
   } | null>(null);
@@ -166,6 +163,37 @@ export function Settings() {
     else toast(t("toastError"), r?.error || "", 6000);
   };
 
+  // The unified status payload already carries the per-component update
+  // results, the headcrab verdict and the plugin release, so every view reads
+  // them from the one call instead of re-fetching each (which went to GitHub
+  // again, in series, on every visit).
+  const applyComponentsStatus = (cs: ComponentsStatus | null | undefined) => {
+    if (!cs?.success) return;
+    setComponentsStatus(cs);
+    const upd = (id: string) => {
+      const u = cs.components?.find((c) => c.id === id)?.update;
+      return u ? { installed: u.installed ?? null, latest: u.latest ?? null, has_update: !!u.available } : null;
+    };
+    setCrUpdate(upd("cloudredirect"));
+    setLlUpdate(upd("lumalinux"));
+    if (cs.headcrab) {
+      setHeadcrabCompat({
+        current_build: cs.headcrab.current ?? null,
+        target: cs.headcrab.target ?? null,
+        compatible: cs.headcrab.compatible ?? null,
+        lumalinux_ready: cs.headcrab.lumalinux_ready,
+        current_build_supported_by_latest: cs.headcrab.current_build_supported_by_latest,
+      });
+    }
+    if (cs.plugin) {
+      setPluginUpdate({
+        installed: cs.plugin.installed ?? null,
+        latest: cs.plugin.latest ?? null,
+        has_update: !!cs.plugin.available,
+      });
+    }
+  };
+
   // Re-fetch everything the Dependencies view renders (component state + the
   // unified status the morphing button reads).
   const reloadStatus = async () => {
@@ -174,7 +202,7 @@ export function Settings() {
       getSlssteamHealth(), getLumalinuxHealth(), getCloudredirectHealth(),
     ]);
     if (d?.success) setDeps(d);
-    if (cs?.success) setComponentsStatus(cs);
+    applyComponentsStatus(cs);
     if (sls?.state) setSlssteamHealth(sls);
     if (ll?.state) setLumalinuxHealth(ll);
     if (cr?.state) setCrHealth(cr);
@@ -199,28 +227,21 @@ export function Settings() {
 
     const refreshDeps = async () => {
       if (cancelled) return;
-      const depsResult = await checkDependencies();
-      if (!cancelled && depsResult.success) setDeps(depsResult);
-      const cs = await getComponentsStatus();
-      if (!cancelled && cs?.success) setComponentsStatus(cs);
-      const [sls, ll, cr, cru, llu] = await Promise.all([
-        getSlssteamHealth(), getLumalinuxHealth(),
-        getCloudredirectHealth(), checkCloudredirectUpdate(),
-        checkLumalinuxUpdate(),
+      // Local reads first (disk + /proc, tenths of a second) so the component
+      // rows paint with their real state at once. The rows render as soon as
+      // deps lands, and an empty health reads as "Not installed" in red — so
+      // health must land with it, not after the network status below.
+      const [depsResult, sls, ll, cr] = await Promise.all([
+        checkDependencies(), getSlssteamHealth(), getLumalinuxHealth(), getCloudredirectHealth(),
       ]);
-      if (!cancelled && sls.state) setSlssteamHealth(sls);
-      if (!cancelled && ll.state)  setLumalinuxHealth(ll);
-      if (!cancelled && cr.state)  setCrHealth(cr);
-      if (!cancelled) setCrUpdate({
-        installed: cru.installed ?? null,
-        latest: cru.latest ?? null,
-        has_update: !!cru.has_update,
-      });
-      if (!cancelled) setLlUpdate({
-        installed: llu.installed ?? null,
-        latest: llu.latest ?? null,
-        has_update: !!llu.has_update,
-      });
+      if (cancelled) return;
+      if (depsResult.success) setDeps(depsResult);
+      if (sls.state) setSlssteamHealth(sls);
+      if (ll.state)  setLumalinuxHealth(ll);
+      if (cr.state)  setCrHealth(cr);
+      // Then the one network call: update lines, headcrab, plugin release.
+      const cs = await getComponentsStatus();
+      if (!cancelled) applyComponentsStatus(cs);
     };
 
     const load = async () => {
@@ -249,45 +270,10 @@ export function Settings() {
       if (!cancelled && addl?.success) setAddlApps(addl.appids ?? []);
       if (!cancelled && fake?.success) setFakeAppIds(fake.entries ?? {});
 
-      const [sls, ll, cr, cru, llu] = await Promise.all([
-        getSlssteamHealth(), getLumalinuxHealth(),
-        getCloudredirectHealth(), checkCloudredirectUpdate(),
-        checkLumalinuxUpdate(),
-      ]);
-      if (!cancelled && sls.state) setSlssteamHealth(sls);
-      if (!cancelled && ll.state)  setLumalinuxHealth(ll);
-      if (!cancelled && cr.state)  setCrHealth(cr);
-      if (!cancelled) setCrUpdate({
-        installed: cru.installed ?? null,
-        latest: cru.latest ?? null,
-        has_update: !!cru.has_update,
-      });
-      if (!cancelled) setLlUpdate({
-        installed: llu.installed ?? null,
-        latest: llu.latest ?? null,
-        has_update: !!llu.has_update,
-      });
-
-      const compatResult = await checkHeadcrabCompat();
-      if (!cancelled && compatResult.success) {
-        setHeadcrabCompat({
-          current_build: compatResult.current_build,
-          target: compatResult.target,
-          compatible: compatResult.compatible,
-          lumalinux_ready: compatResult.lumalinux_ready,
-          current_build_supported_by_latest: compatResult.current_build_supported_by_latest,
-        });
-      }
-
+      // Component health, update lines, headcrab and the plugin release all
+      // came with refreshDeps() above (one status call); nothing to re-fetch.
       const libResult = await getSteamLibraries();
       if (!cancelled && libResult.success && libResult.libraries) setLibraries(libResult.libraries);
-
-      const pu = await checkPluginUpdate();
-      if (!cancelled && pu.success) setPluginUpdate({
-        installed: pu.installed ?? null,
-        latest: pu.latest ?? null,
-        has_update: !!pu.has_update,
-      });
     };
 
     load();
@@ -677,7 +663,7 @@ export function Settings() {
 
   const handleCheckPluginUpdate = async () => {
     setPluginMsg(t("checking"));
-    const pu = await checkPluginUpdate();
+    const pu = await checkPluginUpdate(true);
     if (pu.success) {
       setPluginUpdate({
         installed: pu.installed ?? null,
@@ -725,8 +711,7 @@ export function Settings() {
     if (sls.state) setSlssteamHealth(sls);
     if (ll.state) setLumalinuxHealth(ll);
     if (cr.state) setCrHealth(cr);
-    const cs = await getComponentsStatus(true);
-    if (cs?.success) setComponentsStatus(cs);
+    applyComponentsStatus(await getComponentsStatus(true));
     const c = await getCredentialStatus();
     if (c.success) setCred(c);
     requestRefresh();

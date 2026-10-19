@@ -516,9 +516,9 @@ class Plugin:
         from downloads import get_games_database
         return _j(get_games_database())
 
-    async def check_plugin_update(self) -> str:
+    async def check_plugin_update(self, force: bool = False) -> str:
         from self_update import check_plugin_update
-        return _j(await check_plugin_update())
+        return _j(await check_plugin_update(force=force))
 
     async def update_plugin(self) -> str:
         from self_update import update_plugin

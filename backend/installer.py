@@ -654,10 +654,12 @@ async def _plan_this_run() -> dict:
     fz = read_freeze()
     if not fz.get("frozen"):
         return {"refuse": None, "reason": "no pin"}
-    sls_text = await slssteam_updates_text()
+    # An install decision reads the feeds fresh (force=True): the 15 min feed
+    # cache is for the status surface, not for deciding what goes on disk.
+    sls_text = await slssteam_updates_text(force=True)
     cur_hash = current_client_hash()
-    gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(),
-                               await latest_release_group(), sls_text, slssteam_latest_group(sls_text))
+    gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(force=True),
+                               await latest_release_group(force=True), sls_text, slssteam_latest_group(sls_text))
     return plan_setup(True, sls_text, cur_hash, gate_for_latest)
 
 

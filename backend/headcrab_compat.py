@@ -18,10 +18,12 @@ at Desktop Mode in that case.
 
 from __future__ import annotations
 
+import asyncio
 import glob
 import os
 import re
 
+from feed_cache import fresh
 from http_client import ensure_http_client
 from paths import find_steam_root, real_home
 
@@ -125,15 +127,21 @@ def _load_cache() -> int | None:
         return None
 
 
-async def headcrab_target() -> int | None:
+async def headcrab_target(force: bool = False) -> int | None:
     """Fetch the current Headcrab-pinned client version from upstream.
 
     Live read of `HeadcrabCompatibleClientVer` in Deadboy666/h3adcr-b's
     main branch via LumaDeck's shared HTTP client (handles SSL/CA bundle
     on the PyInstaller-bundled Python that Decky ships). Cached on disk
-    after a successful fetch so the check keeps working offline. Fails
-    closed (returns None) if neither network nor cache yields a value.
+    after a successful fetch: a copy younger than feed_cache.FEED_TTL is
+    served without a fetch unless `force`, and any copy keeps the check
+    working offline. Fails closed (returns None) if neither network nor
+    cache yields a value.
     """
+    if not force and fresh(_CACHE_FILE):
+        cached = _load_cache()
+        if cached is not None:
+            return cached
     try:
         client = await ensure_http_client(context="headcrab_compat")
         resp = await client.get(_HEADCRAB_URL, timeout=_FETCH_TIMEOUT)
@@ -166,12 +174,21 @@ def _looks_like_feed(text: str) -> bool:
     return any(line.startswith("SafeModeHashes:") for line in text.splitlines())
 
 
-async def _lumalinux_updates_text() -> str | None:
+async def _lumalinux_updates_text(force: bool = False) -> str | None:
     """Fetch lumalinux's res/updates.yaml (main), cached to disk. None if
     unreachable and no cache. main is the right source for the per-group BUILD
     LISTS (hashes append live, no release needed); the group POINTER comes from
-    the release instead — see latest_release_group()."""
+    the release instead — see latest_release_group(). A cached copy younger
+    than feed_cache.FEED_TTL is served without a fetch unless `force`."""
     text = None
+    if not force and fresh(_LL_CACHE_FILE):
+        try:
+            with open(_LL_CACHE_FILE, "r", encoding="utf-8") as f:
+                cached = f.read()
+            if _looks_like_feed(cached):
+                return cached
+        except Exception:
+            pass
     try:
         client = await ensure_http_client(context="headcrab_compat")
         resp = await client.get(_LUMALINUX_UPDATES_URL, timeout=_FETCH_TIMEOUT)
@@ -208,7 +225,7 @@ async def _lumalinux_updates_text() -> str | None:
     return text
 
 
-async def latest_release_group() -> str | None:
+async def latest_release_group(force: bool = False) -> str | None:
     """The SafeMode group-id (res/version.txt value) compiled into the LATEST
     published lumalinux release .so, read from its release asset.
 
@@ -216,8 +233,17 @@ async def latest_release_group() -> str | None:
     binary actually hook?" — the .so trusts only its compile-time group. Cached to
     disk. Returns None when unreachable + no cache, OR when the release predates
     the version.txt asset (older releases); callers then fall back to a whole-file
-    scan (safe while a single group exists)."""
+    scan (safe while a single group exists). A cached copy younger than
+    feed_cache.FEED_TTL is served without a fetch unless `force`."""
     group = None
+    if not force and fresh(_REL_GROUP_CACHE_FILE):
+        try:
+            with open(_REL_GROUP_CACHE_FILE, "r", encoding="utf-8") as f:
+                cand = f.read().strip()
+            if re.fullmatch(r"\d+", cand):
+                return cand
+        except Exception:
+            pass
     try:
         client = await ensure_http_client(context="headcrab_compat")
         resp = await client.get(_LUMALINUX_RELEASE_VERSION_URL, timeout=_FETCH_TIMEOUT)
@@ -340,15 +366,19 @@ async def lumalinux_supports_build(build: int | None) -> bool | None:
     return _supports_build(await _lumalinux_updates_text(), await latest_release_group(), build)
 
 
-async def check_headcrab_compat() -> dict:
+async def check_headcrab_compat(force: bool = False) -> dict:
     """Return whether the current Steam build matches Headcrab's pinned target,
     and whether the LATEST lumalinux release is ready for both the pinned target
-    (Steam-update gate) and the build the user is on now (lumalinux-update gate)."""
+    (Steam-update gate) and the build the user is on now (lumalinux-update gate).
+    `force` skips the feed caches (manual refresh)."""
     build = current_steam_build()
-    target = await headcrab_target()
-    # Fetch the two inputs once, then answer both questions against them.
-    text = await _lumalinux_updates_text()
-    group = await latest_release_group()
+    # The three inputs are independent fetches: run them at once (the QAM waits
+    # on this), then answer both questions against them.
+    target, text, group = await asyncio.gather(
+        headcrab_target(force=force),
+        _lumalinux_updates_text(force=force),
+        latest_release_group(force=force),
+    )
     # Valve relabels a build without changing steamclient.so (1788291500 became
     # 1788652215 on 2026-09-05), and headcrab's pinned MANIFEST can keep the old
     # label while headcrab.sh carries the new one. A Deck downgrade.sh just put on

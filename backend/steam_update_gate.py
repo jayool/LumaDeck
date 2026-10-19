@@ -34,11 +34,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import asyncio
 import os
 import re
 import time
 from typing import Optional
 
+from feed_cache import fresh
 from http_client import ensure_http_client
 from paths import find_steam_root, real_home
 
@@ -121,10 +123,20 @@ async def latest_stable_build(force: bool = False) -> Optional[int]:
         return None
 
 
-async def slssteam_updates_text() -> Optional[str]:
-    """SLSsteam's res/updates.yaml from upstream (fresh: a release that adds a
-    hash must show up without waiting for a Steam restart to refresh SLSsteam's
-    own cached copy), falling back to our cache, then to SLSsteam's copy."""
+async def slssteam_updates_text(force: bool = False) -> Optional[str]:
+    """SLSsteam's res/updates.yaml from upstream (a release that adds a hash
+    must show up without waiting for a Steam restart to refresh SLSsteam's own
+    cached copy), falling back to our cache, then to SLSsteam's copy. Our copy
+    is served without a fetch while younger than feed_cache.FEED_TTL unless
+    `force` (manual refresh, install decisions)."""
+    if not force and fresh(_SLS_CACHE):
+        try:
+            with open(_SLS_CACHE, "r", encoding="utf-8") as f:
+                text = f.read()
+            if "SafeModeHashes" in text:
+                return text
+        except Exception:
+            pass
     try:
         client = await ensure_http_client(context="steam_update_gate")
         resp = await client.get(_SLSSTEAM_UPDATES_URL, timeout=_FETCH_TIMEOUT)
@@ -364,10 +376,12 @@ async def steam_update_gate(force: bool = False) -> dict:
     from headcrab_compat import _lumalinux_updates_text, latest_release_group
     from slssteam_version import resolve_installed_version
 
-    stable = await latest_stable_build(force=force)
-    ll_text = await _lumalinux_updates_text()
-    ll_group = await latest_release_group()
-    sls_text = await slssteam_updates_text()
+    stable, ll_text, ll_group, sls_text = await asyncio.gather(
+        latest_stable_build(force=force),
+        _lumalinux_updates_text(force=force),
+        latest_release_group(force=force),
+        slssteam_updates_text(force=force),
+    )
     try:
         sls_installed, _src = await resolve_installed_version()
     except Exception:

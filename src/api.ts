@@ -143,8 +143,8 @@ export const devProbeVersions = async (appid: number) =>
 
 // In-plugin self-update (#23). checkPluginUpdate → { has_update, installed,
 // latest, download_url }; updatePlugin downloads + applies the latest release.
-export const checkPluginUpdate = async () =>
-  parseResult(await call<[], string>("check_plugin_update"));
+export const checkPluginUpdate = async (force = false) =>
+  parseResult(await call<[boolean], string>("check_plugin_update", force));
 
 export const updatePlugin = async () =>
   parseResult(await call<[], string>("update_plugin"));

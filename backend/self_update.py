@@ -16,6 +16,7 @@ import shutil
 import tempfile
 import zipfile
 
+from feed_cache import FEED_TTL, fresh
 from http_client import ensure_http_client
 from paths import get_plugin_dir, real_home, settings_dir
 
@@ -66,14 +67,57 @@ def _zip_version(zip_path: str) -> str:
     return ""
 
 
-async def check_plugin_update() -> dict:
+def _release_cache_path() -> str:
+    return os.path.join(real_home(), ".cache", "lumadeck", "plugin_release.json")
+
+
+def _read_release_cache() -> dict | None:
+    try:
+        with open(_release_cache_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and data.get("tag"):
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _write_release_cache(tag: str, download_url: str) -> None:
+    try:
+        path = _release_cache_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"tag": tag, "download_url": download_url}, f)
+    except Exception as exc:
+        logger.warning(f"self_update: failed to cache the release: {exc}")
+
+
+def _result(installed: str, latest_tag: str, download_url: str) -> dict:
+    has_update = _parse_version(latest_tag) > _parse_version(installed)
+    return {
+        "success": True,
+        "has_update": bool(has_update and download_url),
+        "installed": installed,
+        "latest": latest_tag.lstrip("v"),
+        "download_url": download_url,
+    }
+
+
+async def check_plugin_update(force: bool = False) -> dict:
     """Compare the installed version against the latest GitHub release.
 
     Returns {success, has_update, installed, latest, download_url}. Never
     raises — a network failure is reported as success=False so callers (the
     QAM load path included) can stay quiet.
+
+    The release is cached on disk: a copy younger than feed_cache.FEED_TTL is
+    used without a fetch unless `force` (the About button, the title-bar
+    Refresh), and on a failed fetch the copy is used whatever its age.
     """
     installed = _installed_version()
+    cached = _read_release_cache()
+    if cached and not force and fresh(_release_cache_path(), FEED_TTL):
+        return _result(installed, cached["tag"], cached.get("download_url", ""))
     try:
         client = await ensure_http_client("self_update")
         resp = await client.get(
@@ -82,6 +126,8 @@ async def check_plugin_update() -> dict:
             timeout=10,
         )
         if resp.status_code != 200:
+            if cached:
+                return _result(installed, cached["tag"], cached.get("download_url", ""))
             return {"success": False, "error": f"GitHub API {resp.status_code}", "installed": installed}
         data = resp.json()
         latest_tag = data.get("tag_name") or ""
@@ -90,15 +136,12 @@ async def check_plugin_update() -> dict:
             if asset.get("name") == _ASSET:
                 download_url = asset.get("browser_download_url", "")
                 break
-        has_update = _parse_version(latest_tag) > _parse_version(installed)
-        return {
-            "success": True,
-            "has_update": bool(has_update and download_url),
-            "installed": installed,
-            "latest": latest_tag.lstrip("v"),
-            "download_url": download_url,
-        }
+        if latest_tag:
+            _write_release_cache(latest_tag, download_url)
+        return _result(installed, latest_tag, download_url)
     except Exception as exc:
+        if cached:
+            return _result(installed, cached["tag"], cached.get("download_url", ""))
         return {"success": False, "error": str(exc), "installed": installed}
 
 

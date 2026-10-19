@@ -71,13 +71,13 @@ class HashForBuild(unittest.TestCase):
 
 class CompatNormalisation(unittest.TestCase):
     def _compat(self, installed, target, feed=FEED):
-        async def _text():
+        async def _text(force=False):
             return feed
 
-        async def _target():
+        async def _target(force=False):
             return target
 
-        async def _group():
+        async def _group(force=False):
             return "20260922150000"
 
         with mock.patch.object(hc, "current_steam_build", return_value=installed), \

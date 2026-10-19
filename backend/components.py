@@ -11,6 +11,7 @@ step — this module can ship without changing anything visible.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from typing import Optional
@@ -253,6 +254,9 @@ async def get_components_status(force: bool = False) -> dict:
             logger.warning(f"components: {getattr(fn, '__name__', 'check')} failed: {exc}")
             return default
 
+    async def _const(value):
+        return value
+
     async def _safe(coro, default):
         # Each subcheck is isolated: a single failure (network, parse) must not
         # blank the whole status surface.
@@ -301,11 +305,26 @@ async def get_components_status(force: bool = False) -> dict:
     ll_forced = dev.get("lumalinux_health") is not None
     cr_forced = dev.get("cloudredirect_health") is not None
 
-    # SLSsteam's own feed, fetched fresh (cache fallback): decides whether the
-    # latest SLSsteam hooks the client on disk, and whether the release cache
-    # is behind Ace's newest pattern group.
+    # SLSsteam's own feed (15 min disk cache, fetched on force, cache fallback
+    # offline): decides whether the latest SLSsteam hooks the client on disk,
+    # and whether the release cache is behind Ace's newest pattern group.
     from steam_update_gate import current_client_hash, slssteam_latest_supports, slssteam_updates_text
-    sls_text = await _safe(slssteam_updates_text(), None)
+    # The network checks that don't depend on each other go out at once: the
+    # QAM's Refresh icon spins until this returns, and in series they added up
+    # to several seconds on the Deck's wifi (each is its own TLS connection).
+    # The SLSsteam release check waits for its feed (it decides whether the
+    # release cache is stale), so it runs after.
+    sls_text, headcrab, plugin, ll_update, cr_update = await asyncio.gather(
+        _safe(slssteam_updates_text(force=force), None),
+        _safe(check_headcrab_compat(force=force),
+              {"compatible": None, "target": None, "current_build": None}),
+        _safe(check_plugin_update(force=force),
+              {"installed": None, "latest": None, "has_update": False}),
+        (_safe(check_lumalinux_update(ll_health.get("version"), force=force), no_update)
+         if not ll_forced else _const(no_update)),
+        (_safe(check_cloudredirect_update(force=force), no_update)
+         if not cr_forced else _const(no_update)),
+    )
     cur_hash = _safe_sync(current_client_hash, None)
     sls_supports_current = slssteam_latest_supports(sls_text, cur_hash)
     # SLSsteam not mapped in Steam reads not_loaded / not_injected from the
@@ -321,12 +340,7 @@ async def get_components_status(force: bool = False) -> dict:
 
     sls_update = no_update if sls_forced else await _safe(
         check_slssteam_update(force=sls_force), no_update)
-    ll_update = no_update if ll_forced else await _safe(
-        check_lumalinux_update(ll_health.get("version"), force=force), no_update)
-    cr_update = no_update if cr_forced else await _safe(
-        check_cloudredirect_update(force=force), no_update)
 
-    headcrab = await _safe(check_headcrab_compat(), {"compatible": None, "target": None, "current_build": None})
     # Would Fix in Desktop help? Only asked while something is not_supported
     # (the one state that offers it). possible False -> the QAM shows the Wait
     # row instead of a button that would be refused.
@@ -334,8 +348,6 @@ async def get_components_status(force: bool = False) -> dict:
     if any(h.get("state") == "not_supported" for h in (sls_health, ll_health, cr_health)):
         from desktop_handoff import downgrade_check
         downgrade = await _safe(downgrade_check(force=force), downgrade)
-    plugin = await _safe(check_plugin_update(), {"installed": None, "latest": None, "has_update": False})
-
     # `installed` is derived from the (dev-aware) health state, NOT a raw disk
     # check. read_*_health() returns "not_installed" exactly when the .so is
     # absent, so this equals check_*_installed() in production — but it also

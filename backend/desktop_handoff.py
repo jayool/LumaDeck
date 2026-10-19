@@ -387,8 +387,8 @@ async def downgrade_check(force: bool = False) -> dict:
     target = await downgrade_target(force=force)
     if target is None:
         return {"target": None, "possible": None, "error": "could not read the downgrade target manifest"}
-    target_hash = _hash_for_build(await _lumalinux_updates_text(), target)
-    sls_text = await slssteam_updates_text()
+    target_hash = _hash_for_build(await _lumalinux_updates_text(force=force), target)
+    sls_text = await slssteam_updates_text(force=force)
     why = downgrade_target_ok(sls_text, target_hash)
     ok = slssteam_latest_supports(sls_text, target_hash)
     return {"target": target, "possible": (None if ok is None else not why),
