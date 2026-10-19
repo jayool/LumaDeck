@@ -234,13 +234,40 @@ def slssteam_latest_supports(text: str | None, sha: str | None) -> Optional[bool
 
 
 _HASH_CACHE: dict = {}
+_HASH_CACHE_FILE = os.path.join(_CACHE_DIR, "client_hash.json")
+
+
+def _read_hash_file(key: tuple) -> Optional[str]:
+    """The on-disk copy of the last hash, valid only for the same
+    (path, size, mtime) — a Steam update changes size and mtime, so a stale
+    entry can't be mistaken for the new binary."""
+    try:
+        with open(_HASH_CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if (data.get("path"), data.get("size"), data.get("mtime")) == key \
+                and re.fullmatch(r"[0-9a-f]{64}", str(data.get("sha256", ""))):
+            return data["sha256"]
+    except Exception:
+        pass
+    return None
+
+
+def _write_hash_file(key: tuple, sha: str) -> None:
+    try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        with open(_HASH_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"path": key[0], "size": key[1], "mtime": key[2], "sha256": sha}, f)
+    except Exception as exc:
+        logger.info(f"steam_update_gate: could not write the client hash cache ({exc})")
 
 
 def current_client_hash() -> Optional[str]:
     """SHA-256 of the installed ubuntu12_32/steamclient.so — the binary that is
     actually hooked, as opposed to the label in package/*.manifest (which lied
     twice on 2026-10-14: after an interrupted downgrade, and after SteamOS
-    re-bootstrapped the client). Cached per (path, size, mtime)."""
+    re-bootstrapped the client). Cached per (path, size, mtime), in memory and
+    on disk: hashing the 40 MB file again on every backend start cost seconds
+    on a cold disk, and the file only changes when Steam updates."""
     root = find_steam_root()
     if not root:
         return None
@@ -253,6 +280,11 @@ def current_client_hash() -> Optional[str]:
     hit = _HASH_CACHE.get(key)
     if hit:
         return hit
+    hit = _read_hash_file(key)
+    if hit:
+        _HASH_CACHE.clear()
+        _HASH_CACHE[key] = hit
+        return hit
     try:
         h = hashlib.sha256()
         with open(path, "rb") as f:
@@ -262,6 +294,7 @@ def current_client_hash() -> Optional[str]:
         return None
     _HASH_CACHE.clear()
     _HASH_CACHE[key] = h.hexdigest()
+    _write_hash_file(key, _HASH_CACHE[key])
     return _HASH_CACHE[key]
 
 

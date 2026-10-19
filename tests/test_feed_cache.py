@@ -181,3 +181,56 @@ class PluginReleaseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClientHashTests(unittest.TestCase):
+    """current_client_hash keeps the sha256 of steamclient.so on disk, keyed by
+    (path, size, mtime): a new backend process reuses it without reading the
+    40 MB file, and a changed file (a Steam update) is hashed again."""
+
+    def _setup(self, d, body=b"steamclient"):
+        root = os.path.join(d, "steam")
+        os.makedirs(os.path.join(root, "ubuntu12_32"))
+        so = os.path.join(root, "ubuntu12_32", "steamclient.so")
+        open(so, "wb").write(body)
+        return root, so
+
+    def test_disk_copy_is_reused_by_a_fresh_process(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            root, so = self._setup(d)
+            cache = os.path.join(d, "client_hash.json")
+            with mock.patch.object(gate, "find_steam_root", lambda: root), \
+                 mock.patch.object(gate, "_HASH_CACHE_FILE", cache), \
+                 mock.patch.object(gate, "_CACHE_DIR", d), \
+                 mock.patch.dict(gate._HASH_CACHE, {}, clear=True):
+                sha = gate.current_client_hash()
+                self.assertEqual(sha, hashlib.sha256(b"steamclient").hexdigest())
+                self.assertEqual(json.load(open(cache))["sha256"], sha)
+                # A fresh process: empty memory cache, and the file must not be read.
+                gate._HASH_CACHE.clear()
+                real_open = open
+
+                def guarded_open(path, *a, **k):
+                    if str(path) == so:
+                        raise AssertionError("steamclient.so was hashed again")
+                    return real_open(path, *a, **k)
+                with mock.patch("builtins.open", guarded_open):
+                    self.assertEqual(gate.current_client_hash(), sha)
+
+    def test_a_changed_file_is_hashed_again(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            root, so = self._setup(d)
+            cache = os.path.join(d, "client_hash.json")
+            with mock.patch.object(gate, "find_steam_root", lambda: root), \
+                 mock.patch.object(gate, "_HASH_CACHE_FILE", cache), \
+                 mock.patch.object(gate, "_CACHE_DIR", d), \
+                 mock.patch.dict(gate._HASH_CACHE, {}, clear=True):
+                gate.current_client_hash()
+                open(so, "wb").write(b"a newer steamclient")
+                _age(so, -5)  # a later mtime, as an update would leave
+                gate._HASH_CACHE.clear()
+                self.assertEqual(gate.current_client_hash(),
+                                 hashlib.sha256(b"a newer steamclient").hexdigest())
+                self.assertEqual(json.load(open(cache))["size"], len(b"a newer steamclient"))
