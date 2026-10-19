@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Focusable } from "@decky/ui";
 import { FaCloudDownloadAlt } from "react-icons/fa";
 
@@ -16,18 +16,57 @@ interface GameCardProps {
   onClick: (appid: number) => void;
 }
 
-// Steam publishes per-app art on its CDN and the Steam client loads it fine.
-// Portrait capsule (the native library-grid art) first; header.jpg as a
-// fallback for apps without a portrait; then a plain text tile if the app has
-// no art at all.
+// Where the cover comes from, in order:
+//  1. Steam's own library art. The client already holds the portrait of every
+//     app the library has shown (appcache/librarycache), serves it without the
+//     network, and returns the user's custom art (SteamGridDB etc.) when set —
+//     the same call the native grid makes.
+//  2. The store CDN: portrait capsule, then header.jpg for apps without one.
+//  3. A plain text tile — and a retry after a while, since a CDN miss is
+//     usually the network (resume from sleep, a slow wifi, 30 tiles at once),
+//     not a missing cover. The old sticky text tile is what users reported as
+//     "posters often don't show".
 const ART_BASE = "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps";
+const RETRY_MS = 15000;
+
+function steamLibraryArt(appid: number): string | null {
+  try {
+    const store = (window as any).appStore;
+    const overview = store?.GetAppOverviewByAppID?.(appid);
+    if (!overview) return null;
+    const url = store.GetVerticalCapsuleURLForApp?.(overview);
+    return typeof url === "string" && url.length > 0 ? url : null;
+  } catch {
+    return null;
+  }
+}
 
 // Grid tile for the My Games library — a Steam-style portrait cover.
 export function GameCard({ game, onClick }: GameCardProps) {
-  const portrait = `${ART_BASE}/${game.appid}/library_600x900.jpg`;
-  const header = `${ART_BASE}/${game.appid}/header.jpg`;
-  const [src, setSrc] = useState(portrait);
-  const [noArt, setNoArt] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  // Re-asked on every retry: Steam may not have had the app's overview yet
+  // when the tile first mounted (a game added moments ago).
+  const candidates = useMemo(() => {
+    const list: string[] = [];
+    const local = steamLibraryArt(game.appid);
+    if (local) list.push(local);
+    list.push(`${ART_BASE}/${game.appid}/library_600x900.jpg`);
+    list.push(`${ART_BASE}/${game.appid}/header.jpg`);
+    return list;
+  }, [game.appid, attempt]);
+  const noArt = idx >= candidates.length;
+  // A CDN URL gets a changing query on each retry so the browser doesn't hand
+  // back its cached failure; Steam's own URL is left exactly as given.
+  const src = noArt ? "" : (
+    attempt > 0 && candidates[idx].startsWith(ART_BASE)
+      ? `${candidates[idx]}?r=${attempt}` : candidates[idx]);
+
+  useEffect(() => {
+    if (!noArt) return;
+    const timer = setTimeout(() => { setAttempt((a) => a + 1); setIdx(0); }, RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [noArt]);
 
   // Two real states (see Library review): a game with its files present is
   // Installed → full colour. One that's only staged (manifest written but Steam
@@ -77,10 +116,7 @@ export function GameCard({ game, onClick }: GameCardProps) {
         ) : (
           <img
             src={src}
-            onError={() => {
-              if (src === portrait) setSrc(header);
-              else setNoArt(true);
-            }}
+            onError={() => setIdx((i) => i + 1)}
             style={{
               position: "absolute",
               inset: 0,

@@ -1068,12 +1068,12 @@ If per-disk install is ever wanted, it's a backend feature (make
   component was unreferenced. Deleted.
 - **`components/TextInputButton.tsx`** — not imported anywhere (QAM text input is
   a plain `TextField` now). Deleted.
-- **`components/AppPageButton.tsx`** — kept: it's injected into Steam's **native**
-  library app page (`index.tsx`), not a Decky panel, so its `<div>` "Added via
-  LumaDeck" badge is correct (no `PanelSection`/`Field` context there). Badge
-  text: `13px #8bca68`, centred.
-- **What remains in `components/`:** `ActionButton` (§8), `AppPageButton`,
-  `GameCard` (§7), `ScrollAnchor` (§9f), `SystemStatus` (§3).
+- **`components/AppPageButton.tsx`** — the "Added via LumaDeck" badge injected
+  into Steam's native library app page. Removed: it changed the page's
+  structure and broke users' CSS mods, and said nothing the library needs.
+  The app page is left exactly native.
+- **What remains in `components/`:** `ActionButton` (§8), `GameCard` (§7),
+  `ScrollAnchor` (§9f), `SystemStatus` (§3).
 
 ---
 
@@ -1474,7 +1474,7 @@ them. They add to the principles above and change none of them.
   `#c8a84b` (gold: Metacritic mid, ProtonDB gold, hints), `#e06060`
   (Metacritic low, ProtonDB borked), the ProtonDB medal map
   (`PROTONDB_TIER_COLOR`, `GameList.tsx:54-60`), and the library tile background
-  `#1a2129`. Sizes seen beyond the 12/11px tokens: `13px` (Help, AppPageButton),
+  `#1a2129`. Sizes seen beyond the 12/11px tokens: `13px` (Help),
   `14px` (GameCard name), `15px` (title-bar icons).
 
 ### Drift in code (to fix in code, not in the rules)
@@ -1504,8 +1504,7 @@ code fixes. Line numbers as of 2026-10-09.
   `#8b929e` (`Settings.tsx:1358`, :1380 — a near-duplicate of `#8b929a`),
   `#c7d5e0` (`Settings.tsx:1406`); `opacity: 0.8` instead of a muted colour
   (`Settings.tsx:882`, :898); `#e07070` on the Uninstall ⚠ instead of the
-  warning/danger value (`GameDetail.tsx:1536`); `#8bca68` on the AppPageButton
-  badge (`AppPageButton.tsx:43`). Off-value warning icons also appear as
+  warning/danger value (`GameDetail.tsx:1536`). Off-value warning icons also appear as
   `#ffaa00` (`GameDetail.tsx:1344`) and `#c8a84b` (`Settings.tsx:967`). The
   comment at `GameList.tsx:53` points to a "DESIGN_UI.md palette" for the
   ProtonDB medals; only the observed list above exists.

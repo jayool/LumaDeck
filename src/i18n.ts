@@ -390,8 +390,6 @@ const strings: Record<Lang, Record<string, string>> = {
     // GameCard
     disabled: "Disabled",
 
-    // AppPageButton (library badge)
-    addedViaLumaDeck: "Added via LumaDeck",
 
     // LuaTools session / backend error codes (see errorText() below)
     luatoolsSessionExpired: "LuaTools session expired — log in again below",
@@ -786,8 +784,6 @@ const strings: Record<Lang, Record<string, string>> = {
     // GameCard
     disabled: "Desativado",
 
-    // AppPageButton (library badge)
-    addedViaLumaDeck: "Adicionado via LumaDeck",
 
     // LuaTools session / backend error codes (see errorText() below)
     luatoolsSessionExpired: "Sessão do LuaTools expirou — entre novamente abaixo",
