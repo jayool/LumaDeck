@@ -452,19 +452,52 @@ def find_lumalinux_status_path() -> Optional[str]:
     """
     # The real user's runtime dir (on SteamOS uid 1000 == deck), with the uid
     # 1000 default kept as a belt fallback.
+    candidates = lumalinux_status_candidates()
+    # A candidate whose writer is still running wins over an earlier one that
+    # is stale. Both can exist at once: the 32-bit client's library writes
+    # under /run/user, the 64-bit client's writes under ~/.cache (it runs inside
+    # the Steam Runtime container, where XDG_RUNTIME_DIR is another tree), so
+    # after a client switch within one session the first path holds the
+    # previous run's file. Taking "the first that exists" then reported
+    # not_loaded while the live library had written its status (codespace,
+    # 2026-10-20). With no live writer, the first existing file is returned as
+    # before, and read_lumalinux_status() discards it as stale.
+    existing = [p for p in candidates if os.path.isfile(p)]
+    for p in existing:
+        if _status_writer_alive(p, proc_root="/proc"):
+            return p
+    return existing[0] if existing else None
+
+
+def lumalinux_status_candidates() -> list:
+    """Where lumalinux's status.json may be, in the order the library itself
+    prefers: the deck user's runtime dir, then the cache fallbacks."""
     candidates = [f"/run/user/{real_uid()}/lumalinux/status.json"]
     default_1000 = "/run/user/1000/lumalinux/status.json"
     if default_1000 not in candidates:
         candidates.append(default_1000)
-    # Cache fallbacks (lumalinux falls back here if XDG_RUNTIME_DIR is unset).
+    # Cache fallbacks (lumalinux falls back here if XDG_RUNTIME_DIR is unset,
+    # and always from the 64-bit build).
     candidates += [
         os.path.join(_REAL_HOME, ".cache/lumalinux/status.json"),
         os.path.expanduser("~/.cache/lumalinux/status.json"),
     ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return p
-    return None
+    return candidates
+
+
+def _status_writer_alive(path: str, proc_root: str = "/proc") -> bool:
+    """True when the status.json at `path` names a pid that still runs. A
+    file without a pid counts as alive (nothing to cross-check); an unreadable
+    file does not."""
+    try:
+        import json as _json
+        with open(path, "r") as f:
+            pid = _json.load(f).get("pid")
+    except Exception:
+        return False
+    if isinstance(pid, int) and pid > 0:
+        return os.path.isdir(os.path.join(proc_root, str(pid)))
+    return True
 
 
 def read_lumalinux_status() -> Optional[dict]:
