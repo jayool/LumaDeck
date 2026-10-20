@@ -324,22 +324,54 @@ def get_steamidra_lite_script() -> Optional[str]:
     return candidate if os.path.isfile(candidate) else None
 
 
-def check_lumalinux_active() -> bool:
-    """True if liblumalinux.so is mapped into any running process (= the
-    LD_PRELOAD inside Steam took effect). Mirrors _check_process_injected
-    for SLSsteam."""
+# "Is this library mapped into a running process?" — the one question the three
+# component health reads ask of /proc. One pass over /proc/*/maps answers it
+# for all three at once; each status refresh used to make three passes (one
+# per library) over the same files, which is where 0.5 s of a cold status went
+# with Steam and steamwebhelper mapped. The answer is memoised for two
+# seconds: a status call reads all three within milliseconds, and a Steam
+# restart takes far longer than that to change the truth.
+_MAPPED_NAMES = ("SLSsteam.so", "liblumalinux.so", "cloud_redirect.so")
+_MAPPED_TTL = 2.0
+_mapped_cache: dict = {"at": 0.0, "found": frozenset()}
+
+
+def mapped_libraries(names=_MAPPED_NAMES, proc_root: str = "/proc") -> frozenset:
+    """The subset of `names` that appears in any readable /proc/*/maps. One
+    read per maps file; stops early once every name has been seen."""
+    import glob as _glob
+    found: set = set()
+    wanted = tuple(names)
     try:
-        import glob as _glob
-        for maps_path in _glob.glob("/proc/*/maps"):
+        for maps_path in _glob.glob(os.path.join(proc_root, "*", "maps")):
             try:
                 with open(maps_path, "r", errors="replace") as f:
-                    if "liblumalinux.so" in f.read():
-                        return True
+                    text = f.read()
             except Exception:
                 continue
+            for n in wanted:
+                if n not in found and n in text:
+                    found.add(n)
+            if len(found) == len(wanted):
+                break
     except Exception:
         pass
-    return False
+    return frozenset(found)
+
+
+def _is_mapped(name: str) -> bool:
+    import time as _time
+    now = _time.monotonic()
+    if now - _mapped_cache["at"] > _MAPPED_TTL:
+        _mapped_cache["found"] = mapped_libraries()
+        _mapped_cache["at"] = now
+    return name in _mapped_cache["found"]
+
+
+def check_lumalinux_active() -> bool:
+    """True if liblumalinux.so is mapped into any running process (= the
+    LD_PRELOAD inside Steam took effect)."""
+    return _is_mapped("liblumalinux.so")
 
 
 def find_lumalinux_gmrc_path() -> Optional[str]:
@@ -916,18 +948,7 @@ def get_cloudredirect_so_path() -> Optional[str]:
 
 def check_cloudredirect_active() -> bool:
     """True if cloud_redirect.so is mapped into any running process."""
-    try:
-        import glob as _glob
-        for maps_path in _glob.glob("/proc/*/maps"):
-            try:
-                with open(maps_path, "r", errors="replace") as f:
-                    if "cloud_redirect.so" in f.read():
-                        return True
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return False
+    return _is_mapped("cloud_redirect.so")
 
 
 _CLOUDREDIRECT_TOKEN_DIRS = [
@@ -1104,18 +1125,7 @@ def read_cloudredirect_health() -> dict:
 
 def _check_process_injected() -> bool:
     """Return True if SLSsteam.so is actually mapped into any running process."""
-    try:
-        import glob as _glob
-        for maps_path in _glob.glob("/proc/*/maps"):
-            try:
-                with open(maps_path, "r", errors="replace") as _f:
-                    if "SLSsteam.so" in _f.read():
-                        return True
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return False
+    return _is_mapped("SLSsteam.so")
 
 
 def verify_slssteam_injected() -> dict:
