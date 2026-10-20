@@ -1,0 +1,48 @@
+name: CI
+
+# Every push and pull request: the backend unit tests, the TypeScript check
+# and the plugin build. Until 2026-10-20 nothing ran on push — the 475 backend
+# tests only ran by hand before a commit, and the release workflow (tags only)
+# built without testing.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Backend unit tests
+        run: python3 -m unittest discover -s tests
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: npx tsc --noEmit -p .
+
+      - name: Build
+        run: pnpm run build
