@@ -1494,31 +1494,31 @@ code fixes. Line numbers as of 2026-10-09.
     "Log out", the connected / logged-out descriptions (:834, :842, :853-867).
   - `src/hooks/useLuatoolsConnect.ts`: toasts marked `TODO i18n` (:65, :68,
     :82).
-  - The Dev page (`Settings.tsx:1351-1413`, handler :732-751) is exempt from
+  - The Dev page (`Settings.tsx:1336-1398`, handler :732-751) is exempt from
     `t()`, but its strings mix English and **Spanish** ("Leyendo SteamDB…",
     "Probar lector SteamDB", "Abrir SteamDB…", "Lector SteamDB: …"); they
     should at least be one language.
 - **Keys missing in pt-BR** (help* keys are en-only by design, §9f):
   `showMoreResults`, `sysAlignUpSwitching`, `sysAlignUpManual`.
-- **Off-token colours:** muted greys `#888` (`Settings.tsx:585`, :1094),
-  `#8b929e` (`Settings.tsx:1358`, :1380 — a near-duplicate of `#8b929a`),
-  `#c7d5e0` (`Settings.tsx:1406`); `opacity: 0.8` instead of a muted colour
-  (`Settings.tsx:882`, :898); `#e07070` on the Uninstall ⚠ instead of the
+- **Off-token colours:** muted greys `#888` (`Settings.tsx:571`, :1094),
+  `#8b929e` (`Settings.tsx:1343`, :1380 — a near-duplicate of `#8b929a`),
+  `#c7d5e0` (`Settings.tsx:1391`); `opacity: 0.8` instead of a muted colour
+  (`Settings.tsx:867`, :898); `#e07070` on the Uninstall ⚠ instead of the
   warning/danger value (`GameDetail.tsx:1536`). Off-value warning icons also appear as
-  `#ffaa00` (`GameDetail.tsx:1344`) and `#c8a84b` (`Settings.tsx:967`). The
+  `#ffaa00` (`GameDetail.tsx:1344`) and `#c8a84b` (`Settings.tsx:952`). The
   comment at `GameList.tsx:53` points to a "DESIGN_UI.md palette" for the
   ProtonDB medals; only the observed list above exists.
 - **Layout spacer `<div>`s:** `<div style={{ height: "12px" }} />` between the
-  label-less `TextField` and Save (`Settings.tsx:789`, :817) — contradicts
+  label-less `TextField` and Save (`Settings.tsx:774`, :817) — contradicts
   "native rows space themselves" (§9c).
 - **Two confirm styles:** the two-click confirm is implemented two ways. Most
   buttons relabel themselves ("Confirm (restarts Steam)" / "Confirm (continues
   in Desktop)", no description: `SystemStatus.tsx`, Quick Install
-  `GameList.tsx:695-701`, Components `Settings.tsx:1208-1222`, the achievements
+  `GameList.tsx:695-701`, Components `Settings.tsx:1193-1207`, the achievements
   Restart); Uninstall (`GameDetail.tsx:1577`, `clickToConfirm`) and Replace fix
   (`GameDetail.tsx:1024`) put the prompt in the `description`.
 - **Severity as text, not icon:** the Components sub-lines carry severity as a
-  coloured text glyph (⚠ / ↑ / •) in a `<span>` (`Settings.tsx:583-588`), and
+  coloured text glyph (⚠ / ↑ / •) in a `<span>` (`Settings.tsx:569-574`), and
   "⚡" is a text glyph in the Quick Install label (`i18n.ts:370`).
 - **Code bugs:**
   - `takePendingSettingsTab()` (`src/routes.ts:17-21`) is never called, and the
