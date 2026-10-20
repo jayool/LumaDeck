@@ -203,7 +203,8 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
 // Collapse the per-component status into the minimum the user needs: at most one
 // system "problem" row (by priority), CloudRedirect login if pending, any stuck
 // games, then the update track. See DESIGN_UI.md "Component model".
-function buildRows(
+// Exported for the unit tests (src/components/SystemStatus.test.ts).
+export function buildRows(
   t: (k: string, ...a: any[]) => string,
   status: ComponentsStatus,
   stuck: { appid: number; name: string }[],
