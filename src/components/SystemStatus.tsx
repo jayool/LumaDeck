@@ -23,9 +23,8 @@ export interface Component {
 export interface ComponentsStatus {
   success: boolean;
   components: Component[];
-  // Which Steam client runs: "ubuntu12_32" (every Deck so far) or "steamrt64"
-  // (the 64-bit client in the Steam Runtime container; supported=false while
-  // the stack has no 64-bit SLSsteam). Absent on older backends = 32-bit.
+  // Which Steam client runs (backend paths.steam_client_arch): "ubuntu12_32" or
+  // "steamrt64". Data only; no row reads it yet.
   client?: { arch: string; supported: boolean };
   headcrab: {
     compatible: boolean | null;
@@ -183,9 +182,6 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
   const notComplete =
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
   const anyUnsupported = installed.some((c) => c.health === "not_supported");
-  // The 64-bit Steam client: nothing below applies (no downgrade, no repair, no
-  // restart brings the 32-bit stack into it). The status row says so; no button.
-  if (status.client && status.client.supported === false) return null;
   // Same order as buildRows: a fix that exists outranks "wait".
   if (anyUnsupported && updateFixesBreak(status)) return "update";
   if (anyUnsupported && unpinFixesBreak(status)) return "unpin";
@@ -248,18 +244,7 @@ export function buildRows(
   // always "Steam build not supported"; the description names the button that
   // fixes it (Update / Fix in Desktop / Let Steam update), or says to wait when
   // nothing can. Orange in every case: adding games does not work.
-  if (status.client && status.client.supported === false) {
-    // The 64-bit Steam client (steamrt64) runs: the 32-bit SLSsteam and
-    // CloudRedirect cannot load into it and nothing here fixes that — not a
-    // restart, not setup.sh, not a downgrade (that pins the 32-bit tree, which
-    // this client does not run). One honest row, no button; the per-component
-    // "not loaded" below it is the symptom, so this row outranks every other
-    // system problem.
-    rows.push({
-      key: "client64", severity: "problem",
-      label: t("sysClient64"), description: t("sysClient64Desc"),
-    });
-  } else if (anyUnsupported && updateFixesBreak(status)) {
+  if (anyUnsupported && updateFixesBreak(status)) {
     // The component already shipped support for the new build: Update (one
     // setup.sh run) is the fix. Downgrading here would pin Steam on an old
     // client the updated component no longer hooks.

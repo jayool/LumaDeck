@@ -213,32 +213,3 @@ describe("a LumaDeck update is pending", () => {
     expect(rh[0].severity).toBe("info");
   });
 });
-
-// ---- the 64-bit Steam client (steamrt64) ----------------------------------
-// The 32-bit SLSsteam/CloudRedirect cannot load into it; nothing in the QAM
-// fixes that. One row, no button, and it outranks every other system problem.
-describe("64-bit Steam client", () => {
-  it("shows the client64 row first and offers no action", () => {
-    const s = status(
-      { client: { arch: "steamrt64", supported: false }, guard: { active: true, fails: 3, since: "x", client_changed: false } },
-      [comp("slssteam", { health: "not_loaded" }), comp("cloudredirect", { health: "not_loaded" }),
-       comp("lumalinux", { health: "not_supported" })],
-    );
-    const r = rows(s);
-    expect(r[0].key).toBe("client64");
-    expect(r[0].actionLabel).toBeUndefined();
-    expect(r.map((x) => x.key)).not.toContain("desktop");
-    expect(r.map((x) => x.key)).not.toContain("guard");
-    expect(r.map((x) => x.key)).not.toContain("restart");
-    expect(primarySystemAction(s)).toBeNull();
-  });
-
-  it("changes nothing on the 32-bit client or without the field", () => {
-    const base = status({}, [comp("slssteam", { health: "not_loaded" }), comp("cloudredirect"), comp("lumalinux")]);
-    const with32 = status({ client: { arch: "ubuntu12_32", supported: true } },
-                          [comp("slssteam", { health: "not_loaded" }), comp("cloudredirect"), comp("lumalinux")]);
-    expect(rows(with32).map((x) => x.key)).toEqual(rows(base).map((x) => x.key));
-    expect(rows(base)[0].key).toBe("restart");
-    expect(primarySystemAction(with32)).toBe("restart");
-  });
-});
