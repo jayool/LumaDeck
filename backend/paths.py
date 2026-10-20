@@ -359,6 +359,61 @@ def mapped_libraries(names=_MAPPED_NAMES, proc_root: str = "/proc") -> frozenset
     return frozenset(found)
 
 
+# ── which Steam client runs: ubuntu12_32 (the 32-bit client every Deck has
+# run so far) or steamrt64 (the 64-bit client inside the Steam Runtime 3
+# container, on the Deck beta channel since 2026-10; lumalinux
+# docs/steam-rt3-x64.md). The truth is the binary of the running Steam
+# process; when Steam is not running, Valve's opt-in marker is the only hint
+# left. Anything else — no Steam, no marker, unreadable /proc — answers the
+# 32-bit client, so every caller behaves exactly as it did before the 64-bit
+# client existed. Both trees stay on disk whichever one runs (the 64-bit
+# client keeps ubuntu12_32/ as a legacy tree), which is why the client hash,
+# the restart and the health rows must ask this and not just look for files.
+STEAM_CLIENT_32 = "ubuntu12_32"
+STEAM_CLIENT_64 = "steamrt64"
+_STEAM_CLIENT_MARKER = ".steam-enable-steamrt64-client"
+_CLIENT_ARCH_TTL = 2.0
+_client_arch_cache: dict = {"at": 0.0, "arch": None}
+
+
+def detect_steam_client_arch(proc_root: str = "/proc", steam_root: Optional[str] = None) -> str:
+    """One pass over /proc/*/cmdline for a Steam client binary; the marker as
+    the fallback; the 32-bit client as the answer for everything else."""
+    import glob as _glob
+    try:
+        for cmd_path in _glob.glob(os.path.join(proc_root, "*", "cmdline")):
+            try:
+                with open(cmd_path, "rb") as f:
+                    argv0 = f.read(4096).split(b"\0", 1)[0].decode("utf-8", "replace")
+            except Exception:
+                continue
+            if argv0.endswith("/" + STEAM_CLIENT_64 + "/steam"):
+                return STEAM_CLIENT_64
+            if argv0.endswith("/" + STEAM_CLIENT_32 + "/steam"):
+                return STEAM_CLIENT_32
+    except Exception:
+        pass
+    root = steam_root if steam_root is not None else find_steam_root()
+    if root and os.path.exists(os.path.join(root, _STEAM_CLIENT_MARKER)):
+        return STEAM_CLIENT_64
+    return STEAM_CLIENT_32
+
+
+def steam_client_arch() -> str:
+    """detect_steam_client_arch() memoised for a couple of seconds, like the
+    mapped-libraries scan: the QAM asks several times per refresh."""
+    import time as _time
+    now = _time.monotonic()
+    if _client_arch_cache["arch"] is None or now - _client_arch_cache["at"] > _CLIENT_ARCH_TTL:
+        _client_arch_cache["arch"] = detect_steam_client_arch()
+        _client_arch_cache["at"] = now
+    return _client_arch_cache["arch"]
+
+
+def steam_client_is_64() -> bool:
+    return steam_client_arch() == STEAM_CLIENT_64
+
+
 def _is_mapped(name: str) -> bool:
     import time as _time
     now = _time.monotonic()

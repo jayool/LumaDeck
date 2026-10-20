@@ -309,6 +309,15 @@ async def get_components_status(force: bool = False) -> dict:
     # offline): decides whether the latest SLSsteam hooks the client on disk,
     # and whether the release cache is behind Ace's newest pattern group.
     from steam_update_gate import current_client_hash, slssteam_latest_supports, slssteam_updates_text
+    from paths import steam_client_arch, STEAM_CLIENT_64
+    # Which Steam client runs. On the 64-bit client (steamrt64, in the Steam
+    # Runtime container) the 32-bit SLSsteam and CloudRedirect never load and
+    # the hooks have nothing to serve: the frontend shows one row saying so and
+    # offers none of the fixes below (a downgrade pins the 32-bit tree, which
+    # that client does not run). Everything else in this payload is still
+    # computed, against the client that runs.
+    client_arch = _safe_sync(steam_client_arch, "ubuntu12_32")
+    client_64 = client_arch == STEAM_CLIENT_64
     # The network checks that don't depend on each other go out at once: the
     # QAM's Refresh icon spins until this returns, and in series they added up
     # to several seconds on the Deck's wifi (each is its own TLS connection).
@@ -345,7 +354,7 @@ async def get_components_status(force: bool = False) -> dict:
     # (the one state that offers it). possible False -> the QAM shows the Wait
     # row instead of a button that would be refused.
     downgrade = {"target": None, "possible": None, "error": None}
-    if any(h.get("state") == "not_supported" for h in (sls_health, ll_health, cr_health)):
+    if not client_64 and any(h.get("state") == "not_supported" for h in (sls_health, ll_health, cr_health)):
         from desktop_handoff import downgrade_check
         downgrade = await _safe(downgrade_check(force=force), downgrade)
     # `installed` is derived from the (dev-aware) health state, NOT a raw disk
@@ -372,6 +381,7 @@ async def get_components_status(force: bool = False) -> dict:
     return {
         "success": True,
         "components": components,
+        "client": {"arch": client_arch, "supported": not client_64},
         "quickInstall": quick_install_override,
         "headcrab": {
             "compatible": headcrab.get("compatible"),

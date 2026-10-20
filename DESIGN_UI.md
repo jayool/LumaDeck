@@ -1116,6 +1116,19 @@ update, row builder, action) with the `steam.sh` cascade knowledge copied into
 every button. Three components × four concerns = a tangle. They are the **same
 kind of thing** — a *managed component* — so we unify them.
 
+### The Steam client (2026-10-20)
+
+The backend reports which Steam client runs (`client.arch`: `ubuntu12_32`,
+every Deck so far, or `steamrt64`, the 64-bit client in the Steam Runtime
+container that reached the Deck beta in 2026-10; `client.supported` is false
+there while the stack has no 64-bit SLSsteam). Detection: the binary of the
+running Steam process, then Valve's opt-in marker, else the 32-bit client — so
+nothing changes for a 32-bit Deck. On the 64-bit client the QAM shows one row,
+"64-bit Steam client", with no button, above every other system problem: the
+"not loaded" of the 32-bit components is the symptom, and no restart, repair or
+downgrade (which pins the 32-bit tree that client does not run) applies. The
+client hash and the Steam close fallback follow the same answer.
+
 ### The components
 - **Core** = **SLSsteam + lumalinux**. They go together; one without the other is
   a broken state, fixed by reinstalling the pair.

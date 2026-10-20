@@ -291,7 +291,9 @@ class Plugin:
         else:
             logger.info("LumaDeck: no systemd or not root; closing Steam instead of rebooting")
         _user = real_user()
-        steam_bin = os.path.join(real_home(), ".local/share/Steam/ubuntu12_32/steam")
+        from paths import steam_client_arch
+        client_arch = steam_client_arch()   # ubuntu12_32 or steamrt64 (paths.py)
+        steam_bin = os.path.join(real_home(), ".local/share/Steam", client_arch, "steam")
         # Try IPC shutdown as the real user first
         for cmd in [
             ["sudo", "-u", _user, steam_bin, "-shutdown"],
@@ -306,7 +308,7 @@ class Plugin:
         try:
             import signal
             result = subprocess.run(
-                ["pgrep", "-u", _user, "-f", "ubuntu12_32/steam"],
+                ["pgrep", "-u", _user, "-f", client_arch + "/steam"],
                 capture_output=True, text=True
             )
             for pid_str in result.stdout.strip().splitlines():

@@ -262,7 +262,9 @@ def _write_hash_file(key: tuple, sha: str) -> None:
 
 
 def current_client_hash() -> Optional[str]:
-    """SHA-256 of the installed ubuntu12_32/steamclient.so — the binary that is
+    """SHA-256 of the installed steamclient.so of the client that RUNS
+    (ubuntu12_32/, or steamrt64/ on the 64-bit client — paths.steam_client_arch;
+    both trees are on disk, only one is hooked) — the binary that is
     actually hooked, as opposed to the label in package/*.manifest (which lied
     twice on 2026-10-14: after an interrupted downgrade, and after SteamOS
     re-bootstrapped the client). Cached per (path, size, mtime), in memory and
@@ -271,7 +273,8 @@ def current_client_hash() -> Optional[str]:
     root = find_steam_root()
     if not root:
         return None
-    path = os.path.join(root, "ubuntu12_32", "steamclient.so")
+    from paths import steam_client_arch
+    path = os.path.join(root, steam_client_arch(), "steamclient.so")
     try:
         st = os.stat(path)
     except OSError:
