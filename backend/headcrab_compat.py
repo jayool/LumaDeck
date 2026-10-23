@@ -25,7 +25,7 @@ import re
 
 from feed_cache import fresh
 from http_client import ensure_http_client
-from paths import find_steam_root, real_home
+from paths import find_steam_root, real_home, steam_client_arch
 
 try:
     import decky  # type: ignore
@@ -272,31 +272,58 @@ async def latest_release_group(force: bool = False) -> str | None:
     return group
 
 
-def _build_in_group(text: str, group: str, build: int) -> bool:
-    """True iff `steam_version: <build>` appears inside SafeModeHashes[<group>].
-
-    Scans from the `  <group>:` header (2-space indent) to the next 2-space
-    `  <digits>:` group header, a dedent to a top-level key, or EOF. Dependency-
-    free — Decky's bundled Python has no YAML lib."""
-    lines = text.splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if re.match(rf"^  {re.escape(group)}:\s*$", line):
-            start = i + 1
-            break
-    if start is None:
-        return False
-    for line in lines[start:]:
-        if re.match(r"^  \d+:\s*$", line):     # next group header ends the block
-            break
-        if line and not line[0].isspace():     # dedent to a top-level key ends it
-            break
-        if re.search(rf"steam_version:\s*{build}\b", line):
-            return True
-    return False
+# One whitelisted hash = the `# ...` annotation lines above it (steam_version,
+# caps, arch, free notes) + its `- <sha256>` line. Since 2026-10-23 the file also
+# lists the 64-bit (steamrt64) client's hashes, marked `# arch: steamrt64`: same
+# steam_version as the 32-bit hash of that build (one manifest, two packages),
+# different file. Every scan below therefore filters by architecture: an entry
+# without an arch mark is the ubuntu12_32 client's. lumalinux's own runtime
+# ignores the mark (each .so looks its own hash up); downgrade.sh's
+# hash_for_build applies the same rule — keep the three in step.
+_HASH_LINE_RE = re.compile(r"^\s*-\s*([0-9a-f]{64})\b")
+_STEAM_VERSION_RE = re.compile(r"^\s*#\s*steam_version:\s*(\d+)\b")
+_ARCH_RE = re.compile(r"^\s*#\s*arch:\s*(\S+)")
+_DEFAULT_ARCH = "ubuntu12_32"
 
 
-def _supports_build(text: str | None, group: str | None, build: int | None) -> bool | None:
+def _whitelist_entries(text: str):
+    """Yield (group, steam_versions, arch, sha) per hash line of SafeModeHashes.
+    `group` is the `  <digits>:` header the hash sits under (None before any);
+    `steam_versions` every `# steam_version:` annotated above it since the last
+    hash; `arch` the `# arch:` mark or ubuntu12_32. Dependency-free — Decky's
+    bundled Python has no YAML lib."""
+    group, versions, arch = None, [], _DEFAULT_ARCH
+    for line in text.splitlines():
+        g = re.match(r"^  (\d+):\s*$", line)
+        if g:
+            group, versions, arch = g.group(1), [], _DEFAULT_ARCH
+            continue
+        if line and not line[0].isspace():     # dedent to a top-level key
+            group, versions, arch = None, [], _DEFAULT_ARCH
+            continue
+        m = _STEAM_VERSION_RE.match(line)
+        if m:
+            versions.append(int(m.group(1)))
+            continue
+        a = _ARCH_RE.match(line)
+        if a:
+            arch = a.group(1)
+            continue
+        h = _HASH_LINE_RE.match(line)
+        if h:
+            yield group, versions, arch, h.group(1)
+            versions, arch = [], _DEFAULT_ARCH
+
+
+def _build_in_group(text: str, group: str, build: int, arch: str = _DEFAULT_ARCH) -> bool:
+    """True iff a `# steam_version: <build>` entry of client `arch` sits inside
+    SafeModeHashes[<group>]."""
+    return any(g == group and build in vs and a == arch
+               for g, vs, a, _sha in _whitelist_entries(text))
+
+
+def _supports_build(text: str | None, group: str | None, build: int | None,
+                    arch: str = _DEFAULT_ARCH) -> bool | None:
     """Would the LATEST release hook Steam build `build`? None when unknown.
 
     Checks `build` against the RELEASE's group (`group`) in `text`. Falls back to a
@@ -313,38 +340,28 @@ def _supports_build(text: str | None, group: str | None, build: int | None) -> b
     # A pre-schema file has no steam_version anywhere -> unknown, don't false-block.
     if "steam_version" not in text:
         return None
-    # Un-annotated build -> unknown (fail-open), never a false "unsupported".
-    if re.search(rf"steam_version:\s*{build}\b", text) is None:
+    # Un-annotated build (for this client arch) -> unknown (fail-open), never a
+    # false "unsupported".
+    if not any(build in vs and a == arch for _g, vs, a, _sha in _whitelist_entries(text)):
         return None
     if group is None:
         return True   # annotated + no release group to scope by -> supported (fallback)
-    return _build_in_group(text, group, build)
+    return _build_in_group(text, group, build, arch)
 
 
-_HASH_LINE_RE = re.compile(r"^\s*-\s*([0-9a-f]{64})\b")
-_STEAM_VERSION_RE = re.compile(r"^\s*#\s*steam_version:\s*(\d+)\b")
-
-
-def _hash_for_build(text: str | None, build: int | None) -> str | None:
-    """The steamclient.so SHA-256 res/updates.yaml records for `build`: the first
-    `- <64 hex>` entry after a `# steam_version: <build>` annotation. A hash can
-    carry several annotations (Valve relabels builds without changing the file:
-    1788291500 and 1788652215 are one binary), so an unrelated annotation between
-    the match and the hash does not clear the match. None when unknown. Same rule
-    as downgrade.sh's hash_for_build — keep the two in step."""
+def _hash_for_build(text: str | None, build: int | None, arch: str = _DEFAULT_ARCH) -> str | None:
+    """The steamclient.so SHA-256 res/updates.yaml records for `build` on client
+    `arch`: the first hash whose annotations include `# steam_version: <build>`
+    (a hash can carry several: Valve relabels builds without changing the file,
+    1788291500 and 1788652215 are one binary) and whose arch is `arch`. The
+    64-bit entry of the same build is a different file, never returned for the
+    ubuntu12_32 tree. None when unknown. Same rule as downgrade.sh's
+    hash_for_build — keep the two in step."""
     if text is None or build is None:
         return None
-    want = False
-    for line in text.splitlines():
-        m = _STEAM_VERSION_RE.match(line)
-        if m:
-            if int(m.group(1)) == build:
-                want = True
-            continue
-        if want:
-            h = _HASH_LINE_RE.match(line)
-            if h:
-                return h.group(1)
+    for _g, vs, a, sha in _whitelist_entries(text):
+        if build in vs and a == arch:
+            return sha
     return None
 
 
@@ -357,13 +374,14 @@ def builds_share_binary(text: str | None, a: int | None, b: int | None) -> bool 
     return ha == hb
 
 
-async def lumalinux_supports_build(build: int | None) -> bool | None:
-    """Whether the LATEST lumalinux release would hook Steam build `build`.
+async def lumalinux_supports_build(build: int | None, arch: str = _DEFAULT_ARCH) -> bool | None:
+    """Whether the LATEST lumalinux release would hook Steam build `build` on
+    client `arch` (ubuntu12_32 unless the caller asks about the 64-bit one).
 
     "Latest release" — NOT main: reads the release's compiled SafeMode group
     (latest_release_group()) and checks `build` under THAT group in res/updates.yaml,
     ignoring any newer group main may carry ahead of a release. None on ambiguity."""
-    return _supports_build(await _lumalinux_updates_text(), await latest_release_group(), build)
+    return _supports_build(await _lumalinux_updates_text(), await latest_release_group(), build, arch)
 
 
 async def check_headcrab_compat(force: bool = False) -> dict:
@@ -409,5 +427,8 @@ async def check_headcrab_compat(force: bool = False) -> dict:
         # lumalinux-update gate: would the latest release still hook the build the
         # user is on now? Callers suppress the lumalinux update offer only on a
         # positive False (latest dropped this build's pattern-set), never on None.
-        "current_build_supported_by_latest": _supports_build(text, group, build),
+        # "The build the user is on now" runs on whichever client boots (the
+        # 32-bit one, or steamrt64 on the beta / RT3 opt-in), so the whitelist is
+        # read for that client's entries.
+        "current_build_supported_by_latest": _supports_build(text, group, build, steam_client_arch()),
     }

@@ -331,7 +331,7 @@ def get_steamidra_lite_script() -> Optional[str]:
 # with Steam and steamwebhelper mapped. The answer is memoised for two
 # seconds: a status call reads all three within milliseconds, and a Steam
 # restart takes far longer than that to change the truth.
-_MAPPED_NAMES = ("SLSsteam.so", "liblumalinux.so", "cloud_redirect.so")
+_MAPPED_NAMES = ("SLSsteam.so", "liblumalinux.so", "liblumalinux-x86_64.so", "cloud_redirect.so")
 _MAPPED_TTL = 2.0
 _mapped_cache: dict = {"at": 0.0, "found": frozenset()}
 
@@ -424,9 +424,11 @@ def _is_mapped(name: str) -> bool:
 
 
 def check_lumalinux_active() -> bool:
-    """True if liblumalinux.so is mapped into any running process (= the
-    LD_PRELOAD inside Steam took effect)."""
-    return _is_mapped("liblumalinux.so")
+    """True if liblumalinux.so (32-bit client) or liblumalinux-x86_64.so (the
+    steamrt64 client, inside its container) is mapped into any running process
+    (= the LD_PRELOAD inside Steam took effect). Both are named in LD_PRELOAD
+    since lumalinux setup.sh of 2026-10-23; each client maps only its own."""
+    return _is_mapped("liblumalinux.so") or _is_mapped("liblumalinux-x86_64.so")
 
 
 def find_lumalinux_gmrc_path() -> Optional[str]:
