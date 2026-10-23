@@ -180,6 +180,19 @@ class AppRunning(unittest.TestCase):
         env = dict(os.environ, SteamAppId="4242424", SteamGameId="4242424")
         proc = subprocess.Popen(["sleep", "20"], env=env)
         try:
+            # Popen returns between the child's fork and its exec: until the exec
+            # lands, /proc/<pid>/environ is still this process's (no SteamAppId)
+            # and a scan that early misses it (flaked in CI, 2026-10-23). Wait
+            # for the child's own environment before asking.
+            import time
+            for _ in range(200):
+                try:
+                    with open(f"/proc/{proc.pid}/environ", "rb") as fh:
+                        if b"SteamAppId=4242424\0" in fh.read():
+                            break
+                except OSError:
+                    pass
+                time.sleep(0.01)
             self.assertTrue(steam_utils.is_app_running(4242424))
             self.assertFalse(steam_utils.is_app_running(4242425))
         finally:
