@@ -230,9 +230,24 @@ def get_slssteam_config_path() -> str:
     return os.path.join(get_slssteam_config_dir(), "config.yaml")
 
 
-def check_slssteam_installed() -> bool:
+def slssteam_so_relpath(arch: Optional[str] = None) -> str:
+    """Where the SLSsteam.so that serves client `arch` lives under the SLSsteam
+    root. lumalinux's setup.sh places each build by its ELF class: the 32-bit
+    one at SLSsteam.so (as always), the 64-bit one at x86_64/SLSsteam.so (same
+    file name: SLSsteam matches its own name, e.g. when it strips itself from
+    LD_AUDIT). Default: the client that runs (steam_client_arch)."""
+    if (arch or steam_client_arch()) == STEAM_CLIENT_64:
+        return os.path.join("x86_64", "SLSsteam.so")
+    return "SLSsteam.so"
+
+
+def check_slssteam_installed(arch: Optional[str] = None) -> bool:
+    """Is the SLSsteam build for client `arch` (default: the one that runs) on
+    disk? A 32-bit SLSsteam.so alone does not count on the 64-bit client: that
+    client never maps it."""
+    rel = slssteam_so_relpath(arch)
     for path in _SLSSTEAM_CANDIDATES:
-        if os.path.isfile(os.path.join(path, "SLSsteam.so")):
+        if os.path.isfile(os.path.join(path, rel)):
             return True
     return False
 
@@ -1152,6 +1167,8 @@ def read_cloudredirect_health() -> dict:
                          failed trampoline install)
         not_authed     — healthy hooks + no provider tokens (sign in, desktop)
         healthy        — mapped + clean log + tokens present
+        unavailable_64 — installed, but Steam runs its 64-bit client: CR is
+                         32-bit only and that client never maps it (no fix)
     """
     try:
         import dev
@@ -1162,6 +1179,8 @@ def read_cloudredirect_health() -> dict:
         return dev.health("cloudredirect", _ov)
     if not check_cloudredirect_installed():
         return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
+    if steam_client_is_64():
+        return {"state": "unavailable_64", "cause": None, "version": None, "action": None}
 
     if _cloudredirect_kill_switched():
         return {"state": "disabled", "cause": None, "version": None, "action": None}
@@ -1355,6 +1374,14 @@ def read_slssteam_health() -> dict:
         _ov = None
     if _ov:
         return dev.health("slssteam", _ov)
+    # The 64-bit client with the stack installed but no 64-bit SLSsteam build
+    # on disk (upstream's first x86_64 build is a prerelease, 2026-10-22):
+    # nothing a restart or a reinstall fixes until one is published, so the
+    # UI says so instead of "restart" / "install". A fresh device (no build
+    # of either class) is still not_installed: Quick Install is the answer.
+    if (steam_client_is_64() and not check_slssteam_installed(STEAM_CLIENT_64)
+            and check_slssteam_installed(STEAM_CLIENT_32)):
+        return {"state": "unavailable_64", "cause": None, "action": None}
     if not check_slssteam_installed():
         return {"state": "not_installed", "cause": None, "action": "install"}
 

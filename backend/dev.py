@@ -23,14 +23,14 @@ _FILE = os.path.join(_DIR, "data", "dev_overrides.json")
 _ACTION = {
     "slssteam": {"not_installed": "install", "not_loaded": "restart",
                  "not_injected": "restart", "not_supported": "downgrade",
-                 "healthy": None},
+                 "unavailable_64": None, "healthy": None},
     "lumalinux": {"not_installed": "install", "not_loaded": "restart",
                   "not_injected": "restart", "not_supported": "downgrade",
                   "healthy": None},
     "cloudredirect": {"not_installed": "install", "disabled": None,
                       "not_loaded": "restart", "not_injected": "restart",
                       "not_supported": "downgrade", "not_authed": "configure_desktop",
-                      "healthy": None},
+                      "unavailable_64": None, "healthy": None},
 }
 
 

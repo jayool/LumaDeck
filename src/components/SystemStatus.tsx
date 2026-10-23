@@ -7,7 +7,7 @@ import { useT } from "../i18n";
 // Canonical state set, shared by all three components. not_authed / disabled
 // are CloudRedirect-only. See read_*_health() in backend/paths.py.
 export type ComponentHealth =
-  | "not_installed" | "not_loaded" | "not_injected" | "not_supported"
+  | "not_installed" | "not_loaded" | "not_injected" | "not_supported" | "unavailable_64"
   | "not_authed" | "disabled" | "healthy" | string;
 
 export interface Component {
@@ -308,6 +308,19 @@ export function buildRows(
       actionLabel: t("restartSteam"),
       onAction: needsSetup ? actions.repair : actions.restart,
       confirm: "restart", busyLabel: needsSetup ? undefined : t("restartingSteam"),
+    });
+  } else if (sls?.installed && sls.health === "unavailable_64") {
+    // Steam runs its 64-bit client and there is no 64-bit SLSsteam build on
+    // disk (none published yet): nothing to press. Added games don't work.
+    rows.push({
+      key: "x64-sls", severity: "problem",
+      label: t("sysX64NotReady"), description: t("sysX64NotReadyDesc"),
+    });
+  } else if (cr?.installed && cr.health === "unavailable_64") {
+    // Same client, SLSsteam fine, CloudRedirect 32-bit only: cloud saves off.
+    rows.push({
+      key: "x64-cr", severity: "problem",
+      label: t("sysX64NoCloud"), description: t("sysX64NoCloudDesc"),
     });
   }
 

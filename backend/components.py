@@ -28,21 +28,37 @@ except ImportError:
 
 # --- SLSsteam update ---------------------------------------------------------
 
-async def check_slssteam_update(force: bool = False) -> dict:
-    """SLSsteam update = a newer release at AceSLS/SLSsteam — the repo setup.sh
-    installs `latest` from.
+async def check_slssteam_update(force: bool = False, arch: Optional[str] = None) -> dict:
+    """SLSsteam update = a newer build for the client that runs (`arch`,
+    default paths.steam_client_arch):
+
+      64-bit client: a newer release at AceSLS/SLSsteam — where setup.sh
+        installs `latest` from.
+      32-bit client: upstream dropped 32-bit support after
+        slssteam_version.LAST_32BIT_TAG, so that release is the last one this
+        client will ever get and the only "latest" it is compared against.
+        A newer release at AceSLS/SLSsteam is a 64-bit build and is never
+        offered here: setup.sh would not install it over the 32-bit one anyway.
 
     Nothing SLSsteam puts on disk states its version, so the installed side comes
     from slssteam_version.resolve_installed_version(): the tag setup.sh recorded
-    at install, or — for installs predating that — a proven lower bound derived
-    from the binary. Both are release tags (build timestamps like
-    '20260820085507'), which has_update's compare orders correctly as-is, bigger
-    being newer. An unknown version yields no update, the safe default.
+    at install (one record per architecture), or — for installs predating that
+    — a proven lower bound derived from the binary. Both are release tags (build
+    timestamps like '20260820085507'), which has_update's compare orders
+    correctly as-is, bigger being newer. An unknown version yields no update,
+    the safe default.
 
     force=True bypasses the release cache for a manual refresh."""
-    from slssteam_version import SOURCE_UNKNOWN, resolve_installed_version
-    installed, source = await resolve_installed_version()
-    result = await has_update("AceSLS", "SLSsteam", installed, force=force)
+    from paths import STEAM_CLIENT_64, steam_client_arch
+    from slssteam_version import LAST_32BIT_TAG, SOURCE_UNKNOWN, resolve_installed_version
+    arch = arch or steam_client_arch()
+    installed, source = await resolve_installed_version(arch)
+    if arch == STEAM_CLIENT_64:
+        result = await has_update("AceSLS", "SLSsteam", installed, force=force)
+    else:
+        result = await has_update_from(installed, {
+            "tag": LAST_32BIT_TAG, "tag_normalised": LAST_32BIT_TAG,
+            "url": f"https://github.com/AceSLS/SLSsteam/releases/tag/{LAST_32BIT_TAG}"})
     # Tells "no update" apart from "no idea" in the log — the two are the same
     # answer to the user, and only this line distinguishes them in a bug report.
     result["version_source"] = source
@@ -200,16 +216,17 @@ def _component(id_: str, name: str, installed: bool, health: dict, update: dict,
     }
 
 
-def _slssteam_health_from_feed(health: dict, sls_text, cur_hash) -> dict:
+def _slssteam_health_from_feed(health: dict, sls_text, cur_hash, arch: Optional[str] = None) -> dict:
     """not_loaded / not_injected -> not_supported when the installed SLSsteam
     release's SafeModeHashes group lacks the client on disk. Any other state,
     an unknown installed tag, a missing feed or an unreadable client hash
-    leave `health` as is."""
+    leave `health` as is. `arch` picks the installed build's record (the
+    client that runs by default)."""
     if health.get("state") not in ("not_loaded", "not_injected"):
         return health
     from slssteam_version import read_recorded_version
     from steam_update_gate import slssteam_supports
-    tag = read_recorded_version()
+    tag = read_recorded_version(arch)
     if not tag or slssteam_supports(sls_text, tag, cur_hash) is not False:
         return health
     logger.info("components: SLSsteam %s does not list client %s; not_supported",
@@ -335,7 +352,7 @@ async def get_components_status(force: bool = False) -> dict:
          if not cr_forced else _const(no_update)),
     )
     cur_hash = _safe_sync(current_client_hash, None)
-    sls_supports_current = slssteam_latest_supports(sls_text, cur_hash)
+    sls_supports_current = slssteam_latest_supports(sls_text, cur_hash, client_arch)
     # SLSsteam not mapped in Steam reads not_loaded / not_injected from the
     # process alone. When the INSTALLED release's own list says it does not
     # hook the client on disk, that is the real cause (a crash-guarded or
@@ -344,11 +361,15 @@ async def get_components_status(force: bool = False) -> dict:
     # a Dev-forced state is left alone; no feed or no record -> unchanged.
     if not sls_forced:
         sls_health = _safe_sync(
-            lambda: _slssteam_health_from_feed(sls_health, sls_text, cur_hash), sls_health)
+            lambda: _slssteam_health_from_feed(sls_health, sls_text, cur_hash, client_arch), sls_health)
     sls_force = force or _safe_sync(lambda: _sls_release_cache_stale(sls_text), False)
 
-    sls_update = no_update if sls_forced else await _safe(
-        check_slssteam_update(force=sls_force), no_update)
+    # A build the running client cannot use (unavailable_64) is nothing to
+    # compare against a release: no Update offer for it.
+    sls_update = no_update if (sls_forced or sls_health.get("state") == "unavailable_64") else await _safe(
+        check_slssteam_update(force=sls_force, arch=client_arch), no_update)
+    if cr_health.get("state") == "unavailable_64":
+        cr_update = no_update
 
     # Would Fix in Desktop help? Only asked while something is not_supported
     # (the one state that offers it). possible False -> the QAM shows the Wait

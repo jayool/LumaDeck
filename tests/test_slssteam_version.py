@@ -127,3 +127,33 @@ class ReadRecordedVersionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerArchitectureRecordTests(unittest.TestCase):
+    """One record per client: setup.sh writes .slssteam.version for the 32-bit
+    build and .slssteam.version.x86_64 for the 64-bit one. Reading one never
+    answers for the other."""
+
+    def setUp(self):
+        self.cfg = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.cfg, ignore_errors=True))
+        self._orig = sv.get_slssteam_config_dir
+        sv.get_slssteam_config_dir = lambda: self.cfg
+        self.addCleanup(lambda: setattr(sv, "get_slssteam_config_dir", self._orig))
+
+    def test_each_architecture_reads_its_own_record(self):
+        with open(os.path.join(self.cfg, ".slssteam.version"), "w") as fh:
+            fh.write("20261014151919\n")
+        self.assertEqual(sv.read_recorded_version(sv.STEAM_CLIENT_32), "20261014151919")
+        self.assertIsNone(sv.read_recorded_version(sv.STEAM_CLIENT_64))
+        with open(os.path.join(self.cfg, ".slssteam.version.x86_64"), "w") as fh:
+            fh.write("20261101000000\n")
+        self.assertEqual(sv.read_recorded_version(sv.STEAM_CLIENT_64), "20261101000000")
+        self.assertEqual(sv.read_recorded_version(sv.STEAM_CLIENT_32), "20261014151919")
+
+    def test_file_names(self):
+        self.assertEqual(sv.version_file_name(sv.STEAM_CLIENT_32), ".slssteam.version")
+        self.assertEqual(sv.version_file_name(sv.STEAM_CLIENT_64), ".slssteam.version.x86_64")
+
+    def test_last_32bit_tag_is_a_release_tag(self):
+        self.assertRegex(sv.LAST_32BIT_TAG, r"^\d{14}$")

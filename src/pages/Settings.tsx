@@ -563,14 +563,16 @@ export function Settings() {
   // Right-side status for a component. Hook components (SLSsteam / lumalinux /
   // CloudRedirect) read "Active" when healthy; anything installed but not fully
   // working just says "Installed" and a warning line explains below.
-  const compStatus = (present: boolean, healthy?: boolean) =>
-    !present ? t("notInstalled") : healthy ? t("installedLoaded") : t("installed");
+  // unavailable_64 (no build for the 64-bit Steam client) is neither broken
+  // nor missing: grey "Not available", the sub-line says why.
+  const compStatus = (present: boolean, healthy?: boolean, unavailable?: boolean) =>
+    !present ? t("notInstalled") : unavailable ? t("statusUnavailable") : healthy ? t("installedLoaded") : t("installed");
 
   // Three-state colour to match the three states: not installed = red, installed
   // but not working = amber (there, but broken — mirrors the sub-line), healthy =
   // green. Without the amber, a broken-but-installed component reads as green "OK".
-  const compColor = (present: boolean, healthy?: boolean) =>
-    !present ? "#ff4444" : healthy ? "#00cc00" : "#ff8c00";
+  const compColor = (present: boolean, healthy?: boolean, unavailable?: boolean) =>
+    !present ? "#ff4444" : unavailable ? "#888" : healthy ? "#00cc00" : "#ff8c00";
 
   // A small colored line under the component (where the path used to be). Nothing
   // renders when healthy and up to date, so the normal screen is just the list.
@@ -606,6 +608,7 @@ export function Settings() {
   const slssHealthDesc = () => {
     const h = slssteamHealth;
     if (!slssPresent) return undefined;
+    if (h?.state === "unavailable_64") return warnDesc(t("healthX64NoBuild"), "muted");
     if (h && h.state !== "healthy") return warnDesc(healthLine(h.state));
     // Healthy → update available in the same subtext slot as the other two.
     // Steam's own build status is NOT smuggled in here; it has its own row below.
@@ -635,7 +638,11 @@ export function Settings() {
     const lines: any[] = [];
     const notice = warnDesc(t("crUnmaintained"), "muted");
     if (notice) lines.push(notice);
-    if (crHealth && crHealth.state !== "healthy" && crHealth.state !== "not_authed") {
+    if (crHealth?.state === "unavailable_64") {
+      // 32-bit only on the 64-bit Steam client: nothing to fix, grey.
+      const d = warnDesc(t("healthX64Only32"), "muted");
+      if (d) lines.push(d);
+    } else if (crHealth && crHealth.state !== "healthy" && crHealth.state !== "not_authed") {
       // disabled is a deliberate opt-out → muted grey line, no warning. Every
       // other non-healthy state maps to the shared restart/desktop wording.
       const isDisabled = crHealth.state === "disabled";
@@ -697,9 +704,9 @@ export function Settings() {
   // ── Dev preview: force UI states (backend/dev.py). Only forges what the UI
   //    reads (health + credentials); nothing real is touched. ────────────────
   const devControls = [
-    { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
+    { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "unavailable_64"] },
     { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
-    { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "not_authed", "disabled"] },
+    { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "not_authed", "disabled", "unavailable_64"] },
     { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
     { key: "crash_guard", label: "Crash guard", opts: ["real", "active"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
@@ -1067,8 +1074,8 @@ export function Settings() {
           <>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="SLSsteam" description={slssHealthDesc()}>
-                <span style={{ color: compColor(slssPresent, slssteamHealth?.state === "healthy") }}>
-                  {compStatus(slssPresent, slssteamHealth?.state === "healthy")}
+                <span style={{ color: compColor(slssPresent, slssteamHealth?.state === "healthy", slssteamHealth?.state === "unavailable_64") }}>
+                  {compStatus(slssPresent, slssteamHealth?.state === "healthy", slssteamHealth?.state === "unavailable_64")}
                 </span>
               </Field>
             </PanelSectionRow>
@@ -1092,8 +1099,8 @@ export function Settings() {
                   // Off by choice, not broken → grey "Disabled", no amber alarm.
                   <span style={{ color: "#888" }}>{t("statusDisabled")}</span>
                 ) : (
-                  <span style={{ color: compColor(crPresent, crHealth?.state === "healthy") }}>
-                    {compStatus(crPresent, crHealth?.state === "healthy")}
+                  <span style={{ color: compColor(crPresent, crHealth?.state === "healthy", crHealth?.state === "unavailable_64") }}>
+                    {compStatus(crPresent, crHealth?.state === "healthy", crHealth?.state === "unavailable_64")}
                   </span>
                 )}
               </Field>

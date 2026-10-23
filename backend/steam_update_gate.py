@@ -42,7 +42,7 @@ from typing import Optional
 
 from feed_cache import fresh
 from http_client import ensure_http_client
-from paths import find_steam_root, real_home
+from paths import STEAM_CLIENT_32, STEAM_CLIENT_64, find_steam_root, real_home
 
 try:
     import decky  # type: ignore
@@ -227,10 +227,30 @@ def slssteam_latest_group(text: str | None) -> Optional[str]:
     return max(tags) if tags else None
 
 
-def slssteam_latest_supports(text: str | None, sha: str | None) -> Optional[bool]:
-    """Would the LATEST SLSsteam release hook client `sha`? The question every
-    setup.sh run has to ask before installing it on a pinned client."""
-    return slssteam_supports(text, "99999999999999", sha)
+def slssteam_latest_supports(text: str | None, sha: str | None,
+                             arch: str = STEAM_CLIENT_32) -> Optional[bool]:
+    """Would the latest SLSsteam build FOR CLIENT `arch` hook client `sha`? The
+    question every setup.sh run has to ask before installing it on a pinned
+    client. "Latest" depends on the architecture since 2026-10-22:
+
+      32-bit (ubuntu12_32): upstream dropped 32-bit support after
+        slssteam_version.LAST_32BIT_TAG, so the latest 32-bit build is that
+        release, for good, and its group is the one that decides. A 32-bit
+        client listed nowhere reads False, as before: no newer 32-bit build will
+        ever list it.
+      64-bit (steamrt64): the newest group, as the plain rule always said — but
+        only once the file lists `sha` somewhere. Upstream has not published a
+        64-bit hash yet (its first x86_64 build is a prerelease), so a 64-bit
+        client listed nowhere reads None (unknown), never False: "not
+        supported" would be a false alarm on every 64-bit Deck, and None lets
+        setup.sh install latest as before.
+    """
+    if arch == STEAM_CLIENT_64:
+        if slssteam_tag_for_hash(text, sha) is None:
+            return None
+        return slssteam_supports(text, "99999999999999", sha)
+    from slssteam_version import LAST_32BIT_TAG
+    return slssteam_supports(text, LAST_32BIT_TAG, sha)
 
 
 _HASH_CACHE: dict = {}
@@ -357,7 +377,7 @@ def evaluate(stable_build: Optional[int], ll_text: Optional[str], ll_group: Opti
 
 
 def plan_setup(frozen: bool, sls_text: Optional[str], current_hash: Optional[str],
-               gate_for_latest: Optional[dict]) -> dict:
+               gate_for_latest: Optional[dict], arch: str = STEAM_CLIENT_32) -> dict:
     """What a setup.sh run must do so SLSsteam and the Steam client it runs on
     never end up mismatched. Pure; see install_via_setup for the live wiring.
 
@@ -383,11 +403,13 @@ def plan_setup(frozen: bool, sls_text: Optional[str], current_hash: Optional[str
 
     `gate_for_latest` is evaluate() run with sls_installed = the latest group
     (i.e. "would the latest SLSsteam be ready for Valve's build?").
+    `arch` is the client that runs (paths.steam_client_arch): "latest" is the
+    latest build for that client (slssteam_latest_supports).
     Returns {"refuse", "reason"}; the pin is never lifted by an install."""
     plan = {"refuse": None, "reason": "no pin"}
     if not frozen:
         return plan
-    supports = slssteam_latest_supports(sls_text, current_hash)
+    supports = slssteam_latest_supports(sls_text, current_hash, arch)
     if supports is True:
         plan["reason"] = "latest SLSsteam hooks the pinned client"
         return plan
@@ -418,8 +440,11 @@ async def steam_update_gate(force: bool = False) -> dict:
         latest_release_group(force=force),
         slssteam_updates_text(force=force),
     )
+    # The gate is about Valve's stable 32-bit build (the manifest above) and
+    # the 32-bit tree a pin holds, so the installed SLSsteam that matters here
+    # is the 32-bit one, whichever client runs.
     try:
-        sls_installed, _src = await resolve_installed_version()
+        sls_installed, _src = await resolve_installed_version(STEAM_CLIENT_32)
     except Exception:
         sls_installed = None
     result = evaluate(stable, ll_text, ll_group, sls_text, sls_installed)
