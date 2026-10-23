@@ -280,7 +280,7 @@ async def latest_release_group(force: bool = False) -> str | None:
 # without an arch mark is the ubuntu12_32 client's. lumalinux's own runtime
 # ignores the mark (each .so looks its own hash up); downgrade.sh's
 # hash_for_build applies the same rule — keep the three in step.
-_HASH_LINE_RE = re.compile(r"^\s*-\s*([0-9a-f]{64})\b")
+_HASH_LINE_RE = re.compile(r"^\s*-\s*([0-9a-f]{6,64})\b(.*)$")
 _STEAM_VERSION_RE = re.compile(r"^\s*#\s*steam_version:\s*(\d+)\b")
 _ARCH_RE = re.compile(r"^\s*#\s*arch:\s*(\S+)")
 _DEFAULT_ARCH = "ubuntu12_32"
@@ -311,6 +311,13 @@ def _whitelist_entries(text: str):
             continue
         h = _HASH_LINE_RE.match(line)
         if h:
+            # Annotations may also trail the hash on its own line
+            # (`- <sha> # steam_version: N`), the shape older entries used.
+            tail = h.group(2)
+            versions += [int(v) for v in re.findall(r"steam_version:\s*(\d+)\b", tail)]
+            ta = re.search(r"arch:\s*(\S+)", tail)
+            if ta:
+                arch = ta.group(1)
             yield group, versions, arch, h.group(1)
             versions, arch = [], _DEFAULT_ARCH
 
