@@ -98,6 +98,31 @@ class SupportRule(unittest.TestCase):
         self.assertIsNone(g.slssteam_latest_supports(None, NEW))
         self.assertIsNone(g.slssteam_latest_supports(SLS_REAL, None))
 
+    def test_latest_for_the_32bit_client_is_the_last_32bit_release(self):
+        # Upstream dropped 32-bit support after 20261014151919: a newer group
+        # (a 64-bit build) says nothing about the 32-bit client, whose latest
+        # stays that release. NEW is listed there; OLD was dropped by it.
+        x64 = SLS_REAL + "\n  20261101000000: #tag 20261101000000\n    - " + "e" * 64 + " #steamrt64\n"
+        self.assertTrue(g.slssteam_latest_supports(x64, NEW, g.STEAM_CLIENT_32))
+        self.assertFalse(g.slssteam_latest_supports(x64, OLD, g.STEAM_CLIENT_32))
+        # The plain call is the 32-bit rule: every caller that does not say is
+        # about the 32-bit tree (the pin, the downgrade).
+        self.assertTrue(g.slssteam_latest_supports(x64, NEW))
+
+    def test_latest_for_the_64bit_client_is_unknown_until_listed(self):
+        sha64 = "e" * 64
+        # No 64-bit hash published anywhere: unknown, never "not supported".
+        self.assertIsNone(g.slssteam_latest_supports(SLS_REAL, sha64, g.STEAM_CLIENT_64))
+        # Listed under the newest group: supported. Listed only under an older
+        # one: dropped.
+        x64 = SLS_REAL + "\n  20261101000000: #tag 20261101000000\n    - " + sha64 + " #steamrt64\n"
+        self.assertTrue(g.slssteam_latest_supports(x64, sha64, g.STEAM_CLIENT_64))
+        newer = x64 + "\n  20261201000000: #tag 20261201000000\n    - " + "f" * 64 + " #steamrt64\n"
+        self.assertFalse(g.slssteam_latest_supports(newer, sha64, g.STEAM_CLIENT_64))
+        # The 32-bit rule is unchanged by the 64-bit groups.
+        self.assertTrue(g.slssteam_latest_supports(newer, NEW, g.STEAM_CLIENT_32))
+        self.assertIsNone(g.plan_setup(True, SLS_REAL, sha64, None, g.STEAM_CLIENT_64)["refuse"])
+
     def test_evaluate_with_the_real_feed(self):
         # Jayo's Deck 15:55: pinned on bc54101b, SLSsteam 20261001 -> update it.
         r = g.evaluate(1791918634, LL_FEED, GROUP, SLS_REAL, "20261001163836")

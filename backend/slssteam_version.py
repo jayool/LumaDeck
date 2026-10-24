@@ -27,7 +27,8 @@ import re
 from typing import List, Optional, Tuple
 
 from http_client import ensure_http_client
-from paths import find_slssteam_root, get_slssteam_config_dir
+from paths import (STEAM_CLIENT_32, STEAM_CLIENT_64, find_slssteam_root,
+                   get_slssteam_config_dir, slssteam_so_relpath, steam_client_arch)
 
 try:
     import decky  # type: ignore
@@ -50,7 +51,27 @@ SOURCE_UNKNOWN = "unknown"     # neither worked; caller must not report an updat
 # turn it into (0, 0, 0) and silently mis-order it.
 _TAG_RE = re.compile(r"^\d{14}$")
 
-_VERSION_FILE = ".slssteam.version"
+# One record per client architecture, because one SLSsteam build serves one
+# client and both can be installed at once (setup.sh places each by its ELF
+# class). The 32-bit record keeps the original name, so installs from before
+# the 64-bit client keep their tag.
+_VERSION_FILE = ".slssteam.version"               # the 32-bit build (ubuntu12_32)
+_VERSION_FILE_64 = ".slssteam.version.x86_64"     # the 64-bit build (steamrt64)
+
+# The last 32-bit SLSsteam release. Upstream recompiled in 64-bit and dropped
+# 32-bit support right after it (release notes of the first x86_64 build,
+# 2026-10-22), so for the 32-bit client this tag is final, the way
+# CloudRedirect's 2.6.6 is: `latest` at AceSLS/SLSsteam describes the 64-bit
+# build from now on and says nothing about the 32-bit client. lumalinux's
+# setup.sh installs this tag for the 32-bit client (its SLS32_TAG) and this is
+# the "latest" the 32-bit client is compared against here. Bump both only if
+# upstream ever publishes another 32-bit build.
+LAST_32BIT_TAG = "20261014151919"
+
+
+def version_file_name(arch: Optional[str] = None) -> str:
+    """The record file for client `arch` (default: the client that runs)."""
+    return _VERSION_FILE_64 if (arch or steam_client_arch()) == STEAM_CLIENT_64 else _VERSION_FILE
 
 # SLSsteam's SafeMode feed: a map of VERSION -> the steamclient.so hashes that
 # VERSION is certified against. We only want its KEYS, which are exactly the set
@@ -74,13 +95,16 @@ _derive_cache: dict = {}
 
 # --- the recorded version (the normal path) ---------------------------------
 
-def read_recorded_version() -> Optional[str]:
-    """The release tag setup.sh recorded at install time, or None.
+def read_recorded_version(arch: Optional[str] = None) -> Optional[str]:
+    """The release tag setup.sh recorded at install time for the SLSsteam build
+    of client `arch` (default: the client that runs), or None.
 
     None means "no usable record" — either the file is absent (an install from
-    before setup.sh recorded it) or its contents are not a release tag.
+    before setup.sh recorded it, or a 64-bit build installed from a URL that is
+    not an AceSLS release) or its contents are not a release tag.
     """
-    path = os.path.join(get_slssteam_config_dir(), _VERSION_FILE)
+    name = version_file_name(arch)
+    path = os.path.join(get_slssteam_config_dir(), name)
     try:
         with open(path, "r", encoding="utf-8") as fh:
             value = fh.read().strip()
@@ -92,7 +116,7 @@ def read_recorded_version() -> Optional[str]:
     if not _TAG_RE.match(value):
         if value:
             logger.warning(
-                f"slssteam_version: ignoring malformed {_VERSION_FILE} "
+                f"slssteam_version: ignoring malformed {name} "
                 f"({value[:32]!r}); expected a 14-digit release tag"
             )
         return None
@@ -159,7 +183,7 @@ async def _updates_yaml_text() -> Optional[str]:
     return None
 
 
-async def derive_version_floor() -> Optional[str]:
+async def derive_version_floor(arch: Optional[str] = None) -> Optional[str]:
     """A release tag the installed SLSsteam is guaranteed to be at or above.
 
     Not an estimate — a deduction:
@@ -178,7 +202,7 @@ async def derive_version_floor() -> Optional[str]:
     Blind spot: releases before 20251226083318 shipped no res/version.txt, so
     there is no VERSION in those binaries and this returns None.
     """
-    so_path = os.path.join(find_slssteam_root(), "SLSsteam.so")
+    so_path = os.path.join(find_slssteam_root(), slssteam_so_relpath(arch))
     try:
         stat = os.stat(so_path)
     except OSError:
@@ -205,29 +229,30 @@ async def derive_version_floor() -> Optional[str]:
 
 # --- what callers use --------------------------------------------------------
 
-async def resolve_installed_version() -> Tuple[Optional[str], str]:
-    """(version, source) for the installed SLSsteam.
+async def resolve_installed_version(arch: Optional[str] = None) -> Tuple[Optional[str], str]:
+    """(version, source) for the installed SLSsteam build of client `arch`
+    (default: the client that runs).
 
     The recorded tag wins whenever it exists; the derived floor only fills in for
     installs that predate setup.sh recording it. A None version means the caller
     must report no update — "we don't know" and "nothing new" are the same answer
     to the user, so the source is logged to tell them apart afterwards.
     """
-    recorded = read_recorded_version()
+    recorded = read_recorded_version(arch)
     if recorded:
         return recorded, SOURCE_RECORDED
 
-    derived = await derive_version_floor()
+    derived = await derive_version_floor(arch)
     if derived:
         logger.info(
-            f"slssteam_version: no {_VERSION_FILE} recorded; using the version "
+            f"slssteam_version: no {version_file_name(arch)} recorded; using the version "
             f"floor derived from the binary ({derived}). Reinstalling the "
             f"components records the exact release tag."
         )
         return derived, SOURCE_DERIVED
 
     logger.info(
-        f"slssteam_version: no {_VERSION_FILE} recorded and the binary VERSION "
+        f"slssteam_version: no {version_file_name(arch)} recorded and the binary VERSION "
         f"could not be identified — SLSsteam updates cannot be detected until "
         f"the components are reinstalled."
     )

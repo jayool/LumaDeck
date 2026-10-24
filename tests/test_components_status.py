@@ -65,7 +65,8 @@ class GetComponentsStatusTests(unittest.TestCase):
             ("dev", {"get": lambda key: None}),
             ("slssteam_version", {
                 "SOURCE_UNKNOWN": "unknown",
-                "read_recorded_version": lambda: "20260820085507",
+                "LAST_32BIT_TAG": "20261014151919",
+                "read_recorded_version": lambda *a, **k: "20260820085507",
                 "resolve_installed_version": self._async_const(("20260820085507", "recorded")),
             }),
         ):
@@ -187,7 +188,7 @@ class SlssteamHealthFromFeedTests(unittest.TestCase):
 
     def _recorded(self, tag):
         module = types.ModuleType("slssteam_version")
-        module.read_recorded_version = lambda: tag
+        module.read_recorded_version = lambda *a, **k: tag
         sys.modules["slssteam_version"] = module
 
     def test_installed_release_lacking_the_client_is_not_supported(self):

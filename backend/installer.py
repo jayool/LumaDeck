@@ -339,14 +339,22 @@ def _install_spliced_tickets(config_path: str,
     if os.path.isfile(_spliced_tickets_kill_switch_path()):
         return True, f"skipped (kill-switch {SPLICED_TICKETS_KILL_SWITCH} present)"
 
+    from paths import STEAM_CLIENT_64, steam_client_arch
+    arch = steam_client_arch()
     if slssteam_version is None:
         from slssteam_version import read_recorded_version, SOURCE_RECORDED, SOURCE_UNKNOWN
-        rec = read_recorded_version()
+        rec = read_recorded_version(arch)
         slssteam_version = (rec, SOURCE_RECORDED) if rec else (None, SOURCE_UNKNOWN)
     tag, source = slssteam_version
-    if not tag:
+    if not tag and arch == STEAM_CLIENT_64:
+        # Every 64-bit SLSsteam build postdates the plugin system (the first
+        # x86_64 build is of 2026-10-22; Plugins exist since 20260903114323),
+        # so an unrecorded tag (a build installed from a URL that is not an
+        # AceSLS release) is no reason to hold the plugin back.
+        tag, source = "x86_64", "arch"
+    elif not tag:
         return True, "skipped (SLSsteam version unknown; reinstall components to record it)"
-    if str(tag) < SPLICED_TICKETS_MIN_SLSSTEAM:
+    if source != "arch" and str(tag) < SPLICED_TICKETS_MIN_SLSSTEAM:
         return True, (f"skipped (SLSsteam {tag} [{source}] predates the plugin system, "
                       f"needs >= {SPLICED_TICKETS_MIN_SLSSTEAM})")
 
@@ -600,9 +608,15 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         if process.returncode == 0:
             # Verify the post-condition instead of trusting the exit code: the
             # wrapper + the two load-bearing .so's must be on disk.
+            # SLSsteam of either architecture counts here: setup.sh installs
+            # the 32-bit build always and the 64-bit one when upstream
+            # publishes it, so on the 64-bit client a missing x86_64 build is
+            # not the installer's failure — the SLSsteam row reports it.
+            from paths import STEAM_CLIENT_32, STEAM_CLIENT_64
             wrapper = os.path.join(real_home(), ".local", "share", "SLSsteam", "path", "steam")
             if not (os.path.exists(wrapper)
-                    and check_slssteam_installed()
+                    and (check_slssteam_installed(STEAM_CLIENT_32)
+                         or check_slssteam_installed(STEAM_CLIENT_64))
                     and check_lumalinux_installed()):
                 SETUP_INSTALL_STATE["status"] = "failed"
                 SETUP_INSTALL_STATE["error"] = (
@@ -660,7 +674,8 @@ async def _plan_this_run() -> dict:
     cur_hash = current_client_hash()
     gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(force=True),
                                await latest_release_group(force=True), sls_text, slssteam_latest_group(sls_text))
-    return plan_setup(True, sls_text, cur_hash, gate_for_latest)
+    from paths import steam_client_arch
+    return plan_setup(True, sls_text, cur_hash, gate_for_latest, steam_client_arch())
 
 
 async def quick_install(gamemode: bool = True) -> dict:
@@ -755,8 +770,9 @@ async def reinject_installed() -> dict:
     steps = []
     # WS2: setup.sh re-installs and re-injects the WHOLE stack idempotently, so run
     # it if any component is present (reinject = re-run setup.sh).
-    if (check_slssteam_installed() or check_cloudredirect_installed()
-            or check_lumalinux_installed()):
+    from paths import STEAM_CLIENT_32, STEAM_CLIENT_64
+    if (check_slssteam_installed(STEAM_CLIENT_32) or check_slssteam_installed(STEAM_CLIENT_64)
+            or check_cloudredirect_installed() or check_lumalinux_installed()):
         steps.append(("stack", install_via_setup, get_setup_status))
 
     if not steps:

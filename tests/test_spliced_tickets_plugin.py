@@ -105,7 +105,7 @@ class SplicedTickets(unittest.TestCase):
         self._write_cfg()
         import slssteam_version
         orig = slssteam_version.read_recorded_version
-        slssteam_version.read_recorded_version = lambda: "20260903114323"
+        slssteam_version.read_recorded_version = lambda *a, **k: "20260903114323"
         self.addCleanup(lambda: setattr(slssteam_version, "read_recorded_version", orig))
         ok, msg = installer._install_spliced_tickets(self.cfg)
         self.assertTrue(ok, msg)
