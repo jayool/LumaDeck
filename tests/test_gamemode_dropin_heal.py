@@ -15,8 +15,7 @@ The cases:
   * drop-in on disk, inert  -> no write, daemon-reload (the 0.7.1 state)
   * systemd query fails     -> reload anyway, never treated as broken
   * no launcher, no drop-in -> hands off, no systemctl call at all
-  * no launcher, OUR stale drop-in -> must be removed + reload (pending: see
-    test_orphan_dropin_is_removed; expectedFailure until the heal does it)
+  * no launcher, OUR stale drop-in -> removed + reload (Steam launches vanilla)
   * no launcher, FOREIGN drop-in   -> never touched
   * the root -> deck-user systemctl crossing builds the argv it documents
 """
@@ -161,19 +160,35 @@ class HealGamemodeDropin(unittest.TestCase):
         self.assertFalse(os.path.exists(self.dropin), "must never point ExecStart at a missing launcher")
         self.assertEqual(fake.calls, [], "nothing to heal: no systemctl traffic")
 
-    @unittest.expectedFailure
     def test_orphan_dropin_is_removed(self):
         """Launcher gone (SLSDeck's uninstall, moon's `setup.sh uninstall`, a
         manual rm -rf of ~/.local/share/SLSsteam) but OUR drop-in survived in
         ~/.config/systemd/user: steam-launcher.service would exec a missing file
         and Game Mode comes up without Steam. The heal must remove the stale
-        drop-in and reload so Steam launches vanilla. Pending behaviour."""
+        drop-in and reload so Steam launches vanilla."""
         self.put_dropin()
         fake = FakeSystemctl(show_out=LOADED_OURS)
         res = self.heal(fake)
         self.assertFalse(os.path.exists(self.dropin), "stale drop-in must be removed")
+        self.assertTrue(os.path.isdir(os.path.dirname(self.dropin)), "only the file goes")
         self.assertEqual(fake.reloads, 1)
+        self.assertEqual([c[0] for c in fake.calls], ["daemon-reload"], "no show query: nothing to verify")
         self.assertTrue(res["healed"])
+        self.assertEqual(res["reason"], "orphan_dropin_removed")
+        self.assertFalse(res["wrote"])
+        self.assertTrue(res["reloaded"])
+
+    def test_orphan_dropin_removal_survives_a_failed_reload(self):
+        """The file is still removed when daemon-reload fails (bus not up yet):
+        the next Game Mode boot reads unit files fresh, so the stale ExecStart is
+        gone either way. The failure is reported, not hidden."""
+        self.put_dropin()
+        fake = FakeSystemctl(reload_rc=1)
+        res = self.heal(fake)
+        self.assertFalse(os.path.exists(self.dropin))
+        self.assertEqual(res["reason"], "orphan_dropin_removed")
+        self.assertFalse(res["reloaded"])
+        self.assertIn("rc=1", res["reload_detail"])
 
     def test_foreign_dropin_is_never_touched(self):
         """No launcher and a drop-in that is not ours (SLSDeck's 50-slsdeck.conf

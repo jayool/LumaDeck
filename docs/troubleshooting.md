@@ -135,6 +135,12 @@ works. LumaDeck **self-heals** this on every plugin load: it rewrites the drop-i
 Steam once** and the components go Active. If it persists, press **Repair** (or
 **Reinstall Components**) in **Settings ▸ Components** (re-runs `setup.sh`).
 
+The reverse also self-heals: if `~/.local/share/SLSsteam` was deleted (another
+plugin's uninstall, a manual `rm -rf`) the launcher our drop-in points at is gone
+and Game Mode would come up without Steam at all. On plugin load LumaDeck removes
+its own stale drop-in and `daemon-reload`s, so Steam launches vanilla; then
+**Reinstall Components** restores injection.
+
 ### Manifest fetch fails
 - Check your credentials in **Settings ▸ API Credentials** — an expired/invalid
   key or cookie is the usual cause ([Credentials](credentials.md)).
