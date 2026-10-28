@@ -69,12 +69,13 @@ async def check_slssteam_update(force: bool = False, arch: Optional[str] = None)
 
 # --- CloudRedirect update ----------------------------------------------------
 
-# CloudRedirect's upstream (Selectively11/CloudRedirect) was deleted on
-# 2026-10-16 together with its author's account, and nobody expects it back. The
-# last Linux build, 2.6.6, is what lumalinux's setup.sh now ships from its own
-# release assets (lumalinux docs/cloudredirect.md §0, docs/maintenance.md). So
-# "latest" is a constant: there is no feed to ask, and asking the dead repo on
-# every status refresh was a 404 per refresh. The compare stays — the sign-in
+# CloudRedirect's upstream is crghofficial/cloudredirect (same 2.6.6, no code
+# change since 2026-10-03); we do not follow it. The last Linux build, 2.6.6, is
+# what lumalinux's setup.sh ships from its own release assets (lumalinux
+# docs/cloudredirect.md §0, docs/maintenance.md). So "latest" is a constant:
+# there is no feed to ask (asking a repo on every status refresh was a 404 per
+# refresh when the original vanished), and a new upstream release would be
+# picked up by hand, via lumalinux's assets. The compare stays — the sign-in
 # app deploys its own older .so (2.6.5), and Update (one setup.sh run) is how
 # it gets back to 2.6.6.
 _CR_SHIPPED_VERSION = "2.6.6"
