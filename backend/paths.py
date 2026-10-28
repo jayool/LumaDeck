@@ -784,6 +784,9 @@ def heal_gamemode_dropin() -> dict:
     (~/.local/share/SLSsteam/lumalinux-steam-launcher) actually exists. Pointing
     steam-launcher.service's ExecStart at a missing binary would break the Game
     Mode Steam launch outright — strictly worse than the un-injected state we heal.
+    The mirror case is healed too: launcher gone but OUR drop-in still on disk
+    (someone rm -rf'd ~/.local/share/SLSsteam) → the stale drop-in is removed and
+    systemd reloaded, so Game Mode launches Steam vanilla instead of not at all.
 
     Idempotent: no-ops when the drop-in is already loaded and routing through our
     launcher, and when lumalinux isn't installed (the launcher won't exist).
@@ -798,9 +801,25 @@ def heal_gamemode_dropin() -> dict:
 
     # Guard: never write a drop-in whose ExecStart target is missing — that would
     # brick the Game Mode Steam launch. No launcher ⇒ setup.sh hasn't installed
-    # the Game Mode path here (or lumalinux isn't installed) ⇒ nothing to heal.
+    # the Game Mode path here (or lumalinux isn't installed) ⇒ nothing to write.
+    # The one thing to do in that state is the opposite: if OUR drop-in survived
+    # while the launcher went (SLSDeck's uninstall and moon's `setup.sh uninstall`
+    # both rm -rf ~/.local/share/SLSsteam, the shared dir the launcher lives in;
+    # the drop-in lives in ~/.config/systemd/user and outlives it), then
+    # steam-launcher.service execs a missing file and Game Mode comes up without
+    # Steam — no QAM, no way to reach this plugin. Remove the stale drop-in and
+    # reload so Steam launches vanilla; a reinstall rewrites both. Only a drop-in
+    # carrying our launcher mark is touched: a foreign one is left exactly as is.
     if not os.path.isfile(launcher):
-        return {**base, "reason": "no_launcher"}
+        if not _gm_dropin_routes_through_us(home):
+            return {**base, "reason": "no_launcher"}
+        try:
+            os.remove(dropin)
+        except Exception as exc:
+            return {**base, "reason": f"orphan_remove_failed: {exc}"}
+        reloaded, reload_detail = _systemctl_user_daemon_reload()
+        return {"healed": True, "reason": "orphan_dropin_removed", "wrote": False,
+                "loaded": None, "reloaded": reloaded, "reload_detail": reload_detail}
 
     # Step 1 — ensure the on-disk file is correct. Write only if missing/wrong, so
     # a healthy Deck doesn't churn the file (and its ownership) every boot.

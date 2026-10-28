@@ -115,7 +115,11 @@ CloudRedirect adds two of its own:
 > load it rewrites `steam-launcher.service.d/lumalinux.conf` if it went missing or
 > inert and `daemon-reload`s it — so a Game-Mode-only loss (components *Installed*,
 > never *Active*, while Desktop works) recovers on the next Steam restart without a
-> manual reinstall.
+> manual reinstall. The mirror case is healed too: if the launcher the drop-in
+> points at is gone (something deleted `~/.local/share/SLSsteam`, e.g. another
+> plugin's uninstall) but our drop-in survived, the stale drop-in is removed so
+> Game Mode launches Steam vanilla instead of not at all; reinstall to get
+> injection back.
 
 ## Recovery mode (crash guard)
 
