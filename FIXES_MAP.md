@@ -118,24 +118,52 @@ itself and shows `Application load error 6:0000065432`. SLSsteam fakes
 ownership for the library, not for that ticket.
 
 **Spliced tickets (automatic).** Ace's `spliced-tickets.lua`, an SLSsteam Lua
-plugin (Ace published it on the SLSsteam Discord, 2026-08-30). It hooks that
-ticket call: on an empty ticket it re-requests the ticket of app 7 (owned by
-every account), splices the game's appid in just before the signature and
-adjusts the offsets the stub reads. A stub that only reads the appid where it
-is told to unpacks and runs; one that verifies the signature does not. Ace:
-19 of 20 games (Insurgency Sandstorm the exception). Measured here on Joe
-Danger (229890), 2026-09-28, with a control run: plugin on → launches, plugin
-off → 65432. Nothing in the game directory changes, so checksums, mods and
-the game's own updates are untouched, and nothing is frozen.
+plugin (Ace published it on the SLSsteam Discord, 2026-08-30), with
+LumaDeck's base-ticket selection added on 2026-10-30. It hooks that ticket
+call: on an empty ticket it takes the ticket of an app the account does own,
+splices the game's appid in just before the signature and adjusts the offsets
+the stub reads. A stub that only reads the appid where it is told to unpacks
+and runs; one that verifies the signature does not. Ace: 19 of 20 games
+(Insurgency Sandstorm the exception). Nothing in the game directory changes,
+so checksums, mods and the game's own updates are untouched, and nothing is
+frozen.
+
+The base ticket. Ace's plugin used app 7 (the Steam client, owned by every
+account). Since 2026-10-20, the day app 7's record changed, the client holds
+no ownership ticket for it: the call returns size 0, the splice was 4 bytes of
+appid and every stub showed 65432 again ("spliced tickets is broken rn",
+Ace, 2026-10-28). The client still holds tickets for the apps the account owns
+and has installed, in the same layout (178 bytes: steamid at 8, appid at 16,
+128-byte signature at 50), and the stub accepts a splice built on any of
+them. LumaDeck's plugin therefore looks for the base in this order: app 7
+(should Valve bring it back); Valve's compat tools and runtimes a Deck that
+runs Windows games has (Proton Experimental 1493710, Hotfix 2180100, Proton
+10 3658110, 9 2805730, 8 1887720, Steam Linux Runtime sniper 1628350, 4183110,
+soldier 1070560, scout-on-soldier 1391110); then every installed app of every
+Steam library (`libraryfolders.vdf`, SD card included), never the game itself
+nor the apps added through SLSsteam (`AdditionalApps` in its `config.yaml`:
+installed, not owned, no ticket).
+The first app with a ticket is remembered and tried first afterwards. With no
+ticket anywhere the hook returns 0 (the stub shows 65432 as before).
+
+Measured: Joe Danger (229890), 2026-09-28, Deck, app 7 as base, with a control
+run: plugin on → launches, plugin off → 65432. How to Fish (4001890), SteamStub
+3.1 x64, 2026-10-30, in CI (32-bit stable client c770a8b1, SLSsteam
+20261014, a throwaway account that owns nothing): app 7 → 65432; Proton
+Experimental, Steam Linux Runtime 4183110 and Spacewar (480) as base → the
+stub accepts, Steamworks initialises with the account, the game runs.
 
 How LumaDeck ships it (`installer._install_spliced_tickets`, run with the
 other SLSsteam flags on every plugin start):
 
-- bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`: a
-  credit header, then Ace's file byte for byte (the part below the header,
-  from `SplicedTickets = …` on, has sha256 starting `62f377e3`; the whole
-  shipped file, header included, `700b7953`). Not fetched from anywhere at runtime; updated by hand like the
-  Steamless DLLs when Ace publishes a new one.
+- bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`:
+  Ace's hook, splice and double-load guard, plus LumaDeck's base-ticket
+  selection (`SplicedTickets.baseCandidates`, `installedApps`, `baseTicket`,
+  each block marked `LumaDeck:`); whole file sha256 starting `414d81a3`. Not fetched
+  from anywhere at runtime. Should Ace publish his own fix, the two are
+  compared by hand. Tested in `tests/test_spliced_tickets_lua.py` (the Lua run
+  under lupa with SLSsteam's API stubbed; skipped where lupa is missing) and
+  `tests/test_spliced_tickets_plugin.py` (the install).
 - installed as `~/.config/SLSsteam/plugins/lumadeck-spliced-tickets.lua`
   (0600, owned by the real user) and `Plugins: yes` in SLSsteam's
   `config.yaml`, flag first, file second: SLSsteam hot-loads a plugin dropped
@@ -150,7 +178,9 @@ other SLSsteam flags on every plugin start):
   delete. Two copies do not double-hook: SLSsteam runs all plugins in one Lua
   state and the plugin's first line (`SplicedTickets = SplicedTickets or …`
   + `if SplicedTickets.setup then return end`) makes the second copy a no-op.
-  That guard is why the file is shipped verbatim.
+  That guard is why the global table keeps Ace's name; whichever copy loads
+  first wins (SLSsteam loads the plugins directory in name order, so
+  `lumadeck-…` loads before `spliced-tickets.lua`).
 - gated on SLSsteam `>= 20260903114323`, the first release with the plugin
   system: an older one ignores `Plugins`, so LumaDeck skips (log says so)
   rather than claim an install that does nothing. Unknown version → skip.
@@ -158,9 +188,10 @@ other SLSsteam flags on every plugin start):
   the flag and the file alone (it does not remove an existing copy).
 - did it load? `grep -a "loaded\|Ran " ~/.SLSsteam.log` shows
   `spliced-tickets.lua loaded!` (the plugin's own notify, Ace's original name,
-  from inside the untouched file) and `Ran lumadeck-spliced-tickets.lua`
-  (SLSsteam's line, our file name). The splice itself logs only in SLSsteam
-  debug builds, so the evidence that it worked is the game launching.
+  from inside the file) and `Ran lumadeck-spliced-tickets.lua` (SLSsteam's
+  line, our file name). Did it splice? `grep -a "Spliced ticket\|No base ticket"
+  ~/.SLSsteam.log`: `Spliced ticket for <game> on app <base>` names the base
+  used; `No base ticket for <game>` means no installed app had one.
 
 **Steamless (manual, "Remove Steam DRM").** For the stub that verifies the
 signature, or an SLSsteam too old for plugins. It rewrites the `.exe`, so it

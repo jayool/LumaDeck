@@ -48,11 +48,17 @@ class SplicedTickets(unittest.TestCase):
         with open(self.cfg, encoding="utf-8") as f:
             return f.read()
 
-    def test_bundled_plugin_is_aces_file(self):
+    def test_bundled_plugin_is_aces_hook_with_lumadecks_base_selection(self):
         body = self.bundled.decode("utf-8")
         self.assertIn("SplicedTickets = SplicedTickets or {", body)      # the double-load guard
         self.assertIn('VFTableInfo_t("14IClientUserMap", "GetAppOwnershipTicketExtendedData")', body)
         self.assertIn("Author: Ace", body)
+        # LumaDeck's change (2026-10-30): the base ticket is looked for beyond app 7.
+        self.assertIn("SplicedTickets.baseCandidates = { 7, 1493710,", body)
+        self.assertIn("SplicedTickets.installedApps = function()", body)
+        self.assertIn("libraryfolders.vdf", body)
+        self.assertIn("size = SplicedTickets.baseTicket(pUser, appId,", body)
+        self.assertNotIn("getTicketTramp(pUser, 7, pTicket", body)       # the fixed app-7 call is gone
 
     def test_installs_and_flips_plugins_no_to_yes(self):
         self._write_cfg()
