@@ -2,7 +2,7 @@
 
 What LumaDeck ships inside its release zip that is not its own, and under
 which terms. Components LumaDeck installs on the Deck at run time but does not
-redistribute (lumalinux, SLSsteam, CloudRedirect, Goldberg, steamnetsock-patch,
+redistribute (lumalinux, SLSsteam, CloudRedirect, steamnetsock-patch,
 eos-proxy, Decky Loader, the .NET runtime) are credited in the README and keep
 their own licences; nothing of them is in the zip.
 
@@ -51,6 +51,15 @@ Attribution-NonCommercial-NoDerivatives 4.0 International License
 (<https://creativecommons.org/licenses/by-nc-nd/4.0/>): it is redistributed
 here with attribution, unchanged, for non-commercial use only. It is a
 separate work aggregated in the zip, not part of LumaDeck's own code.
+
+## Goldberg Steam Emulator (gbe_fork) — LGPL-3.0
+
+The release build fetches the emulator binaries of
+[gbe_fork](https://github.com/Detanup01/gbe_fork) (Detanup01's fork of the
+Goldberg Steam Emulator) into `backend/deps/Goldberg/`, unmodified, so the zip
+ships them. They are licensed under the GNU Lesser General Public License
+v3.0; the source is in that repository and the binaries are used as separate
+libraries copied next to a game, not linked into LumaDeck.
 
 ## spliced-tickets.lua — author Ace, no licence declared
 
