@@ -128,4 +128,6 @@ Research / educational. Use with your own Steam account and content. Do not redi
 
 ## License
 
-MIT — inherited from DeckTools.
+MIT — inherited from DeckTools. What the release zip carries from others
+(DeckTools, Steamless, the spliced-tickets plugin) and under which terms is in
+[THIRD-PARTY.md](THIRD-PARTY.md).
