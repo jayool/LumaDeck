@@ -11,9 +11,10 @@ libraryfolders.vdf), never from the game itself; the splice puts the game's
 appid at the old signature offset, moves the signature by 4 and keeps the
 steamid; the base that worked is remembered; with no ticket anywhere the hook
 returns 0 instead of 4 bytes of appid. 2026-11-07: Spacewar (480) is the
-first base; its ticket is asked for once per logon (ClientAccountInfo after
-ClientLogOnResponse, or at load when already logged on) and from the hook
-when nothing has a ticket and the login did not ask; never twice in a logon.
+first base; its ticket is asked for once per logon, at the first CM packet
+that finds the client logged on with the licences loaded (isSubscribed), and
+from the hook when nothing has a ticket and the logon did not ask; a logoff
+re-arms it; never twice in a logon.
 """
 import os
 import sys
@@ -47,6 +48,7 @@ local M = {}
 M.calls = calls
 local ffiStub = {
     cdef = function() end,
+    new = function() return { [0] = 0 } end,
     C = { malloc = function(n) return { } end, free = function() end,
           place_lua_hook = function(_, fn) return fn end,
           unpack_user_data = function(ud) return ud end },
@@ -73,11 +75,13 @@ log = { info = function(m) calls[#calls + 1] = m end, debug = function() end,
         notify = function() end, notifyError = function() end }
 -- SLS: the callbacks a plugin registers are captured (M.cbs) and fired by the
 -- tests; the engine's user reports M.loggedOn and hands a marker as IClientUser.
-M.cbs = {}; M.loggedOn = false; M.clientUser = { marker = "engine IClientUser" }
+M.cbs = {}; M.loggedOn = false; M.subscribed = false; M.clientUser = { marker = "engine IClientUser" }
 SLS = {
     registerCallback = function(name, fn) M.cbs[name] = fn end,
-    steamEngine = { getUser = function(_, i) return { getClientUser = function()
-        return setmetatable(M.clientUser, { __index = { loggedOn = function() return M.loggedOn end } }) end } end },
+    steamEngine = { getUser = function(_, i) return {
+        isSubscribed = function(_, app) return M.subscribed end,
+        getClientUser = function()
+            return setmetatable(M.clientUser, { __index = { loggedOn = function() return M.loggedOn end } }) end } end },
 }
 -- the original GetAppOwnershipTicketExtendedData: the fake fills the buffers like Steam does
 M.tramp = function(pUser, appId, pTicket, ticketSize, pOffAppId, pOffSteamId, pOffSig, pOffSigSize)
@@ -257,26 +261,43 @@ class SplicedTicketsLua(unittest.TestCase):
         self.assertTrue(any("asked Steam for the ownership ticket of app 480 (no base ticket for 229890)" in m for m in logs), logs)
         self.assertTrue(any("the next launch has it" in m for m in logs), logs)
 
-    def test_logon_asks_once_and_a_new_logon_asks_again(self):
+    def test_logon_asks_once_the_licences_are_loaded_and_a_new_logon_asks_again(self):
         L, M = self._runtime({})
         M.run(self.src, 229890)
         asked = self._spy(L)
         L.globals().SplicedTickets.requested = False
-        recv = M.cbs[b"Network::recvPkt"]
-        pkt = lambda t: L.table_from({b"body": L.table_from({b"type": t})})
-        recv(pkt(768 - 2147483648))                  # ClientAccountInfo, protobuf high bit set: the request
-        recv(pkt(768 - 2147483648))                  # again in the same logon: nothing
+        recv, send = M.cbs[b"Network::recvPkt"], M.cbs[b"Network::sendPkt"]
+        recv(None)                                   # logged off: nothing
+        M.loggedOn = True
+        recv(None)                                   # logged on, licences not in yet: nothing (run 70's dropped request)
+        self.assertEqual(asked, [])
+        M.subscribed = True
+        send(None)                                   # logged on with the licences: the request, on an outbound tick too
+        send(None); recv(None)                       # same logon: nothing more
         self.assertEqual([a[1:] for a in asked], [(480, 0)])
         self.assertEqual(bytes(asked[0][0].marker), b"engine IClientUser")   # the engine's IClientUser, not the hook's pUser
-        recv(pkt(751 - 2147483648))                  # ClientLogOnResponse: a new logon
-        recv(pkt(768 - 2147483648))
+        self.assertEqual(self._hook(L, 229890), 0)   # the hook does not ask again after the logon did
+        self.assertEqual(len(asked), 1)
+        M.loggedOn = False; recv(None)               # logoff re-arms
+        M.loggedOn = True; recv(None)                # the new logon asks again
         self.assertEqual(len(asked), 2)
-        self.assertEqual(self._hook(L, 229890), 0)   # the hook does not ask again after the login did
-        self.assertEqual(len(asked), 2)
+
+    def test_requested_ticket_is_read_back_once(self):
+        L, M = self._runtime({480: make_ticket(480)})
+        M.run(self.src, 229890)
+        M.loggedOn = True; M.subscribed = True
+        self._spy(L)
+        L.globals().SplicedTickets.requested = False
+        recv = M.cbs[b"Network::recvPkt"]
+        recv(None)                                   # the request
+        recv(None); recv(None)                       # the read-back: found, logged once
+        logs = [bytes(c).decode() for c in M.calls.values()]
+        self.assertEqual(sum("is in memory (178 bytes)" in m for m in logs), 1, logs)
+        self.assertTrue(L.eval(b"SplicedTickets.verified"))
 
     def test_plugin_loaded_with_a_session_asks_at_load(self):
         L, M = self._runtime({})
-        M.loggedOn = True
+        M.loggedOn = True; M.subscribed = True
         # resolveUpdate cannot work on the stubbed vtable: the load-time request is
         # attempted (the log says so) and nothing breaks.
         M.run(self.src, 229890)
@@ -284,6 +305,7 @@ class SplicedTicketsLua(unittest.TestCase):
         self.assertTrue(any("not resolved, ticket of app 480 not requested (plugin loaded, logged on)" in m for m in logs), logs)
         self.assertIn(b"SLSsteam::initialized", M.cbs)
         self.assertIn(b"Network::recvPkt", M.cbs)
+        self.assertIn(b"Network::sendPkt", M.cbs)
 
 
 if __name__ == "__main__":
