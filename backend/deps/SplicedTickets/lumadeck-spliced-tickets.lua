@@ -34,6 +34,25 @@
 -- ticket). The first one with a ticket is remembered and tried first. The
 -- base used is logged at info level: "Spliced ticket for <game> on app <base>".
 --
+-- LumaDeck, 2026-11-07: Spacewar (480) as the base that needs nothing
+-- installed. The client only holds the tickets of the apps it has installed
+-- (it fetches them at login); an owned app that is not installed reads as an
+-- empty ticket until someone ASKS the server for it. Measured in luma-lab's
+-- login smoke (run 68, stable 32-bit client, a throwaway account): after the
+-- login 480 and 7 read 0 bytes, Proton Experimental and runtime 4183110 (both
+-- installed, neither launched) 178; one IClientUser::BUpdateAppOwnershipTicket
+-- (480, false) and the server answered within the second with the usual
+-- 178-byte ticket (appid at 16, signature at 50); the same call for app 7 is
+-- refused ("failed to update ownership ticket (Access Denied)"). So: the
+-- ticket of 480 is asked for once per logon (when the plugin loads with a
+-- session, at SLSsteam::initialized if logged on, and at each ClientAccountInfo
+-- after a ClientLogOnResponse), so that it is in memory before any game asks;
+-- 480 is the first base tried, then the list and the scan above as before;
+-- and when nothing at all has a ticket the hook asks for 480's then (once, if
+-- the login did not), returns the empty ticket for that launch, and the next
+-- launch finds it. The request goes through the live vtable slot of the
+-- IClientUser object (SLSsteam's own hook on it included).
+--
 -- To keep LumaDeck from installing it: touch ~/.config/lumadeck/no_spliced_tickets
 
 SplicedTickets = SplicedTickets or {
@@ -56,6 +75,8 @@ ffi.cdef[[
 	void* place_lua_hook(const int, const void*);
 
 	typedef uint32_t(*GetTicket_t)(void*, uint32_t, uint8_t*, uint32_t, uint32_t*, uint32_t*, uint32_t*, uint32_t*);
+	typedef bool(*UpdateTicket_t)(void*, uint32_t, int);
+	void* unpack_user_data(const void*);
 ]]
 
 SplicedTickets.mutexReturn = function(value, mutex)
@@ -80,8 +101,62 @@ log.debug("User ExtendedData at "..clientUserMap.index)
 -- Steam Linux Runtime (4183110, pulled by Proton Experimental), 2.0 (soldier),
 -- 1.0 (scout on soldier). Whatever Proton a Deck installed for its Windows
 -- games is in here or in the installed-apps scan below.
-SplicedTickets.baseCandidates = { 7, 1493710, 2180100, 3658110, 2805730, 1887720, 1628350, 4183110, 1070560, 1391110 }
+-- LumaDeck 2026-11-07: Spacewar (480) first, the app whose ticket this plugin
+-- asks the server for (header); it needs nothing installed.
+SplicedTickets.baseCandidates = { 480, 7, 1493710, 2180100, 3658110, 2805730, 1887720, 1628350, 4183110, 1070560, 1391110 }
 SplicedTickets.baseApp = nil   -- the base that worked last time; tried first
+
+-- LumaDeck: the ticket request (header). One request per logon: `requested`
+-- is cleared by ClientLogOnResponse; the hook asks only when the login did
+-- not. The function is the live vtable slot of the IClientUser object (the
+-- `this` Steam passes to the hook, or SLSsteam's engine user outside it).
+SplicedTickets.requestApp = 480
+SplicedTickets.requested = false
+SplicedTickets.updateFn = nil
+
+SplicedTickets.engineClientUser = function()
+	local ok, p = pcall(function() return ffi.C.unpack_user_data(SLS.steamEngine:getUser(0):getClientUser()) end)
+	if ok and p ~= nil then return p end
+	return nil
+end
+
+SplicedTickets.loggedOn = function()
+	local ok, v = pcall(function() return SLS.steamEngine:getUser(0):getClientUser():loggedOn() end)
+	return ok and v == true
+end
+
+SplicedTickets.resolveUpdate = function(this)
+	if SplicedTickets.updateFn ~= nil then return SplicedTickets.updateFn end
+	local ok, fn = pcall(function()
+		local map = VFTableInfo_t("14IClientUserMap", "BUpdateAppOwnershipTicket")
+		if not map:init() then return nil end
+		local slot = ffi.cast("void**", ffi.cast("void**", this)[0])[map.index]
+		if slot == nil then return nil end
+		return ffi.cast("UpdateTicket_t", slot)
+	end)
+	if ok and fn ~= nil then SplicedTickets.updateFn = fn end
+	return SplicedTickets.updateFn
+end
+
+-- Returns true when a request went out. `this` nil: the engine's user.
+SplicedTickets.request = function(this, why)
+	if SplicedTickets.requested then return false end
+	local app = SplicedTickets.requestApp
+	this = this or SplicedTickets.engineClientUser()
+	if this == nil then
+		log.debug("Spliced tickets: no IClientUser yet, ticket of app " .. app .. " not requested (" .. why .. ")")
+		return false
+	end
+	local fn = SplicedTickets.resolveUpdate(this)
+	if fn == nil then
+		log.info("Spliced tickets: BUpdateAppOwnershipTicket not resolved, ticket of app " .. app .. " not requested (" .. why .. ")")
+		return false
+	end
+	SplicedTickets.requested = true
+	local ok, r = pcall(fn, this, app, 0)
+	log.info("Spliced tickets: asked Steam for the ownership ticket of app " .. app .. " (" .. why .. ") -> " .. (ok and tostring(r) or ("error " .. tostring(r))))
+	return ok
+end
 
 -- LumaDeck: the apps added through SLSsteam (AdditionalApps in its
 -- config.yaml). They are installed but not owned, so they never have a
@@ -173,7 +248,11 @@ SplicedTickets.hkGetTicket = ffi.cast("GetTicket_t", function(pUser, appId, pTic
 	-- LumaDeck: was `getTicketTramp(pUser, 7, ...)`; see the header.
 	size = SplicedTickets.baseTicket(pUser, appId, pTicket, ticketSize, pOffAppId, pOffSteamId, pOffSig, pOffSigSize)
 	if size == 0 then
-		log.info("No base ticket for " .. appId .. ": neither app 7 nor any installed app has one; the stub gets the empty ticket")
+		-- LumaDeck: nothing in memory. Ask for 480's now if the login did not
+		-- (header): this launch gets the empty ticket, the next one finds it.
+		local asked = SplicedTickets.request(pUser, "no base ticket for " .. appId)
+		log.info("No base ticket for " .. appId .. ": neither Spacewar, app 7 nor any installed app has one; the stub gets the empty ticket"
+			.. (asked and ("; Steam was asked for app " .. SplicedTickets.requestApp .. "'s, the next launch has it") or ""))
 		return SplicedTickets.mutexReturn(0, mutex)
 	end
 
@@ -206,5 +285,23 @@ end)
 
 SplicedTickets.getTicketHook = LuaHook("GetTicket", clientUser.ptr)
 SplicedTickets.getTicketTramp = ffi.cast("GetTicket_t", ffi.C.place_lua_hook(SplicedTickets.getTicketHook.index, SplicedTickets.hkGetTicket))
+
+-- LumaDeck: ask for 480's ticket at login (header). ClientLogOnResponse (751)
+-- opens a new logon: the flag clears; ClientAccountInfo (768) follows it once
+-- the session is up: the request goes out. A plugin dropped in with Steam
+-- already logged on (LumaDeck installs it hot) asks right away.
+if SLS ~= nil and SLS.registerCallback ~= nil then
+	pcall(SLS.registerCallback, "Network::recvPkt", function(pkt)
+		local ok, t = pcall(function() return tonumber(pkt.body.type) end)
+		if not ok or t == nil then return end
+		if t < 0 then t = t + 2147483648 end   -- protobuf messages carry the high bit
+		if t == 751 then SplicedTickets.requested = false
+		elseif t == 768 then SplicedTickets.request(nil, "logon") end
+	end)
+	pcall(SLS.registerCallback, "SLSsteam::initialized", function()
+		if SplicedTickets.loggedOn() then SplicedTickets.request(nil, "initialized, logged on") end
+	end)
+	if SplicedTickets.loggedOn() then SplicedTickets.request(nil, "plugin loaded, logged on") end
+end
 
 log.notify("spliced-tickets.lua loaded!")
