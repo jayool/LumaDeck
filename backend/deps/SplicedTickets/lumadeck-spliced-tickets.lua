@@ -31,8 +31,7 @@
 -- runtimes a Deck that runs Windows games has installed, then every installed
 -- app in every Steam library (libraryfolders.vdf, SD card included) except
 -- the ones added through SLSsteam (AdditionalApps: installed, not owned, no
--- ticket). The first one with a ticket is remembered and tried first. The
--- base used is logged at info level: "Spliced ticket for <game> on app <base>".
+-- ticket). The base used is logged at info level: "Spliced ticket for <game> on app <base>".
 --
 -- LumaDeck, 2026-11-07: Spacewar (480) first. The client only holds the
 -- tickets of the apps it has installed; an owned app that is not installed
@@ -94,7 +93,7 @@ log.debug("User ExtendedData at "..clientUserMap.index)
 -- LumaDeck 2026-11-07: Spacewar (480) first, the app whose ticket this plugin
 -- asks the server for (header); it needs nothing installed.
 SplicedTickets.baseCandidates = { 480, 7, 1493710, 2180100, 3658110, 2805730, 1887720, 1628350, 4183110, 1070560, 1391110 }
-SplicedTickets.baseApp = nil   -- the base that worked last time; tried first
+SplicedTickets.baseApp = nil   -- the base used last time (for the log line; 480 is always tried first)
 
 -- LumaDeck: ask Steam for 480's ticket (header). `this` is the IClientUser
 -- the hook was called on; the function is its live vtable slot (SLSsteam's own
@@ -181,10 +180,8 @@ SplicedTickets.baseTicket = function(pUser, appId, pTicket, ticketSize, pOffAppI
 		return n
 	end
 	-- try() leaves the ticket in the caller's buffers, so a hit is returned as is.
-	if SplicedTickets.baseApp then
-		local n = try(SplicedTickets.baseApp)
-		if n > 0 then return n end
-	end
+	-- Always in list order: 480 is on every account, the rest only on some
+	-- machines, so the one that worked last time is not tried first.
 	for _, base in ipairs(SplicedTickets.baseCandidates) do
 		local n = try(base)
 		if n > 0 then return n end

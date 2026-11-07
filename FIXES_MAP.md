@@ -143,9 +143,10 @@ Steam Linux Runtime sniper 1628350, 4183110, soldier 1070560, scout-on-soldier
 1391110); then every installed app of every Steam library
 (`libraryfolders.vdf`, SD card included), never the game itself nor the apps
 added through SLSsteam (`AdditionalApps` in its `config.yaml`: installed, not
-owned, no ticket). The first app with a ticket is remembered and tried first
-afterwards. With no ticket anywhere the hook returns 0 (the stub shows 65432
-as before) and asks for Spacewar's ticket, so the next launch has it.
+owned, no ticket). Always in that order: 480 is on every account, the rest
+only on some machines. With no ticket anywhere the hook returns 0 (the stub
+shows 65432 as before) and asks for Spacewar's ticket, so the next launch has
+it.
 
 Why the client holds some tickets and not others, and the Spacewar request
 (2026-11-07). The client fetches at login the ownership tickets of the apps it
@@ -182,7 +183,7 @@ other SLSsteam flags on every plugin start):
 - bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`:
   Ace's hook, splice and double-load guard, plus LumaDeck's base-ticket
   selection and Spacewar request (`SplicedTickets.baseCandidates`,
-  `installedApps`, `baseTicket`, `request`, each block marked `LumaDeck:`); whole file sha256 starting `d84544c8`. Not fetched
+  `installedApps`, `baseTicket`, `request`, each block marked `LumaDeck:`); whole file sha256 starting `560b9a98`. Not fetched
   from anywhere at runtime. Should Ace publish his own fix, the two are
   compared by hand. Tested in `tests/test_spliced_tickets_lua.py` (the Lua run
   under lupa with SLSsteam's API stubbed; skipped where lupa is missing) and

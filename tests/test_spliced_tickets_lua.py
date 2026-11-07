@@ -9,7 +9,7 @@ Pins: a real ticket is returned untouched; with app 7 empty the base comes
 from the candidate list, then from the installed apps (every library in
 libraryfolders.vdf), never from the game itself; the splice puts the game's
 appid at the old signature offset, moves the signature by 4 and keeps the
-steamid; the base that worked is remembered; with no ticket anywhere the hook
+steamid; 480 is always tried first; with no ticket anywhere the hook
 returns 0 instead of 4 bytes of appid. 2026-11-07: Spacewar (480) is the
 first base; when it reads empty the hook asks Steam for its ticket, once per
 such launch, and goes on with the other bases.
@@ -196,7 +196,7 @@ class SplicedTicketsLua(unittest.TestCase):
         self.assertIsNone(base)
         self.assertTrue(any("No base ticket for 229890" in m for m in log), log)
 
-    def test_working_base_is_remembered_and_tried_first(self):
+    def test_spacewar_is_tried_first_even_after_another_base_worked(self):
         L, M = self._runtime({4183110: make_ticket(4183110)})
         M.run(self.src, 229890)
         self.assertEqual(L.eval(b"SplicedTickets.baseApp"), 4183110)
@@ -209,7 +209,8 @@ class SplicedTicketsLua(unittest.TestCase):
         zero = lambda: L.table_from({0: 0})
         buf = L.eval(b"setmetatable({}, { __index = function(t, k) return rawget(t, k) or 0 end })")
         L.globals().SplicedTickets.hkGetTicket(L.table(), 229890, buf, 1024, zero(), zero(), zero(), zero())
-        self.assertEqual(order, [229890, 4183110])   # the game's own ticket, then the remembered base: nothing else
+        self.assertEqual(order[:2], [229890, 480])   # the game's own ticket, then 480 before the base that worked
+        self.assertEqual(order[-1], 4183110)
 
     # --- 2026-11-07: Spacewar as the requested base -------------------------
 
@@ -249,12 +250,18 @@ class SplicedTicketsLua(unittest.TestCase):
         L, M = self._runtime({1493710: make_ticket(1493710)})
         M.run(self.src, 229890)
         asked = self._spy(L)
-        L.globals().SplicedTickets.baseApp = None    # a first launch (no base remembered yet)
         self.assertEqual(self._hook(L, 229890), 178) # 480 empty -> asked; this launch splices on Proton
         self.assertEqual([a[1:] for a in asked], [(480, 0)])
         self.assertEqual(L.eval(b"SplicedTickets.baseApp"), 1493710)
-        self.assertEqual(self._hook(L, 229890), 178) # Proton remembered: tried first, 480 not read, nothing asked
-        self.assertEqual(len(asked), 1)
+        self.assertEqual(self._hook(L, 229890), 178) # still empty: asked again, Proton again
+        self.assertEqual(len(asked), 2)
+        # once the ticket is there, 480 is the base, Proton or not
+        L2, M2 = self._runtime({480: make_ticket(480), 1493710: make_ticket(1493710)})
+        M2.run(self.src, 229890)
+        asked2 = self._spy(L2)
+        self.assertEqual(self._hook(L2, 229890), 178)
+        self.assertEqual(asked2, [])
+        self.assertEqual(L2.eval(b"SplicedTickets.baseApp"), 480)
 
     def test_hook_does_not_ask_once_spacewar_has_a_ticket(self):
         L, M = self._runtime({480: make_ticket(480)})
