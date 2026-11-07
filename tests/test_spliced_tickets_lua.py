@@ -13,8 +13,8 @@ steamid; the base that worked is remembered; with no ticket anywhere the hook
 returns 0 instead of 4 bytes of appid. 2026-11-07: Spacewar (480) is the
 first base; its ticket is asked for once per logon, at the first CM packet
 that finds the client logged on with the licences loaded (isSubscribed), and
-from the hook when nothing has a ticket and the logon did not ask; a logoff
-re-arms it; never twice in a logon.
+from the hook when nothing has a ticket and the logon's request was not read
+back as answered; a logoff re-arms it.
 """
 import os
 import sys
@@ -255,8 +255,8 @@ class SplicedTicketsLua(unittest.TestCase):
         L.globals().SplicedTickets.requested = False
         self.assertEqual(self._hook(L, 229890), 0)   # this launch: empty ticket, request sent
         self.assertEqual([a[1:] for a in asked], [(480, 0)])
-        self.assertEqual(self._hook(L, 229890), 0)   # a second miss in the same logon: no second request
-        self.assertEqual(len(asked), 1)
+        self.assertEqual(self._hook(L, 229890), 0)   # a second miss, the first request unanswered: it asks again
+        self.assertEqual(len(asked), 2)              # (one per launch that finds nothing, never a loop within one)
         logs = [bytes(c).decode() for c in M.calls.values()]
         self.assertTrue(any("asked Steam for the ownership ticket of app 480 (no base ticket for 229890)" in m for m in logs), logs)
         self.assertTrue(any("the next launch has it" in m for m in logs), logs)
@@ -276,11 +276,14 @@ class SplicedTicketsLua(unittest.TestCase):
         send(None); recv(None)                       # same logon: nothing more
         self.assertEqual([a[1:] for a in asked], [(480, 0)])
         self.assertEqual(bytes(asked[0][0].marker), b"engine IClientUser")   # the engine's IClientUser, not the hook's pUser
-        self.assertEqual(self._hook(L, 229890), 0)   # the hook does not ask again after the logon did
-        self.assertEqual(len(asked), 1)
+        self.assertEqual(self._hook(L, 229890), 0)   # the logon's request was never read back as answered:
+        self.assertEqual(len(asked), 2)              # the hook asks again (run 70: it did not, and spliced on Proton)
+        L.globals().SplicedTickets.verified = True   # the logon's request answered (ticket read back)
+        self.assertEqual(self._hook(L, 229890), 0)   # a miss now (480 gone from memory): no third request
+        self.assertEqual(len(asked), 2)
         M.loggedOn = False; recv(None)               # logoff re-arms
         M.loggedOn = True; recv(None)                # the new logon asks again
-        self.assertEqual(len(asked), 2)
+        self.assertEqual(len(asked), 3)
 
     def test_requested_ticket_is_read_back_once(self):
         L, M = self._runtime({480: make_ticket(480)})

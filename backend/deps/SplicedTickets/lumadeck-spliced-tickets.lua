@@ -50,9 +50,10 @@
 -- dropped; run 70 of the smoke), checked on every CM packet until then, and
 -- read back afterwards; 480 is the first base tried, then the list and the
 -- scan above as before; and when nothing at all has a ticket the hook asks for
--- 480's then (once per logon), returns the empty ticket for that launch, and
--- the next launch finds it. The request goes through the live vtable slot of
--- the IClientUser object (SLSsteam's own hook on it included).
+-- 480's then (unless the logon's request was already read back as answered),
+-- returns the empty ticket for that launch, and the next launch finds it. The
+-- request goes through the live vtable slot of the IClientUser object
+-- (SLSsteam's own hook on it included).
 --
 -- To keep LumaDeck from installing it: touch ~/.config/lumadeck/no_spliced_tickets
 
@@ -107,9 +108,10 @@ log.debug("User ExtendedData at "..clientUserMap.index)
 SplicedTickets.baseCandidates = { 480, 7, 1493710, 2180100, 3658110, 2805730, 1887720, 1628350, 4183110, 1070560, 1391110 }
 SplicedTickets.baseApp = nil   -- the base that worked last time; tried first
 
--- LumaDeck: the ticket request (header). One request per logon: `requested`
--- clears when the client is seen logged off; the hook asks only when the
--- logon did not. The function is the live vtable slot of the IClientUser
+-- LumaDeck: the ticket request (header). One request per logon from the
+-- ticks below (`requested` clears when the client is seen logged off), one
+-- more from the hook when nothing has a ticket and that one was never read
+-- back as answered. The function is the live vtable slot of the IClientUser
 -- object (the `this` Steam passes to the hook, or SLSsteam's engine user).
 SplicedTickets.requestApp = 480
 SplicedTickets.requested = false
@@ -149,8 +151,12 @@ SplicedTickets.resolveUpdate = function(this)
 end
 
 -- Returns true when a request went out. `this` nil: the engine's user.
-SplicedTickets.request = function(this, why)
-	if SplicedTickets.requested then return false end
+-- `again`: the hook's call, when nothing has a ticket: it asks even after the
+-- logon did, unless the logon's request was read back as answered (verified).
+-- A request counts as done only once its ticket has been seen (run 70: the
+-- logon's request was lost and the hook, seeing "already asked", never asked).
+SplicedTickets.request = function(this, why, again)
+	if SplicedTickets.requested and (SplicedTickets.verified or not again) then return false end
 	local app = SplicedTickets.requestApp
 	this = this or SplicedTickets.engineClientUser()
 	if this == nil then
@@ -260,7 +266,7 @@ SplicedTickets.hkGetTicket = ffi.cast("GetTicket_t", function(pUser, appId, pTic
 	if size == 0 then
 		-- LumaDeck: nothing in memory. Ask for 480's now if the login did not
 		-- (header): this launch gets the empty ticket, the next one finds it.
-		local asked = SplicedTickets.request(pUser, "no base ticket for " .. appId)
+		local asked = SplicedTickets.request(pUser, "no base ticket for " .. appId, true)
 		log.info("No base ticket for " .. appId .. ": neither Spacewar, app 7 nor any installed app has one; the stub gets the empty ticket"
 			.. (asked and ("; Steam was asked for app " .. SplicedTickets.requestApp .. "'s, the next launch has it") or ""))
 		return SplicedTickets.mutexReturn(0, mutex)

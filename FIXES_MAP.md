@@ -166,10 +166,12 @@ on **and** the account's licences loaded (`isSubscribed(480)` true; a request
 sent at the logon message itself, before the licences are in, is dropped:
 run 70), through the live vtable slot of the IClientUser object (SLSsteam's
 own hook on that call included), reads it back on the next packets and logs
-once that it is in memory; a logoff re-arms it; never twice in a logon: a
-refused one is not worth repeating. A game launched before the answer gets
-the empty ticket once; the hook then asks itself if the logon did not. Base
-order, gate and request are tested in `tests/test_spliced_tickets_lua.py`.
+once that it is in memory; a logoff re-arms it. A game launched before the
+answer gets the empty ticket once; the hook then asks itself unless the
+logon's request was already read back as answered (a request counts as done
+only once its ticket has been seen; run 70 lost the logon's request and the
+hook, seeing "already asked", never asked). Base order, gate and request are
+tested in `tests/test_spliced_tickets_lua.py`.
 
 Measured: Joe Danger (229890), 2026-09-28, Deck, app 7 as base, with a control
 run: plugin on → launches, plugin off → 65432. How to Fish (4001890), SteamStub
@@ -184,7 +186,7 @@ other SLSsteam flags on every plugin start):
 - bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`:
   Ace's hook, splice and double-load guard, plus LumaDeck's base-ticket
   selection and Spacewar request (`SplicedTickets.baseCandidates`,
-  `installedApps`, `baseTicket`, `request`, each block marked `LumaDeck:`); whole file sha256 starting `48fbb63e`. Not fetched
+  `installedApps`, `baseTicket`, `request`, each block marked `LumaDeck:`); whole file sha256 starting `cfe65327`. Not fetched
   from anywhere at runtime. Should Ace publish his own fix, the two are
   compared by hand. Tested in `tests/test_spliced_tickets_lua.py` (the Lua run
   under lupa with SLSsteam's API stubbed; skipped where lupa is missing) and
