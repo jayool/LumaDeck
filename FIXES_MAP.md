@@ -160,18 +160,14 @@ Experimental and runtime 4183110 178 each, none of them launched that session;
 one request for 480 and its 178-byte ticket was there within the second
 (appid at 16, signature at 50, like the others); the same request for 7 ends
 in `content_log` as `AppID 7 failed to update ownership ticket (Access
-Denied)`. So the plugin asks for 480's ticket once per logon, at the first CM
-packet (in or out: the plugin API has no timer) that finds the client logged
-on **and** the account's licences loaded (`isSubscribed(480)` true; a request
-sent at the logon message itself, before the licences are in, is dropped:
-run 70), through the live vtable slot of the IClientUser object (SLSsteam's
-own hook on that call included), reads it back on the next packets and logs
-once that it is in memory (the client logs nothing about it); a logoff
-re-arms it. A launch that finds no ticket at all asks for 480's itself, one
-request per such launch: its own empty read of 480 is the proof that the
-logon's request did not get it (run 70 lost the logon's request and the
-hook, seeing "already asked", never asked). Base order, gate and request are
-tested in `tests/test_spliced_tickets_lua.py`.
+Denied)`. So when 480 reads empty at a launch the plugin asks for its ticket
+right there (`IClientUser::BUpdateAppOwnershipTicket(480, false)`, through
+the object's live vtable slot, SLSsteam's own hook on it included) and goes
+on with the other bases: that launch splices on Proton or a runtime, or fails
+as before, and the next one has 480. SLSsteam keeps the ticket on disk
+(`~/.config/SLSsteam/cache/ticket_480.yaml`) and reloads it, so this happens
+once per machine. Base order and the request are tested in
+`tests/test_spliced_tickets_lua.py`.
 
 Measured: Joe Danger (229890), 2026-09-28, Deck, app 7 as base, with a control
 run: plugin on → launches, plugin off → 65432. How to Fish (4001890), SteamStub
@@ -186,7 +182,7 @@ other SLSsteam flags on every plugin start):
 - bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`:
   Ace's hook, splice and double-load guard, plus LumaDeck's base-ticket
   selection and Spacewar request (`SplicedTickets.baseCandidates`,
-  `installedApps`, `baseTicket`, `request`, each block marked `LumaDeck:`); whole file sha256 starting `456a9037`. Not fetched
+  `installedApps`, `baseTicket`, `request`, each block marked `LumaDeck:`); whole file sha256 starting `d84544c8`. Not fetched
   from anywhere at runtime. Should Ace publish his own fix, the two are
   compared by hand. Tested in `tests/test_spliced_tickets_lua.py` (the Lua run
   under lupa with SLSsteam's API stubbed; skipped where lupa is missing) and

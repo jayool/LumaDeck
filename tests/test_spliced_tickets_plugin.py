@@ -57,7 +57,7 @@ class SplicedTickets(unittest.TestCase):
         self.assertIn("SplicedTickets.baseCandidates = { 480, 7, 1493710,", body)
         # LumaDeck's change (2026-11-07): Spacewar's ticket is asked for, once per logon.
         self.assertIn('VFTableInfo_t("14IClientUserMap", "BUpdateAppOwnershipTicket")', body)
-        self.assertIn("SplicedTickets.request = function(this, why, again)", body)
+        self.assertIn("SplicedTickets.request = function(this)", body)
         self.assertIn("SplicedTickets.installedApps = function()", body)
         self.assertIn("libraryfolders.vdf", body)
         self.assertIn("size = SplicedTickets.baseTicket(pUser, appId,", body)

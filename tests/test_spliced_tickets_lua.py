@@ -11,10 +11,8 @@ libraryfolders.vdf), never from the game itself; the splice puts the game's
 appid at the old signature offset, moves the signature by 4 and keeps the
 steamid; the base that worked is remembered; with no ticket anywhere the hook
 returns 0 instead of 4 bytes of appid. 2026-11-07: Spacewar (480) is the
-first base; its ticket is asked for once per logon, at the first CM packet
-that finds the client logged on with the licences loaded (isSubscribed), and
-from the hook at each launch that finds no ticket at all; a logoff re-arms
-the logon's.
+first base; when it reads empty the hook asks Steam for its ticket, once per
+such launch, and goes on with the other bases.
 """
 import os
 import sys
@@ -48,10 +46,8 @@ local M = {}
 M.calls = calls
 local ffiStub = {
     cdef = function() end,
-    new = function() return { [0] = 0 } end,
     C = { malloc = function(n) return { } end, free = function() end,
-          place_lua_hook = function(_, fn) return fn end,
-          unpack_user_data = function(ud) return ud end },
+          place_lua_hook = function(_, fn) return fn end },
     gc = function(p) return p end,
     cast = function(ctype, v)
         -- uint32_t* over a 4-byte box: bytes readable through [0..3]
@@ -73,16 +69,6 @@ LuaHook = function() return { index = 1 } end
 LuaMutex = function() return { unlock = function() end } end
 log = { info = function(m) calls[#calls + 1] = m end, debug = function() end,
         notify = function() end, notifyError = function() end }
--- SLS: the callbacks a plugin registers are captured (M.cbs) and fired by the
--- tests; the engine's user reports M.loggedOn and hands a marker as IClientUser.
-M.cbs = {}; M.loggedOn = false; M.subscribed = false; M.clientUser = { marker = "engine IClientUser" }
-SLS = {
-    registerCallback = function(name, fn) M.cbs[name] = fn end,
-    steamEngine = { getUser = function(_, i) return {
-        isSubscribed = function(_, app) return M.subscribed end,
-        getClientUser = function()
-            return setmetatable(M.clientUser, { __index = { loggedOn = function() return M.loggedOn end } }) end } end },
-}
 -- the original GetAppOwnershipTicketExtendedData: the fake fills the buffers like Steam does
 M.tramp = function(pUser, appId, pTicket, ticketSize, pOffAppId, pOffSteamId, pOffSig, pOffSigSize)
     local t = tickets[appId]
@@ -248,64 +234,35 @@ class SplicedTicketsLua(unittest.TestCase):
         self.assertEqual(data[8:16], make_ticket(480)[8:16])
         self.assertTrue(any("Spliced ticket for 229890 on app 480" in m for m in log), log)
 
-    def test_hook_asks_for_spacewar_once_when_nothing_has_a_ticket(self):
+    def test_hook_asks_for_spacewar_when_its_ticket_is_empty(self):
         L, M = self._runtime({})
-        M.run(self.src, 229890)                      # loaded; the first miss could not resolve the request (stubbed vtable)
+        M.run(self.src, 229890)                      # the first launch: resolveUpdate fails on the stubbed vtable, logged
         asked = self._spy(L)
-        L.globals().SplicedTickets.requested = False
-        self.assertEqual(self._hook(L, 229890), 0)   # this launch: empty ticket, request sent
+        self.assertEqual(self._hook(L, 229890), 0)   # nothing anywhere: 480 asked for, the stub gets the empty ticket
         self.assertEqual([a[1:] for a in asked], [(480, 0)])
-        self.assertEqual(self._hook(L, 229890), 0)   # a second miss, the first request unanswered: it asks again
-        self.assertEqual(len(asked), 2)              # (one per launch that finds nothing, never a loop within one)
+        self.assertEqual(self._hook(L, 229890), 0)   # still empty at the next launch: asked again (one per launch)
+        self.assertEqual(len(asked), 2)
         logs = [bytes(c).decode() for c in M.calls.values()]
-        self.assertTrue(any("asked Steam for the ownership ticket of app 480 (no base ticket for 229890)" in m for m in logs), logs)
-        self.assertTrue(any("the next launch has it" in m for m in logs), logs)
+        self.assertTrue(any("asked Steam for the ownership ticket of app 480" in m for m in logs), logs)
 
-    def test_logon_asks_once_the_licences_are_loaded_and_a_new_logon_asks_again(self):
-        L, M = self._runtime({})
+    def test_hook_asks_for_spacewar_and_splices_on_proton_meanwhile(self):
+        L, M = self._runtime({1493710: make_ticket(1493710)})
         M.run(self.src, 229890)
         asked = self._spy(L)
-        L.globals().SplicedTickets.requested = False
-        recv, send = M.cbs[b"Network::recvPkt"], M.cbs[b"Network::sendPkt"]
-        recv(None)                                   # logged off: nothing
-        M.loggedOn = True
-        recv(None)                                   # logged on, licences not in yet: nothing (run 70's dropped request)
-        self.assertEqual(asked, [])
-        M.subscribed = True
-        send(None)                                   # logged on with the licences: the request, on an outbound tick too
-        send(None); recv(None)                       # same logon: nothing more
+        L.globals().SplicedTickets.baseApp = None    # a first launch (no base remembered yet)
+        self.assertEqual(self._hook(L, 229890), 178) # 480 empty -> asked; this launch splices on Proton
         self.assertEqual([a[1:] for a in asked], [(480, 0)])
-        self.assertEqual(bytes(asked[0][0].marker), b"engine IClientUser")   # the engine's IClientUser, not the hook's pUser
-        self.assertEqual(self._hook(L, 229890), 0)   # a launch that reads 480 as empty: the logon's request did
-        self.assertEqual(len(asked), 2)              # not get it, the hook asks (run 70: it did not, and spliced on Proton)
-        M.loggedOn = False; recv(None)               # logoff re-arms
-        M.loggedOn = True; recv(None)                # the new logon asks again
-        self.assertEqual(len(asked), 3)
+        self.assertEqual(L.eval(b"SplicedTickets.baseApp"), 1493710)
+        self.assertEqual(self._hook(L, 229890), 178) # Proton remembered: tried first, 480 not read, nothing asked
+        self.assertEqual(len(asked), 1)
 
-    def test_requested_ticket_is_read_back_once(self):
+    def test_hook_does_not_ask_once_spacewar_has_a_ticket(self):
         L, M = self._runtime({480: make_ticket(480)})
         M.run(self.src, 229890)
-        M.loggedOn = True; M.subscribed = True
-        self._spy(L)
-        L.globals().SplicedTickets.requested = False
-        recv = M.cbs[b"Network::recvPkt"]
-        recv(None)                                   # the request
-        recv(None); recv(None)                       # the read-back: found, logged once
-        logs = [bytes(c).decode() for c in M.calls.values()]
-        self.assertEqual(sum("is in memory (178 bytes)" in m for m in logs), 1, logs)
-        self.assertTrue(L.eval(b"SplicedTickets.verified"))
-
-    def test_plugin_loaded_with_a_session_asks_at_load(self):
-        L, M = self._runtime({})
-        M.loggedOn = True; M.subscribed = True
-        # resolveUpdate cannot work on the stubbed vtable: the load-time request is
-        # attempted (the log says so) and nothing breaks.
-        M.run(self.src, 229890)
-        logs = [bytes(c).decode() for c in M.calls.values()]
-        self.assertTrue(any("not resolved, ticket of app 480 not requested (plugin loaded, logged on)" in m for m in logs), logs)
-        self.assertIn(b"SLSsteam::initialized", M.cbs)
-        self.assertIn(b"Network::recvPkt", M.cbs)
-        self.assertIn(b"Network::sendPkt", M.cbs)
+        asked = self._spy(L)
+        self.assertEqual(self._hook(L, 229890), 178)
+        self.assertEqual(asked, [])
+        self.assertEqual(L.eval(b"SplicedTickets.baseApp"), 480)
 
 
 if __name__ == "__main__":
