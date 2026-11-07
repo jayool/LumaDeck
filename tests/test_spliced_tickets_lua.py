@@ -11,8 +11,9 @@ libraryfolders.vdf), never from the game itself; the splice puts the game's
 appid at the old signature offset, moves the signature by 4 and keeps the
 steamid; 480 is always tried first; with no ticket anywhere the hook
 returns 0 instead of 4 bytes of appid. 2026-11-07: Spacewar (480) is the
-first base; when it reads empty the hook asks Steam for its ticket, once per
-such launch, and goes on with the other bases.
+first base; its ticket is asked for once at logon, at the first CM packet
+that finds isSubscribed(480) true (the licences are in); when the hook still
+reads it empty it asks there too and goes on with the other bases.
 """
 import os
 import sys
@@ -47,7 +48,8 @@ M.calls = calls
 local ffiStub = {
     cdef = function() end,
     C = { malloc = function(n) return { } end, free = function() end,
-          place_lua_hook = function(_, fn) return fn end },
+          place_lua_hook = function(_, fn) return fn end,
+          unpack_user_data = function(ud) return ud end },
     gc = function(p) return p end,
     cast = function(ctype, v)
         -- uint32_t* over a 4-byte box: bytes readable through [0..3]
@@ -69,6 +71,15 @@ LuaHook = function() return { index = 1 } end
 LuaMutex = function() return { unlock = function() end } end
 log = { info = function(m) calls[#calls + 1] = m end, debug = function() end,
         notify = function() end, notifyError = function() end }
+-- SLS: the callbacks the plugin registers (M.cbs), the engine's user with
+-- M.subscribed as isSubscribed(480) and a marker as its IClientUser.
+M.cbs = {}; M.subscribed = false; M.clientUser = { marker = "engine IClientUser" }
+SLS = {
+    registerCallback = function(name, fn) M.cbs[name] = fn end,
+    steamEngine = { getUser = function(_, i) return {
+        isSubscribed = function(_, app) return M.subscribed end,
+        getClientUser = function() return M.clientUser end } end },
+}
 -- the original GetAppOwnershipTicketExtendedData: the fake fills the buffers like Steam does
 M.tramp = function(pUser, appId, pTicket, ticketSize, pOffAppId, pOffSteamId, pOffSig, pOffSigSize)
     local t = tickets[appId]
@@ -262,6 +273,20 @@ class SplicedTicketsLua(unittest.TestCase):
         self.assertEqual(self._hook(L2, 229890), 178)
         self.assertEqual(asked2, [])
         self.assertEqual(L2.eval(b"SplicedTickets.baseApp"), 480)
+
+    def test_logon_asks_once_the_licences_are_in(self):
+        L, M = self._runtime({})
+        M.run(self.src, 229890)
+        asked = self._spy(L)
+        L.globals().SplicedTickets.requested = False
+        recv, send = M.cbs[b"Network::recvPkt"], M.cbs[b"Network::sendPkt"]
+        recv(None); send(None)                       # licences not in: nothing (run 70's dropped request)
+        self.assertEqual(asked, [])
+        M.subscribed = True
+        send(None)                                   # licences in: the request, on an outbound tick too
+        recv(None); send(None)                       # once
+        self.assertEqual([a[1:] for a in asked], [(480, 0)])
+        self.assertEqual(bytes(asked[0][0].marker), b"engine IClientUser")
 
     def test_hook_does_not_ask_once_spacewar_has_a_ticket(self):
         L, M = self._runtime({480: make_ticket(480)})

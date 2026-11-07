@@ -37,11 +37,13 @@
 -- tickets of the apps it has installed; an owned app that is not installed
 -- reads as empty until someone asks the server for it, and the server issues
 -- 480's at once (luma-lab login smoke, runs 68/69, 32- and 64-bit clients;
--- app 7's is refused). So when 480 reads empty the hook asks for it right
--- there (IClientUser::BUpdateAppOwnershipTicket through the object's live
--- vtable slot) and goes on with the bases above: that launch uses one of
--- them or fails as before, the next one has 480. SLSsteam keeps the ticket
--- on disk (cache/ticket_480.yaml), so this happens once per machine.
+-- app 7's is refused). So 480's ticket is asked for once at logon, as soon
+-- as the account's licences are in (isSubscribed(480), SLSsteam's own
+-- CheckAppOwnership answer: a request sent at the logon message itself, before
+-- the licences arrive, is dropped; run 70), so it is there before any game
+-- asks; and should the hook still find it empty it asks there too and goes on
+-- with the bases above. SLSsteam keeps the ticket on disk
+-- (cache/ticket_480.yaml), so after the first session nothing is asked.
 --
 -- To keep LumaDeck from installing it: touch ~/.config/lumadeck/no_spliced_tickets
 
@@ -66,6 +68,7 @@ ffi.cdef[[
 
 	typedef uint32_t(*GetTicket_t)(void*, uint32_t, uint8_t*, uint32_t, uint32_t*, uint32_t*, uint32_t*, uint32_t*);
 	typedef bool(*UpdateTicket_t)(void*, uint32_t, int);
+	void* unpack_user_data(const void*);
 ]]
 
 SplicedTickets.mutexReturn = function(value, mutex)
@@ -95,12 +98,15 @@ log.debug("User ExtendedData at "..clientUserMap.index)
 SplicedTickets.baseCandidates = { 480, 7, 1493710, 2180100, 3658110, 2805730, 1887720, 1628350, 4183110, 1070560, 1391110 }
 SplicedTickets.baseApp = nil   -- the base used last time (for the log line; 480 is always tried first)
 
--- LumaDeck: ask Steam for 480's ticket (header). `this` is the IClientUser
--- the hook was called on; the function is its live vtable slot (SLSsteam's own
--- hook on it included). Logs one line; the answer arrives asynchronously.
+-- LumaDeck: ask Steam for 480's ticket (header). `this` is the IClientUser:
+-- the one the hook was called on, or SLSsteam's engine user at logon; the
+-- function is its live vtable slot (SLSsteam's own hook on it included). Logs
+-- one line; the answer arrives asynchronously.
 SplicedTickets.requestApp = 480
+SplicedTickets.requested = false   -- the logon's request went out
 SplicedTickets.request = function(this)
 	local app = SplicedTickets.requestApp
+	SplicedTickets.requested = true
 	if SplicedTickets.updateFn == nil then
 		local ok, fn = pcall(function()
 			local map = VFTableInfo_t("14IClientUserMap", "BUpdateAppOwnershipTicket")
@@ -237,5 +243,23 @@ end)
 
 SplicedTickets.getTicketHook = LuaHook("GetTicket", clientUser.ptr)
 SplicedTickets.getTicketTramp = ffi.cast("GetTicket_t", ffi.C.place_lua_hook(SplicedTickets.getTicketHook.index, SplicedTickets.hkGetTicket))
+
+-- LumaDeck: the logon request (header). The plugin API has no timer: every
+-- CM packet is a tick until the request is out. isSubscribed(480) turns true
+-- once the licences are in; the request is sent then, once.
+if SLS ~= nil and SLS.registerCallback ~= nil then
+	local function atLogon()
+		if SplicedTickets.requested then return end
+		pcall(function()
+			local user = SLS.steamEngine:getUser(0)
+			if user and user:isSubscribed(SplicedTickets.requestApp) then
+				SplicedTickets.request(ffi.C.unpack_user_data(user:getClientUser()))
+			end
+		end)
+	end
+	pcall(SLS.registerCallback, "Network::recvPkt", atLogon)
+	pcall(SLS.registerCallback, "Network::sendPkt", atLogon)
+	atLogon()   -- dropped in with Steam already logged on (LumaDeck installs it hot)
+end
 
 log.notify("spliced-tickets.lua loaded!")
