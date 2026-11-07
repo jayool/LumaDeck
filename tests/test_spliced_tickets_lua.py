@@ -13,8 +13,8 @@ steamid; the base that worked is remembered; with no ticket anywhere the hook
 returns 0 instead of 4 bytes of appid. 2026-11-07: Spacewar (480) is the
 first base; its ticket is asked for once per logon, at the first CM packet
 that finds the client logged on with the licences loaded (isSubscribed), and
-from the hook when nothing has a ticket and the logon's request was not read
-back as answered; a logoff re-arms it.
+from the hook at each launch that finds no ticket at all; a logoff re-arms
+the logon's.
 """
 import os
 import sys
@@ -276,11 +276,8 @@ class SplicedTicketsLua(unittest.TestCase):
         send(None); recv(None)                       # same logon: nothing more
         self.assertEqual([a[1:] for a in asked], [(480, 0)])
         self.assertEqual(bytes(asked[0][0].marker), b"engine IClientUser")   # the engine's IClientUser, not the hook's pUser
-        self.assertEqual(self._hook(L, 229890), 0)   # the logon's request was never read back as answered:
-        self.assertEqual(len(asked), 2)              # the hook asks again (run 70: it did not, and spliced on Proton)
-        L.globals().SplicedTickets.verified = True   # the logon's request answered (ticket read back)
-        self.assertEqual(self._hook(L, 229890), 0)   # a miss now (480 gone from memory): no third request
-        self.assertEqual(len(asked), 2)
+        self.assertEqual(self._hook(L, 229890), 0)   # a launch that reads 480 as empty: the logon's request did
+        self.assertEqual(len(asked), 2)              # not get it, the hook asks (run 70: it did not, and spliced on Proton)
         M.loggedOn = False; recv(None)               # logoff re-arms
         M.loggedOn = True; recv(None)                # the new logon asks again
         self.assertEqual(len(asked), 3)

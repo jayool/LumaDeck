@@ -50,8 +50,8 @@
 -- dropped; run 70 of the smoke), checked on every CM packet until then, and
 -- read back afterwards; 480 is the first base tried, then the list and the
 -- scan above as before; and when nothing at all has a ticket the hook asks for
--- 480's then (unless the logon's request was already read back as answered),
--- returns the empty ticket for that launch, and the next launch finds it. The
+-- 480's then (one request per such launch), returns the empty ticket for
+-- that launch, and the next launch finds it. The
 -- request goes through the live vtable slot of the IClientUser object
 -- (SLSsteam's own hook on it included).
 --
@@ -109,13 +109,13 @@ SplicedTickets.baseCandidates = { 480, 7, 1493710, 2180100, 3658110, 2805730, 18
 SplicedTickets.baseApp = nil   -- the base that worked last time; tried first
 
 -- LumaDeck: the ticket request (header). One request per logon from the
--- ticks below (`requested` clears when the client is seen logged off), one
--- more from the hook when nothing has a ticket and that one was never read
--- back as answered. The function is the live vtable slot of the IClientUser
--- object (the `this` Steam passes to the hook, or SLSsteam's engine user).
+-- ticks below (`requested` clears when the client is seen logged off), and
+-- one per launch that finds no ticket at all (the hook). The function is the
+-- live vtable slot of the IClientUser object (the `this` Steam passes to the
+-- hook, or SLSsteam's engine user).
 SplicedTickets.requestApp = 480
 SplicedTickets.requested = false
-SplicedTickets.verified = false   -- the requested ticket was read back non-empty
+SplicedTickets.verified = false   -- the logon's ticket was read back (one log line; diagnosis only)
 SplicedTickets.updateFn = nil
 
 SplicedTickets.engineClientUser = function()
@@ -151,12 +151,12 @@ SplicedTickets.resolveUpdate = function(this)
 end
 
 -- Returns true when a request went out. `this` nil: the engine's user.
--- `again`: the hook's call, when nothing has a ticket: it asks even after the
--- logon did, unless the logon's request was read back as answered (verified).
--- A request counts as done only once its ticket has been seen (run 70: the
--- logon's request was lost and the hook, seeing "already asked", never asked).
+-- `again`: the hook's call. The hook has just read 480's ticket as empty, so
+-- whatever the logon asked did not get it: it asks, one request per such
+-- launch (run 70: the logon's request was lost and the hook, seeing "already
+-- asked", never asked). The ticks ask once per logon.
 SplicedTickets.request = function(this, why, again)
-	if SplicedTickets.requested and (SplicedTickets.verified or not again) then return false end
+	if SplicedTickets.requested and not again then return false end
 	local app = SplicedTickets.requestApp
 	this = this or SplicedTickets.engineClientUser()
 	if this == nil then
@@ -305,8 +305,8 @@ SplicedTickets.getTicketTramp = ffi.cast("GetTicket_t", ffi.C.place_lua_hook(Spl
 -- LumaDeck: ask for 480's ticket at logon (header). The plugin API has no
 -- timer, so every CM packet, in or out, is a tick: logged off -> a new logon
 -- will ask again; logged on with the licences loaded and not asked yet -> ask;
--- asked -> read the ticket back until it is there (one log line), then nothing
--- more. A plugin dropped in with Steam already logged on (LumaDeck installs it
+-- asked -> read the ticket back until it is there, for one log line that says
+-- the request was answered (the client logs nothing), then nothing more. A plugin dropped in with Steam already logged on (LumaDeck installs it
 -- hot) asks at the first tick. A tick never re-enters itself: the request is
 -- a packet of its own.
 SplicedTickets.inTick = false
