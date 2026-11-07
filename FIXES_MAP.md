@@ -135,16 +135,46 @@ appid and every stub showed 65432 again ("spliced tickets is broken rn",
 Ace, 2026-10-28). The client still holds tickets for the apps the account owns
 and has installed, in the same layout (178 bytes: steamid at 8, appid at 16,
 128-byte signature at 50), and the stub accepts a splice built on any of
-them. LumaDeck's plugin therefore looks for the base in this order: app 7
-(should Valve bring it back); Valve's compat tools and runtimes a Deck that
-runs Windows games has (Proton Experimental 1493710, Hotfix 2180100, Proton
-10 3658110, 9 2805730, 8 1887720, Steam Linux Runtime sniper 1628350, 4183110,
-soldier 1070560, scout-on-soldier 1391110); then every installed app of every
-Steam library (`libraryfolders.vdf`, SD card included), never the game itself
-nor the apps added through SLSsteam (`AdditionalApps` in its `config.yaml`:
-installed, not owned, no ticket).
-The first app with a ticket is remembered and tried first afterwards. With no
-ticket anywhere the hook returns 0 (the stub shows 65432 as before).
+them. LumaDeck's plugin therefore looks for the base in this order: Spacewar
+(480, see the next paragraph); app 7 (should Valve bring it back); Valve's
+compat tools and runtimes a Deck that runs Windows games has (Proton
+Experimental 1493710, Hotfix 2180100, Proton 10 3658110, 9 2805730, 8 1887720,
+Steam Linux Runtime sniper 1628350, 4183110, soldier 1070560, scout-on-soldier
+1391110); then every installed app of every Steam library
+(`libraryfolders.vdf`, SD card included), never the game itself nor the apps
+added through SLSsteam (`AdditionalApps` in its `config.yaml`: installed, not
+owned, no ticket). Always in that order: 480 is on every account, the rest
+only on some machines. With no ticket anywhere the hook returns 0 (the stub
+shows 65432 as before) and asks for Spacewar's ticket, so the next launch has
+it.
+
+Why the client holds some tickets and not others, and the Spacewar request
+(2026-11-07). The client fetches at login the ownership tickets of the apps it
+has **installed**; an owned app that is not installed reads as an empty ticket
+until something asks the server for it. That is why Proton and the runtimes
+worked as bases and app 7 and Spacewar did not. Asked for explicitly with
+`IClientUser::BUpdateAppOwnershipTicket(appid, false)`, the server issues
+Spacewar's at once and refuses app 7's. Measured in luma-lab's login smoke
+(run 68, stable 32-bit client c770a8b1, SLSsteam 20261014, the throwaway
+account): after the login 480 and 7 read 0 bytes and the installed Proton
+Experimental and runtime 4183110 178 each, none of them launched that session;
+one request for 480 and its 178-byte ticket was there within the second
+(appid at 16, signature at 50, like the others); the same request for 7 ends
+in `content_log` as `AppID 7 failed to update ownership ticket (Access
+Denied)`. So the plugin asks for 480's ticket once at logon
+(`IClientUser::BUpdateAppOwnershipTicket(480, false)`, through the object's
+live vtable slot, SLSsteam's own hook on it included), at the first CM packet
+that finds `isSubscribed(480)` true, which is SLSsteam's own
+`CheckAppOwnership` answer and turns true once the account's licences are in
+(a request sent at the logon message itself, before that, is dropped: run 70);
+the ticket is there within the second, before any game asks. Should the hook
+still read 480 empty (a launch in the first second after the logon) it asks
+there too and goes on with the other bases for that launch. SLSsteam keeps
+the ticket on disk (`~/.config/SLSsteam/cache/ticket_480.yaml`) and reloads
+it, so after the first session nothing is asked. Measured end to end: How to
+Fish in the login smoke, run 71, spliced on 480 at its first launch, Spacewar
+not installed. Base order and the requests are tested in
+`tests/test_spliced_tickets_lua.py`.
 
 Measured: Joe Danger (229890), 2026-09-28, Deck, app 7 as base, with a control
 run: plugin on → launches, plugin off → 65432. How to Fish (4001890), SteamStub
@@ -158,8 +188,8 @@ other SLSsteam flags on every plugin start):
 
 - bundled at `backend/deps/SplicedTickets/lumadeck-spliced-tickets.lua`:
   Ace's hook, splice and double-load guard, plus LumaDeck's base-ticket
-  selection (`SplicedTickets.baseCandidates`, `installedApps`, `baseTicket`,
-  each block marked `LumaDeck:`); whole file sha256 starting `414d81a3`. Not fetched
+  selection and Spacewar request (`SplicedTickets.baseCandidates`,
+  `installedApps`, `baseTicket`, `request`, each block marked `LumaDeck:`); whole file sha256 starting `1789d8c4`. Not fetched
   from anywhere at runtime. Should Ace publish his own fix, the two are
   compared by hand. Tested in `tests/test_spliced_tickets_lua.py` (the Lua run
   under lupa with SLSsteam's API stubbed; skipped where lupa is missing) and

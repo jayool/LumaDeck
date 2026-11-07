@@ -54,7 +54,10 @@ class SplicedTickets(unittest.TestCase):
         self.assertIn('VFTableInfo_t("14IClientUserMap", "GetAppOwnershipTicketExtendedData")', body)
         self.assertIn("Author: Ace", body)
         # LumaDeck's change (2026-10-30): the base ticket is looked for beyond app 7.
-        self.assertIn("SplicedTickets.baseCandidates = { 7, 1493710,", body)
+        self.assertIn("SplicedTickets.baseCandidates = { 480, 7, 1493710,", body)
+        # LumaDeck's change (2026-11-07): Spacewar's ticket is asked for, once per logon.
+        self.assertIn('VFTableInfo_t("14IClientUserMap", "BUpdateAppOwnershipTicket")', body)
+        self.assertIn("SplicedTickets.request = function(this)", body)
         self.assertIn("SplicedTickets.installedApps = function()", body)
         self.assertIn("libraryfolders.vdf", body)
         self.assertIn("size = SplicedTickets.baseTicket(pUser, appId,", body)
