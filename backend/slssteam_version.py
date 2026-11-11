@@ -58,15 +58,18 @@ _TAG_RE = re.compile(r"^\d{14}$")
 _VERSION_FILE = ".slssteam.version"               # the 32-bit build (ubuntu12_32)
 _VERSION_FILE_64 = ".slssteam.version.x86_64"     # the 64-bit build (steamrt64)
 
-# The last 32-bit SLSsteam release. Upstream recompiled in 64-bit and dropped
-# 32-bit support right after it (release notes of the first x86_64 build,
-# 2026-10-22), so for the 32-bit client this tag is final, the way
-# CloudRedirect's 2.6.6 is: `latest` at AceSLS/SLSsteam describes the 64-bit
-# build from now on and says nothing about the 32-bit client. lumalinux's
-# setup.sh installs this tag for the 32-bit client (its SLS32_TAG) and this is
-# the "latest" the 32-bit client is compared against here. Bump both only if
-# upstream ever publishes another 32-bit build.
-LAST_32BIT_TAG = "20261014151919"
+# The newest 32-bit SLSsteam release we know of. Upstream is moving to 64-bit
+# (branch dev-multiarch, no release yet) and `latest` will at some point be a
+# 64-bit build that says nothing about the 32-bit client; but it kept
+# publishing 32-bit builds after the first pin (20261106120254 came out after
+# 20261014151919), so this is a hand-kept value, not a final one. It is the
+# "latest" the 32-bit client is compared against here (Components, and the
+# Steam update gate's "would the latest 32-bit SLSsteam hook this client").
+# lumalinux's setup.sh carries the same tag (its SLS32_TAG) as the floor for
+# the 32-bit client. Bump both when upstream publishes another 32-bit build;
+# a release's asset names do not say which it is (the Arch packages carry
+# the host's x86_64 either way), only the ELF class of bin/SLSsteam.so does.
+LAST_32BIT_TAG = "20261106120254"
 
 
 def version_file_name(arch: Optional[str] = None) -> str:

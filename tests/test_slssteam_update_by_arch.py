@@ -1,7 +1,7 @@
 """The SLSsteam update offer depends on the client that runs
 (backend/components.check_slssteam_update).
 
-Upstream dropped 32-bit support after 20261014151919, so on the 32-bit client
+The newest 32-bit release is pinned (LAST_32BIT_TAG), so on the 32-bit client
 that release is the last "latest": a newer release at AceSLS/SLSsteam is a
 64-bit build and must never be offered there. On the 64-bit client the release
 feed decides, as before.
@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 import components  # noqa: E402
 
-LAST32 = "20261014151919"
+LAST32 = "20261106120254"
 
 
 class SlssteamUpdateByArch(unittest.TestCase):
