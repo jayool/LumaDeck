@@ -4,8 +4,9 @@
 Pins: the reference is fetched from upstream's res/config.yaml (plain YAML, the
 source the build embeds; the generated src/config_default.hpp left upstream's
 git on dev@ae5cbf1), a valid fetch is cached as-is, garbage / a 404 / an
-exception leave the cache alone, the bundled snapshot passes the same gate,
-and completion appends only the keys the on-disk config lacks.
+exception leave the cache alone, there is no bundled fallback (no cache means
+no reference and completion is a no-op), and completion appends only the keys
+the on-disk config lacks.
 """
 import asyncio
 import os
@@ -17,6 +18,17 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 import slssteam_schema as ss  # noqa: E402
+
+# A stand-in for upstream's res/config.yaml: the keys of the 2026-11-06 release,
+# each with a one-line default. Enough for the reference gate.
+_REF_KEYS = [
+    "PlayNotOwnedGames", "DisableFamilyShareLock", "AutoFilterList", "AppIds",
+    "ExtraDlcIds", "ManifestIds", "CDKeys", "DenuvoGames", "AdditionalApps",
+    "FakeAppIds", "ShowSLSsteamLog", "LogLevels", "SafeMode", "SmartTickets",
+    "UseUSaveFile", "LaunchOptions", "ImpersonateBin", "Plugins", "DisableCloud",
+    "DisableUpdates", "OverrideSteamSettings", "UseFileCache",
+]
+_REF_YAML = "".join(f"#{k} default\n{k}: no\n\n" for k in _REF_KEYS)
 
 
 class _Resp:
@@ -55,7 +67,7 @@ class Refresh(unittest.TestCase):
         return client
 
     def test_fetches_res_config_yaml_and_caches_it_verbatim(self):
-        text = ss._BUNDLED_YAML + "\n#A key SLSsteam added later\nNewKey: no\n"
+        text = _REF_YAML + "#A key SLSsteam added later\nNewKey: no\n"
         c = self._client(_Client(_Resp(200, text)))
         self.assertTrue(asyncio.run(ss.refresh_reference_cache()))
         self.assertEqual(c.urls, ["https://raw.githubusercontent.com/AceSLS/SLSsteam/main/res/config.yaml"])
@@ -63,11 +75,18 @@ class Refresh(unittest.TestCase):
             self.assertEqual(f.read(), text)
         self.assertIn("NewKey", ss.present_top_level_keys(ss.load_reference_yaml()))
 
-    def test_404_keeps_cache_and_bundled(self):
+    def test_404_keeps_cache_and_gives_no_reference(self):
         self._client(_Client(_Resp(404, "Not Found")))
         self.assertFalse(asyncio.run(ss.refresh_reference_cache()))
         self.assertFalse(os.path.exists(ss._CACHE_FILE))
-        self.assertEqual(ss.load_reference_yaml(), ss._BUNDLED_YAML)
+        self.assertEqual(ss.load_reference_yaml(), "")
+
+    def test_404_keeps_an_existing_cache(self):
+        with open(ss._CACHE_FILE, "w", encoding="utf-8") as f:
+            f.write(_REF_YAML)
+        self._client(_Client(_Resp(404, "Not Found")))
+        self.assertFalse(asyncio.run(ss.refresh_reference_cache()))
+        self.assertEqual(ss.load_reference_yaml(), _REF_YAML)
 
     def test_garbage_is_rejected(self):
         self._client(_Client(_Resp(200, "<html>rate limited</html>")))
@@ -77,21 +96,32 @@ class Refresh(unittest.TestCase):
     def test_exception_never_raises(self):
         self._client(_Client(exc=RuntimeError("offline")))
         self.assertFalse(asyncio.run(ss.refresh_reference_cache()))
-        self.assertEqual(ss.load_reference_yaml(), ss._BUNDLED_YAML)
+        self.assertEqual(ss.load_reference_yaml(), "")
+
+    def test_no_reference_means_no_write(self):
+        cfg = os.path.join(self.tmp, "config.yaml")
+        on_disk = "PlayNotOwnedGames: yes\n"
+        with open(cfg, "w", encoding="utf-8") as f:
+            f.write(on_disk)
+        res = ss.complete_slssteam_config(cfg)
+        self.assertEqual(res["reason"], "no reference available")
+        with open(cfg, encoding="utf-8") as f:
+            self.assertEqual(f.read(), on_disk)
 
 
 class Reference(unittest.TestCase):
-    def test_bundled_passes_the_gate(self):
-        self.assertTrue(ss._looks_like_reference(ss._BUNDLED_YAML))
+    def test_no_bundled_copy(self):
+        self.assertFalse(hasattr(ss, "_BUNDLED_YAML"))
+        self.assertTrue(ss._looks_like_reference(_REF_YAML))
 
     def test_completion_appends_only_missing_keys(self):
         on_disk = "PlayNotOwnedGames: yes\nAdditionalApps:\n  - 480\n"
-        new, added = ss.complete_config_text(on_disk, ss._BUNDLED_YAML)
+        new, added = ss.complete_config_text(on_disk, _REF_YAML)
         self.assertTrue(new.startswith(on_disk))                 # byte-for-byte prefix
         self.assertNotIn("AdditionalApps", added)
         self.assertIn("SafeMode", added)
         self.assertIn("DenuvoGames", added)
-        again, added2 = ss.complete_config_text(new, ss._BUNDLED_YAML)
+        again, added2 = ss.complete_config_text(new, _REF_YAML)
         self.assertEqual(again, new)                             # idempotent
         self.assertEqual(added2, [])
 
