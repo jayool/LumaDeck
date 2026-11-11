@@ -22,11 +22,13 @@ cannot lose the user's values (AdditionalApps, ManifestIds, flag choices, …) o
 corrupt nested structures. Idempotent.
 
 The reference key-set is SLSsteam's own ``res/config.yaml`` (the default config
-its build embeds into the binary) — fetched live from ``main`` (so newly-added
-keys are tracked) with the bundled snapshot below as the offline fallback.
-(Until 2026-09 we fetched the generated ``src/config_default.hpp`` instead; that
-header left upstream's git on dev@ae5cbf1, the YAML is its source and identical.) If neither yields a valid reference, completion is a no-op (worst case:
-the toast persists; never a partial write).
+its build embeds into the binary), fetched from ``main`` on every LumaDeck start
+and cached under ``~/.cache/lumadeck``. There is deliberately no bundled copy:
+installing or updating SLSsteam already needs the network, so the cache is
+filled on the first start that has it, and a copy pasted here only drifted
+(the last one predated ``Plugins``, ``SmartTickets`` and ``LaunchOptions``).
+With no cached reference, completion is a no-op (worst case: the toast persists
+until the next start with network; never a partial write).
 """
 
 from __future__ import annotations
@@ -51,158 +53,6 @@ _CONFIG_DEFAULT_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/main/re
 _CACHE_DIR = os.path.join(real_home(), ".cache/lumadeck")
 _CACHE_FILE = os.path.join(_CACHE_DIR, "slssteam_config_default.yaml")
 _FETCH_TIMEOUT = 8.0
-
-# Bundled fallback: SLSsteam's default config YAML, verbatim from res/config.yaml.
-# Updated when we bump supported SLSsteam. Used only when the live fetch is
-# unavailable.
-_BUNDLED_YAML = r"""#Example AppIds Config for those not familiar with YAML:
-#AppIds:
-#  - 440
-#  - 730
-#Take care of not messing up your spaces! Otherwise it won't work
-
-#Example of DlcData:
-#DlcData:
-#  AppId:
-#    FirstDlcAppId: "Dlc Name"
-#    SecondDlcAppId: "Dlc Name"
-
-#Example of DenuvoGames:
-#DenuvoGames:
-#  SteamId:
-#    -  AppId1
-#    -  AppId2
-
-#Example of FakeAppIds:
-#FakeAppIds:
-#  AppId1: FakeAppId1
-#  AppId2: FakeAppId2
-
-#Disables Family Share license locking for self and others
-DisableFamilyShareLock: yes
-
-#Switches to whitelist instead of the default blacklist
-UseWhitelist: no
-
-#List of AppIds to ex-/include. Either specify each DLC you want to in-/exclude individually
-#or add the DLC's parent AppId (the Game's one) to allow unlocking all of their child AppIds
-AppIds:
-
-#Additional AppIds to inject (Overrides OwnerIds for apps you got shared! This breaks downloads)
-#Best to use this only on games NOT in your library.
-#AppIds on this list will automatically get added to your AppIds setting aswell, but only for the initial check.
-#It will get ignored in exclusion checks for the parent AppId
-AdditionalApps:
-
-#Extra Data for Dlcs belonging to a specific AppId. Only needed
-#when the App you're playing is hit by Steams 64 DLC limit
-DlcData:
-
-#Used to retrieve ProductInfo from Steam servers for some games
-AppTokens:
-
-#Legacy CD keys required by some games
-#Unless explicitly specified SLSsteam will generate a random 4 * 4 key using A-Z + 0-9 seeded by your accountId + appId
-#If you want to delete injected CD keys delete cdk_[number] from your localconfig.vdf
-CDKeys:
-
-#Fake Steam being offline for specified AppIds. Same format as AppIds
-FakeOffline:
-
-#Change AppIds of games to enable networking features
-#Use 0 as a key to set for all unowned Apps
-#Do not run multiple apps under the same AppId simultaneously! It's possible but
-#will most likely cause undefined behaviour
-#Requires access to /proc to read processes' real AppId from their environment (most distros allow this by default)
-FakeAppIds:
-
-#Override Depot manifest IDs
-#Use this to download older game versions or to lock a game to a specific version
-ManifestIds:
-
-#Never download these depots
-DepotBlacklist:
-
-#Custom ingame statuses. Set AppId to 0 to disable
-IdleStatus:
-  AppId: 0
-  Title: ""
-
-#Override game titles. Only works with owned appIds! For injected appIds use either UnownedStatus or combine them with FakeAppIds
-GameTitles:
-
-#Override purchase time stamps
-SubscriptionTimestamps:
-
-#Blocks games from unlocking on wrong accounts
-DenuvoGames:
-
-#Overrides your SteamId an app sees. Only needed when the automatic SteamId spoofing
-#fails (some games do call GetSteamId before they request your ticket)
-#Also can be used to workaround locked saves
-#Either set to SteamId or to 0 to use the SteamId in the cached AppOwnershipTicket
-SteamIdOverride:
-
-#Automatically grab Achievement schemas from Steams CDN which makes them always up to date
-#Slows down game's loading page the first time you click them
-#If you don't want this set it to 0 and use tools/schema-grabber instead to grab them outside of steam
-#to get the achievement schemas. Doing so will revert to the previous behaviour of falling back to
-#the offline cache (appcache/stats) when a GetUserStats request fails
-MaxSchemaTries: 10
-
-#Automatically disable SLSsteam when steamclient.so does not match a predefined file hash that is known to work
-#You should enable this if you're planing to use SLSsteam with Steam Deck's gamemode
-SafeMode: no
-
-#Warn user via notification when steamclient.so hash differs from known safe hash
-#Mostly useful for development so I don't accidentally miss an update
-WarnHashMissmatch: no
-
-#Notify when SLSsteam is done initializing
-NotifyInit: yes
-
-#Enable sending commands to SLSsteam via /tmp/SLSsteam.API
-API: no
-
-#Disable cloud saves for unlocked games. Set to "no" if using CloudRedirect or similar.
-DisableCloud: yes
-
-#Disable updates for AppIds on AdditionalApps
-#Only works for unowned games, since those do not get any depots from CUserAppManager::BuildDepotDependency.
-#For owned games use ManifestIds
-DisableUpdates: yes
-
-#Changes your Persona's Name clientsidedly
-FakeName: ""
-
-#Changes your account's E-Mail clientsided. Leave blank to disable
-FakeEmail: ""
-
-#Changes your wallet's balance clientsidedly. 0 to turn off
-FakeWalletBalance: 0
-
-#Log levels:
-#Trace = 0x1 #Tracing
-#Once = 0x2 #Only log once
-#Debug = 0x4 #Debugging statements
-#Warn = 0x8 #Something went wrong but it's not terrible
-#Error = 0x10 #Something went wrong and it's terrible/can't be recovered from. Function failed
-#Info = 0x20 #Log for users/external tools
-#NotifyShort = 0x40
-#NotifyLong = 0x80
-#LogLevels below Warn are stripped from release versions
-#If you want to use them use a debug version
-#LogLevels are bitwise flags, so for example to only
-#show Long Notifications & Errors use 0x90 (calculated via 0x80 or 0x10)
-#Default enables everything
-LogLevels: 0xff
-
-#Dump all used IClientInterfaceMaps
-DumpClientInterfaces: no
-
-#Logs all calls to Steamworks (this makes the logfile huge! Only useful for debugging/analyzing
-ExtendedLogging: no"""
-
 
 # A top-level key line: starts at column 0 (no indent), not a comment, `name:`.
 _TOP_KEY = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:")
@@ -297,22 +147,23 @@ def _cache_path() -> str:
 
 def load_reference_yaml() -> str:
     """The reference YAML to complete against: the fetched cache if present and
-    valid, else the bundled snapshot."""
+    valid, else "" (no reference: completion does nothing)."""
     try:
         if os.path.isfile(_CACHE_FILE):
             with open(_CACHE_FILE, "r", encoding="utf-8") as f:
                 cached = f.read()
             if _looks_like_reference(cached):
                 return cached
+            logger.info("slssteam_schema: cached reference didn't validate; no reference")
     except Exception as exc:
-        logger.warning(f"slssteam_schema: cache read failed ({exc}), using bundled")
-    return _BUNDLED_YAML
+        logger.warning(f"slssteam_schema: cache read failed ({exc}); no reference")
+    return ""
 
 
 async def refresh_reference_cache() -> bool:
     """Best-effort: fetch res/config.yaml, validate it, cache it to disk. Returns
     True on a successful refresh. Never raises. On any failure the existing
-    cache (or the bundled snapshot) keeps being used."""
+    cache (if any) keeps being used."""
     try:
         from http_client import ensure_http_client
         client = await ensure_http_client(context="slssteam_schema")
@@ -322,7 +173,7 @@ async def refresh_reference_cache() -> bool:
             return False
         yaml_text = resp.text or ""
         if not _looks_like_reference(yaml_text):
-            logger.info("slssteam_schema: fetched res/config.yaml didn't validate; keeping bundled")
+            logger.info("slssteam_schema: fetched res/config.yaml didn't validate; keeping cache")
             return False
         os.makedirs(_CACHE_DIR, exist_ok=True)
         tmp = _CACHE_FILE + ".tmp"
@@ -331,7 +182,7 @@ async def refresh_reference_cache() -> bool:
         os.replace(tmp, _CACHE_FILE)
         return True
     except Exception as exc:
-        logger.info(f"slssteam_schema: reference refresh failed ({exc}); using bundled/cache")
+        logger.info(f"slssteam_schema: reference refresh failed ({exc}); using cache if any")
         return False
 
 
@@ -350,7 +201,10 @@ def complete_slssteam_config(config_path: str | None = None) -> dict:
     except Exception as exc:
         return {"completed": False, "added": [], "reason": f"read failed: {exc}"}
 
-    new_content, added = complete_config_text(content, load_reference_yaml())
+    reference = load_reference_yaml()
+    if not reference:
+        return {"completed": False, "added": [], "reason": "no reference available"}
+    new_content, added = complete_config_text(content, reference)
     if not added:
         return {"completed": False, "added": [], "reason": "already complete"}
 

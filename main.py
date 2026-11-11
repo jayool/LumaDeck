@@ -156,8 +156,8 @@ class Plugin:
                         return
                     # Refresh SLSsteam's schema reference once (best-effort) so
                     # config completion inside ensure_slssteam_flags tracks any
-                    # keys newer SLSsteam versions added. Falls back to the bundled
-                    # snapshot if the fetch fails.
+                    # keys newer SLSsteam versions added. Without a cached
+                    # reference, completion is a no-op until a start with network.
                     try:
                         from slssteam_schema import refresh_reference_cache
                         await refresh_reference_cache()
