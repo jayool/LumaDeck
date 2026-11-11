@@ -65,7 +65,7 @@ class GetComponentsStatusTests(unittest.TestCase):
             ("dev", {"get": lambda key: None}),
             ("slssteam_version", {
                 "SOURCE_UNKNOWN": "unknown",
-                "LAST_32BIT_TAG": "20261014151919",
+                "LAST_32BIT_TAG": "20261106120254",
                 "read_recorded_version": lambda *a, **k: "20260820085507",
                 "resolve_installed_version": self._async_const(("20260820085507", "recorded")),
             }),
