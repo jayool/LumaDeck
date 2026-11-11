@@ -99,10 +99,13 @@ class SupportRule(unittest.TestCase):
         self.assertIsNone(g.slssteam_latest_supports(SLS_REAL, None))
 
     def test_latest_for_the_32bit_client_is_the_last_32bit_release(self):
-        # Upstream dropped 32-bit support after 20261014151919: a newer group
-        # (a 64-bit build) says nothing about the 32-bit client, whose latest
-        # stays that release. NEW is listed there; OLD was dropped by it.
-        x64 = SLS_REAL + "\n  20261101000000: #tag 20261101000000\n    - " + "e" * 64 + " #steamrt64\n"
+        # The newest 32-bit release is pinned (LAST_32BIT_TAG): a group newer
+        # than it (a 64-bit build) says nothing about the 32-bit client, whose
+        # latest stays that release. NEW is listed under its group; OLD was
+        # dropped by it. The 64-bit group must be tagged after the pin, which
+        # is what reality gives (upstream tags by build date) as long as the
+        # pin is bumped when a newer 32-bit release appears.
+        x64 = SLS_REAL + "\n  20261201000000: #tag 20261201000000\n    - " + "e" * 64 + " #steamrt64\n"
         self.assertTrue(g.slssteam_latest_supports(x64, NEW, g.STEAM_CLIENT_32))
         self.assertFalse(g.slssteam_latest_supports(x64, OLD, g.STEAM_CLIENT_32))
         # The plain call is the 32-bit rule: every caller that does not say is
@@ -115,9 +118,9 @@ class SupportRule(unittest.TestCase):
         self.assertIsNone(g.slssteam_latest_supports(SLS_REAL, sha64, g.STEAM_CLIENT_64))
         # Listed under the newest group: supported. Listed only under an older
         # one: dropped.
-        x64 = SLS_REAL + "\n  20261101000000: #tag 20261101000000\n    - " + sha64 + " #steamrt64\n"
+        x64 = SLS_REAL + "\n  20261201000000: #tag 20261201000000\n    - " + sha64 + " #steamrt64\n"
         self.assertTrue(g.slssteam_latest_supports(x64, sha64, g.STEAM_CLIENT_64))
-        newer = x64 + "\n  20261201000000: #tag 20261201000000\n    - " + "f" * 64 + " #steamrt64\n"
+        newer = x64 + "\n  20270101000000: #tag 20270101000000\n    - " + "f" * 64 + " #steamrt64\n"
         self.assertFalse(g.slssteam_latest_supports(newer, sha64, g.STEAM_CLIENT_64))
         # The 32-bit rule is unchanged by the 64-bit groups.
         self.assertTrue(g.slssteam_latest_supports(newer, NEW, g.STEAM_CLIENT_32))
