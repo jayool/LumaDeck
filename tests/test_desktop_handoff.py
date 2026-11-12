@@ -89,5 +89,27 @@ class TestSessionFamilyPublic(unittest.TestCase):
         self.assertEqual(p._session_family("fedora"), "unknown")
 
 
+
+
+class DowngradeOn64Tests(unittest.TestCase):
+    """downgrade.sh installs a build of the 32-bit manifest line; the 64-bit
+    client's bootstrapper ignores it (a Deck, 2026-11-12: "Downgrade FAILED ...
+    RESTORED"). On the 64-bit client the check says "not possible" before any
+    network call, so the QAM never offers Fix in Desktop there."""
+
+    def test_not_possible_on_the_64bit_client(self):
+        import asyncio
+        import paths
+        saved = paths.steam_client_arch
+        paths.steam_client_arch = lambda: paths.STEAM_CLIENT_64
+        try:
+            r = asyncio.run(dh.downgrade_check())
+        finally:
+            paths.steam_client_arch = saved
+        self.assertEqual(r["possible"], False)
+        self.assertIsNone(r["target"])
+        self.assertIn("64-bit", r["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

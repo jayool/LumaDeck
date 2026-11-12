@@ -46,7 +46,7 @@ export interface ComponentsStatus {
   // WITHOUT any injection until the stack changes or the state is cleared.
   // While latched every hook component reads not_loaded and a plain restart
   // does nothing — so the UI shows Recovery mode + Retry instead. Stack-wide.
-  guard?: { active: boolean; fails: number; since: string | null; client_changed: boolean };
+  guard?: { active: boolean; fails: number; since: string | null; client_changed: boolean; latches?: number };
   // The Steam-update pin (steam.cfg). mine = written by our downgrade.sh after a
   // break-recovery downgrade; the only pin offered for lifting in place.
   // Would Fix in Desktop help? possible === false -> the Wait row, no button.
@@ -173,6 +173,13 @@ export function updateFixesBreak(status: ComponentsStatus | null): boolean {
 // the Dependencies page drives its one morphing button from the same logic as
 // the QAM's problem row. Priority: Fix in Desktop > Restart. Keep in sync with
 // buildRows.
+// The launcher's crash guard is latched and it is the FIRST latch on the client
+// that runs (setup.sh counts them in latch_count; an older launcher reports 1).
+export function guardFirstLatch(status: ComponentsStatus | null): boolean {
+  const g = status?.guard;
+  return !!g?.active && (g.latches ?? 1) < 2;
+}
+
 export function primarySystemAction(status: ComponentsStatus | null): PrimaryAction {
   if (!status?.success) return null;
   const comps = status.components || [];
@@ -182,6 +189,12 @@ export function primarySystemAction(status: ComponentsStatus | null): PrimaryAct
   const notComplete =
     (!!sls?.installed && !ll?.installed) || (!sls?.installed && !!ll?.installed);
   const anyUnsupported = installed.some((c) => c.health === "not_supported");
+  // The crash guard latched ONCE on this client: one startup crash with our
+  // libraries mapped. Re-enable is the retry, before any "not supported"
+  // reading from feeds (those can be wrong: on the 64-bit client the feeds
+  // list no 64-bit build yet). A second latch on the same client is the
+  // evidence the feeds were right, and the unsupported handling below applies.
+  if (guardFirstLatch(status)) return "retry";
   // Same order as buildRows: a fix that exists outranks "wait".
   if (anyUnsupported && updateFixesBreak(status)) return "update";
   if (anyUnsupported && unpinFixesBreak(status)) return "unpin";
@@ -239,12 +252,25 @@ export function buildRows(
     !installed.some((c) => c.id !== "lumalinux" && c.health === "not_supported");
 
   // ---- one system problem, by priority ----
-  //   Steam-unsupported (Update / Let Steam update / Wait / Desktop) > Recovery > Restart
+  //   Recovery (first latch) > Steam-unsupported (Update / Let Steam update / Wait / Desktop) > Recovery (repeated) > Restart
   // "A Steam update broke a component" is ONE row with one mould: the title is
   // always "Steam build not supported"; the description names the button that
   // fixes it (Update / Fix in Desktop / Let Steam update), or says to wait when
   // nothing can. Orange in every case: adding games does not work.
-  if (anyUnsupported && updateFixesBreak(status)) {
+  if (guardFirstLatch(status)) {
+    // One startup crash with our libraries mapped: the launcher paused the
+    // stack. Re-enable clears its state and restarts; if it crashes again the
+    // guard latches a second time and the rows below take over (the feeds'
+    // "not supported" is then backed by evidence). Shown before any
+    // feed-based reading, which on the 64-bit client cannot be trusted yet.
+    rows.push({
+      key: "guard", severity: "problem",
+      label: t("sysRecovery"), description: t("sysRecoveryDesc"),
+      actionLabel: t("sysReenable"),
+      onAction: actions.retry,
+      confirm: "restart", busyLabel: t("restartingSteam"),
+    });
+  } else if (anyUnsupported && updateFixesBreak(status)) {
     // The component already shipped support for the new build: Update (one
     // setup.sh run) is the fix. Downgrading here would pin Steam on an old
     // client the updated component no longer hooks.

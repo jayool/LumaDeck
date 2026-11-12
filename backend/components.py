@@ -293,7 +293,7 @@ async def get_components_status(force: bool = False) -> dict:
     # every hook component reads not_loaded and a plain restart cannot help, so
     # the UI shows "Recovery mode" + Retry instead of "Restart needed". Stack-wide
     # like headcrab, not per component. Inactive on any failure (safe default).
-    guard = _safe_sync(read_crash_guard, {"active": False, "fails": 0, "since": None, "client_changed": False})
+    guard = _safe_sync(read_crash_guard, {"active": False, "fails": 0, "since": None, "client_changed": False, "latches": 0})
     # The Steam-update pin (steam.cfg). Any pin is THE pin, whoever wrote it
     # (our downgrade.sh signs it `# lumalinux`; headcrab's installer writes an
     # unsigned one): the UI offers to lift it in place with "Let Steam update",
@@ -449,5 +449,6 @@ async def get_components_status(force: bool = False) -> dict:
             "fails": int(guard.get("fails") or 0),
             "since": guard.get("since"),
             "client_changed": bool(guard.get("client_changed")),
+            "latches": int(guard.get("latches") or (1 if guard.get("active") else 0)),
         },
     }

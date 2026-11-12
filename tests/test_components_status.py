@@ -119,7 +119,7 @@ class GetComponentsStatusTests(unittest.TestCase):
         self.assertIn("headcrab", result)
         # The launcher's crash guard, read by the QAM's "Recovery mode" row and
         # the Settings button; stack-wide like headcrab.
-        self.assertEqual(set(result["guard"]), {"active", "fails", "since", "client_changed"})
+        self.assertEqual(set(result["guard"]), {"active", "fails", "since", "client_changed", "latches"})
         self.assertFalse(result["guard"]["active"])
 
     def test_a_latched_crash_guard_is_reported(self):
@@ -129,7 +129,8 @@ class GetComponentsStatusTests(unittest.TestCase):
                             "client_changed": False})
         result = asyncio.run(components.get_components_status())
         self.assertEqual(result["guard"], {"active": True, "fails": 3,
-                                           "since": "2026-09-23 10:22:09", "client_changed": False})
+                                           "since": "2026-09-23 10:22:09", "client_changed": False,
+                                           "latches": 1})
 
     def test_a_failing_guard_read_reports_inactive(self):
         import paths

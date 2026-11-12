@@ -813,10 +813,21 @@ class Plugin:
 
     async def retry_injection(self) -> str:
         """Clear the launcher's crash guard (safe mode) so the next Steam launch
-        injects again. Removes only its four state files; the frontend then
-        restarts Steam, exactly like Repair. See paths.clear_crash_guard."""
+        injects again, then run setup.sh once (reinject_installed) before the
+        frontend restarts Steam. The setup.sh run is what brings the launcher's
+        guard library up to date: the one on disk may be the version that counted
+        any Steam dump as our crash (fixed in lumalinux v0.22.7), and re-enabling
+        under that version latches again on the next stray dump. A missing
+        x86_64 build is installed by the same run. See paths.clear_crash_guard."""
         from paths import clear_crash_guard
-        return _j(clear_crash_guard())
+        cleared = clear_crash_guard()
+        if not cleared.get("success"):
+            return _j(cleared)
+        from installer import reinject_installed
+        refreshed = await reinject_installed()
+        out = dict(refreshed)
+        out["removed"] = cleared.get("removed", [])
+        return _j(out)
 
     async def apply_component(self, component_id: str, op: str = "repair") -> str:
         """Install/repair/update one component (or 'core'), cascade-safe. Poll
