@@ -365,10 +365,10 @@ async def get_components_status(force: bool = False) -> dict:
             lambda: _slssteam_health_from_feed(sls_health, sls_text, cur_hash, client_arch), sls_health)
     sls_force = force or _safe_sync(lambda: _sls_release_cache_stale(sls_text), False)
 
+    sls_update = no_update if sls_forced else await _safe(
+        check_slssteam_update(force=sls_force, arch=client_arch), no_update)
     # A build the running client cannot use (unavailable_64) is nothing to
     # compare against a release: no Update offer for it.
-    sls_update = no_update if (sls_forced or sls_health.get("state") == "unavailable_64") else await _safe(
-        check_slssteam_update(force=sls_force, arch=client_arch), no_update)
     if cr_health.get("state") == "unavailable_64":
         cr_update = no_update
 

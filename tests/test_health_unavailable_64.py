@@ -1,11 +1,11 @@
 """unavailable_64: Steam runs its 64-bit client and a component has no build
 for it (backend/paths.read_slssteam_health / read_cloudredirect_health).
 
-SLSsteam reads it only when the stack is installed (a 32-bit build on disk)
-and the x86_64 build is missing; a device with no build at all stays
-not_installed so Quick Install is offered. CloudRedirect, 32-bit only, reads
-it on the 64-bit client whatever else is true. Neither offers an action: a
-restart or a reinstall changes nothing until a 64-bit build exists.
+SLSsteam no longer reads it: setup.sh ships a 64-bit build (lumalinux
+v0.22.6, 2026-11-12), so on the 64-bit client a missing x86_64 build is
+not_installed with the install action, whatever the 32-bit build on disk.
+CloudRedirect, 32-bit only, reads it on the 64-bit client whatever else is
+true, with no action: nothing changes until a 64-bit build exists.
 
     python -m unittest discover -s tests
 """
@@ -42,11 +42,11 @@ class Unavailable64(unittest.TestCase):
         self.patch("check_slssteam_installed",
                    lambda arch=None: have64 if (arch or paths.steam_client_arch()) == paths.STEAM_CLIENT_64 else have32)
 
-    def test_slssteam_64bit_client_without_its_build(self):
+    def test_slssteam_64bit_client_without_its_build_is_not_installed(self):
         self._client(paths.STEAM_CLIENT_64)
         self._slssteam_on_disk(have32=True, have64=False)
         self.assertEqual(paths.read_slssteam_health(),
-                         {"state": "unavailable_64", "cause": None, "action": None})
+                         {"state": "not_installed", "cause": None, "action": "install"})
 
     def test_slssteam_fresh_device_stays_not_installed(self):
         self._client(paths.STEAM_CLIENT_64)

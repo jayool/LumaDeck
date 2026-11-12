@@ -608,7 +608,6 @@ export function Settings() {
   const slssHealthDesc = () => {
     const h = slssteamHealth;
     if (!slssPresent) return undefined;
-    if (h?.state === "unavailable_64") return warnDesc(t("healthX64NoBuild"), "muted");
     if (h && h.state !== "healthy") return warnDesc(healthLine(h.state));
     // Healthy → update available in the same subtext slot as the other two.
     // Steam's own build status is NOT smuggled in here; it has its own row below.
@@ -704,7 +703,7 @@ export function Settings() {
   // ── Dev preview: force UI states (backend/dev.py). Only forges what the UI
   //    reads (health + credentials); nothing real is touched. ────────────────
   const devControls = [
-    { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "unavailable_64"] },
+    { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "not_authed", "disabled", "unavailable_64"] },
     { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
@@ -1074,8 +1073,8 @@ export function Settings() {
           <>
             <PanelSectionRow>
               <Field focusable highlightOnFocus={false} label="SLSsteam" description={slssHealthDesc()}>
-                <span style={{ color: compColor(slssPresent, slssteamHealth?.state === "healthy", slssteamHealth?.state === "unavailable_64") }}>
-                  {compStatus(slssPresent, slssteamHealth?.state === "healthy", slssteamHealth?.state === "unavailable_64")}
+                <span style={{ color: compColor(slssPresent, slssteamHealth?.state === "healthy") }}>
+                  {compStatus(slssPresent, slssteamHealth?.state === "healthy")}
                 </span>
               </Field>
             </PanelSectionRow>
