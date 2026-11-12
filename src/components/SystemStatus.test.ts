@@ -141,19 +141,16 @@ describe("recovery and restart", () => {
 });
 
 describe("Steam runs its 64-bit client (unavailable_64)", () => {
-  it("one orange row, no button, when SLSsteam has no 64-bit build; CloudRedirect's row yields to it", () => {
+  it("a missing 64-bit SLSsteam is a half-install: the repair row with its button, CloudRedirect's row yields to it", () => {
     const s = status({}, [
-      comp("slssteam", { health: "unavailable_64" }),
+      comp("slssteam", { installed: false, health: "not_installed", action: "install" }),
       comp("cloudredirect", { health: "unavailable_64" }),
       comp("lumalinux"),
     ]);
     const r = rows(s);
-    expect(r.map((x) => x.key)).toEqual(["x64-sls"]);
-    expect(r[0].label).toBe("sysX64NotReady");
-    expect(r[0].severity).toBe("problem");
-    expect(r[0].actionLabel).toBeUndefined();
-    // Not a half-install and not "not loaded": no restart / repair.
-    expect(primarySystemAction(s)).toBeNull();
+    expect(r.map((x) => x.key)).toEqual(["restart"]);
+    expect(r[0].actionLabel).toBe("restartSteam");
+    expect(primarySystemAction(s)).toBe("reinject");
   });
 
   it("the cloud-saves row when only CloudRedirect lacks a 64-bit build", () => {
@@ -166,7 +163,7 @@ describe("Steam runs its 64-bit client (unavailable_64)", () => {
   });
 
   it("a real problem still outranks it", () => {
-    const s = status({}, [comp("slssteam", { health: "unavailable_64" }), comp("cloudredirect", { health: "unavailable_64" }), comp("lumalinux", { health: "not_loaded" })]);
+    const s = status({}, [comp("slssteam"), comp("cloudredirect", { health: "unavailable_64" }), comp("lumalinux", { health: "not_loaded" })]);
     expect(rows(s).map((x) => x.key)).toEqual(["restart"]);
   });
 });

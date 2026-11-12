@@ -309,15 +309,10 @@ export function buildRows(
       onAction: needsSetup ? actions.repair : actions.restart,
       confirm: "restart", busyLabel: needsSetup ? undefined : t("restartingSteam"),
     });
-  } else if (sls?.installed && sls.health === "unavailable_64") {
-    // Steam runs its 64-bit client and there is no 64-bit SLSsteam build on
-    // disk (none published yet): nothing to press. Added games don't work.
-    rows.push({
-      key: "x64-sls", severity: "problem",
-      label: t("sysX64NotReady"), description: t("sysX64NotReadyDesc"),
-    });
   } else if (cr?.installed && cr.health === "unavailable_64") {
-    // Same client, SLSsteam fine, CloudRedirect 32-bit only: cloud saves off.
+    // The 64-bit client, SLSsteam fine, CloudRedirect 32-bit only: cloud
+    // saves off. (A missing 64-bit SLSsteam is a half-install above: setup.sh
+    // ships that build since lumalinux v0.22.6.)
     rows.push({
       key: "x64-cr", severity: "problem",
       label: t("sysX64NoCloud"), description: t("sysX64NoCloudDesc"),
