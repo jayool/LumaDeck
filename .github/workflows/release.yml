@@ -144,9 +144,21 @@ jobs:
           chmod 777 LumaDeck/backend/data
           zip -r LumaDeck.zip LumaDeck/
 
+      - name: Release description (the compare link the generated notes used to carry, nothing else)
+        id: notes
+        run: |
+          git fetch --quiet --tags --force origin
+          prev="$(git tag --list 'v*' | sort -V | grep -B1 -x "${GITHUB_REF_NAME}" | head -n 1)"
+          [ "$prev" = "${GITHUB_REF_NAME}" ] && prev=""
+          if [ -n "$prev" ]; then
+            echo "body=**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${prev}...${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "body=**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: LumaDeck.zip
+          body: ${{ steps.notes.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
