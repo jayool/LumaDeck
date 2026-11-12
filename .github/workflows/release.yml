@@ -148,5 +148,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: LumaDeck.zip
+          # A release with an empty description shows the tagged commit's
+          # message in its place; the tag name keeps that out.
+          body: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
