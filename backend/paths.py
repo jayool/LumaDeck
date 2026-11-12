@@ -971,7 +971,7 @@ def read_lumalinux_health() -> dict:
 # ---------------------------------------------------------------------------
 
 _GUARD_STATE_FILES = ("safe_mode", "safe_mode_fingerprint", "boot_fail_count", "last_launch")
-_GUARD_INACTIVE = {"active": False, "fails": 0, "since": None, "client_changed": False}
+_GUARD_INACTIVE = {"active": False, "fails": 0, "since": None, "client_changed": False, "latches": 0}
 
 
 def crash_guard_dir() -> str:
@@ -988,7 +988,8 @@ def _parse_guard_latch(log_text: str) -> tuple:
     Unknown fields stay at their defaults; a missing line yields (None, 0, False)."""
     since, fails, changed = None, 0, False
     for line in log_text.splitlines():
-        m = re.match(r"^(\S+ \S+) latching safe mode \(fails=(\d+) client_changed=(\d)\)", line)
+        # setup.sh from lumalinux v0.22.7 appends " latches_on_this_client=N".
+        m = re.match(r"^(\S+ \S+) latching safe mode \(fails=(\d+) client_changed=(\d)(?: latches_on_this_client=\d+)?\)", line)
         if m:
             since, fails, changed = m.group(1), int(m.group(2)), m.group(3) == "1"
     return since, fails, changed
@@ -1001,7 +1002,7 @@ def read_crash_guard() -> dict:
     try:
         import dev
         if dev.get("crash_guard") == "active":
-            return {"active": True, "fails": 3, "since": "2026-01-01 00:00:00", "client_changed": False}
+            return {"active": True, "fails": 3, "since": "2026-01-01 00:00:00", "client_changed": False, "latches": 1}
     except Exception:
         pass
     d = crash_guard_dir()
@@ -1019,7 +1020,20 @@ def read_crash_guard() -> dict:
             since, log_fails, changed = _parse_guard_latch(f.read())
     except Exception:
         pass
-    return {"active": True, "fails": fails or log_fails, "since": since, "client_changed": changed}
+    # How many times the launcher latched in a row on the client that runs
+    # (latch_count, setup.sh from lumalinux v0.22.7; the guard resets it on a
+    # clean boot and when the client changes). One latch is one crash: the fix
+    # is to re-enable and try again. A second latch on the same client is the
+    # evidence that the build and the stack do not go together. An older
+    # launcher writes no file: read as 1, never as "repeated".
+    latches = 1
+    try:
+        with open(os.path.join(d, "latch_count"), "r", encoding="utf-8") as f:
+            latches = max(1, int(f.read().strip() or "1"))
+    except Exception:
+        pass
+    return {"active": True, "fails": fails or log_fails, "since": since, "client_changed": changed,
+            "latches": latches}
 
 
 def clear_crash_guard() -> dict:

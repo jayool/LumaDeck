@@ -119,7 +119,7 @@ class GetComponentsStatusTests(unittest.TestCase):
         self.assertIn("headcrab", result)
         # The launcher's crash guard, read by the QAM's "Recovery mode" row and
         # the Settings button; stack-wide like headcrab.
-        self.assertEqual(set(result["guard"]), {"active", "fails", "since", "client_changed"})
+        self.assertEqual(set(result["guard"]), {"active", "fails", "since", "client_changed", "latches"})
         self.assertFalse(result["guard"]["active"])
 
     def test_a_latched_crash_guard_is_reported(self):
@@ -129,7 +129,8 @@ class GetComponentsStatusTests(unittest.TestCase):
                             "client_changed": False})
         result = asyncio.run(components.get_components_status())
         self.assertEqual(result["guard"], {"active": True, "fails": 3,
-                                           "since": "2026-09-23 10:22:09", "client_changed": False})
+                                           "since": "2026-09-23 10:22:09", "client_changed": False,
+                                           "latches": 1})
 
     def test_a_failing_guard_read_reports_inactive(self):
         import paths
@@ -209,6 +210,23 @@ class SlssteamHealthFromFeedTests(unittest.TestCase):
             self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), text, sha), NOT_LOADED)
         self._recorded(None)  # install predating the recorded tag
         self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), _FEED, _OLD), NOT_LOADED)
+
+    def test_64bit_client_listed_nowhere_is_unknown_not_unsupported(self):
+        # The x86_64 fallback's record is the 32-bit release setup.sh checked;
+        # that release's group lists no 64-bit client. Not a Steam update that
+        # broke anything: the state stays what the process says.
+        self._recorded("20261014151919")
+        x64 = "53bdabbbb63fff0146a459f1f40dc9208661f329810557c462404ba52318bf11"
+        for h in (NOT_LOADED, NOT_INJECTED):
+            self.assertEqual(components._slssteam_health_from_feed(dict(h), _FEED, x64, "steamrt64"), h)
+        # The 32-bit client keeps the rule: unlisted = not_supported.
+        self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), _FEED, _OLD, "ubuntu12_32"), NOT_SUPPORTED)
+        # A 64-bit client the feed does list is judged by its group like any other.
+        feed64 = _FEED + f"  20261201000000: #tag\n    - {x64} #steamrt64\n"
+        self._recorded("20261201000000")
+        self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), feed64, x64, "steamrt64"), NOT_LOADED)
+        self._recorded("20261014151919")
+        self.assertEqual(components._slssteam_health_from_feed(dict(NOT_LOADED), feed64, x64, "steamrt64"), NOT_SUPPORTED)
 
     def test_only_the_not_mapped_states_are_rewritten(self):
         self._recorded("20261014151919")

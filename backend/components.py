@@ -226,9 +226,22 @@ def _slssteam_health_from_feed(health: dict, sls_text, cur_hash, arch: Optional[
     if health.get("state") not in ("not_loaded", "not_injected"):
         return health
     from slssteam_version import read_recorded_version
-    from steam_update_gate import slssteam_supports
+    from steam_update_gate import slssteam_supports, slssteam_tag_for_hash
+    from paths import STEAM_CLIENT_64, steam_client_arch
     tag = read_recorded_version(arch)
-    if not tag or slssteam_supports(sls_text, tag, cur_hash) is not False:
+    if not tag:
+        return health
+    # A 64-bit client the feed lists in no group: upstream's releases are
+    # 32-bit builds whose groups list 32-bit clients, so a group's silence says
+    # nothing about this client (steam_update_gate.slssteam_latest_supports
+    # has the same rule for "latest"). Unknown, not unsupported: read as
+    # not_supported it offered the downgrade on a 64-bit client, where the
+    # downgrade cannot apply, and hid the crash guard's re-enable (a Deck,
+    # 2026-11-12). The day the feed lists a 64-bit client the rule is the
+    # 32-bit one again: unlisted means unsupported.
+    if (arch or steam_client_arch()) == STEAM_CLIENT_64 and slssteam_tag_for_hash(sls_text, cur_hash) is None:
+        return health
+    if slssteam_supports(sls_text, tag, cur_hash) is not False:
         return health
     logger.info("components: SLSsteam %s does not list client %s; not_supported",
                 tag, (cur_hash or "")[:8])
@@ -293,7 +306,7 @@ async def get_components_status(force: bool = False) -> dict:
     # every hook component reads not_loaded and a plain restart cannot help, so
     # the UI shows "Recovery mode" + Retry instead of "Restart needed". Stack-wide
     # like headcrab, not per component. Inactive on any failure (safe default).
-    guard = _safe_sync(read_crash_guard, {"active": False, "fails": 0, "since": None, "client_changed": False})
+    guard = _safe_sync(read_crash_guard, {"active": False, "fails": 0, "since": None, "client_changed": False, "latches": 0})
     # The Steam-update pin (steam.cfg). Any pin is THE pin, whoever wrote it
     # (our downgrade.sh signs it `# lumalinux`; headcrab's installer writes an
     # unsigned one): the UI offers to lift it in place with "Let Steam update",
@@ -449,5 +462,6 @@ async def get_components_status(force: bool = False) -> dict:
             "fails": int(guard.get("fails") or 0),
             "since": guard.get("since"),
             "client_changed": bool(guard.get("client_changed")),
+            "latches": int(guard.get("latches") or (1 if guard.get("active") else 0)),
         },
     }

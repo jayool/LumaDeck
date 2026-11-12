@@ -50,7 +50,7 @@ class CrashGuardTests(unittest.TestCase):
 
     def test_no_state_dir_is_inactive(self):
         self.assertEqual(paths.read_crash_guard(),
-                         {"active": False, "fails": 0, "since": None, "client_changed": False})
+                         {"active": False, "fails": 0, "since": None, "client_changed": False, "latches": 0})
 
     def test_state_dir_without_latch_is_inactive(self):
         # A normal injected launch leaves last_launch and a counter, never safe_mode.
@@ -65,7 +65,32 @@ class CrashGuardTests(unittest.TestCase):
         self._write("guard.log", LATCH_LOG)
         g = paths.read_crash_guard()
         self.assertEqual(g, {"active": True, "fails": 3,
-                             "since": "2026-09-23 10:22:09", "client_changed": False})
+                             "since": "2026-09-23 10:22:09", "client_changed": False, "latches": 1})
+
+    def test_latch_count_counts_the_latches_on_this_client(self):
+        # setup.sh (lumalinux v0.22.7) writes latch_count: 1 after the first
+        # latch ("try again"), 2 after a second one on the same client (the
+        # build and the stack do not go together). Its log line carries the
+        # count too; the parser still reads since/fails/client_changed off it.
+        self._write("safe_mode")
+        self._write("boot_fail_count", "1")
+        self._write("latch_count", "2")
+        self._write("guard.log", "2026-11-12 18:00:00 latching safe mode (fails=1 client_changed=1 latches_on_this_client=2) -> vanilla (/usr/lib/steamos/steam-launcher)\n")
+        g = paths.read_crash_guard()
+        self.assertEqual(g, {"active": True, "fails": 1, "since": "2026-11-12 18:00:00",
+                             "client_changed": True, "latches": 2})
+        # An older launcher writes no latch_count: one latch, never "repeated".
+        os.remove(os.path.join(self.dir, "latch_count"))
+        self.assertEqual(paths.read_crash_guard()["latches"], 1)
+
+    def test_clear_keeps_the_latch_count(self):
+        # Re-enable is a retry: the count must survive it so a second latch on
+        # the same client reads as 2.
+        self._write("safe_mode")
+        self._write("latch_count", "1")
+        self._write("latched_client", "a:b/")
+        paths.clear_crash_guard()
+        self.assertEqual(sorted(os.listdir(self.dir)), ["latch_count", "latched_client"])
 
     def test_latched_on_first_crash_after_a_steam_update(self):
         self._write("safe_mode")

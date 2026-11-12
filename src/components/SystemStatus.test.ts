@@ -107,6 +107,52 @@ describe("a Steam update broke a component (not_supported)", () => {
   });
 });
 
+describe("crash guard versus the feeds", () => {
+  it("the first latch wins over a feed-based not_supported: Re-enable injection, not Fix in Desktop", () => {
+    // A Deck, 2026-11-12: the 64-bit client, the stack paused by one startup
+    // crash, SLSsteam read not_supported off a list with no 64-bit build. The
+    // user saw Fix in Desktop (which cannot apply on that client) and never the
+    // button that lifts the guard.
+    const s = status(
+      { guard: { active: true, fails: 1, since: "x", client_changed: true, latches: 1 }, downgrade: { target: 1, possible: true } },
+      [comp("slssteam", { health: "not_supported" }), comp("cloudredirect", { health: "unavailable_64" }), comp("lumalinux", { health: "not_loaded" })],
+    );
+    expect(rows(s).map((x) => x.key)).toEqual(["guard"]);
+    expect(rows(s)[0].actionLabel).toBe("sysReenable");
+    expect(primarySystemAction(s)).toBe("retry");
+  });
+
+  it("an older launcher reports no count: one latch, Re-enable", () => {
+    const s = status(
+      { guard: { active: true, fails: 3, since: "x", client_changed: false } },
+      [comp("slssteam", { health: "not_supported" }), comp("cloudredirect"), comp("lumalinux")],
+    );
+    expect(primarySystemAction(s)).toBe("retry");
+  });
+
+  it("a second latch on the same client is evidence: the unsupported handling applies", () => {
+    const twice = { active: true, fails: 1, since: "x", client_changed: true, latches: 2 };
+    // Downgrade possible (32-bit client): Fix in Desktop.
+    let s = status(
+      { guard: twice, downgrade: { target: 1, possible: true } },
+      [comp("slssteam", { health: "not_supported" }), comp("cloudredirect"), comp("lumalinux", { health: "not_loaded" })],
+    );
+    expect(rows(s).map((x) => x.key)).toEqual(["desktop"]);
+    expect(primarySystemAction(s)).toBe("downgrade");
+    // No downgrade (64-bit client): wait, no button.
+    s = status(
+      { guard: twice, downgrade: { target: null, possible: false } },
+      [comp("slssteam", { health: "not_supported" }), comp("cloudredirect"), comp("lumalinux", { health: "not_loaded" })],
+    );
+    expect(rows(s).map((x) => x.key)).toEqual(["wait"]);
+    expect(primarySystemAction(s)).toBeNull();
+    // Nothing unsupported: the second latch is still Recovery.
+    s = status({ guard: twice }, [comp("slssteam", { health: "not_loaded" }), comp("cloudredirect"), comp("lumalinux", { health: "not_loaded" })]);
+    expect(rows(s).map((x) => x.key)).toEqual(["guard"]);
+    expect(primarySystemAction(s)).toBe("retry");
+  });
+});
+
 describe("recovery and restart", () => {
   it("Recovery mode with Re-enable injection when the crash guard is latched, even though components read not_loaded", () => {
     const s = status(

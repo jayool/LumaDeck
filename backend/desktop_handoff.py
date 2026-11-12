@@ -384,6 +384,15 @@ async def downgrade_check(force: bool = False) -> dict:
     payload carries it so the QAM offers the button only when it can work."""
     from headcrab_compat import _hash_for_build, _lumalinux_updates_text
     from steam_update_gate import slssteam_latest_supports, slssteam_updates_text
+    from paths import STEAM_CLIENT_64, steam_client_arch
+    # downgrade.sh installs a build of the 32-bit manifest line (ubuntu12) and
+    # the 64-bit client's bootstrapper ignores it: "Downgrade FAILED ... The
+    # bootstrapper did not install build 1791918634", then it restores
+    # steam.cfg (a Deck, 2026-11-12). There is no 64-bit downgrade; the QAM
+    # must not offer one.
+    if steam_client_arch() == STEAM_CLIENT_64:
+        return {"target": None, "possible": False,
+                "error": "no downgrade for the 64-bit client: downgrade.sh targets the 32-bit manifest line"}
     target = await downgrade_target(force=force)
     if target is None:
         return {"target": None, "possible": None, "error": "could not read the downgrade target manifest"}
