@@ -308,8 +308,6 @@ const strings: Record<Lang, Record<string, string>> = {
     healthUnsupportedWait: "Steam build not supported. Wait for an update.",
     healthDisabled: "Disabled by user. Re-enable in Desktop.",
     // Steam runs its 64-bit client (Components sub-row + right-side label).
-    healthX64Only32: "32-bit only; the 64-bit Steam client cannot load it.",
-    statusUnavailable: "Not available",
     crUnmaintained: "No longer maintained upstream. LumaDeck ships its last build; a Steam update may stop it for good.",
     statusDisabled: "Disabled",
     // Steam component row (Dependencies) — build-support status, right-aligned
@@ -329,8 +327,6 @@ const strings: Record<Lang, Record<string, string>> = {
     sysCloudLogin: "Cloud saves need sign-in",
     sysCloudLoginDesc: "Open the CloudRedirect app in Desktop Mode to sign in.",
     // Steam runs its 64-bit client and a component has no build for it.
-    sysX64NoCloud: "Cloud saves unavailable",
-    sysX64NoCloudDesc: "Steam runs its new 64-bit build. Cloud saves for added games don't work on it.",
     sysStuck: "{0} can't update",
     sysStuckDesc: "This game's update is stuck. Open it to fix.",
     sysOpenGame: "Open game",
@@ -712,8 +708,6 @@ const strings: Record<Lang, Record<string, string>> = {
     healthUnsupportedFix: "Build da Steam não suportada. Toque em \"{0}\" para corrigir.",
     healthUnsupportedWait: "Build da Steam não suportada. Aguarde uma atualização.",
     healthDisabled: "Desabilitado pelo usuário. Reative no Desktop.",
-    healthX64Only32: "Só 32 bits; o cliente Steam de 64 bits não o carrega.",
-    statusUnavailable: "Não disponível",
     crUnmaintained: "Sem manutenção upstream. O LumaDeck inclui a última versão; uma atualização da Steam pode pará-lo de vez.",
     statusDisabled: "Desabilitado",
     statusSupported: "Suportado",
@@ -730,8 +724,6 @@ const strings: Record<Lang, Record<string, string>> = {
     sysReenable: "Reativar injeção",
     sysCloudLogin: "O salvamento na nuvem precisa de login",
     sysCloudLoginDesc: "Abra o app CloudRedirect no Modo Desktop para entrar.",
-    sysX64NoCloud: "Saves na nuvem indisponíveis",
-    sysX64NoCloudDesc: "A Steam usa a sua nova build de 64 bits. Os saves na nuvem dos jogos adicionados não funcionam nela.",
     sysStuck: "{0} não consegue atualizar",
     sysStuckDesc: "Uma atualização da Steam para este jogo travou. Abra para corrigir.",
     sysOpenGame: "Abrir jogo",

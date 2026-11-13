@@ -51,7 +51,9 @@ class MappedLibrariesTests(unittest.TestCase):
 
         def fake_scan(names=paths._MAPPED_NAMES, proc_root="/proc"):
             calls.append(1)
-            return frozenset({"SLSsteam.so", "cloud_redirect.so"})
+            # The 32-bit CloudRedirect's path tail (the health asks about the
+            # running client's build; the default test client is the 32-bit one).
+            return frozenset({"SLSsteam.so", "cloud_redirect.so", "CloudRedirect/cloud_redirect.so"})
 
         with mock.patch.object(paths, "mapped_libraries", fake_scan), \
              mock.patch.dict(paths._mapped_cache, {"at": 0.0, "found": frozenset()}):

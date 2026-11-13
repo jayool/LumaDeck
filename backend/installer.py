@@ -772,7 +772,8 @@ async def reinject_installed() -> dict:
     # it if any component is present (reinject = re-run setup.sh).
     from paths import STEAM_CLIENT_32, STEAM_CLIENT_64
     if (check_slssteam_installed(STEAM_CLIENT_32) or check_slssteam_installed(STEAM_CLIENT_64)
-            or check_cloudredirect_installed() or check_lumalinux_installed()):
+            or check_cloudredirect_installed(STEAM_CLIENT_32) or check_cloudredirect_installed(STEAM_CLIENT_64)
+            or check_lumalinux_installed()):
         steps.append(("stack", install_via_setup, get_setup_status))
 
     if not steps:

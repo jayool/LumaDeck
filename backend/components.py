@@ -79,7 +79,11 @@ async def check_slssteam_update(force: bool = False, arch: Optional[str] = None)
 # app deploys its own older .so (2.6.5), and Update (one setup.sh run) is how
 # it gets back to 2.6.6.
 _CR_SHIPPED_VERSION = "2.6.6"
+# Where setup.sh takes each build from: the archived 32-bit .so is a lumalinux
+# release asset; the 64-bit one is built from jayool/cloudredirect (the port
+# of upstream's Linux hooks to the 64-bit client) by that repo's release.
 _CR_SHIPPED_URL = "https://github.com/jayool/lumalinux/releases/tag/v0.22.3"
+_CR_SHIPPED_URL_64 = "https://github.com/jayool/cloudredirect/releases/tag/v2.6.6-linux64.1"
 
 # The .so states its own version. This is deliberate upstream, not incidental log
 # text: CloudRedirect's CMakeLists reads <ReleaseVersion> out of Version.props,
@@ -180,15 +184,17 @@ async def check_lumalinux_update(health_version: Optional[str] = None, force: bo
 async def check_cloudredirect_update(force: bool = False) -> dict:
     """CloudRedirect update = the .so on disk is older than the build we ship.
 
-    The version compiled into the installed .so against _CR_SHIPPED_VERSION. No
-    network: upstream is gone (see above). `force` is accepted for the uniform
+    The version compiled into the installed .so (the running client's build:
+    x86_64/ on the 64-bit client) against _CR_SHIPPED_VERSION. No network:
+    upstream is gone (see above). `force` is accepted for the uniform
     signature and has nothing to bypass. Unknown installed means no update, the
     safe default."""
-    from paths import get_cloudredirect_so_path
+    from paths import get_cloudredirect_so_path, steam_client_arch, STEAM_CLIENT_64
     local_path = get_cloudredirect_so_path()
     installed = read_cloudredirect_version(local_path) if local_path else None
+    url = _CR_SHIPPED_URL_64 if steam_client_arch() == STEAM_CLIENT_64 else _CR_SHIPPED_URL
     latest = {"tag": f"v{_CR_SHIPPED_VERSION}", "tag_normalised": _CR_SHIPPED_VERSION,
-              "url": _CR_SHIPPED_URL}
+              "url": url}
     return await has_update_from(installed, latest)
 
 
@@ -328,12 +334,11 @@ async def get_components_status(force: bool = False) -> dict:
     # and whether the release cache is behind Ace's newest pattern group.
     from steam_update_gate import current_client_hash, slssteam_latest_supports, slssteam_updates_text
     from paths import steam_client_arch, STEAM_CLIENT_64
-    # Which Steam client runs. On the 64-bit client (steamrt64, in the Steam
-    # Runtime container) the 32-bit SLSsteam and CloudRedirect never load and
-    # the hooks have nothing to serve: the frontend shows one row saying so and
-    # offers none of the fixes below (a downgrade pins the 32-bit tree, which
-    # that client does not run). Everything else in this payload is still
-    # computed, against the client that runs.
+    # Which Steam client runs. Every component ships a build per client
+    # (32-bit, and 64-bit for steamrt64 in the Steam Runtime container), and
+    # every health, version and feed question below is asked about the build
+    # of the client that runs. The one thing the 64-bit client cannot have is
+    # a downgrade (it pins the 32-bit tree, which that client does not run).
     client_arch = _safe_sync(steam_client_arch, "ubuntu12_32")
     client_64 = client_arch == STEAM_CLIENT_64
     # The network checks that don't depend on each other go out at once: the
@@ -367,10 +372,6 @@ async def get_components_status(force: bool = False) -> dict:
 
     sls_update = no_update if sls_forced else await _safe(
         check_slssteam_update(force=sls_force, arch=client_arch), no_update)
-    # A build the running client cannot use (unavailable_64) is nothing to
-    # compare against a release: no Update offer for it.
-    if cr_health.get("state") == "unavailable_64":
-        cr_update = no_update
 
     # Would Fix in Desktop help? Only asked while something is not_supported
     # (the one state that offers it). possible False -> the QAM shows the Wait

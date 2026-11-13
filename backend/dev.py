@@ -30,7 +30,7 @@ _ACTION = {
     "cloudredirect": {"not_installed": "install", "disabled": None,
                       "not_loaded": "restart", "not_injected": "restart",
                       "not_supported": "downgrade", "not_authed": "configure_desktop",
-                      "unavailable_64": None, "healthy": None},
+                      "healthy": None},
 }
 
 

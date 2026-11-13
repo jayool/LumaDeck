@@ -123,7 +123,7 @@ class TestSinglePathsWired(unittest.TestCase):
         self.assertEqual(paths._CLOUDREDIRECT_TOKEN_DIRS[0],
                          os.path.join(h, ".config/CloudRedirect"))
         self.assertEqual(paths._CR_LOG_PATHS[0],
-                         os.path.join(h, ".config/CloudRedirect/cr_debug.log"))
+                         os.path.join(h, ".config/CloudRedirect/cloud_redirect.log"))
         self.assertEqual(paths._CR_DISABLE_PATHS[0],
                          os.path.join(h, ".config/CloudRedirect/disable"))
         # The ~ fallback entry is always preserved as the second element.
