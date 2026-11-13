@@ -115,7 +115,7 @@ describe("crash guard versus the feeds", () => {
     // button that lifts the guard.
     const s = status(
       { guard: { active: true, fails: 1, since: "x", client_changed: true, latches: 1 }, downgrade: { target: 1, possible: true } },
-      [comp("slssteam", { health: "not_supported" }), comp("cloudredirect", { health: "unavailable_64" }), comp("lumalinux", { health: "not_loaded" })],
+      [comp("slssteam", { health: "not_supported" }), comp("cloudredirect", { installed: false, health: "not_installed", action: "install" }), comp("lumalinux", { health: "not_loaded" })],
     );
     expect(rows(s).map((x) => x.key)).toEqual(["guard"]);
     expect(rows(s)[0].actionLabel).toBe("sysReenable");
@@ -186,11 +186,11 @@ describe("recovery and restart", () => {
   });
 });
 
-describe("Steam runs its 64-bit client (unavailable_64)", () => {
-  it("a missing 64-bit SLSsteam is a half-install: the repair row with its button, CloudRedirect's row yields to it", () => {
+describe("Steam runs its 64-bit client: CloudRedirect is a per-client build like the others", () => {
+  it("a missing 64-bit SLSsteam is a half-install: the repair row with its button", () => {
     const s = status({}, [
       comp("slssteam", { installed: false, health: "not_installed", action: "install" }),
-      comp("cloudredirect", { health: "unavailable_64" }),
+      comp("cloudredirect", { installed: false, health: "not_installed", action: "install" }),
       comp("lumalinux"),
     ]);
     const r = rows(s);
@@ -199,18 +199,17 @@ describe("Steam runs its 64-bit client (unavailable_64)", () => {
     expect(primarySystemAction(s)).toBe("reinject");
   });
 
-  it("the cloud-saves row when only CloudRedirect lacks a 64-bit build", () => {
-    const s = status({}, [comp("slssteam"), comp("cloudredirect", { health: "unavailable_64" }), comp("lumalinux")]);
-    const r = rows(s);
-    expect(r.map((x) => x.key)).toEqual(["x64-cr"]);
-    expect(r[0].label).toBe("sysX64NoCloud");
-    expect(r[0].actionLabel).toBeUndefined();
+  it("only the 64-bit CloudRedirect missing (lumalinux not updated yet): no row, as on the 32-bit client", () => {
+    // The lumalinux update row (plugin-level) is what brings setup.sh and the
+    // build; CloudRedirect alone missing never had a QAM row.
+    const s = status({}, [comp("slssteam"), comp("cloudredirect", { installed: false, health: "not_installed", action: "install" }), comp("lumalinux")]);
+    expect(rows(s)).toEqual([]);
     expect(primarySystemAction(s)).toBeNull();
   });
 
-  it("a real problem still outranks it", () => {
-    const s = status({}, [comp("slssteam"), comp("cloudredirect", { health: "unavailable_64" }), comp("lumalinux", { health: "not_loaded" })]);
-    expect(rows(s).map((x) => x.key)).toEqual(["restart"]);
+  it("the 64-bit CloudRedirect installed and loaded reads like any healthy component", () => {
+    const s = status({}, [comp("slssteam"), comp("cloudredirect", { health: "healthy" }), comp("lumalinux")]);
+    expect(rows(s)).toEqual([]);
   });
 });
 

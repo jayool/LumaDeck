@@ -7,7 +7,7 @@ import { useT } from "../i18n";
 // Canonical state set, shared by all three components. not_authed / disabled
 // are CloudRedirect-only. See read_*_health() in backend/paths.py.
 export type ComponentHealth =
-  | "not_installed" | "not_loaded" | "not_injected" | "not_supported" | "unavailable_64"
+  | "not_installed" | "not_loaded" | "not_injected" | "not_supported"
   | "not_authed" | "disabled" | "healthy" | string;
 
 export interface Component {
@@ -334,14 +334,6 @@ export function buildRows(
       actionLabel: t("restartSteam"),
       onAction: needsSetup ? actions.repair : actions.restart,
       confirm: "restart", busyLabel: needsSetup ? undefined : t("restartingSteam"),
-    });
-  } else if (cr?.installed && cr.health === "unavailable_64") {
-    // The 64-bit client, SLSsteam fine, CloudRedirect 32-bit only: cloud
-    // saves off. (A missing 64-bit SLSsteam is a half-install above: setup.sh
-    // ships that build since lumalinux v0.22.6.)
-    rows.push({
-      key: "x64-cr", severity: "problem",
-      label: t("sysX64NoCloud"), description: t("sysX64NoCloudDesc"),
     });
   }
 

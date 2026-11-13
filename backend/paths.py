@@ -346,7 +346,8 @@ def get_steamidra_lite_script() -> Optional[str]:
 # with Steam and steamwebhelper mapped. The answer is memoised for two
 # seconds: a status call reads all three within milliseconds, and a Steam
 # restart takes far longer than that to change the truth.
-_MAPPED_NAMES = ("SLSsteam.so", "liblumalinux.so", "liblumalinux-x86_64.so", "cloud_redirect.so")
+_MAPPED_NAMES = ("SLSsteam.so", "liblumalinux.so", "liblumalinux-x86_64.so", "cloud_redirect.so",
+                 "CloudRedirect/cloud_redirect.so", "CloudRedirect/x86_64/cloud_redirect.so")
 _MAPPED_TTL = 2.0
 _mapped_cache: dict = {"at": 0.0, "found": frozenset()}
 
@@ -1058,7 +1059,11 @@ def clear_crash_guard() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# CloudRedirect paths (32-bit cloud-save RPC hook library, also via LD_PRELOAD)
+# CloudRedirect paths (cloud-save RPC hook library, also via LD_PRELOAD). One
+# build per Steam client, laid out by setup.sh like SLSsteam's: the 32-bit
+# cloud_redirect.so at the root, the 64-bit one under x86_64/ (same file name;
+# lumalinux v0.22.8). Each client's ld.so loads the one of its class, so every
+# question here is asked about the build of the client that runs.
 # ---------------------------------------------------------------------------
 
 _CLOUDREDIRECT_CANDIDATES = _home_candidates(
@@ -1067,26 +1072,40 @@ _CLOUDREDIRECT_CANDIDATES = _home_candidates(
 )
 
 
-def find_cloudredirect_root() -> Optional[str]:
-    """Return the directory containing cloud_redirect.so, or None."""
+def _cloudredirect_so_relpath(arch: Optional[str] = None) -> str:
+    """cloud_redirect.so's path inside the CloudRedirect dir for a client."""
+    if (arch or steam_client_arch()) == STEAM_CLIENT_64:
+        return os.path.join("x86_64", "cloud_redirect.so")
+    return "cloud_redirect.so"
+
+
+def find_cloudredirect_root(arch: Optional[str] = None) -> Optional[str]:
+    """Return the CloudRedirect dir holding the running client's
+    cloud_redirect.so (x86_64/ for the 64-bit client), or None."""
+    rel = _cloudredirect_so_relpath(arch)
     for path in _CLOUDREDIRECT_CANDIDATES:
-        if os.path.isdir(path) and os.path.isfile(os.path.join(path, "cloud_redirect.so")):
+        if os.path.isdir(path) and os.path.isfile(os.path.join(path, rel)):
             return path
     return None
 
 
-def check_cloudredirect_installed() -> bool:
-    return find_cloudredirect_root() is not None
+def check_cloudredirect_installed(arch: Optional[str] = None) -> bool:
+    return find_cloudredirect_root(arch) is not None
 
 
-def get_cloudredirect_so_path() -> Optional[str]:
-    root = find_cloudredirect_root()
-    return os.path.join(root, "cloud_redirect.so") if root else None
+def get_cloudredirect_so_path(arch: Optional[str] = None) -> Optional[str]:
+    root = find_cloudredirect_root(arch)
+    return os.path.join(root, _cloudredirect_so_relpath(arch)) if root else None
 
 
-def check_cloudredirect_active() -> bool:
-    """True if cloud_redirect.so is mapped into any running process."""
-    return _is_mapped("cloud_redirect.so")
+def check_cloudredirect_active(arch: Optional[str] = None) -> bool:
+    """True if the running client's cloud_redirect.so is mapped into any
+    process. Both builds share the file name, so the match is on the path
+    tail (CloudRedirect/x86_64/cloud_redirect.so vs
+    CloudRedirect/cloud_redirect.so), not the bare name."""
+    if (arch or steam_client_arch()) == STEAM_CLIENT_64:
+        return _is_mapped("CloudRedirect/x86_64/cloud_redirect.so")
+    return _is_mapped("CloudRedirect/cloud_redirect.so")
 
 
 _CLOUDREDIRECT_TOKEN_DIRS = [
@@ -1119,24 +1138,40 @@ def check_cloudredirect_authed() -> bool:
 #
 # CR loads via LD_PRELOAD and hooks Steam's transport vtable for cloud RPCs. It
 # does NOT unmap on failure either, so /proc alone can't separate "loaded and
-# working" from "loaded but vtable hook failed". Its own log
-# (~/.config/CloudRedirect/cr_debug.log) is the honest discriminator:
+# working" from "loaded but vtable hook failed". Its own log is the honest
+# discriminator. The builds we ship (the public 2.6.6 source, 32- and 64-bit)
+# write it to ~/.config/CloudRedirect/cloud_redirect.log; cr_debug.log next to
+# it only carries "[CR] ..." traces and is read as a fallback for older builds
+# that logged there:
 #
-#   - "CloudRedirect build X.Y.Z transport=external-curl"     → version (init OK so far)
+#   - "CloudRedirect build X.Y.Z..."                           → version (init OK so far)
 #   - "Init failed: steamclient.so not found"                  → broken/no_steam
 #   - "Init failed: transport vtable not found"                → broken/incompatible
 #   - "Init failed: slot N (...) outside steamclient range, incompatible client"
 #                                                              → broken/incompatible
 #   - "Init failed: transport hook installation failed"        → broken/hook
 #
+# Only these "Init failed" lines count: they are CR's own verdict (it carries
+# on, and says "initialized successfully", when an optional hook misses).
+#
+# The log is appended for the life of the install, every process CR is
+# preloaded into writes a "=== CloudRedirect Linux started ===" header (on the
+# 64-bit client that is the whole launcher chain), and only the client that
+# gets to init writes "=== CloudRedirect loaded [BUILD:...] ===". Read from
+# the LAST of those: the outcome of the current init, not a failure from a
+# session weeks ago.
+#
 # Kill-switch (~/.config/CloudRedirect/disable) is a deliberate user opt-out,
 # not a failure — we surface it but don't nag.
 
 
 _CR_LOG_PATHS = (
+    os.path.join(_REAL_HOME, ".config/CloudRedirect/cloud_redirect.log"),
+    os.path.expanduser("~/.config/CloudRedirect/cloud_redirect.log"),
     os.path.join(_REAL_HOME, ".config/CloudRedirect/cr_debug.log"),
     os.path.expanduser("~/.config/CloudRedirect/cr_debug.log"),
 )
+_CR_INIT_MARKER = "=== CloudRedirect loaded [BUILD:"
 _CR_DISABLE_PATHS = (
     os.path.join(_REAL_HOME, ".config/CloudRedirect/disable"),
     os.path.expanduser("~/.config/CloudRedirect/disable"),
@@ -1154,11 +1189,19 @@ def _cloudredirect_kill_switched() -> bool:
     return any(os.path.isfile(p) for p in _CR_DISABLE_PATHS)
 
 
+def _cloudredirect_last_init(content: str) -> str:
+    """The log from its last init marker on; the whole text when there is none."""
+    idx = content.rfind(_CR_INIT_MARKER)
+    return content[idx:] if idx >= 0 else content
+
+
 def _cloudredirect_log_inspect() -> tuple[Optional[str], Optional[str]]:
     """Return (version, abort_cause) from the live log, or (None, None) if the
     file isn't there. abort_cause is "incompatible" when the vtable couldn't be
     found or its slots are out of range, "no_steam" when steamclient.so wasn't
-    found, "hook" when the trampoline install failed. None = no abort line."""
+    found, "hook" when the trampoline install failed. None = no abort line.
+    Only the last init (the text after the last "=== CloudRedirect loaded"
+    marker) is read; a log without the marker is read whole."""
     log = _cloudredirect_log_path()
     if not log:
         return None, None
@@ -1167,6 +1210,7 @@ def _cloudredirect_log_inspect() -> tuple[Optional[str], Optional[str]]:
             content = f.read()
     except Exception:
         return None, None
+    content = _cloudredirect_last_init(content)
 
     import re as _re
     version: Optional[str] = None
@@ -1200,8 +1244,10 @@ def read_cloudredirect_health() -> dict:
                          failed trampoline install)
         not_authed     — healthy hooks + no provider tokens (sign in, desktop)
         healthy        — mapped + clean log + tokens present
-        unavailable_64 — installed, but Steam runs its 64-bit client: CR is
-                         32-bit only and that client never maps it (no fix)
+
+    Every check is about the build of the client that runs (32-bit at the
+    CloudRedirect root, 64-bit under x86_64/): on the 64-bit client a 32-bit
+    .so alone is not_installed, the install action, whatever else is on disk.
     """
     try:
         import dev
@@ -1212,8 +1258,6 @@ def read_cloudredirect_health() -> dict:
         return dev.health("cloudredirect", _ov)
     if not check_cloudredirect_installed():
         return {"state": "not_installed", "cause": None, "version": None, "action": "install"}
-    if steam_client_is_64():
-        return {"state": "unavailable_64", "cause": None, "version": None, "action": None}
 
     if _cloudredirect_kill_switched():
         return {"state": "disabled", "cause": None, "version": None, "action": None}
@@ -1410,9 +1454,9 @@ def read_slssteam_health() -> dict:
     # Judged for the client that runs: on the 64-bit client a missing
     # x86_64/SLSsteam.so is "not installed" even with the 32-bit build on
     # disk, and the install action (one setup.sh run) is the fix, since
-    # setup.sh ships a 64-bit build (lumalinux v0.22.6, 2026-11-12). Until
-    # then this read unavailable_64 with no action; CloudRedirect, 32-bit
-    # only, still does (read_cloudredirect_health).
+    # setup.sh ships a 64-bit build (lumalinux v0.22.6, 2026-11-12).
+    # CloudRedirect reads the same way since its 64-bit build (lumalinux
+    # v0.22.8; read_cloudredirect_health).
     if not check_slssteam_installed():
         return {"state": "not_installed", "cause": None, "action": "install"}
 
