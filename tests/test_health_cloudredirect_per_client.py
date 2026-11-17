@@ -124,12 +124,32 @@ class HealthOnThe64BitClient(_Patching):
         self._ladder(mapped=True, authed=False)
         self.assertEqual(paths.read_cloudredirect_health()["state"], "not_authed")
 
-    def test_an_init_failure_is_not_supported(self):
+    def test_a_too_early_start_is_not_loaded_with_the_restart_action(self):
+        # Steam was not ready in time (relocations, steamclient.so): the same
+        # row and button as a library that did not load.
         self._client(paths.STEAM_CLIENT_64)
         self.patch("check_cloudredirect_installed", lambda arch=None: True)
-        self._ladder(mapped=True, cause="incompatible")
+        self._ladder(mapped=True, cause="restart")
         h = paths.read_cloudredirect_health()
-        self.assertEqual((h["state"], h["cause"]), ("not_supported", "version"))
+        self.assertEqual((h["state"], h["action"]), ("not_loaded", "restart"))
+
+    def test_a_build_that_defeats_it_is_not_hooked_and_never_a_downgrade(self):
+        # CloudRedirect is optional: information, no action. not_supported
+        # (Fix in Desktop / a Steam downgrade) is for SLSsteam and lumalinux.
+        self._client(paths.STEAM_CLIENT_64)
+        self.patch("check_cloudredirect_installed", lambda arch=None: True)
+        self._ladder(mapped=True, cause="not_hooked")
+        h = paths.read_cloudredirect_health()
+        self.assertEqual((h["state"], h["action"]), ("not_hooked", None))
+        self._client(paths.STEAM_CLIENT_32)
+        h = paths.read_cloudredirect_health()
+        self.assertEqual((h["state"], h["action"]), ("not_hooked", None))
+
+    def test_not_hooked_outranks_the_token_check(self):
+        self._client(paths.STEAM_CLIENT_64)
+        self.patch("check_cloudredirect_installed", lambda arch=None: True)
+        self._ladder(mapped=True, cause="not_hooked", authed=False)
+        self.assertEqual(paths.read_cloudredirect_health()["state"], "not_hooked")
 
     def test_no_state_is_unavailable_any_more(self):
         self._client(paths.STEAM_CLIENT_64)

@@ -1145,14 +1145,27 @@ def check_cloudredirect_authed() -> bool:
 # that logged there:
 #
 #   - "CloudRedirect build X.Y.Z..."                           → version (init OK so far)
-#   - "Init failed: steamclient.so not found"                  → broken/no_steam
-#   - "Init failed: transport vtable not found"                → broken/incompatible
-#   - "Init failed: slot N (...) outside steamclient range, incompatible client"
-#                                                              → broken/incompatible
-#   - "Init failed: transport hook installation failed"        → broken/hook
 #
-# Only these "Init failed" lines count: they are CR's own verdict (it carries
-# on, and says "initialized successfully", when an optional hook misses).
+#   Fixed by a Steam restart (CloudRedirect ran before Steam was ready):
+#   - "Init failed: steamclient.so not found"                  → restart
+#     (the 32-bit build's 10 s wait ran out; the 64-bit build waits 5 min and
+#     stays passive, so it never writes this)
+#   - "Relocations did not complete after Nms" and then
+#     "Init failed: transport vtable not found"                → restart
+#     (Steam took more than 30 s to relocate .data.rel.ro: a loaded machine,
+#     an update applying; the same vtable line as below, told apart by the
+#     relocation line before it)
+#
+#   This Steam build is not hooked (a restart changes nothing):
+#   - "Init failed: transport vtable not found"                → not_hooked
+#     (preceded by the reason: RTTI string / typeinfo / vtable not found, or
+#     "vtable slot N (...) outside steamclient range")
+#   - "Init failed: transport hook installation failed"        → not_hooked
+#   - "Caught signal during init - incompatible steamclient?"  → not_hooked
+#     (CR's crash guard caught a fault while scanning; no "Init failed" line)
+#
+# Only these lines count: they are CR's own verdict (it carries on, and says
+# "initialized successfully", when an optional hook misses).
 #
 # The log is appended for the life of the install, every process CR is
 # preloaded into writes a "=== CloudRedirect Linux started ===" header (on the
@@ -1195,11 +1208,23 @@ def _cloudredirect_last_init(content: str) -> str:
     return content[idx:] if idx >= 0 else content
 
 
+_CR_RESTART_LINES = (
+    "Init failed: steamclient.so not found",
+    "Relocations did not complete after",
+)
+_CR_NOT_HOOKED_LINES = (
+    "Init failed: transport vtable not found",
+    "Init failed: transport hook installation failed",
+    "Caught signal during init",
+)
+
+
 def _cloudredirect_log_inspect() -> tuple[Optional[str], Optional[str]]:
     """Return (version, abort_cause) from the live log, or (None, None) if the
-    file isn't there. abort_cause is "incompatible" when the vtable couldn't be
-    found or its slots are out of range, "no_steam" when steamclient.so wasn't
-    found, "hook" when the trampoline install failed. None = no abort line.
+    file isn't there. abort_cause is "restart" when CloudRedirect gave up
+    before Steam was ready (steamclient.so not mapped in time, relocations not
+    done in 30 s), "not_hooked" when this Steam build defeats it (vtable not
+    found, hook install failed, crash guard tripped). None = clean init.
     Only the last init (the text after the last "=== CloudRedirect loaded"
     marker) is read; a log without the marker is read whole."""
     log = _cloudredirect_log_path()
@@ -1218,15 +1243,13 @@ def _cloudredirect_log_inspect() -> tuple[Optional[str], Optional[str]]:
     if m:
         version = m.group(1)
 
+    # The relocation timeout ends in the same "transport vtable not found" line
+    # as a real incompatibility, so the restart lines are checked first.
     cause: Optional[str] = None
-    if "Init failed: steamclient.so not found" in content:
-        cause = "no_steam"
-    elif "Init failed: transport vtable not found" in content:
-        cause = "incompatible"
-    elif _re.search(r"Init failed: slot \d+ \([^)]+\) outside steamclient range", content):
-        cause = "incompatible"
-    elif "Init failed: transport hook installation failed" in content:
-        cause = "hook"
+    if any(line in content for line in _CR_RESTART_LINES):
+        cause = "restart"
+    elif any(line in content for line in _CR_NOT_HOOKED_LINES):
+        cause = "not_hooked"
 
     return version, cause
 
@@ -1239,9 +1262,10 @@ def read_cloudredirect_health() -> dict:
         disabled       — ~/.config/CloudRedirect/disable    (none — user choice)
         not_loaded     — not mapped, wrapper coverage present (restart Steam)
         not_injected   — not mapped, wrapper coverage lost (re-run setup.sh)
-        not_supported  — mapped + log "Init failed: ..."    (fix in Desktop)
-                         (cause "version" for vtable/steam issues, "hooks" for a
-                         failed trampoline install)
+        not_loaded     — mapped + log says Steam was not ready (restart Steam)
+        not_hooked     — mapped + log says this Steam build defeats it (none:
+                         cloud saves are off; never a downgrade for an
+                         optional component)
         not_authed     — healthy hooks + no provider tokens (sign in, desktop)
         healthy        — mapped + clean log + tokens present
 
@@ -1274,11 +1298,15 @@ def read_cloudredirect_health() -> dict:
             return {"state": "not_loaded", "cause": None, "version": version, "action": "restart"}
         return {"state": "not_injected", "cause": "wrapper", "version": version, "action": "install"}
 
-    if cause:
-        # no_steam / incompatible = Steam-side (cause "version"); hook = a failed
-        # trampoline install (cause "hooks"). Both → fix in Desktop.
-        canon = "hooks" if cause == "hook" else "version"
-        return {"state": "not_supported", "cause": canon, "version": version, "action": "downgrade"}
+    if cause == "restart":
+        # CR gave up before Steam was ready (slow start, update applying): the
+        # same row and button as a library that did not load.
+        return {"state": "not_loaded", "cause": "timing", "version": version, "action": "restart"}
+    if cause == "not_hooked":
+        # This Steam build defeats it. CloudRedirect is optional (cloud saves),
+        # so this is information, not a reason to downgrade Steam: never
+        # not_supported.
+        return {"state": "not_hooked", "cause": "version", "version": version, "action": None}
 
     if not check_cloudredirect_authed():
         return {"state": "not_authed", "cause": None, "version": version, "action": "configure_desktop"}

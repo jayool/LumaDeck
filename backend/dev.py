@@ -29,7 +29,7 @@ _ACTION = {
                   "healthy": None},
     "cloudredirect": {"not_installed": "install", "disabled": None,
                       "not_loaded": "restart", "not_injected": "restart",
-                      "not_supported": "downgrade", "not_authed": "configure_desktop",
+                      "not_hooked": None, "not_authed": "configure_desktop",
                       "healthy": None},
 }
 

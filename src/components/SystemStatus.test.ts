@@ -87,6 +87,12 @@ describe("a Steam update broke a component (not_supported)", () => {
     expect(primarySystemAction(s)).toBeNull();
   });
 
+  it("Wait, with no button, on the 64-bit client: the backend answers possible=false, there is no 64-bit downgrade", () => {
+    const s = status({ downgrade: { target: null, possible: false } }, broken());
+    expect(keys(s)).toEqual(["wait"]);
+    expect(primarySystemAction(s)).toBeNull();
+  });
+
   it("Fix in Desktop otherwise", () => {
     const s = status({}, broken());
     const r = rows(s);
@@ -219,6 +225,29 @@ describe("info track", () => {
     const r = rows(s);
     expect(r.map((x) => x.key)).toEqual(["cr-auth"]);
     expect(r[0].severity).toBe("info");
+  });
+
+  it("Cloud saves off as a blue row, no button, when this Steam build defeats CloudRedirect", () => {
+    // Optional component: never the orange "Steam build not supported" row,
+    // never Fix in Desktop; component updates keep being offered.
+    const s = status({}, [
+      comp("slssteam"),
+      comp("cloudredirect", { health: "not_hooked" }),
+      comp("lumalinux", { update: { installed: "1", latest: "2", available: true } }),
+    ]);
+    const r = rows(s);
+    expect(r.map((x) => x.key)).toEqual(["cr-not-hooked", "update"]);
+    expect(r[0].severity).toBe("info");
+    expect(r[0].label).toBe("sysCloudOff");
+    expect(r[0].actionLabel).toBeUndefined();
+    expect(primarySystemAction(s)).toBeNull();
+  });
+
+  it("a CloudRedirect that started too early reads not_loaded: the plain Restart row", () => {
+    const s = status({}, [comp("slssteam"), comp("cloudredirect", { health: "not_loaded", action: "restart" }), comp("lumalinux")]);
+    const r = rows(s);
+    expect(r.map((x) => x.key)).toEqual(["restart"]);
+    expect(r[0].actionLabel).toBe("restartSteam");
   });
 
   it("one orange row per stuck game, with Open game", () => {

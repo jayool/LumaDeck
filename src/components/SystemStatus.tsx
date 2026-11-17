@@ -8,7 +8,7 @@ import { useT } from "../i18n";
 // are CloudRedirect-only. See read_*_health() in backend/paths.py.
 export type ComponentHealth =
   | "not_installed" | "not_loaded" | "not_injected" | "not_supported"
-  | "not_authed" | "disabled" | "healthy" | string;
+  | "not_hooked" | "not_authed" | "disabled" | "healthy" | string;
 
 export interface Component {
   id: "slssteam" | "cloudredirect" | "lumalinux";
@@ -334,6 +334,19 @@ export function buildRows(
       actionLabel: t("restartSteam"),
       onAction: needsSetup ? actions.repair : actions.restart,
       confirm: "restart", busyLabel: needsSetup ? undefined : t("restartingSteam"),
+    });
+  }
+
+  // ---- CloudRedirect stopped by this Steam build (optional component) ----
+  // Its init log says this client defeats it (vtable not found, hook install
+  // failed, crash guard tripped). Games still add and play; only cloud saves
+  // are off. Information on the blue track, no button: a Steam downgrade is
+  // not worth an optional component, and a restart changes nothing (a
+  // too-early start reads not_loaded and gets the Restart row above).
+  if (cr?.installed && cr.health === "not_hooked" && !anyUnsupported) {
+    rows.push({
+      key: "cr-not-hooked", severity: "info",
+      label: t("sysCloudOff"), description: t("sysCloudOffDesc"),
     });
   }
 
