@@ -307,6 +307,9 @@ const strings: Record<Lang, Record<string, string>> = {
     healthUnsupportedFix: "Steam build not supported. Press \"{0}\" to fix.",
     healthUnsupportedWait: "Steam build not supported. Wait for an update.",
     healthDisabled: "Disabled by user. Re-enable in Desktop.",
+    // CloudRedirect only: its init log says this Steam build defeats it. No
+    // button; the line sits under crUnmaintained and continues it.
+    healthNotHooked: "Stopped by this Steam build. Cloud saves are off.",
     // Steam runs its 64-bit client (Components sub-row + right-side label).
     crUnmaintained: "No longer maintained upstream. LumaDeck ships its last build; a Steam update may stop it for good.",
     statusDisabled: "Disabled",
@@ -326,6 +329,8 @@ const strings: Record<Lang, Record<string, string>> = {
     sysReenable: "Re-enable injection",
     sysCloudLogin: "Cloud saves need sign-in",
     sysCloudLoginDesc: "Open the CloudRedirect app in Desktop Mode to sign in.",
+    sysCloudOff: "Cloud saves off",
+    sysCloudOffDesc: "CloudRedirect doesn't work on this Steam build.",
     // Steam runs its 64-bit client and a component has no build for it.
     sysStuck: "{0} can't update",
     sysStuckDesc: "This game's update is stuck. Open it to fix.",
@@ -708,6 +713,7 @@ const strings: Record<Lang, Record<string, string>> = {
     healthUnsupportedFix: "Build da Steam não suportada. Toque em \"{0}\" para corrigir.",
     healthUnsupportedWait: "Build da Steam não suportada. Aguarde uma atualização.",
     healthDisabled: "Desabilitado pelo usuário. Reative no Desktop.",
+    healthNotHooked: "Parado por esta versão da Steam. Os saves na nuvem estão desativados.",
     crUnmaintained: "Sem manutenção upstream. O LumaDeck inclui a última versão; uma atualização da Steam pode pará-lo de vez.",
     statusDisabled: "Desabilitado",
     statusSupported: "Suportado",
@@ -724,6 +730,8 @@ const strings: Record<Lang, Record<string, string>> = {
     sysReenable: "Reativar injeção",
     sysCloudLogin: "O salvamento na nuvem precisa de login",
     sysCloudLoginDesc: "Abra o app CloudRedirect no Modo Desktop para entrar.",
+    sysCloudOff: "Saves na nuvem desativados",
+    sysCloudOffDesc: "O CloudRedirect não funciona nesta versão da Steam.",
     sysStuck: "{0} não consegue atualizar",
     sysStuckDesc: "Uma atualização da Steam para este jogo travou. Abra para corrigir.",
     sysOpenGame: "Abrir jogo",

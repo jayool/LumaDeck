@@ -52,7 +52,7 @@ export const getLumalinuxHealth = async () =>
 
 // Resolved CloudRedirect state for the UI. Adds two CR-only states (not_authed,
 // disabled) to the canonical set. Returns:
-//   { state: "not_installed"|"disabled"|"not_loaded"|"not_injected"|"not_supported"|"not_authed"|"healthy",
+//   { state: "not_installed"|"disabled"|"not_loaded"|"not_injected"|"not_hooked"|"not_authed"|"healthy",
 //     cause: null|"version"|"hooks", version: null|string,
 //     action: null|"install"|"restart"|"downgrade"|"configure_desktop" }
 export const getCloudredirectHealth = async () =>

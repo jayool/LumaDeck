@@ -122,6 +122,34 @@ class GetComponentsStatusTests(unittest.TestCase):
         self.assertEqual(set(result["guard"]), {"active", "fails", "since", "client_changed", "latches"})
         self.assertFalse(result["guard"]["active"])
 
+    def test_cloudredirect_not_hooked_never_asks_for_a_downgrade(self):
+        import paths
+        import desktop_handoff
+        self.patch(paths, "read_cloudredirect_health",
+                   lambda: {"state": "not_hooked", "cause": "version", "action": None})
+        asked = []
+
+        async def _check(force=False):
+            asked.append(force)
+            return {"target": 1, "possible": True, "error": None}
+        self.patch(desktop_handoff, "downgrade_check", _check)
+        result = asyncio.run(components.get_components_status())
+        self.assertEqual(asked, [])
+        self.assertEqual(result["downgrade"], {"target": None, "possible": None})
+        by_id = {c["id"]: c for c in result["components"]}
+        self.assertEqual(by_id["cloudredirect"]["health"], "not_hooked")
+
+    def test_on_the_64bit_client_a_broken_component_gets_an_explicit_no_downgrade(self):
+        # downgrade.sh targets the 32-bit manifest line and the 64-bit
+        # bootstrapper ignores it (a Deck, 2026-11-12). The QAM hides Fix in
+        # Desktop only on an explicit False, so the answer must be asked for.
+        import paths
+        self.patch(paths, "steam_client_arch", lambda: paths.STEAM_CLIENT_64)
+        self.patch(paths, "read_slssteam_health",
+                   lambda: {"state": "not_supported", "cause": "version", "action": "downgrade"})
+        result = asyncio.run(components.get_components_status())
+        self.assertEqual(result["downgrade"], {"target": None, "possible": False})
+
     def test_a_latched_crash_guard_is_reported(self):
         import paths
         self.patch(paths, "read_crash_guard",

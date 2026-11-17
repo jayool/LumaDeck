@@ -556,6 +556,9 @@ export function Settings() {
       case "not_injected":  return guardActive ? t("healthPausedByGuard") : t("healthNotInjected");
       case "not_supported": return unsupportedFixLabel
         ? t("healthUnsupportedFix", unsupportedFixLabel) : t("healthUnsupportedWait");
+      // CloudRedirect only: this Steam build defeats it. No button (optional
+      // component, not worth a downgrade); sits under the upstream notice.
+      case "not_hooked":    return t("healthNotHooked");
       default:              return null;
     }
   };
@@ -699,7 +702,7 @@ export function Settings() {
   const devControls = [
     { key: "slssteam_health", label: "SLSsteam health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
-    { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported", "not_authed", "disabled"] },
+    { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_hooked", "not_authed", "disabled"] },
     { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
     { key: "crash_guard", label: "Crash guard", opts: ["real", "active"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
