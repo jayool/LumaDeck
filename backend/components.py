@@ -17,6 +17,7 @@ import re
 from typing import Optional
 
 from update_checks import has_update, has_update_from
+from droiddeck_compat import is_droiddeck
 
 try:
     import decky  # type: ignore
@@ -410,7 +411,7 @@ async def get_components_status(force: bool = False) -> dict:
     return {
         "success": True,
         "components": components,
-        "client": {"arch": client_arch, "supported": not client_64},
+        "client": {"arch": client_arch, "supported": not client_64 and not is_droiddeck()},
         "quickInstall": quick_install_override,
         "headcrab": {
             "compatible": headcrab.get("compatible"),

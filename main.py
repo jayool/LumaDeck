@@ -46,6 +46,16 @@ def _j(obj) -> str:
     return json.dumps(obj)
 
 
+def _droiddeck_unsupported(operation: str):
+    """Refuse SteamOS-dependent mutations until the native hooks are ported."""
+    from droiddeck_compat import is_droiddeck
+    if is_droiddeck():
+        return _j({"success": False, "error": (
+            f"{operation} is not available in DroidDeck compatibility preview. "
+            "Native Steam download and component hooks are not ported yet.")})
+    return None
+
+
 _injection_repaired_on_startup: bool = False
 
 
@@ -58,6 +68,19 @@ class Plugin:
         global _injection_repaired_on_startup
         logger.info("LumaDeck: Plugin loaded")
         try:
+            from droiddeck_compat import is_droiddeck
+            if is_droiddeck():
+                logger.warning("LumaDeck: DroidDeck compatibility preview; download hooks disabled")
+                from api_manifest import init_apis, restore_credentials_from_settings
+                from downloads import init_applist, init_games_db
+                await init_apis()
+                try:
+                    restore_credentials_from_settings()
+                except Exception as exc:
+                    logger.warning("LumaDeck: credential restore skipped: %s", exc)
+                await init_applist()
+                await init_games_db()
+                return
             from api_manifest import init_apis
             from downloads import init_applist, init_games_db
             from paths import get_platform_summary, verify_slssteam_injected
@@ -346,6 +369,9 @@ class Plugin:
         return _j(read_freeze())
 
     async def lift_steam_freeze(self) -> str:
+        blocked = _droiddeck_unsupported("lift_steam_freeze")
+        if blocked is not None:
+            return blocked
         """Let Steam update again: strip the BootStrapper* pin (and our
         `# lumalinux` signature) from steam.cfg. Steam self-updates on its next
         start. The caller restarts Steam. See steam_freeze.lift_freeze."""
@@ -353,6 +379,9 @@ class Plugin:
         return _j(lift_freeze())
 
     async def repair_slssteam_headcrab(self) -> str:
+        blocked = _droiddeck_unsupported("repair_slssteam_headcrab")
+        if blocked is not None:
+            return blocked
         from slssteam_ops import repair_slssteam_headcrab
         return _j(await repair_slssteam_headcrab())
 
@@ -435,10 +464,16 @@ class Plugin:
             return _j({"success": False, "error": str(exc)})
 
     async def pin_game(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("pin_game")
+        if blocked is not None:
+            return blocked
         from downloads import pin_game
         return _j(await pin_game(appid))
 
     async def unpin_game(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("unpin_game")
+        if blocked is not None:
+            return blocked
         from downloads import unpin_game
         return _j(await unpin_game(appid))
 
@@ -452,6 +487,9 @@ class Plugin:
         return _j(await list_versions(int(appid)))
 
     async def install_game_version(self, appid: int, buildid: int) -> str:
+        blocked = _droiddeck_unsupported("install_game_version")
+        if blocked is not None:
+            return blocked
         import pins as _pins
         if _pins.is_owned(int(appid)):
             return _j({"success": False, "error": "This game is yours: Steam manages its version."})
@@ -463,6 +501,9 @@ class Plugin:
     # ==========================================================================
 
     async def start_download(self, appid: int, target_library_path: str = "", owned: bool = False) -> str:
+        blocked = _droiddeck_unsupported("start_download")
+        if blocked is not None:
+            return blocked
         logger.info(f"LumaDeck: start_download called, appid={appid}, library={target_library_path or '(default)'}, owned={owned}")
         try:
             from downloads import start_download
@@ -490,6 +531,9 @@ class Plugin:
         return _j(has_luatools_for_app(appid))
 
     async def delete_luatools_for_app(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("delete_luatools_for_app")
+        if blocked is not None:
+            return blocked
         from downloads import delete_luatools_for_app
         return _j(delete_luatools_for_app(appid))
 
@@ -555,10 +599,16 @@ class Plugin:
     # ==========================================================================
 
     async def add_fake_app_id(self, appid: int, fake_id: int = 480) -> str:
+        blocked = _droiddeck_unsupported("add_fake_app_id")
+        if blocked is not None:
+            return blocked
         from slssteam_ops import add_fake_app_id
         return _j(add_fake_app_id(appid, fake_id))
 
     async def remove_fake_app_id(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("remove_fake_app_id")
+        if blocked is not None:
+            return blocked
         from slssteam_ops import remove_fake_app_id
         return _j(remove_fake_app_id(appid))
 
@@ -575,14 +625,23 @@ class Plugin:
         return _j(list_additional_apps())
 
     async def add_to_additional_apps(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("add_to_additional_apps")
+        if blocked is not None:
+            return blocked
         from slssteam_ops import add_to_additional_apps
         return _j(add_to_additional_apps(appid))
 
     async def remove_from_additional_apps(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("remove_from_additional_apps")
+        if blocked is not None:
+            return blocked
         from slssteam_ops import remove_from_additional_apps
         return _j(remove_from_additional_apps(appid))
 
     async def uninstall_game_full(self, appid: int, remove_compatdata: bool = False, steam_dlc_disabled: bool = False) -> str:
+        blocked = _droiddeck_unsupported("uninstall_game_full")
+        if blocked is not None:
+            return blocked
         from slssteam_ops import uninstall_game_full
         return _j(uninstall_game_full(appid, remove_compatdata, bool(steam_dlc_disabled)))
 
@@ -600,6 +659,9 @@ class Plugin:
         return _j(check_goldberg_status(install_path))
 
     async def apply_goldberg(self, install_path: str, appid: int) -> str:
+        blocked = _droiddeck_unsupported("apply_goldberg")
+        if blocked is not None:
+            return blocked
         from goldberg import apply_goldberg
         res = apply_goldberg(install_path, appid)
         if res.get("success"):
@@ -607,6 +669,9 @@ class Plugin:
         return _j(res)
 
     async def remove_goldberg(self, install_path: str, appid: int) -> str:
+        blocked = _droiddeck_unsupported("remove_goldberg")
+        if blocked is not None:
+            return blocked
         from goldberg import remove_goldberg
         return _j(remove_goldberg(install_path, appid))
 
@@ -655,6 +720,9 @@ class Plugin:
         return _j(await check_for_fixes(appid))
 
     async def apply_game_fix(self, appid: int, download_url: str, install_path: str, fix_type: str = "", game_name: str = "", replace: bool = False) -> str:
+        blocked = _droiddeck_unsupported("apply_game_fix")
+        if blocked is not None:
+            return blocked
         from fixes import apply_game_fix
         return _j(await apply_game_fix(appid, download_url, install_path, fix_type, game_name, replace=replace))
 
@@ -688,10 +756,16 @@ class Plugin:
         return _j(await list_luatools_fixes(appid))
 
     async def download_luatools_fix(self, appid: int, fix_id: str, install_path: str, slot: str = "", title: str = "", online: bool = False, replace: bool = False) -> str:
+        blocked = _droiddeck_unsupported("download_luatools_fix")
+        if blocked is not None:
+            return blocked
         from luatools_auth import download_luatools_fix
         return _j(await download_luatools_fix(appid, fix_id, install_path, slot, title, online, replace))
 
     async def unfix_game(self, appid: int, install_path: str = "", fix_date: str = "") -> str:
+        blocked = _droiddeck_unsupported("unfix_game")
+        if blocked is not None:
+            return blocked
         from fixes import unfix_game
         return _j(await unfix_game(appid, install_path, fix_date))
 
@@ -704,6 +778,9 @@ class Plugin:
         return _j(get_installed_fixes())
 
     async def apply_linux_native_fix(self, install_path: str) -> str:
+        blocked = _droiddeck_unsupported("apply_linux_native_fix")
+        if blocked is not None:
+            return blocked
         from fixes import apply_linux_native_fix
         return _j(apply_linux_native_fix(install_path))
 
@@ -712,6 +789,9 @@ class Plugin:
         return _j(compute_fix_launch_options(appid, install_path))
 
     async def enable_online(self, appid: int, install_path: str) -> str:
+        blocked = _droiddeck_unsupported("enable_online")
+        if blocked is not None:
+            return blocked
         """The Online toggle: FakeAppId 480 + netsock + EOS proxy by detection.
         Only the proxy lives in the game's files, so only it freezes the game."""
         from fixes import enable_online
@@ -721,6 +801,9 @@ class Plugin:
         return _j(res)
 
     async def disable_online(self, appid: int, install_path: str) -> str:
+        blocked = _droiddeck_unsupported("disable_online")
+        if blocked is not None:
+            return blocked
         from fixes import disable_online
         return _j(disable_online(appid, install_path))
 
@@ -733,6 +816,9 @@ class Plugin:
     # ==========================================================================
 
     async def repair_appmanifest(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("repair_appmanifest")
+        if blocked is not None:
+            return blocked
         import pins as _pins
         if _pins.is_owned(int(appid)):
             return _j({"success": False, "error": "This game is yours: its appmanifest belongs to Steam."})
@@ -740,6 +826,9 @@ class Plugin:
         return _j(await repair_appmanifest(appid))
 
     async def reconfigure_slssteam(self, appid: int) -> str:
+        blocked = _droiddeck_unsupported("reconfigure_slssteam")
+        if blocked is not None:
+            return blocked
         from slssteam_ops import reconfigure_slssteam
         return _j(await reconfigure_slssteam(appid))
 
@@ -760,6 +849,9 @@ class Plugin:
         return _j(get_steamless_download_status())
 
     async def run_steamless(self, install_path: str, appid: int = 0) -> str:
+        blocked = _droiddeck_unsupported("run_steamless")
+        if blocked is not None:
+            return blocked
         from steamless import run_steamless
         return _j(await run_steamless(install_path, appid))
 
@@ -808,10 +900,16 @@ class Plugin:
         return _j(check_dependencies())
 
     async def reinject_installed(self) -> str:
+        blocked = _droiddeck_unsupported("reinject_installed")
+        if blocked is not None:
+            return blocked
         from installer import reinject_installed
         return _j(await reinject_installed())
 
     async def retry_injection(self) -> str:
+        blocked = _droiddeck_unsupported("retry_injection")
+        if blocked is not None:
+            return blocked
         """Clear the launcher's crash guard (safe mode) so the next Steam launch
         injects again, then run setup.sh once (reinject_installed) before the
         frontend restarts Steam. The setup.sh run is what brings the launcher's
@@ -830,12 +928,18 @@ class Plugin:
         return _j(out)
 
     async def apply_component(self, component_id: str, op: str = "repair") -> str:
+        blocked = _droiddeck_unsupported("apply_component")
+        if blocked is not None:
+            return blocked
         """Install/repair/update one component (or 'core'), cascade-safe. Poll
         get_quick_install_status. See the Component model spec in DESIGN_UI.md."""
         from installer import apply_component
         return _j(await apply_component(component_id, op))
 
     async def run_desktop_handoff_real(self) -> str:
+        blocked = _droiddeck_unsupported("run_desktop_handoff_real")
+        if blocked is not None:
+            return blocked
         """Arm a one-shot Desktop autostart (REAL payload: downgrade.sh + setup.sh)
         and switch to Desktop. It runs there and returns to Game Mode on success;
         stays in Desktop on failure. prepare_real() first picks the SLSsteam that
@@ -853,6 +957,9 @@ class Plugin:
         return _j(disarm_desktop_handoff())
 
     async def quick_install(self) -> str:
+        blocked = _droiddeck_unsupported("quick_install")
+        if blocked is not None:
+            return blocked
         from installer import quick_install
         return _j(await quick_install())
 

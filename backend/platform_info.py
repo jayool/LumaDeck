@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import pwd
+from droiddeck_compat import is_droiddeck
 from typing import Iterable, Optional
 
 try:
@@ -210,10 +211,17 @@ def _steam_owner_name() -> Optional[str]:
 
 def real_user(environ: Optional[dict] = None) -> str:
     env = os.environ if environ is None else environ
+    if is_droiddeck(env):
+        try:
+            return pwd.getpwuid(os.geteuid()).pw_name
+        except (KeyError, OSError):
+            return env.get('USER') or 'root'
     return _resolve_real_user(env, _steam_owner_name(), _uid1000_name(), os.geteuid())
 
 
 def real_home(user: Optional[str] = None, environ: Optional[dict] = None) -> str:
+    if is_droiddeck(environ):
+        return (os.environ if environ is None else environ).get('HOME') or '/root'
     env = os.environ if environ is None else environ
     user = user or real_user(env)
     pw_home = None
@@ -236,6 +244,8 @@ def _resolve_real_uid(pw_uid: Optional[int]) -> int:
 
 def real_uid(user: Optional[str] = None, environ: Optional[dict] = None) -> int:
     env = os.environ if environ is None else environ
+    if is_droiddeck(env):
+        return os.geteuid()
     user = user or real_user(env)
     pw_uid = None
     try:
@@ -343,6 +353,7 @@ def summary(environ: Optional[dict] = None) -> dict:
     home = real_home(user, env)
     data = {
         "distro": distro,
+        "droiddeck": is_droiddeck(env),
         "id_like": _id_like(osr),
         # Headcrab-parity predicates (see the _is_* helpers).
         "is_steamos": _is_steamos(osr),

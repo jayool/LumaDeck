@@ -507,6 +507,12 @@ async def install_via_setup(gamemode: bool = True) -> dict:
     SETUP_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
     logger.info("LumaDeck: install_via_setup() entered (url=%s)", SETUP_SH_URL)
 
+    from droiddeck_compat import is_droiddeck
+    if is_droiddeck():
+        error = "DroidDeck preview: SteamOS component installer is unsupported."
+        SETUP_INSTALL_STATE.update(status="failed", error=error, progress=error)
+        return {"success": False, "error": error}
+
     tmp_dir = None
     try:
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_setup_")

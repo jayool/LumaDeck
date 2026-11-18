@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+from droiddeck_compat import is_droiddeck as _is_droiddeck, selected_client as _dd_client, steam_roots as _dd_steam_roots
 from typing import Optional
 
 try:
@@ -146,6 +147,8 @@ def real_uid() -> int:
 
 
 _STEAM_PATHS = _build_steam_paths(_REAL_HOME, _EXPANDED_HOME)
+if _is_droiddeck():
+    _STEAM_PATHS = list(dict.fromkeys(_dd_steam_roots(_REAL_HOME) + _STEAM_PATHS))
 
 
 def _home_candidates(home, expanded, home_rels, expanded_rels=None, extras=()):
@@ -387,6 +390,7 @@ def mapped_libraries(names=_MAPPED_NAMES, proc_root: str = "/proc") -> frozenset
 # the restart and the health rows must ask this and not just look for files.
 STEAM_CLIENT_32 = "ubuntu12_32"
 STEAM_CLIENT_64 = "steamrt64"
+STEAM_CLIENT_ARM64 = "steamrtarm64"
 _STEAM_CLIENT_MARKER = ".steam-enable-steamrt64-client"
 _CLIENT_ARCH_TTL = 2.0
 _client_arch_cache: dict = {"at": 0.0, "arch": None}
@@ -403,12 +407,16 @@ def detect_steam_client_arch(proc_root: str = "/proc", steam_root: Optional[str]
                     argv0 = f.read(4096).split(b"\0", 1)[0].decode("utf-8", "replace")
             except Exception:
                 continue
+            if argv0.endswith("/" + STEAM_CLIENT_ARM64 + "/steam"):
+                return STEAM_CLIENT_ARM64
             if argv0.endswith("/" + STEAM_CLIENT_64 + "/steam"):
                 return STEAM_CLIENT_64
             if argv0.endswith("/" + STEAM_CLIENT_32 + "/steam"):
                 return STEAM_CLIENT_32
     except Exception:
         pass
+    if _is_droiddeck():
+        return STEAM_CLIENT_64 if _dd_client() == "x86_64" else STEAM_CLIENT_ARM64
     root = steam_root if steam_root is not None else find_steam_root()
     if root and os.path.exists(os.path.join(root, _STEAM_CLIENT_MARKER)):
         return STEAM_CLIENT_64
