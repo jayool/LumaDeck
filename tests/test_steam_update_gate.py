@@ -222,6 +222,14 @@ class Evaluate(unittest.TestCase):
         self.assertEqual(r["state"], "not_yet")
         self.assertEqual(r["blocker"], "lumalinux")
 
+    def test_valves_build_already_installed_is_current(self):
+        # The pin holds nothing back: Valve serves the installed build (a Deck
+        # on steamdeck_stable_steamrt64 1794536281 pinned at 1794536281).
+        r = g.evaluate(1791918634, LL_FEED, GROUP, SLS_FIXED, "20261015120000", current_build=1791918634)
+        self.assertEqual(r["state"], "current")
+        r = g.evaluate(1791918634, LL_FEED, GROUP, SLS_FIXED, "20261015120000", current_build=1788291500)
+        self.assertEqual(r["state"], "ready")
+
     def test_no_manifest_or_feeds_is_unknown(self):
         self.assertEqual(g.evaluate(None, LL_FEED, GROUP, SLS_FIXED, "x")["state"], "unknown")
         self.assertEqual(g.evaluate(1791918634, None, GROUP, SLS_FIXED, "x")["state"], "unknown")
@@ -230,3 +238,57 @@ class Evaluate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+B64_OLD = "dab8df0daa27ffa6594ef5d6bc8cf707f37990220628f1f249fb30f4d88ade91"   # 1794536281
+B64_NEW = "c6b5784ae84a7d63ae1d238045eab33c92eb947d4556de5328e51272973c113c"   # 1795048523
+# The 64-bit entries sit in the release's group (GROUP), like the real feed's.
+LL_FEED_64 = LL_FEED.replace("  20260611150000:\n", f"""\
+    # steam_version: 1792618285
+    - c770a8b13872fed128dd357eabc1d715260fadd9b16c627ae3395406e6ea37d4
+    # steam_version: 1794536281
+    # arch: steamrt64
+    - {B64_OLD}
+    # steam_version: 1795048523
+    # arch: steamrt64
+    - {B64_NEW}
+  20260611150000:
+""")
+SLS_64 = SLS_FIXED + f"""
+  20261112130346: #tag 20261112130346
+    - {B64_OLD} #steamrt64 20261112
+"""
+
+
+class EvaluateOn64(unittest.TestCase):
+    """A codespace on the 64-bit beta, 2026-11-19: pinned at 1794536281 by
+    downgrade.sh, Valve's steamrt64 beta is 1795048523 (SLSsteam aborts on it)
+    while the 32-bit line still serves 1792618285 (supported). The gate must
+    ask about the line that runs."""
+
+    def test_the_64bit_lines_build_is_not_ready(self):
+        r = g.evaluate(1795048523, LL_FEED_64, GROUP, SLS_64, "20261112130346",
+                       g.STEAM_CLIENT_64, current_build=1794536281)
+        self.assertEqual(r["state"], "not_yet")
+        self.assertEqual(r["blocker"], "slssteam")
+        self.assertEqual(r["hash"], B64_NEW)
+
+    def test_a_64bit_build_the_feed_lists_is_ready(self):
+        sls = SLS_64.replace(f"    - {B64_OLD} #steamrt64 20261112\n",
+                             f"    - {B64_OLD} #steamrt64 20261112\n    - {B64_NEW} #steamrt64 20261119\n")
+        r = g.evaluate(1795048523, LL_FEED_64, GROUP, sls, "20261112130346",
+                       g.STEAM_CLIENT_64, current_build=1794536281)
+        self.assertEqual(r["state"], "ready")
+
+    def test_the_32bit_lines_build_is_never_asked_for_a_64bit_client(self):
+        # 1792618285 is annotated for ubuntu12_32 only: on the 64-bit client it
+        # has no hash, so even a wrong caller gets "not_yet", never "ready".
+        r = g.evaluate(1792618285, LL_FEED_64, GROUP, SLS_64, "20261112130346", g.STEAM_CLIENT_64)
+        self.assertEqual((r["state"], r["blocker"]), ("not_yet", "lumalinux"))
+
+    def test_manifest_url_follows_branch_and_line(self):
+        host = "https://client-update.fastly.steamstatic.com/"
+        self.assertEqual(g.manifest_url(g.STEAM_CLIENT_64, "steamdeck_stable"), host + "steam_client_steamdeck_stable_steamrt64")
+        self.assertEqual(g.manifest_url(g.STEAM_CLIENT_32, "steamdeck_stable"), host + "steam_client_steamdeck_stable_ubuntu12")
+        self.assertEqual(g.manifest_url(g.STEAM_CLIENT_64, "publicbeta"), host + "steam_client_publicbeta_steamrt64")
+        self.assertEqual(g.manifest_url(g.STEAM_CLIENT_32, ""), host + "steam_client_ubuntu12")

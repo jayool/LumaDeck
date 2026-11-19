@@ -387,14 +387,20 @@ def mapped_libraries(names=_MAPPED_NAMES, proc_root: str = "/proc") -> frozenset
 # the restart and the health rows must ask this and not just look for files.
 STEAM_CLIENT_32 = "ubuntu12_32"
 STEAM_CLIENT_64 = "steamrt64"
-_STEAM_CLIENT_MARKER = ".steam-enable-steamrt64-client"
+_STEAM_CLIENT_MARKER = ".steam-enable-steamrt64-client"     # the opt-in of the RT3-experimental era (before 2026-11-11)
+_STEAM_CLIENT_OPT_OUT = ".steam-disable-steamrt64-client"   # Valve's opt-out now that the 64-bit client is the default
 _CLIENT_ARCH_TTL = 2.0
 _client_arch_cache: dict = {"at": 0.0, "arch": None}
 
 
 def detect_steam_client_arch(proc_root: str = "/proc", steam_root: Optional[str] = None) -> str:
-    """One pass over /proc/*/cmdline for a Steam client binary; the marker as
-    the fallback; the 32-bit client as the answer for everything else."""
+    """One pass over /proc/*/cmdline for a Steam client binary. With no client
+    running, steam.sh's own rule for the next start: the 64-bit client when its
+    binary is installed and Valve's opt-out marker is absent (the default since
+    2026-11-11), or when the old opt-in marker is there; the 32-bit client for
+    everything else. (Read with Steam closed in a codespace on the 64-bit beta,
+    2026-11-19: the old marker alone answered 32-bit and the downgrade picked
+    the wrong line.)"""
     import glob as _glob
     try:
         for cmd_path in _glob.glob(os.path.join(proc_root, "*", "cmdline")):
@@ -410,8 +416,14 @@ def detect_steam_client_arch(proc_root: str = "/proc", steam_root: Optional[str]
     except Exception:
         pass
     root = steam_root if steam_root is not None else find_steam_root()
-    if root and os.path.exists(os.path.join(root, _STEAM_CLIENT_MARKER)):
-        return STEAM_CLIENT_64
+    if root:
+        if os.path.exists(os.path.join(root, _STEAM_CLIENT_MARKER)):
+            return STEAM_CLIENT_64
+        # steam.sh:78-79 verbatim: `[ ! -e .steam-disable-steamrt64-client ]`
+        # and `[ -x steamrt64/steam ]`, nothing else (read 2026-11-19).
+        if (os.access(os.path.join(root, STEAM_CLIENT_64, "steam"), os.X_OK)
+                and not os.path.exists(os.path.join(root, _STEAM_CLIENT_OPT_OUT))):
+            return STEAM_CLIENT_64
     return STEAM_CLIENT_32
 
 

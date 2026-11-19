@@ -91,24 +91,88 @@ class TestSessionFamilyPublic(unittest.TestCase):
 
 
 
-class DowngradeOn64Tests(unittest.TestCase):
-    """downgrade.sh installs a build of the 32-bit manifest line; the 64-bit
-    client's bootstrapper ignores it (a Deck, 2026-11-12: "Downgrade FAILED ...
-    RESTORED"). On the 64-bit client the check says "not possible" before any
-    network call, so the QAM never offers Fix in Desktop there."""
+class DowngradeTargetTests(unittest.TestCase):
+    """LumaDeck decides the build downgrade.sh lands on (2026-11-19, both client
+    lines): the newest build lumalinux's whitelist annotates for the running
+    client's arch below the installed one that both the latest lumalinux
+    release and the latest SLSsteam for that arch hook. The 64-bit client
+    downgrades along its own steamrt64 line."""
 
-    def test_not_possible_on_the_64bit_client(self):
-        import asyncio
-        import paths
-        saved = paths.steam_client_arch
-        paths.steam_client_arch = lambda: paths.STEAM_CLIENT_64
+    LL = """SafeModeHashes:
+  20261119000000:
+    # steam_version: 1791918634
+    - 0d01ab4fe889f87314c8416d18a2152b130a93231bb19cd6f0ed2ebd7a7ab90a
+    # steam_version: 1792618285
+    - c770a8b13872fed128dd357eabc1d715260fadd9b16c627ae3395406e6ea37d4
+    # steam_version: 1794266161
+    # arch: steamrt64
+    - 53bdabbbb63fff0146a459f1f40dc9208661f329810557c462404ba52318bf11
+    # steam_version: 1794536281
+    # arch: steamrt64
+    - dab8df0daa27ffa6594ef5d6bc8cf707f37990220628f1f249fb30f4d88ade91
+    # steam_version: 1795048523
+    # arch: steamrt64
+    - c6b5784ae84a7d63ae1d238045eab33c92eb947d4556de5328e51272973c113c
+"""
+    SLS = """SafeModeHashes:
+  20261014151919:
+    - 0d01ab4fe889f87314c8416d18a2152b130a93231bb19cd6f0ed2ebd7a7ab90a #ubuntu12_32
+    - 53bdabbbb63fff0146a459f1f40dc9208661f329810557c462404ba52318bf11 #steamrt64
+  20261112130346:
+    - 53bdabbbb63fff0146a459f1f40dc9208661f329810557c462404ba52318bf11 #steamrt64
+    - dab8df0daa27ffa6594ef5d6bc8cf707f37990220628f1f249fb30f4d88ade91 #steamrt64
+"""
+
+    def test_64bit_picks_the_newest_hooked_steamrt64_build_below_current(self):
+        r = dh.pick_downgrade_target(self.LL, "20261119000000", self.SLS, 1795048523, "steamrt64")
+        self.assertEqual(r["target"], 1794536281)
+        self.assertEqual(r["hash"][:8], "dab8df0d")
+        self.assertTrue(r["possible"])
+        # Every hooked build below the installed one, newest first: the script
+        # keeps the first one this install's branch served.
+        self.assertEqual(r["candidates"], [1794536281, 1794266161])
+
+    def test_64bit_skips_a_build_the_latest_slssteam_dropped(self):
+        sls = self.SLS.replace("    - dab8df0daa27ffa6594ef5d6bc8cf707f37990220628f1f249fb30f4d88ade91 #steamrt64\n", "")
+        r = dh.pick_downgrade_target(self.LL, "20261119000000", sls, 1795048523, "steamrt64")
+        self.assertEqual(r["target"], 1794266161)
+        self.assertTrue(r["possible"])
+
+    def test_32bit_follows_its_own_line(self):
+        import slssteam_version
+        saved = slssteam_version.LAST_32BIT_TAG
+        slssteam_version.LAST_32BIT_TAG = "20261014151919"
         try:
-            r = asyncio.run(dh.downgrade_check())
+            r = dh.pick_downgrade_target(self.LL, "20261119000000", self.SLS, 1792618285, "ubuntu12_32")
         finally:
-            paths.steam_client_arch = saved
-        self.assertEqual(r["possible"], False)
+            slssteam_version.LAST_32BIT_TAG = saved
+        self.assertEqual(r["target"], 1791918634)
+        self.assertTrue(r["possible"])
+
+    def test_nothing_below_current_is_not_possible(self):
+        r = dh.pick_downgrade_target(self.LL, "20261119000000", self.SLS, 1794266161, "steamrt64")
+        self.assertIs(r["possible"], False)
         self.assertIsNone(r["target"])
-        self.assertIn("64-bit", r["error"])
+
+    def test_unknown_slssteam_support_is_unknown_not_refused(self):
+        # A 64-bit hash SLSsteam's feed lists nowhere reads None (fail-open).
+        sls = self.SLS.replace("dab8df0daa27ffa6594ef5d6bc8cf707f37990220628f1f249fb30f4d88ade91", "f" * 64)
+        sls = sls.replace("53bdabbbb63fff0146a459f1f40dc9208661f329810557c462404ba52318bf11", "e" * 64)
+        r = dh.pick_downgrade_target(self.LL, "20261119000000", sls, 1795048523, "steamrt64")
+        self.assertIsNone(r["possible"])
+        self.assertEqual(r["target"], 1794536281)
+
+    def test_no_whitelist_is_unknown(self):
+        r = dh.pick_downgrade_target(None, None, self.SLS, 1795048523, "steamrt64")
+        self.assertIsNone(r["possible"])
+
+    def test_payload_carries_build_and_line(self):
+        pl = dh._real_payload(1794536281, "steamrt64")
+        self.assertIn("| TARGET_VERSION=1794536281 CLIENT_LINE=steamrt64 bash", pl)
+        pl = dh._real_payload(1794536281, "steamrt64", [1794536281, 1794266161])
+        self.assertIn('| TARGET_VERSION=1794536281 TARGET_VERSIONS="1794536281 1794266161" CLIENT_LINE=steamrt64 bash', pl)
+        self.assertIn("| bash", dh._real_payload())
+        self.assertNotIn("TARGET_VERSION", dh._real_payload())
 
 
 if __name__ == "__main__":

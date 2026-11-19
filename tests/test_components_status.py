@@ -139,16 +139,24 @@ class GetComponentsStatusTests(unittest.TestCase):
         by_id = {c["id"]: c for c in result["components"]}
         self.assertEqual(by_id["cloudredirect"]["health"], "not_hooked")
 
-    def test_on_the_64bit_client_a_broken_component_gets_an_explicit_no_downgrade(self):
-        # downgrade.sh targets the 32-bit manifest line and the 64-bit
-        # bootstrapper ignores it (a Deck, 2026-11-12). The QAM hides Fix in
-        # Desktop only on an explicit False, so the answer must be asked for.
+    def test_on_the_64bit_client_a_broken_component_asks_the_downgrade_check(self):
+        # The 64-bit client downgrades along its own steamrt64 line
+        # (downgrade.sh, 2026-11-19): the check is asked like on 32-bit and its
+        # answer (here: a pick) reaches the UI.
         import paths
+        import desktop_handoff
         self.patch(paths, "steam_client_arch", lambda: paths.STEAM_CLIENT_64)
         self.patch(paths, "read_slssteam_health",
                    lambda: {"state": "not_supported", "cause": "version", "action": "downgrade"})
+        asked = []
+
+        async def _check(force=False):
+            asked.append(force)
+            return {"target": 1794536281, "possible": True, "error": None}
+        self.patch(desktop_handoff, "downgrade_check", _check)
         result = asyncio.run(components.get_components_status())
-        self.assertEqual(result["downgrade"], {"target": None, "possible": False})
+        self.assertEqual(asked, [False])
+        self.assertEqual(result["downgrade"], {"target": 1794536281, "possible": True})
 
     def test_a_latched_crash_guard_is_reported(self):
         import paths

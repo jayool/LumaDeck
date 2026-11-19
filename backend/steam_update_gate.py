@@ -5,12 +5,15 @@ older build. The user needs to know WHEN lifting the pin is safe, and only the
 plugin can know: headcrab's pin says nothing reliable (nosotros.md §4.1-29), so
 this asks the three sources that actually decide it, with no headcrab anywhere:
 
-  1. Valve's public client manifest for the Deck stable branch — the build Steam
-     will update to the moment the pin is lifted (the bootstrapper fetches this
-     very file).
+  1. Valve's public client manifest for this install's branch and the LINE the
+     running client is on (ubuntu12 for the 32-bit client, steamrt64 for the
+     64-bit one; manifest_url) — the build Steam will update to the moment
+     the pin is lifted (the bootstrapper fetches this very file). Each line
+     has its own build.
   2. lumalinux's res/updates.yaml — maps that build to its steamclient.so hash
-     (the daily cron annotates every new stable build) and says whether the
-     latest lumalinux release hooks it.
+     for that client arch (the cron annotates every new build; the 64-bit
+     entries carry `# arch: steamrt64`) and says whether the latest lumalinux
+     release hooks it.
   3. SLSsteam's res/updates.yaml — lists, per release tag, the hashes that
      release hooks. The hash under a tag = that SLSsteam supports the build; the
      tag also says whether the INSTALLED SLSsteam is new enough.
@@ -19,7 +22,7 @@ The result is advice, never a lock: the button stays available in every state,
 the description changes. A network failure or a format change on Ace's side
 reads as "unknown", so a user is never left without a way back up.
 
-States: ready | not_yet | unknown (see evaluate()); ready carries slssteam_update_pending.
+States: ready | not_yet | current | unknown (see evaluate()); ready carries slssteam_update_pending.
 
 Support rule (2026-10-14, learned the hard way): an SLSsteam release hooks a
 client hash iff the hash is listed under the NEWEST SafeModeHashes group whose
@@ -51,9 +54,15 @@ except ImportError:
     import logging
     logger = logging.getLogger("lumadeck")
 
-# The bootstrapper's own manifest URLs (see any Steam logs/bootstrap_log.txt).
-_DECK_MANIFEST_URL = "https://client-update.fastly.steamstatic.com/steam_client_steamdeck_stable_ubuntu12"
-_LINUX_MANIFEST_URL = "https://client-update.fastly.steamstatic.com/steam_client_ubuntu12"
+# The bootstrapper's own manifest host (see any Steam logs/bootstrap_log.txt):
+# it asks for `steam_client_<branch>_<line>` (`steam_client_<line>` with no
+# branch), where <line> is the client that runs — ubuntu12 for the 32-bit one,
+# steamrt64 for the 64-bit one. Each line has its own current build (the
+# 32-bit one stopped at 1792618285; the 64-bit one moves), so the gate must
+# ask for the line that runs: on a 64-bit install pinned at 1794536281 the
+# 32-bit manifest read "1792618285, supported, update ready" while the 64-bit
+# line's 1795048523 was not (a codespace, 2026-11-19).
+_MANIFEST_HOST = "https://client-update.fastly.steamstatic.com/"
 _SLSSTEAM_UPDATES_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/refs/heads/main/res/updates.yaml"
 _CACHE_DIR = os.path.join(real_home(), ".cache", "lumadeck")
 _STABLE_CACHE = os.path.join(_CACHE_DIR, "steam_stable_build.json")
@@ -64,6 +73,22 @@ _FETCH_TIMEOUT = 5.0
 _VERSION_RE = re.compile(r'^\s*"version"\s+"(\d+)"', re.MULTILINE)
 _SLS_GROUP_RE = re.compile(r"^  (\d{14}):")
 _SLS_HASH_RE = re.compile(r"^\s*-\s*([0-9a-f]{64})\b")
+
+
+def _client_line(arch: str) -> str:
+    """The manifest line of client `arch`: steamrt64 for the 64-bit client,
+    ubuntu12 for the 32-bit one."""
+    return "steamrt64" if arch == STEAM_CLIENT_64 else "ubuntu12"
+
+
+def manifest_url(arch: str, branch: Optional[str] = None) -> str:
+    """Valve's manifest for the line client `arch` runs on this install's
+    branch (package/beta: `steamdeck_stable` on a Deck, `publicbeta` on the
+    desktop beta, empty on plain desktop stable)."""
+    b = _branch() if branch is None else branch
+    line = _client_line(arch)
+    name = f"steam_client_{b}_{line}" if b else f"steam_client_{line}"
+    return _MANIFEST_HOST + name
 
 
 def _branch() -> str:
@@ -86,18 +111,23 @@ def parse_manifest_version(text: str | None) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-async def latest_stable_build(force: bool = False) -> Optional[int]:
-    """The build Valve currently serves on this install's branch, cached 30 min.
-    None when unreachable and no cache."""
+async def latest_stable_build(force: bool = False, arch: Optional[str] = None) -> Optional[int]:
+    """The build Valve currently serves on this install's branch for the line
+    client `arch` runs (default: the client that runs), cached 30 min per
+    line. None when unreachable and no cache."""
+    from paths import steam_client_arch
+    arch = arch or steam_client_arch()
+    line = _client_line(arch)
     if not force:
         try:
             with open(_STABLE_CACHE, "r", encoding="utf-8") as f:
                 cached = json.load(f)
-            if time.time() - float(cached.get("at", 0)) < _STABLE_TTL and cached.get("build"):
+            if (time.time() - float(cached.get("at", 0)) < _STABLE_TTL and cached.get("build")
+                    and cached.get("line") == line):
                 return int(cached["build"])
         except Exception:
             pass
-    url = _DECK_MANIFEST_URL if _branch().startswith("steamdeck") else _LINUX_MANIFEST_URL
+    url = manifest_url(arch)
     build = None
     try:
         client = await ensure_http_client(context="steam_update_gate")
@@ -105,22 +135,25 @@ async def latest_stable_build(force: bool = False) -> Optional[int]:
         if resp.status_code == 200:
             build = parse_manifest_version(resp.text)
         else:
-            logger.info(f"steam_update_gate: HTTP {resp.status_code} for the stable manifest")
+            logger.info(f"steam_update_gate: HTTP {resp.status_code} for {url}")
     except Exception as exc:
-        logger.info(f"steam_update_gate: stable manifest fetch failed ({exc})")
+        logger.info(f"steam_update_gate: manifest fetch failed for {url} ({exc})")
     if build:
         try:
             os.makedirs(_CACHE_DIR, exist_ok=True)
             with open(_STABLE_CACHE, "w", encoding="utf-8") as f:
-                json.dump({"build": build, "at": time.time()}, f)
+                json.dump({"build": build, "line": line, "at": time.time()}, f)
         except Exception:
             pass
         return build
     try:
         with open(_STABLE_CACHE, "r", encoding="utf-8") as f:
-            return int(json.load(f).get("build") or 0) or None
+            cached = json.load(f)
+        if cached.get("line") == line:
+            return int(cached.get("build") or 0) or None
     except Exception:
-        return None
+        pass
+    return None
 
 
 async def slssteam_updates_text(force: bool = False) -> Optional[str]:
@@ -322,9 +355,15 @@ def current_client_hash() -> Optional[str]:
 
 
 def evaluate(stable_build: Optional[int], ll_text: Optional[str], ll_group: Optional[str],
-             sls_text: Optional[str], sls_installed: Optional[str]) -> dict:
-    """Pure decision. Returns {"state", "blocker", "stable_build", "hash",
-    "slssteam_required", "slssteam_installed", "lumalinux_ready"}.
+             sls_text: Optional[str], sls_installed: Optional[str],
+             arch: str = STEAM_CLIENT_32, current_build: Optional[int] = None) -> dict:
+    """Pure decision for the line client `arch` runs (`stable_build` is Valve's
+    build on that line; `current_build` the installed one when known).
+    Returns {"state", "blocker", "stable_build", "hash", "slssteam_required",
+    "slssteam_installed", "lumalinux_ready"}.
+
+    current         — Valve serves the build already installed (or an older
+                      one): nothing to update to, the pin holds nothing back.
 
     ready           — lumalinux's latest release and a RELEASED SLSsteam both
                       hook the build Steam would update to. When the installed
@@ -345,16 +384,21 @@ def evaluate(stable_build: Optional[int], ll_text: Optional[str], ll_group: Opti
     out = {"state": "unknown", "blocker": None, "stable_build": stable_build, "hash": None,
            "slssteam_required": None, "slssteam_installed": sls_installed, "lumalinux_ready": None,
            "slssteam_update_pending": False}
-    if stable_build is None or ll_text is None:
+    if stable_build is None:
         return out
-    sha = _hash_for_build(ll_text, stable_build)
+    if current_build is not None and stable_build <= current_build:
+        out.update(state="current", blocker=None)
+        return out
+    if ll_text is None:
+        return out
+    sha = _hash_for_build(ll_text, stable_build, arch)
     out["hash"] = sha
     if sha is None:
         # The cron has not seen this build: no hash to ask SLSsteam about, and
         # lumalinux itself is unverified on it.
         out.update(state="not_yet", blocker="lumalinux")
         return out
-    ll_ready = _build_in_group(ll_text, ll_group, stable_build) if ll_group else True
+    ll_ready = _build_in_group(ll_text, ll_group, stable_build, arch) if ll_group else True
     out["lumalinux_ready"] = ll_ready
     if sls_text is None:
         return out
@@ -431,26 +475,27 @@ def plan_setup(frozen: bool, sls_text: Optional[str], current_hash: Optional[str
 async def steam_update_gate(force: bool = False) -> dict:
     """Gather the three sources and evaluate. Network failures degrade to
     "unknown", never raise."""
-    from headcrab_compat import _lumalinux_updates_text, latest_release_group
+    from headcrab_compat import _lumalinux_updates_text, current_steam_build, latest_release_group
+    from paths import steam_client_arch
     from slssteam_version import resolve_installed_version
 
+    # Everything about the line the running client is on: Valve's build for
+    # it, the whitelist entries of its arch, the SLSsteam installed for it.
+    arch = steam_client_arch()
     stable, ll_text, ll_group, sls_text = await asyncio.gather(
-        latest_stable_build(force=force),
+        latest_stable_build(force=force, arch=arch),
         _lumalinux_updates_text(force=force),
         latest_release_group(force=force),
         slssteam_updates_text(force=force),
     )
-    # The gate is about Valve's stable 32-bit build (the manifest above) and
-    # the 32-bit tree a pin holds, so the installed SLSsteam that matters here
-    # is the 32-bit one, whichever client runs.
     try:
-        sls_installed, _src = await resolve_installed_version(STEAM_CLIENT_32)
+        sls_installed, _src = await resolve_installed_version(arch)
     except Exception:
         sls_installed = None
-    result = evaluate(stable, ll_text, ll_group, sls_text, sls_installed)
+    result = evaluate(stable, ll_text, ll_group, sls_text, sls_installed, arch, current_steam_build())
     logger.info(
-        "steam_update_gate: state=%s blocker=%s stable=%s hash=%s sls_required=%s sls_installed=%s ll_ready=%s",
-        result["state"], result["blocker"], result["stable_build"],
+        "steam_update_gate: line=%s state=%s blocker=%s stable=%s hash=%s sls_required=%s sls_installed=%s ll_ready=%s",
+        _client_line(arch), result["state"], result["blocker"], result["stable_build"],
         (result["hash"] or "")[:12], result["slssteam_required"], result["slssteam_installed"],
         result["lumalinux_ready"],
     )

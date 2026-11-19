@@ -52,10 +52,12 @@ except ImportError:
     logger = logging.getLogger("lumadeck")
 
 
-# The two keys headcrab's createsteamcfg writes. We strip exactly these on lift
-# and leave anything the user may have added to steam.cfg untouched.
+# The keys a pin writes: the two headcrab's createsteamcfg uses, plus
+# BootStrapperInhibitUpdateOnLaunch (the startup check; downgrade.sh writes it
+# since 2026-11-19, SteamRollbackrLite's third key). We strip exactly these on
+# lift and leave anything the user may have added to steam.cfg untouched.
 _FREEZE_LINE_RE = re.compile(
-    r"^\s*BootStrapper(?:InhibitAll|ForceSelfUpdate)\s*=", re.IGNORECASE
+    r"^\s*BootStrapper(?:InhibitAll|ForceSelfUpdate|InhibitUpdateOnLaunch)\s*=", re.IGNORECASE
 )
 # "frozen" = BootStrapperInhibitAll present and not explicitly turned off.
 _INHIBIT_RE = re.compile(
@@ -143,3 +145,4 @@ def lift_freeze() -> dict:
         return {"success": False, "error": "steam.cfg still frozen after lift"}
     logger.info("steam_freeze: lifted Steam-update freeze at %s", path)
     return {"success": True, "lifted": True, "path": path}
+

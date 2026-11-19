@@ -25,7 +25,7 @@ import re
 
 from feed_cache import fresh
 from http_client import ensure_http_client
-from paths import find_steam_root, real_home, steam_client_arch
+from paths import STEAM_CLIENT_64, find_steam_root, real_home, steam_client_arch
 
 try:
     import decky  # type: ignore
@@ -78,6 +78,14 @@ def _manifest_path() -> str | None:
     candidates = glob.glob(os.path.join(pkg_dir, "steam_client_*.manifest"))
     if not candidates:
         return None
+    # Both lines can leave a manifest behind (an install that moved from the
+    # 32-bit client to the 64-bit one keeps `..._ubuntu12.manifest` next to
+    # `..._steamrt64.manifest`); the running client's line is the one that
+    # names its build. Among that line's files the newest is the active channel.
+    suffix = "_steamrt64.manifest" if steam_client_arch() == STEAM_CLIENT_64 else "_ubuntu12.manifest"
+    mine = [c for c in candidates if c.endswith(suffix)]
+    if mine:
+        candidates = mine
     candidates.sort(key=os.path.getmtime, reverse=True)
     return candidates[0]
 

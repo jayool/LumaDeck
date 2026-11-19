@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 import steam_freeze as sf  # noqa: E402
 
-OUR_PIN = "# lumalinux\nBootStrapperInhibitAll=enable\nBootStrapperForceSelfUpdate=disable\n"
+OUR_PIN = ("# lumalinux\nBootStrapperInhibitAll=enable\nBootStrapperInhibitUpdateOnLaunch=enable\n"
+           "BootStrapperForceSelfUpdate=disable\n")
 
 
 class LiftFreeze(unittest.TestCase):

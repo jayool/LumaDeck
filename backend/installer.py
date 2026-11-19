@@ -670,12 +670,15 @@ async def _plan_this_run() -> dict:
         return {"refuse": None, "reason": "no pin"}
     # An install decision reads the feeds fresh (force=True): the 15 min feed
     # cache is for the status surface, not for deciding what goes on disk.
+    from headcrab_compat import current_steam_build
+    from paths import steam_client_arch
+    arch = steam_client_arch()
     sls_text = await slssteam_updates_text(force=True)
     cur_hash = current_client_hash()
-    gate_for_latest = evaluate(await latest_stable_build(), await _lumalinux_updates_text(force=True),
-                               await latest_release_group(force=True), sls_text, slssteam_latest_group(sls_text))
-    from paths import steam_client_arch
-    return plan_setup(True, sls_text, cur_hash, gate_for_latest, steam_client_arch())
+    gate_for_latest = evaluate(await latest_stable_build(arch=arch), await _lumalinux_updates_text(force=True),
+                               await latest_release_group(force=True), sls_text, slssteam_latest_group(sls_text),
+                               arch, current_steam_build())
+    return plan_setup(True, sls_text, cur_hash, gate_for_latest, arch)
 
 
 async def quick_install(gamemode: bool = True) -> dict:
