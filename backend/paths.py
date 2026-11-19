@@ -419,7 +419,9 @@ def detect_steam_client_arch(proc_root: str = "/proc", steam_root: Optional[str]
     if root:
         if os.path.exists(os.path.join(root, _STEAM_CLIENT_MARKER)):
             return STEAM_CLIENT_64
-        if (os.path.exists(os.path.join(root, STEAM_CLIENT_64, "steam"))
+        # steam.sh:78-79 verbatim: `[ ! -e .steam-disable-steamrt64-client ]`
+        # and `[ -x steamrt64/steam ]`, nothing else (read 2026-11-19).
+        if (os.access(os.path.join(root, STEAM_CLIENT_64, "steam"), os.X_OK)
                 and not os.path.exists(os.path.join(root, _STEAM_CLIENT_OPT_OUT))):
             return STEAM_CLIENT_64
     return STEAM_CLIENT_32

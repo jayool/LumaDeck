@@ -51,6 +51,7 @@ class SteamClientArchTests(unittest.TestCase):
             _fake_proc(d, {30: ["bash"]})
             os.makedirs(os.path.join(root, "steamrt64"))
             open(os.path.join(root, "steamrt64", "steam"), "w").close()
+            os.chmod(os.path.join(root, "steamrt64", "steam"), 0o755)
             self.assertEqual(paths.detect_steam_client_arch(proc_root=d, steam_root=root), "steamrt64")
             open(os.path.join(root, ".steam-disable-steamrt64-client"), "w").close()
             self.assertEqual(paths.detect_steam_client_arch(proc_root=d, steam_root=root), "ubuntu12_32")
