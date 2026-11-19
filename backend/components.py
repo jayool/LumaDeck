@@ -338,9 +338,8 @@ async def get_components_status(force: bool = False) -> dict:
     # Which Steam client runs. Every component ships a build per client
     # (32-bit, and 64-bit for steamrt64 in the Steam Runtime container), and
     # every health, version and feed question below is asked about the build
-    # of the client that runs. The one thing the 64-bit client cannot have is
-    # a downgrade (it pins the 32-bit tree, which that client does not run);
-    # downgrade_check says so.
+    # of the client that runs, the downgrade included (each line has its own
+    # builds; downgrade_check picks along the running one).
     client_arch = _safe_sync(steam_client_arch, "ubuntu12_32")
     client_64 = client_arch == STEAM_CLIENT_64
     # The network checks that don't depend on each other go out at once: the
@@ -378,10 +377,8 @@ async def get_components_status(force: bool = False) -> dict:
     # Would Fix in Desktop help? Only asked while SLSsteam or lumalinux is
     # not_supported (the one state that offers it; CloudRedirect never is:
     # cloud saves are not worth a Steam downgrade). possible False -> the QAM
-    # shows the Wait row instead of a button that would be refused. On the
-    # 64-bit client downgrade_check answers False without a network call
-    # (downgrade.sh targets the 32-bit manifest line); that answer must reach
-    # the UI, which only hides the button on an explicit False.
+    # shows the Wait row instead of a button that would be refused (the UI
+    # hides the button only on an explicit False).
     downgrade = {"target": None, "possible": None, "error": None}
     if any(h.get("state") == "not_supported" for h in (sls_health, ll_health)):
         from desktop_handoff import downgrade_check

@@ -15,6 +15,7 @@ NOT return when the downgrade fails.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Optional
 import pwd
@@ -84,9 +85,10 @@ _DOWNGRADE_SH_URL = os.environ.get(
 # client the downgrade lands on (2026-10-14: 20261014151919 only hooks
 # 1791918634; on the bc54101b client it crash-looped Steam and SteamOS
 # re-bootstrapped the image's client), downgrading only breaks Steam, and the
-# right fix is Update (SystemStatus.updateFixesBreak). prepare_real() checks
-# that against SLSsteam's own res/updates.yaml and refuses the hand-off.
-_REAL_PAYLOAD = f"""
+# right fix is Update (SystemStatus.updateFixesBreak). downgrade_target() picks
+# the newest whitelisted build the latest SLSsteam hooks (both client lines,
+# 2026-11-19) and prepare_real() refuses the hand-off when there is none.
+_REAL_PAYLOAD_TEMPLATE = f"""
 set +e
 # pipefail so `curl … | bash` reflects curl's exit, not bash's: without it a
 # 404/timeout makes curl fail while bash reads empty stdin and exits 0, and the
@@ -99,7 +101,7 @@ echo " (downgrade.sh: client downgrade + pin, then setup.sh: wrapper stack)"
 echo "================================================================"
 echo
 echo ">>> Downgrading Steam + writing the pin (downgrade.sh)..."
-if curl -fsSL {_DOWNGRADE_SH_URL} | bash; then
+if curl -fsSL {_DOWNGRADE_SH_URL} | __DOWNGRADE_ENV__bash; then
   echo
   echo ">>> Downgrade finished OK (Steam downgraded and pinned)."
   echo ">>> Re-establishing the injection wrapper via setup.sh..."
@@ -115,6 +117,24 @@ else
   echo "!! Close this window and switch back to Game Mode manually when ready."
 fi
 """
+
+
+def _real_payload(target=None, line=None) -> str:
+    """The REAL payload with the downgrade decided here: downgrade.sh takes the
+    build to land on (TARGET_VERSION) and the client line (CLIENT_LINE,
+    steamrt64 | ubuntu12) from its environment — LumaDeck picks the newest
+    build the released stack hooks (downgrade_target); the script fetches that
+    build's manifest from the tracker's history. Without them the script picks
+    the newest whitelisted build below the installed one itself."""
+    env = ""
+    if target:
+        env += f"TARGET_VERSION={int(target)} "
+    if line in ("steamrt64", "ubuntu12"):
+        env += f"CLIENT_LINE={line} "
+    return _REAL_PAYLOAD_TEMPLATE.replace("__DOWNGRADE_ENV__", env)
+
+
+_REAL_PAYLOAD = _real_payload()
 
 
 def _deck_ids() -> tuple[int, int]:
@@ -332,77 +352,118 @@ _TARGET_CACHE = os.path.join(_HOME, ".cache", "lumadeck", "downgrade_target.json
 _TARGET_TTL = 30 * 60
 
 
-async def downgrade_target(force: bool = False):
-    """The build downgrade.sh would install: the version in the same manifest it
-    reads (headcrab's SteamTracking branch). Cached 30 minutes like Valve's
-    manifest in steam_update_gate. None when unreachable and no cache."""
+def _client_line(arch: str) -> str:
+    """The manifest line of client `arch`: steamrt64 for the 64-bit client,
+    ubuntu12 for the 32-bit one (the names downgrade.sh and Valve use)."""
+    from paths import STEAM_CLIENT_64
+    return "steamrt64" if arch == STEAM_CLIENT_64 else "ubuntu12"
+
+
+def pick_downgrade_target(ll_text, ll_group, sls_text, current, arch) -> dict:
+    """Pure: the build downgrade.sh should land on for client `arch`, from the
+    feeds. The newest build lumalinux's whitelist annotates for that arch below
+    the installed one (`current`; any when unknown) that BOTH the latest
+    lumalinux release (its group `ll_group`) and the latest SLSsteam for the
+    arch hook — what setup.sh installs right after. Returns {"target",
+    "hash", "possible", "error"}: possible True with the pick; None when a
+    candidate's SLSsteam support is unknown (the 64-bit feed may not list it
+    yet) and nothing better exists; False when no annotated build qualifies."""
+    from headcrab_compat import _hash_for_build, _supports_build, _whitelist_entries
+    from steam_update_gate import slssteam_latest_supports
+    if not ll_text:
+        return {"target": None, "hash": None, "possible": None,
+                "error": "could not read lumalinux's whitelist to pick a build"}
+    builds = sorted({v for _g, vs, a, _sha in _whitelist_entries(ll_text) if a == arch for v in vs},
+                    reverse=True)
+    unknown = None
+    for build in builds:
+        if current is not None and build >= current:
+            continue
+        sha = _hash_for_build(ll_text, build, arch)
+        if _supports_build(ll_text, ll_group, build, arch) is not True:
+            continue
+        ok = slssteam_latest_supports(sls_text, sha, arch)
+        if ok is True:
+            return {"target": build, "hash": sha, "possible": True, "error": None}
+        if ok is None and unknown is None:
+            unknown = (build, sha)
+    if unknown:
+        return {"target": unknown[0], "hash": unknown[1], "possible": None,
+                "error": f"downgrade to {unknown[0]}: could not read SLSsteam's release feed to check it"}
+    if not builds:
+        return {"target": None, "hash": None, "possible": False,
+                "error": f"no {_client_line(arch)} build is whitelisted below the installed one"}
+    return {"target": None, "hash": None, "possible": False,
+            "error": "the latest SLSsteam hooks no whitelisted build below the installed one; update the components instead"}
+
+
+async def downgrade_target(force: bool = False) -> dict:
+    """The build downgrade.sh would install for the running client, decided
+    here (pick_downgrade_target) from the three feeds and cached 30 minutes
+    with the line it is for — run_desktop_handoff_real() hands both to the
+    script. {"target", "hash", "line", "possible", "error"}; the cache when
+    the feeds are unreachable, else possible None."""
     import json
     import time
-    from http_client import ensure_http_client
-    from steam_update_gate import _branch, parse_manifest_version
+    from headcrab_compat import _lumalinux_updates_text, current_steam_build, latest_release_group
+    from paths import steam_client_arch
+    from steam_update_gate import slssteam_updates_text
+    arch = steam_client_arch()
+    line = _client_line(arch)
     if not force:
         try:
             with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
                 cached = json.load(f)
-            if time.time() - float(cached.get("at", 0)) < _TARGET_TTL and cached.get("target"):
-                return int(cached["target"])
+            if (time.time() - float(cached.get("at", 0)) < _TARGET_TTL
+                    and cached.get("line") == line and "possible" in cached):
+                return {k: cached.get(k) for k in ("target", "hash", "line", "possible", "error")}
         except Exception:
             pass
-    deck = _branch().startswith("steamdeck")
-    manifest_url = os.environ.get(
-        "DECK_MANIFEST_URL" if deck else "LINUX_MANIFEST_URL",
-        "https://raw.githubusercontent.com/Deadboy666/SteamTracking/refs/heads/headcrab/ClientManifest/"
-        + ("steam_client_steamdeck_stable_ubuntu12" if deck else "steam_client_ubuntu12"))
-    target = None
-    try:
-        client = await ensure_http_client(context="desktop_handoff")
-        resp = await client.get(manifest_url, timeout=10.0)
-        if resp.status_code == 200:
-            target = parse_manifest_version(resp.text)
-    except Exception as exc:
-        logger.info("desktop_handoff: target manifest fetch failed (%s)", exc)
-    if target:
+    ll_text, ll_group, sls_text = await asyncio.gather(
+        _lumalinux_updates_text(force=force), latest_release_group(force=force),
+        slssteam_updates_text(force=force))
+    pick = pick_downgrade_target(ll_text, ll_group, sls_text, current_steam_build(), arch)
+    pick["line"] = line
+    if ll_text is not None and sls_text is not None:
         try:
             os.makedirs(os.path.dirname(_TARGET_CACHE), exist_ok=True)
             with open(_TARGET_CACHE, "w", encoding="utf-8") as f:
-                json.dump({"target": target, "at": time.time()}, f)
+                json.dump(dict(pick, at=time.time()), f)
         except Exception:
             pass
-        return target
+        return pick
     try:
         with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
-            return int(json.load(f).get("target") or 0) or None
+            cached = json.load(f)
+        if cached.get("line") == line and "possible" in cached:
+            return {k: cached.get(k) for k in ("target", "hash", "line", "possible", "error")}
     except Exception:
-        return None
+        pass
+    return pick
+
+
+def _cached_target() -> dict:
+    """What prepare_real() last decided (the cache downgrade_target writes),
+    for the hand-off itself; empty when there is none."""
+    import json
+    try:
+        with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
+            cached = json.load(f)
+        return cached if cached.get("possible") else {}
+    except Exception:
+        return {}
 
 
 async def downgrade_check(force: bool = False) -> dict:
     """Would Fix in Desktop help right now? {"target": int|None, "possible":
-    True/False/None, "error": str|None}. possible is False when the latest
-    SLSsteam no longer hooks the target client (downgrading would break Steam;
-    the fix is Update or waiting), None when the feeds can't tell. The status
-    payload carries it so the QAM offers the button only when it can work."""
-    from paths import STEAM_CLIENT_64, steam_client_arch
-    # downgrade.sh installs a build of the 32-bit manifest line (ubuntu12) and
-    # the 64-bit client's bootstrapper ignores it: "Downgrade FAILED ... The
-    # bootstrapper did not install build 1791918634", then it restores
-    # steam.cfg (a Deck, 2026-11-12). There is no 64-bit downgrade; the QAM
-    # must not offer one. Answered before the feed imports: it needs none of
-    # them, and nothing network-side may turn this False into "unknown".
-    if steam_client_arch() == STEAM_CLIENT_64:
-        return {"target": None, "possible": False,
-                "error": "no downgrade for the 64-bit client: downgrade.sh targets the 32-bit manifest line"}
-    from headcrab_compat import _hash_for_build, _lumalinux_updates_text
-    from steam_update_gate import slssteam_latest_supports, slssteam_updates_text
-    target = await downgrade_target(force=force)
-    if target is None:
-        return {"target": None, "possible": None, "error": "could not read the downgrade target manifest"}
-    target_hash = _hash_for_build(await _lumalinux_updates_text(force=force), target)
-    sls_text = await slssteam_updates_text(force=force)
-    why = downgrade_target_ok(sls_text, target_hash)
-    ok = slssteam_latest_supports(sls_text, target_hash)
-    return {"target": target, "possible": (None if ok is None else not why),
-            "error": f"downgrade to {target}: {why}" if why else None}
+    True/False/None, "error": str|None}. possible is False when no whitelisted
+    build below the installed one is hooked by the latest SLSsteam (downgrading
+    would break Steam; the fix is Update or waiting), None when the feeds can't
+    tell. Both client lines: the 64-bit client downgrades along its own
+    steamrt64 line (downgrade.sh, 2026-11-19). The status payload carries it so
+    the QAM offers the button only when it can work."""
+    pick = await downgrade_target(force=force)
+    return {"target": pick.get("target"), "possible": pick.get("possible"), "error": pick.get("error")}
 
 
 async def prepare_real() -> dict:
@@ -421,8 +482,10 @@ def run_desktop_handoff_real() -> dict:
     the injection wrapper — and switch to Desktop. Fully decoupled from headcrab.
     Returns to Game Mode only on success; stays in Desktop on failure so the error
     is readable. prepare_real() must have passed first (the latest SLSsteam hooks
-    the target client)."""
-    return _run_handoff(_REAL_PAYLOAD)
+    the target client); the hand-off passes its pick (build + client line) to
+    downgrade.sh."""
+    cached = _cached_target()
+    return _run_handoff(_real_payload(cached.get("target"), cached.get("line")))
 
 
 # Full diagnostic written to a file so a tiny toast doesn't truncate it: the user
