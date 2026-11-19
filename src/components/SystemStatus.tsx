@@ -57,7 +57,7 @@ export interface ComponentsStatus {
     // anything would break Steam, so Components hides Reinstall.
     install_blocked?: boolean;
     // Only with our pin: is it safe to let Steam update? (backend/steam_update_gate.py)
-    // ready | not_yet | unknown. Advice for the text, never a lock. (A released
+    // ready | not_yet | current | unknown. Advice for the text, never a lock. (A released
     // SLSsteam the user hasn't installed yet still reads ready: lift first, the
     // old SLSsteam aborts cleanly on the new build, then Update is offered.)
     gate?: {
@@ -91,6 +91,11 @@ export function steamHeldText(
         description: detailed
           ? t("compSteamNotYetDesc", g?.blocker === "lumalinux" ? "lumalinux" : "SLSsteam")
           : t("sysSteamHeldNotYetDesc"),
+      };
+    case "current":
+      return {
+        label: t("sysSteamHeld"),
+        description: detailed ? t("compSteamCurrentDesc", g?.stable_build ?? "?") : t("sysSteamHeldCurrentDesc"),
       };
     default:
       return { label: t("sysSteamHeld"), description: t("sysSteamHeldUnknownDesc") };
