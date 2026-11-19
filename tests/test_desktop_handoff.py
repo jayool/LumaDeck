@@ -128,6 +128,9 @@ class DowngradeTargetTests(unittest.TestCase):
         self.assertEqual(r["target"], 1794536281)
         self.assertEqual(r["hash"][:8], "dab8df0d")
         self.assertTrue(r["possible"])
+        # Every hooked build below the installed one, newest first: the script
+        # keeps the first one this install's branch served.
+        self.assertEqual(r["candidates"], [1794536281, 1794266161])
 
     def test_64bit_skips_a_build_the_latest_slssteam_dropped(self):
         sls = self.SLS.replace("    - dab8df0daa27ffa6594ef5d6bc8cf707f37990220628f1f249fb30f4d88ade91 #steamrt64\n", "")
@@ -166,6 +169,8 @@ class DowngradeTargetTests(unittest.TestCase):
     def test_payload_carries_build_and_line(self):
         pl = dh._real_payload(1794536281, "steamrt64")
         self.assertIn("| TARGET_VERSION=1794536281 CLIENT_LINE=steamrt64 bash", pl)
+        pl = dh._real_payload(1794536281, "steamrt64", [1794536281, 1794266161])
+        self.assertIn('| TARGET_VERSION=1794536281 TARGET_VERSIONS="1794536281 1794266161" CLIENT_LINE=steamrt64 bash', pl)
         self.assertIn("| bash", dh._real_payload())
         self.assertNotIn("TARGET_VERSION", dh._real_payload())
 

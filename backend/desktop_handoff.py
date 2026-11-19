@@ -119,16 +119,19 @@ fi
 """
 
 
-def _real_payload(target=None, line=None) -> str:
+def _real_payload(target=None, line=None, candidates=None) -> str:
     """The REAL payload with the downgrade decided here: downgrade.sh takes the
-    build to land on (TARGET_VERSION) and the client line (CLIENT_LINE,
-    steamrt64 | ubuntu12) from its environment — LumaDeck picks the newest
-    build the released stack hooks (downgrade_target); the script fetches that
-    build's manifest from the tracker's history. Without them the script picks
-    the newest whitelisted build below the installed one itself."""
+    builds it may land on (TARGET_VERSIONS, newest first: every build the
+    released stack hooks below the installed one; it keeps the first one this
+    install's branch ever served, so a stable install stays on builds stable
+    shipped), the one-build form (TARGET_VERSION, for older scripts) and the
+    client line (CLIENT_LINE, steamrt64 | ubuntu12) from its environment.
+    Without them the script picks among the whitelisted builds itself."""
     env = ""
     if target:
         env += f"TARGET_VERSION={int(target)} "
+    if candidates:
+        env += "TARGET_VERSIONS=\"" + " ".join(str(int(c)) for c in candidates) + "\" "
     if line in ("steamrt64", "ubuntu12"):
         env += f"CLIENT_LINE={line} "
     return _REAL_PAYLOAD_TEMPLATE.replace("__DOWNGRADE_ENV__", env)
@@ -365,16 +368,19 @@ def pick_downgrade_target(ll_text, ll_group, sls_text, current, arch) -> dict:
     the installed one (`current`; any when unknown) that BOTH the latest
     lumalinux release (its group `ll_group`) and the latest SLSsteam for the
     arch hook — what setup.sh installs right after. Returns {"target",
-    "hash", "possible", "error"}: possible True with the pick; None when a
-    candidate's SLSsteam support is unknown (the 64-bit feed may not list it
-    yet) and nothing better exists; False when no annotated build qualifies."""
+    "hash", "candidates", "possible", "error"}: possible True with the pick
+    (`candidates` = every qualifying build, newest first, for downgrade.sh to
+    keep the first one this install's branch served); None when a candidate's
+    SLSsteam support is unknown (the 64-bit feed may not list it yet) and
+    nothing better exists; False when no annotated build qualifies."""
     from headcrab_compat import _hash_for_build, _supports_build, _whitelist_entries
     from steam_update_gate import slssteam_latest_supports
     if not ll_text:
-        return {"target": None, "hash": None, "possible": None,
+        return {"target": None, "hash": None, "candidates": [], "possible": None,
                 "error": "could not read lumalinux's whitelist to pick a build"}
     builds = sorted({v for _g, vs, a, _sha in _whitelist_entries(ll_text) if a == arch for v in vs},
                     reverse=True)
+    good: list = []      # (build, sha) the released stack hooks, newest first
     unknown = None
     for build in builds:
         if current is not None and build >= current:
@@ -384,16 +390,19 @@ def pick_downgrade_target(ll_text, ll_group, sls_text, current, arch) -> dict:
             continue
         ok = slssteam_latest_supports(sls_text, sha, arch)
         if ok is True:
-            return {"target": build, "hash": sha, "possible": True, "error": None}
-        if ok is None and unknown is None:
+            good.append((build, sha))
+        elif ok is None and unknown is None:
             unknown = (build, sha)
+    if good:
+        return {"target": good[0][0], "hash": good[0][1], "candidates": [b for b, _s in good],
+                "possible": True, "error": None}
     if unknown:
-        return {"target": unknown[0], "hash": unknown[1], "possible": None,
+        return {"target": unknown[0], "hash": unknown[1], "candidates": [unknown[0]], "possible": None,
                 "error": f"downgrade to {unknown[0]}: could not read SLSsteam's release feed to check it"}
     if not builds:
-        return {"target": None, "hash": None, "possible": False,
+        return {"target": None, "hash": None, "candidates": [], "possible": False,
                 "error": f"no {_client_line(arch)} build is whitelisted below the installed one"}
-    return {"target": None, "hash": None, "possible": False,
+    return {"target": None, "hash": None, "candidates": [], "possible": False,
             "error": "the latest SLSsteam hooks no whitelisted build below the installed one; update the components instead"}
 
 
@@ -416,7 +425,7 @@ async def downgrade_target(force: bool = False) -> dict:
                 cached = json.load(f)
             if (time.time() - float(cached.get("at", 0)) < _TARGET_TTL
                     and cached.get("line") == line and "possible" in cached):
-                return {k: cached.get(k) for k in ("target", "hash", "line", "possible", "error")}
+                return {k: cached.get(k) for k in ("target", "hash", "candidates", "line", "possible", "error")}
         except Exception:
             pass
     ll_text, ll_group, sls_text = await asyncio.gather(
@@ -436,7 +445,7 @@ async def downgrade_target(force: bool = False) -> dict:
         with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
             cached = json.load(f)
         if cached.get("line") == line and "possible" in cached:
-            return {k: cached.get(k) for k in ("target", "hash", "line", "possible", "error")}
+            return {k: cached.get(k) for k in ("target", "hash", "candidates", "line", "possible", "error")}
     except Exception:
         pass
     return pick
@@ -485,7 +494,7 @@ def run_desktop_handoff_real() -> dict:
     the target client); the hand-off passes its pick (build + client line) to
     downgrade.sh."""
     cached = _cached_target()
-    return _run_handoff(_real_payload(cached.get("target"), cached.get("line")))
+    return _run_handoff(_real_payload(cached.get("target"), cached.get("line"), cached.get("candidates")))
 
 
 # Full diagnostic written to a file so a tiny toast doesn't truncate it: the user
