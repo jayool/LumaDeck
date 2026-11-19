@@ -58,17 +58,6 @@ class LiftFreeze(unittest.TestCase):
         self.assertTrue(r["success"] and r["lifted"])
         self.assertFalse(os.path.exists(self.cfg))
 
-    def test_package_dir_gets_its_write_bit_back(self):
-        # downgrade.sh leaves package/ read-only next to the pin; lifting the
-        # pin must undo that or Steam's next self-update cannot stage.
-        pkg = os.path.join(self._tmp.name, "package")
-        os.mkdir(pkg)
-        os.chmod(pkg, 0o555)
-        self.write(OUR_PIN)
-        r = sf.lift_freeze()
-        self.assertTrue(r["success"])
-        self.assertTrue(os.stat(pkg).st_mode & 0o200)
-
     def test_no_file_is_a_no_op(self):
         r = sf.lift_freeze()
         self.assertTrue(r["success"])

@@ -41,7 +41,6 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import stat
 
 from paths import find_steam_root
 
@@ -144,23 +143,6 @@ def lift_freeze() -> dict:
     st = read_freeze()
     if st.get("frozen"):
         return {"success": False, "error": "steam.cfg still frozen after lift"}
-    _unlock_package_dir(os.path.dirname(path))
     logger.info("steam_freeze: lifted Steam-update freeze at %s", path)
     return {"success": True, "lifted": True, "path": path}
 
-
-def _unlock_package_dir(root: str) -> None:
-    """downgrade.sh's second lock: it leaves package/ read-only (chmod a-w) so
-    nothing writes a pending update there while pinned. Lifting the pin must
-    give the write bit back, or Steam's next self-update fails on the
-    manifest download. Best effort: a missing dir or a chmod error is logged."""
-    pkg = os.path.join(root, "package")
-    try:
-        mode = os.stat(pkg).st_mode
-        if not mode & stat.S_IWUSR:
-            os.chmod(pkg, mode | stat.S_IWUSR)
-            logger.info("steam_freeze: restored the write bit on %s", pkg)
-    except FileNotFoundError:
-        pass
-    except Exception as exc:
-        logger.warning("steam_freeze: could not restore the write bit on %s: %s", pkg, exc)
