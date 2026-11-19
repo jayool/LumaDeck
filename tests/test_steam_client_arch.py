@@ -44,6 +44,17 @@ class SteamClientArchTests(unittest.TestCase):
             open(os.path.join(root, ".steam-enable-steamrt64-client"), "w").close()
             self.assertEqual(paths.detect_steam_client_arch(proc_root=d, steam_root=root), "steamrt64")
 
+    def test_no_steam_running_installed_64bit_client_is_the_default(self):
+        # steam.sh's rule since 2026-11-11: steamrt64/steam on disk runs unless
+        # Valve's opt-out marker is written. No old opt-in marker needed.
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as root:
+            _fake_proc(d, {30: ["bash"]})
+            os.makedirs(os.path.join(root, "steamrt64"))
+            open(os.path.join(root, "steamrt64", "steam"), "w").close()
+            self.assertEqual(paths.detect_steam_client_arch(proc_root=d, steam_root=root), "steamrt64")
+            open(os.path.join(root, ".steam-disable-steamrt64-client"), "w").close()
+            self.assertEqual(paths.detect_steam_client_arch(proc_root=d, steam_root=root), "ubuntu12_32")
+
     def test_unreadable_proc_and_no_root_is_32bit(self):
         self.assertEqual(paths.detect_steam_client_arch(proc_root="/nonexistent/proc", steam_root="/nonexistent"),
                          "ubuntu12_32")
