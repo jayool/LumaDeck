@@ -406,6 +406,101 @@ def pick_downgrade_target(ll_text, ll_group, sls_text, current, arch) -> dict:
             "error": "the latest SLSsteam hooks no whitelisted build below the installed one; update the components instead"}
 
 
+# The tracker (SteamTracking/SteamTracking, ClientManifest/<file>): the public
+# git history of every manifest Valve serves. downgrade.sh fetches the build's
+# manifest from the commit of the install's OWN branch file that carried that
+# version, so a candidate the branch never served (a beta-only build, or the
+# same file relabelled with another number on the other branch, or anything
+# before the tracker started keeping the file — 2026-11-12 for the Deck's
+# 64-bit files) cannot be installed. Asked here, before the button is offered,
+# with the same walk as the script's tracker_manifest_for_version: commits
+# newest first, each manifest's "version", stop at the build or at the first
+# smaller one. Only while a component is not_supported, cached 30 minutes.
+_TRACKER_REPO = "SteamTracking/SteamTracking"
+_TRACKER_API = os.environ.get("LUMADECK_TRACKER_API", f"https://api.github.com/repos/{_TRACKER_REPO}/commits")
+_TRACKER_RAW = os.environ.get("LUMADECK_TRACKER_RAW", f"https://raw.githubusercontent.com/{_TRACKER_REPO}")
+_TRACKER_PER_PAGE = 50
+_TRACKER_MAX_PAGES = 10
+
+
+def tracker_file(line: str, branch: str) -> str:
+    """The tracker's file for client line `line` on Steam branch `branch`
+    (package/beta): a steamdeck_* branch asks for the Deck manifests
+    (`steamdeck_<channel>[_steamrt64]`), anything else the desktop ones
+    (`steam_client_[publicbeta_]<line>`). Same rule as downgrade.sh's
+    tracker_file."""
+    channel = "publicbeta" if "publicbeta" in (branch or "") else "stable"
+    if (branch or "").startswith("steamdeck"):
+        return f"steamdeck_{channel}_{line}" if line == "steamrt64" else f"steamdeck_{channel}"
+    return f"steam_client_{line}" if channel == "stable" else f"steam_client_{channel}_{line}"
+
+
+def served_on_branch(versions_newest_first, candidates) -> list:
+    """Pure: which of `candidates` (newest first) a branch served, given the
+    versions its history holds newest first (None = an unreadable capture).
+    A build is served when the walk meets it before meeting a smaller one."""
+    served = []
+    for c in candidates:
+        for v in versions_newest_first:
+            if v is None:
+                continue
+            if v == c:
+                served.append(c)
+                break
+            if v < c:
+                break
+    return served
+
+
+async def _tracker_commits_page(client, file: str, page: int) -> list:
+    resp = await client.get(_TRACKER_API, params={"path": f"ClientManifest/{file}",
+                                                   "per_page": _TRACKER_PER_PAGE, "page": page}, timeout=10.0)
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}")
+    return [c["sha"] for c in resp.json()]
+
+
+async def _tracker_manifest_version(client, file: str, sha: str):
+    from steam_update_gate import parse_manifest_version
+    resp = await client.get(f"{_TRACKER_RAW}/{sha}/ClientManifest/{file}", timeout=10.0)
+    if resp.status_code != 200:
+        return None
+    return parse_manifest_version(resp.text)
+
+
+async def served_candidates(file: str, candidates: list, client=None):
+    """The candidates the branch (tracker file `file`) served, newest first,
+    walking its history only as far as the oldest candidate needs. None when
+    the tracker cannot be read at all (GitHub down or blocked): the caller
+    keeps its list and the script repeats the walk itself."""
+    if not candidates:
+        return []
+    from http_client import ensure_http_client
+    client = client or await ensure_http_client(context="desktop_handoff")
+    versions: list = []
+
+    def resolved() -> bool:   # every candidate met (served) or passed (not served)
+        seen = [v for v in versions if v is not None]
+        return all(any(v == c for v in seen) or any(v < c for v in seen) for c in candidates)
+
+    try:
+        for page in range(1, _TRACKER_MAX_PAGES + 1):
+            shas = await _tracker_commits_page(client, file, page)
+            if not shas:
+                break
+            for sha in shas:
+                versions.append(await _tracker_manifest_version(client, file, sha))
+                if resolved():
+                    break
+            if resolved() or len(shas) < _TRACKER_PER_PAGE:
+                break
+    except Exception as exc:
+        logger.info("desktop_handoff: tracker history of %s unreadable (%s)", file, exc)
+        if not versions:
+            return None
+    return served_on_branch(versions, candidates)
+
+
 async def downgrade_target(force: bool = False) -> dict:
     """The build downgrade.sh would install for the running client, decided
     here (pick_downgrade_target) from the three feeds and cached 30 minutes
@@ -425,7 +520,7 @@ async def downgrade_target(force: bool = False) -> dict:
                 cached = json.load(f)
             if (time.time() - float(cached.get("at", 0)) < _TARGET_TTL
                     and cached.get("line") == line and "possible" in cached):
-                return {k: cached.get(k) for k in ("target", "hash", "candidates", "line", "possible", "error")}
+                return {k: cached.get(k) for k in ("target", "hash", "candidates", "line", "possible", "error", "tracker", "tracker_file")}
         except Exception:
             pass
     ll_text, ll_group, sls_text = await asyncio.gather(
@@ -433,6 +528,21 @@ async def downgrade_target(force: bool = False) -> dict:
         slssteam_updates_text(force=force))
     pick = pick_downgrade_target(ll_text, ll_group, sls_text, current_steam_build(), arch)
     pick["line"] = line
+    if pick.get("candidates"):
+        from headcrab_compat import _hash_for_build
+        from steam_update_gate import _branch
+        tfile = tracker_file(line, _branch())
+        served = await served_candidates(tfile, pick["candidates"])
+        pick["tracker_file"] = tfile
+        if served is None:
+            pick["tracker"] = "unreachable"       # keep the list: the script walks the history itself
+        elif not served:
+            pick.update(target=None, hash=None, candidates=[], possible=False, tracker="none",
+                        error=f"none of the builds the released stack hooks was served on this install's "
+                              f"Steam branch ({tfile}): nothing to downgrade to; wait for the components")
+        else:
+            pick.update(target=served[0], hash=_hash_for_build(ll_text, served[0], arch),
+                        candidates=served, tracker="ok")
     if ll_text is not None and sls_text is not None:
         try:
             os.makedirs(os.path.dirname(_TARGET_CACHE), exist_ok=True)
@@ -445,7 +555,7 @@ async def downgrade_target(force: bool = False) -> dict:
         with open(_TARGET_CACHE, "r", encoding="utf-8") as f:
             cached = json.load(f)
         if cached.get("line") == line and "possible" in cached:
-            return {k: cached.get(k) for k in ("target", "hash", "candidates", "line", "possible", "error")}
+            return {k: cached.get(k) for k in ("target", "hash", "candidates", "line", "possible", "error", "tracker", "tracker_file")}
     except Exception:
         pass
     return pick

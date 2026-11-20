@@ -175,5 +175,129 @@ class DowngradeTargetTests(unittest.TestCase):
         self.assertNotIn("TARGET_VERSION", dh._real_payload())
 
 
+class TrackerBranchCheckTests(unittest.TestCase):
+    """Before Fix in Desktop is offered, the candidates are checked against the
+    tracker history of the install's own Steam branch, with the script's walk:
+    newest first, stop at the build or at the first smaller one (2026-11-20;
+    beta 1794266161 was relabelled 1794424036 on stable, and the Deck's
+    64-bit files only exist in the tracker since 2026-11-12)."""
+
+    def test_tracker_file_follows_branch_and_line(self):
+        self.assertEqual(dh.tracker_file("steamrt64", "steamdeck_stable"), "steamdeck_stable_steamrt64")
+        self.assertEqual(dh.tracker_file("steamrt64", "steamdeck_publicbeta"), "steamdeck_publicbeta_steamrt64")
+        self.assertEqual(dh.tracker_file("ubuntu12", "steamdeck_stable"), "steamdeck_stable")
+        self.assertEqual(dh.tracker_file("steamrt64", "publicbeta"), "steam_client_publicbeta_steamrt64")
+        self.assertEqual(dh.tracker_file("steamrt64", ""), "steam_client_steamrt64")
+        self.assertEqual(dh.tracker_file("ubuntu12", ""), "steam_client_ubuntu12")
+
+    def test_served_on_branch_walks_like_the_script(self):
+        # stable history: 300, 260, 200, 100 (260 is 250 relabelled)
+        hist = [300, 260, None, 200, 100]
+        self.assertEqual(dh.served_on_branch(hist, [250, 260, 200]), [260, 200])
+        self.assertEqual(dh.served_on_branch(hist, [300]), [300])
+        self.assertEqual(dh.served_on_branch(hist, [50]), [])
+        self.assertEqual(dh.served_on_branch([], [250]), [])
+
+    def _fake_client(self, history, api_down=False):
+        """history: {sha: version|None} in newest-first order."""
+        shas = list(history)
+
+        class R:
+            def __init__(self, code, text="", data=None):
+                self.status_code, self.text, self._d = code, text, data
+            def json(self): return self._d
+
+        class C:
+            calls = []
+            async def get(self_, url, params=None, timeout=None, **k):
+                C.calls.append(url)
+                if url == dh._TRACKER_API:
+                    if api_down: return R(503)
+                    page, per = params["page"], params["per_page"]
+                    return R(200, data=[{"sha": s} for s in shas[(page - 1) * per: page * per]])
+                sha = url.split("/")[-3]
+                v = history.get(sha)
+                return R(200, '"steamrt64"\n{\n\t"version"\t\t"%s"\n}\n' % v) if v else R(200, "")
+        return C()
+
+    def test_served_candidates_keeps_only_what_the_branch_served(self):
+        import asyncio
+        c = self._fake_client({"a": 1794536281, "b": 1794424036, "c": None, "d": 1792618285})
+        got = asyncio.run(dh.served_candidates("steamdeck_stable_steamrt64", [1794536281, 1794266161, 1792618285], c))
+        self.assertEqual(got, [1794536281, 1792618285])
+        # the walk stopped at the first version below the oldest candidate: 4 manifests read
+        self.assertEqual(sum(1 for u in c.calls if "/ClientManifest/" in u), 4)
+
+    def test_served_candidates_stops_early(self):
+        import asyncio
+        c = self._fake_client({"a": 400, "b": 300, "c": 200, "d": 100})
+        self.assertEqual(asyncio.run(dh.served_candidates("f", [300], c)), [300])
+        self.assertEqual(sum(1 for u in c.calls if "/ClientManifest/" in u), 2)
+
+    def test_tracker_unreachable_is_none_not_empty(self):
+        import asyncio
+        c = self._fake_client({"a": 300}, api_down=True)
+        self.assertIsNone(asyncio.run(dh.served_candidates("f", [300], c)))
+        self.assertEqual(asyncio.run(dh.served_candidates("f", [], c)), [])
+
+    def test_downgrade_target_refuses_when_nothing_was_served(self):
+        # Whole decision with the feeds and the tracker patched: a stable Deck
+        # broken on 1794424036 whose supported builds are beta-only -> no button.
+        import asyncio
+        import headcrab_compat, steam_update_gate, paths
+        LL = DowngradeTargetTests.LL; SLS = DowngradeTargetTests.SLS
+        saved = {}
+        def patch(mod, name, val):
+            saved[(mod, name)] = getattr(mod, name); setattr(mod, name, val)
+        async def ll_text(force=False): return LL
+        async def group(force=False): return "20261119000000"
+        async def sls(force=False): return SLS
+        async def served(file, cands, client=None): return []
+        patch(headcrab_compat, "_lumalinux_updates_text", ll_text)
+        patch(headcrab_compat, "latest_release_group", group)
+        patch(headcrab_compat, "current_steam_build", lambda: 1795048523)
+        patch(steam_update_gate, "slssteam_updates_text", sls)
+        patch(steam_update_gate, "_branch", lambda: "steamdeck_stable")
+        patch(paths, "steam_client_arch", lambda: paths.STEAM_CLIENT_64)
+        patch(dh, "served_candidates", served)
+        patch(dh, "_TARGET_CACHE", "/nonexistent/dir/downgrade_target.json")
+        try:
+            r = asyncio.run(dh.downgrade_target(force=True))
+        finally:
+            for (mod, name), val in saved.items():
+                setattr(mod, name, val)
+        self.assertIs(r["possible"], False)
+        self.assertIsNone(r["target"])
+        self.assertEqual(r["tracker_file"], "steamdeck_stable_steamrt64")
+        self.assertIn("steamdeck_stable_steamrt64", r["error"])
+
+    def test_downgrade_target_keeps_only_served_candidates(self):
+        import asyncio
+        import headcrab_compat, steam_update_gate, paths
+        LL = DowngradeTargetTests.LL; SLS = DowngradeTargetTests.SLS
+        saved = {}
+        def patch(mod, name, val):
+            saved[(mod, name)] = getattr(mod, name); setattr(mod, name, val)
+        async def ll_text(force=False): return LL
+        async def group(force=False): return "20261119000000"
+        async def sls(force=False): return SLS
+        async def served(file, cands, client=None): return [c for c in cands if c == 1794266161]
+        patch(headcrab_compat, "_lumalinux_updates_text", ll_text)
+        patch(headcrab_compat, "latest_release_group", group)
+        patch(headcrab_compat, "current_steam_build", lambda: 1795048523)
+        patch(steam_update_gate, "slssteam_updates_text", sls)
+        patch(steam_update_gate, "_branch", lambda: "publicbeta")
+        patch(paths, "steam_client_arch", lambda: paths.STEAM_CLIENT_64)
+        patch(dh, "served_candidates", served)
+        patch(dh, "_TARGET_CACHE", "/nonexistent/dir/downgrade_target.json")
+        try:
+            r = asyncio.run(dh.downgrade_target(force=True))
+        finally:
+            for (mod, name), val in saved.items():
+                setattr(mod, name, val)
+        self.assertEqual((r["target"], r["candidates"], r["possible"]), (1794266161, [1794266161], True))
+        self.assertEqual(r["hash"][:8], "53bdabbb")
+
+
 if __name__ == "__main__":
     unittest.main()
