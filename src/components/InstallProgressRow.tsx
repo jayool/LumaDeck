@@ -5,9 +5,8 @@ import { PanelSectionRow, ProgressBarWithInfo } from "@decky/ui";
  * downloads (curl's percent), indeterminate otherwise, the phase label and
  * the elapsed time in the one info line. Exactly the shape of the Add Game
  * bar (GameDetail): a DIRECT PanelSectionRow child and sOperationText only.
- * sTimeRemaining looked right in the typings but laid the info out in two
- * columns that overflowed the QAM: the bar slid off the right edge and the
- * text vanished (codespace, 2026-11-23).
+ * sTimeRemaining is not used: it adds a second column to the info line that
+ * the QAM has no room for.
  */
 export function InstallProgressRow({ label, percent, elapsed }: {
   label: string;
@@ -18,6 +17,10 @@ export function InstallProgressRow({ label, percent, elapsed }: {
   return (
     <PanelSectionRow>
       <ProgressBarWithInfo
+        // An Item: without layout="below" it keeps the left half for an empty
+        // label and squeezes the bar into the right half, off the QAM's edge,
+        // with the text clipped top-right (screenshot, codespace 2026-11-23).
+        layout="below"
         indeterminate={percent === null}
         nProgress={percent ?? 0}
         sOperationText={text}
