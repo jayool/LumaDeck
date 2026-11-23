@@ -17,7 +17,9 @@ export function InstallProgressRow({ label, percent, elapsed }: {
         indeterminate={percent === null}
         nProgress={percent ?? 0}
         sOperationText={label}
-        sTimeRemaining={elapsed}
+        // Steam's component takes it (its download rows show it); older
+        // @decky/ui typings do not list it, so it goes in untyped.
+        {...({ sTimeRemaining: elapsed } as any)}
       />
     </PanelSectionRow>
   );
