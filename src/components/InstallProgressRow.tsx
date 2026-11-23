@@ -21,7 +21,11 @@ export function InstallProgressRow({ label, percent, elapsed }: {
   return (
     <PanelSectionRow>
       <Field label={text} childrenLayout="below" childrenContainerWidth="max" bottomSeparator="none">
-        <ProgressBar indeterminate={percent === null} nProgress={percent ?? 0} />
+        {/* No transition and never indeterminate once the run started: the
+            bar is measured monotonic in the backend, and the only dips left
+            on the recordings (codespace 2026-11-23, 5 frames/s) were the
+            component animating from 0 at a phase change. */}
+        <ProgressBar key="install-bar" indeterminate={false} nProgress={percent ?? 0} nTransitionSec={0} />
       </Field>
     </PanelSectionRow>
   );
