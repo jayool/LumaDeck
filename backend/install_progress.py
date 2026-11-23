@@ -124,7 +124,13 @@ class InstallProgress:
             return
         m = CURL_BAR_RE.match(text)
         if m:
-            self.percent = min(100.0, float(m.group(1)))
+            # curl's bar is the phase's progress in the download phases. In the
+            # app phase it is only the 3 MB bundle before flatpak's 710 MB of
+            # runtimes: taking it as the phase sent the bar to 89 % and then
+            # back to 9 % when flatpak began (the Quick Install video,
+            # codespace 2026-11-23). Ignored there.
+            if self.phase != "cloudredirect_app":
+                self._set_percent(float(m.group(1)))
             return
         m = FLATPAK_ROW_RE.match(text)
         if m and "/" not in m.group(2) and m.group(4) in ("i", "u", "r"):
@@ -136,18 +142,26 @@ class InstallProgress:
             ref = int(m.group(1)) if m.group(1) else max(1, self._fp_ref or 1)
             total = int(m.group(2)) if m.group(2) else max(self._fp_total, ref)
             self._fp_ref, self._fp_total = ref, max(total, self._fp_total)
-            self.percent = self._flatpak_percent(ref, int(m.group(3)))
+            self._set_percent(self._flatpak_percent(ref, int(m.group(3))))
             return
         if FLATPAK_REF_RE.match(text):
             # no terminal: a ref began; the previous ones are complete
             self._fp_ref += 1
             self._fp_total = max(self._fp_total, self._fp_ref)
-            self.percent = self._flatpak_percent(self._fp_ref, 0)
+            self._set_percent(self._flatpak_percent(self._fp_ref, 0))
             return
         self.detail = text
         pid = phase_for_line(text)
         if pid:
             self.enter(pid)
+
+    def _set_percent(self, value: float) -> None:
+        """Inside a phase the bar never goes back: a lower reading (a second
+        curl bar in the same phase, a flatpak ref count that re-learns its
+        total) keeps the higher one."""
+        value = max(0.0, min(100.0, value))
+        if self.percent is None or value > self.percent:
+            self.percent = value
 
     def _flatpak_percent(self, ref: int, pct: int) -> float:
         """Progress of the whole flatpak install: refs before `ref` complete,
@@ -170,10 +184,11 @@ class InstallProgress:
                     "overall": 0.0, "step": 0, "stepTotal": TOTAL_STEPS, "detail": self.detail}
         idx = PHASE_IDS.index(self.phase)
         _id, label, weight, expected, _trig = PHASES[idx]
-        if self.percent is not None:
-            frac = self.percent / 100.0
-        else:
-            frac = time_fill(self._now() - self.phase_started, expected)
+        # The time fill runs until the first real reading; a first reading
+        # below it (flatpak's 0 % after a second of fill) must not pull the
+        # bar back, so the shown fraction is the higher of the two.
+        fill = time_fill(self._now() - self.phase_started, expected)
+        frac = max(fill, self.percent / 100.0) if self.percent is not None else fill
         return {"phase": self.phase, "progress": label, "percent": self.percent,
                 "overall": round(_OFFSET[self.phase] + weight * frac, 1),
                 "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail}

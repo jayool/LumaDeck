@@ -130,6 +130,51 @@ class PercentTests(unittest.TestCase):
         self.assertTrue(tr.detail.startswith("[*]") or tr.detail == "")    # the ref lines are not "detail"
 
 
+class NeverBackwardsTests(unittest.TestCase):
+    def test_bundle_curl_bar_in_the_app_phase_is_ignored(self):
+        # the Quick Install video (codespace 2026-11-23): the 3 MB bundle's curl bar
+        # read as the phase sent the bar to 89 % and flatpak's start pulled it back to 9 %
+        tr, c = tracker()
+        tr.enter("preparing")
+        tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")
+        tr.feed("######################################## 100.0%")
+        self.assertIsNone(tr.percent)
+        self.assertLess(tr.snapshot()["overall"], 10)
+        tr.feed("Installing runtime/org.freedesktop.Platform.GL.default/x86_64/25.08")
+        self.assertLess(tr.snapshot()["overall"], 10)
+
+    def test_readings_inside_a_phase_only_go_up(self):
+        tr, c = tracker()
+        tr.enter("preparing")
+        tr.feed("[*] Downloading SLSsteam (latest), release 1...")
+        tr.feed("######################################## 100.0%")        # the 64-bit archive
+        tr.feed("[+] Deployed /x/x86_64/SLSsteam.so (64-bit client, latest)")
+        tr.feed("#####                                    12.0%")        # the 32-bit archive begins
+        self.assertEqual(tr.percent, 100.0)
+        # and the time fill never shows more than a later real reading takes back
+        tr2, c2 = tracker()
+        tr2.enter("cloudredirect_app")
+        c2.t += 5
+        shown = tr2.snapshot()["overall"]
+        tr2.feed("Installing runtime/org.kde.Platform/x86_64/6.10")      # flatpak's first ref: 0 %
+        self.assertGreaterEqual(tr2.snapshot()["overall"], shown)
+
+    def test_whole_fake_run_is_monotonic(self):
+        import subprocess
+        out = subprocess.run(["bash", os.path.join(os.path.dirname(__file__), "..", "backend", "dev_fake_setup.sh")],
+                             capture_output=True, env={**os.environ, "LUMADECK_FAKE_SETUP_FAST": "1"}).stdout
+        tr, c = tracker()
+        tr.enter("preparing")
+        last = 0.0
+        for line in out.decode("utf-8", "replace").replace("\r", "\n").split("\n"):
+            tr.feed(line)
+            now = tr.snapshot()["overall"]
+            self.assertGreaterEqual(now, last, line)
+            last = now
+        tr.enter("done")
+        self.assertEqual(tr.snapshot()["overall"], 100.0)
+
+
 class TimeFillTests(unittest.TestCase):
     def test_silent_phase_moves_with_time_and_never_fills(self):
         tr, c = tracker()
