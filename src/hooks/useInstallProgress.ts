@@ -39,13 +39,16 @@ export function useInstallProgress(active: boolean) {
         const s: any = await getQuickInstallStatus();
         const key = s.phase ? `installPhase_${s.phase}` : "";
         const phaseText = key && t(key) !== key ? t(key) : (s.progress || "");
+        // "4/9 · CloudRedirect app · 147/710 MB · 0:14": short enough for the
+        // QAM's one line (the long form was clipped at "147 of 7", recording
+        // 2026-11-23).
         const step = typeof s.step === "number" && s.step > 0 && typeof s.stepTotal === "number"
-          ? t("installStepOf", s.step, s.stepTotal) + "  ·  "
+          ? t("installStepOf", s.step, s.stepTotal) + " · "
           : "";
         // the app phase: flatpak's bytes so far, so the text moves while a
         // 400 MB runtime downloads
         const mb = typeof s.mbTotal === "number" && s.mbTotal > 0
-          ? "  ·  " + t("installMbOf", s.mbDone ?? 0, s.mbTotal)
+          ? " · " + t("installMbOf", s.mbDone ?? 0, s.mbTotal)
           : "";
         if (phaseText) setLabel(step + phaseText + mb);
         setPercent(typeof s.overall === "number" ? s.overall : null);

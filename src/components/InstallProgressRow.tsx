@@ -17,7 +17,7 @@ export function InstallProgressRow({ label, percent, elapsed }: {
   percent: number | null;
   elapsed: string;
 }) {
-  const text = elapsed ? `${label}  ·  ${elapsed}` : label;
+  const text = elapsed ? `${label} · ${elapsed}` : label;
   // Description-sized text (the small grey of "LumaDeck isn't set up yet…"),
   // not the Field's label size: at label size the line wrapped in the QAM
   // ("Step 4 of 9 · Installing" / "CloudRedirect app · 0:14", recordings
