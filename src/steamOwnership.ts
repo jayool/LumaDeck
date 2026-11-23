@@ -32,3 +32,22 @@ export const isOwnedBySteam = (appid: number): boolean => {
     return false;
   }
 };
+
+/**
+ * Does Steam's client know this app at all (it has a library entry, owned or
+ * merely listed by SLSsteam)? Any overview counts, unlike isOwnedBySteam. Used
+ * to show "Open in Steam library": the library page needs an entry to show,
+ * and a game added a moment ago has one only once SLSsteam's hot reload (or a
+ * restart) put it there.
+ */
+export const isInSteamLibrary = (appid: number): boolean => {
+  try {
+    const store: any = (window as any).appStore;
+    return !!store?.GetAppOverviewByAppID?.(appid);
+  } catch {
+    return false;
+  }
+};
+
+/** Steam's own library page for an app (the one the library grid opens). */
+export const steamLibraryRoute = (appid: number): string => `/library/app/${appid}`;

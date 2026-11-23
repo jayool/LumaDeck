@@ -66,7 +66,7 @@ import {
 } from "../api";
 import { errorText, useT } from "../i18n";
 
-import { isOwnedBySteam } from "../steamOwnership";
+import { isOwnedBySteam, isInSteamLibrary, steamLibraryRoute } from "../steamOwnership";
 import { disableDlcs, enableDlcs } from "../steamDlc";
 interface GameDetailProps {
   appid: number;
@@ -161,6 +161,14 @@ export function GameDetail({ appid }: GameDetailProps) {
   // The account owns the base game and LumaDeck only manages its DLC
   // (backend pins.json `owned`, set at Add time from Steam's own answer).
   const [isOwned, setIsOwned] = useState(false);
+  // Steam has a library entry for the app: the "Open in Steam library" button
+  // only makes sense then. Re-asked whenever the page's own picture of the game
+  // changes (added, re-downloaded), since the entry appears with SLSsteam's hot
+  // reload a moment after Add game.
+  const [inSteamLibrary, setInSteamLibrary] = useState(false);
+  useEffect(() => {
+    setInSteamLibrary(isInSteamLibrary(appid));
+  }, [appid, hasLua, downloadState?.status]);
   // Game version (Status row + the Updates picker; backend/game_versions.py).
   // pinVersion: the build we pinned the game to (pins.json: buildid/date/label,
   // any may be null); acfBuildid: the .acf's buildid, right only while Steam
@@ -1199,6 +1207,15 @@ export function GameDetail({ appid }: GameDetailProps) {
               label={hasLua ? t("redownloadManifest") : t("downloadManifest")}
               onClick={handleDownload}
             />
+            {/* Straight to Steam's own page for the game (install/play from
+                there), the one the library grid opens. Only once Steam lists
+                the app; before that the page would be empty. */}
+            {inSteamLibrary && (
+              <ActionButton
+                label={t("openInSteamLibrary")}
+                onClick={() => Navigation.Navigate(steamLibraryRoute(appid))}
+              />
+            )}
             {hasLua && installPath && !isOwned ? (
               <PanelSectionRow>
                 <ToggleField
