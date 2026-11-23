@@ -704,6 +704,10 @@ export function Settings() {
     { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_hooked", "not_authed", "disabled"] },
     { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
+    // "fake": Quick Install / Update / Repair / Reinstall run a bundled script
+    // that prints setup.sh's phases and installs nothing; Restart Steam is a
+    // no-op too. For watching the progress row (backend/dev_fake_setup.sh).
+    { key: "installer", label: "Installer (setup.sh)", opts: ["real", "fake"] },
     { key: "crash_guard", label: "Crash guard", opts: ["real", "active"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
     { key: "ryuu_cred", label: "Ryuu cookie", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },

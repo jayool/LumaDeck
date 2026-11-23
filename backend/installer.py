@@ -531,6 +531,22 @@ def phase_for_line(text: str):
     return None
 
 
+FAKE_SETUP_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dev_fake_setup.sh")
+
+
+def fake_installer_active() -> bool:
+    """Dev preview (Settings ▸ Dev ▸ Installer: fake, backend/dev.py key
+    "installer"): every setup.sh run (Quick Install, Update, Repair,
+    Reinstall) executes dev_fake_setup.sh instead, which prints the real
+    script's phases and installs nothing; restart_steam is a no-op meanwhile.
+    Off on a normal install (no override file)."""
+    try:
+        import dev
+        return dev.get("installer") == "fake"
+    except Exception:
+        return False
+
+
 def set_phase(state: dict, phase: str) -> None:
     """Enter a phase of the plugin's own (preparing, done): label + id, the
     percent cleared (no download is running at a phase boundary)."""
@@ -588,15 +604,24 @@ async def install_via_setup(gamemode: bool = True) -> dict:
     set_phase(SETUP_INSTALL_STATE, "preparing")
     logger.info("LumaDeck: install_via_setup() entered (url=%s)", SETUP_SH_URL)
 
+    fake = fake_installer_active()
+    if fake:
+        logger.info("LumaDeck: install_via_setup in FAKE mode (dev override): running %s, installing nothing",
+                    FAKE_SETUP_SCRIPT)
+
     tmp_dir = None
     try:
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_setup_")
         script_path = os.path.join(tmp_dir, "setup.sh")
-        SETUP_INSTALL_STATE["detail"] = "Downloading setup.sh..."
-        if not await _download(SETUP_SH_URL, script_path):
-            SETUP_INSTALL_STATE["status"] = "failed"
-            SETUP_INSTALL_STATE["error"] = "Failed to download setup.sh"
-            return {"success": False}
+        if fake:
+            import shutil as _sh
+            _sh.copyfile(FAKE_SETUP_SCRIPT, script_path)
+        else:
+            SETUP_INSTALL_STATE["detail"] = "Downloading setup.sh..."
+            if not await _download(SETUP_SH_URL, script_path):
+                SETUP_INSTALL_STATE["status"] = "failed"
+                SETUP_INSTALL_STATE["error"] = "Failed to download setup.sh"
+                return {"success": False}
         os.chmod(script_path, 0o700)
 
         try:
@@ -616,10 +641,13 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         # (Let Steam update first, or wait). Never the 2026-10-14 combination
         # (new SLSsteam on the pinned client), which crash-looped Steam.
         plan = {"refuse": None, "reason": "not evaluated"}
-        try:
-            plan = await _plan_this_run()
-        except Exception as exc:
-            logger.warning("LumaDeck: setup plan failed (%s); installing latest as before", exc)
+        if fake:
+            plan = {"refuse": None, "reason": "fake installer (dev override)"}
+        else:
+            try:
+                plan = await _plan_this_run()
+            except Exception as exc:
+                logger.warning("LumaDeck: setup plan failed (%s); installing latest as before", exc)
         logger.info("LumaDeck: setup plan: %s", plan)
         if plan.get("refuse"):
             SETUP_INSTALL_STATE["status"] = "failed"
@@ -663,6 +691,12 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         else:
             argv = ["bash", script_path]
             proc_env = clean_env(HOME=real_home())
+        if fake and os.environ.get("LUMADECK_FAKE_SETUP_FAST"):
+            # The tests: no pauses. Through sudo's `env` too, sudo resets the
+            # environment otherwise.
+            proc_env["LUMADECK_FAKE_SETUP_FAST"] = "1"
+            if argv[0] == "sudo":
+                argv.insert(argv.index("env") + 1, "LUMADECK_FAKE_SETUP_FAST=1")
         process = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
@@ -693,7 +727,11 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         asyncio.create_task(_read_output())
         await process.wait()
 
-        if process.returncode == 0:
+        if process.returncode == 0 and fake:
+            # Nothing was installed, nothing to verify: the run is the point.
+            SETUP_INSTALL_STATE["status"] = "done"
+            set_phase(SETUP_INSTALL_STATE, "done")
+        elif process.returncode == 0:
             # Verify the post-condition instead of trusting the exit code: the
             # wrapper + the two load-bearing .so's must be on disk.
             # SLSsteam of either architecture counts here: setup.sh installs
@@ -738,7 +776,7 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 pass
 
     logger.info("LumaDeck: install_via_setup finished, state=%s", SETUP_INSTALL_STATE)
-    return {"success": SETUP_INSTALL_STATE["status"] == "done"}
+    return {"success": SETUP_INSTALL_STATE["status"] == "done", "fake": fake}
 
 
 def get_setup_status() -> dict:

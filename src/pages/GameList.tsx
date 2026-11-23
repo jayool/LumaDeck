@@ -531,10 +531,12 @@ export function GameList() {
       setQuickNow(Date.now());
       try {
         const s = await getQuickInstallStatus();
-        const step = s.step
-          ? `[${(s.stepIndex ?? 0) + 1}/${s.totalSteps ?? 2}] ${s.step} — `
-          : "";
-        if (s.progress) setQuickProgress(`${step}${s.progress}`);
+        // The backend names the phase (installer.INSTALL_PHASES); the label is
+        // ours so it is translated. Its English text is the fallback for a
+        // phase this build does not know.
+        const key = s.phase ? `installPhase_${s.phase}` : "";
+        const label = key && t(key) !== key ? t(key) : (s.progress || "");
+        if (label) setQuickProgress(label);
         setQuickPercent(typeof s.percent === "number" ? s.percent : null);
       } catch { }
     }, 1000);
