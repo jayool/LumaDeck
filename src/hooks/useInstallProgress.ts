@@ -42,7 +42,12 @@ export function useInstallProgress(active: boolean) {
         const step = typeof s.step === "number" && s.step > 0 && typeof s.stepTotal === "number"
           ? t("installStepOf", s.step, s.stepTotal) + "  ·  "
           : "";
-        if (phaseText) setLabel(step + phaseText);
+        // the app phase: flatpak's bytes so far, so the text moves while a
+        // 400 MB runtime downloads
+        const mb = typeof s.mbTotal === "number" && s.mbTotal > 0
+          ? "  ·  " + t("installMbOf", s.mbDone ?? 0, s.mbTotal)
+          : "";
+        if (phaseText) setLabel(step + phaseText + mb);
         setPercent(typeof s.overall === "number" ? s.overall : null);
       } catch { }
     }, 1000);

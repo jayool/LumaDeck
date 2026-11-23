@@ -18,9 +18,18 @@ export function InstallProgressRow({ label, percent, elapsed }: {
   elapsed: string;
 }) {
   const text = elapsed ? `${label}  ·  ${elapsed}` : label;
+  // Description-sized text (the small grey of "LumaDeck isn't set up yet…"),
+  // not the Field's label size: at label size the line wrapped in the QAM
+  // ("Step 4 of 9 · Installing" / "CloudRedirect app · 0:14", recordings
+  // 2026-11-23).
+  const small = (
+    <span style={{ fontSize: "12px", fontWeight: "normal", color: "#8b929a", whiteSpace: "nowrap" }}>
+      {text}
+    </span>
+  );
   return (
     <PanelSectionRow>
-      <Field label={text} childrenLayout="below" childrenContainerWidth="max" bottomSeparator="none">
+      <Field label={small} childrenLayout="below" childrenContainerWidth="max" bottomSeparator="none">
         {/* No transition and never indeterminate once the run started: the
             bar is measured monotonic in the backend, and the only dips left
             on the recordings (codespace 2026-11-23, 5 frames/s) were the

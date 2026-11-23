@@ -206,6 +206,17 @@ class FlatpakLiveTableTests(unittest.TestCase):
         c.t += 100
         self.assertEqual(tr.snapshot()["overall"], tr.snapshot()["overall"])
 
+    def test_bytes_for_the_row_text(self):
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        self.assertNotIn("mbTotal", tr.snapshot())
+        tr.feed(self.GIANT)
+        tr.feed("1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub    73.9 MB / 147.8 MB")
+        s = tr.snapshot()
+        self.assertEqual((s["mbDone"], s["mbTotal"]), (74, 702))
+        tr.feed("[*] Downloading netsock...")
+        self.assertNotIn("mbTotal", tr.snapshot())
+
     def test_the_second_table_the_bundle_cannot_pull_the_bar_back(self):
         tr, c = tracker()
         tr.enter("cloudredirect_app")

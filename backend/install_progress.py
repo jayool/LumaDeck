@@ -284,6 +284,14 @@ class InstallProgress:
         # Never backwards, whatever the inputs do (a flatpak ref count that
         # re-learns its total, a repeated line): the reported value only grows.
         self._shown = max(self._shown, round(_OFFSET[self.phase] + weight * frac, 1))
-        return {"phase": self.phase, "progress": label, "percent": self.percent,
-                "overall": self._shown,
-                "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail}
+        out = {"phase": self.phase, "progress": label, "percent": self.percent,
+               "overall": self._shown,
+               "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail}
+        # The app phase's bytes (flatpak's live table), for the row's text:
+        # "146 of 710 MB" moves every second where the bar alone would not.
+        if self.phase == "cloudredirect_app" and self._fp_live:
+            total = sum(t for _, t in self._fp_live.values())
+            if total > 0:
+                done = min(total, sum(d for d, _ in self._fp_live.values()))
+                out["mbDone"], out["mbTotal"] = int(round(done)), int(round(total))
+        return out
