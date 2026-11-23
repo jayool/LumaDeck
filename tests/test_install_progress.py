@@ -193,18 +193,40 @@ class FlatpakLiveTableTests(unittest.TestCase):
         self.assertEqual(set(tr._fp_live), {1, 2, 3, 5})                 # the (partial) Locale has no total yet
         self.assertAlmostEqual(tr._fp_live[1][0], 1.0 / 1024, places=4)
         tr.feed("1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub    73.9 MB / 147.8 MB")
-        self.assertAlmostEqual(tr.snapshot()["percent"], 100 * 73.9 / (147.8 * 2 + 14.6 + 392.1), places=1)
+        whole = 147.8 * 2 + 14.6 + 392.1
+        self.assertAlmostEqual(tr.snapshot()["percent"], 100 * 0.5 * 73.9 / whole, places=1)   # the download half
         tr.feed("4. [/] org.kde.Platform.Locale               6.10        i  flathub   0.5 MB / 1.2 MB")
-        self.assertEqual(tr._fp_live[4], (0.5, 1.2))                      # now it counts, with its real size
+        self.assertEqual(tr._fp_live[4][:2], [0.5, 1.2])                  # now it counts, with its real size
         tr.feed("5. [/] org.kde.Platform                      6.10        i  flathub   196.0 MB / 392.1 MB")
         p1 = tr.snapshot()["percent"]
         tr.feed("5. [/] org.kde.Platform                      6.10        i  flathub   190.0 MB / 392.1 MB")  # a stale redraw
         self.assertEqual(tr.snapshot()["percent"], p1)
         tr.feed("5. [✓] org.kde.Platform                      6.10        i  flathub   392.1 MB")
         self.assertGreater(tr.snapshot()["percent"], p1)
-        self.assertIsNone(tr._fp_ref_started)                              # no time fill competes with real bytes
-        c.t += 100
-        self.assertEqual(tr.snapshot()["overall"], tr.snapshot()["overall"])
+        self.assertIsNone(tr._fp_ref_started)                              # no ref time fill competes with real bytes
+
+    def test_the_deploy_half_moves_by_time_until_the_check(self):
+        # the 27 s plateau while flatpak wrote org.kde.Platform to disk (recording 2026-11-23)
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        tr.feed(" 1.     org.kde.Platform                6.10            i           flathub         < 392.1 MB")
+        tr.feed("1. [ ] org.kde.Platform 6.10 i flathub < 392.1 MB")
+        tr.feed("1. [/] org.kde.Platform 6.10 i flathub 392.1 MB / 392.1 MB")        # download complete
+        s0 = tr.snapshot()
+        self.assertAlmostEqual(s0["percent"], 50.0, places=1)                       # the download half, whole
+        self.assertTrue(s0["writing"])
+        c.t += 10
+        s1 = tr.snapshot()
+        self.assertGreater(s1["percent"], 50.0)
+        self.assertTrue(s1["writing"])
+        c.t += 60
+        s2 = tr.snapshot()
+        self.assertGreater(s2["percent"], s1["percent"])
+        self.assertLessEqual(s2["percent"], 50 + 50 * ip.TIME_FILL_CAP + 0.1)       # never the ✓'s 100 by time
+        tr.feed("1. [✓] org.kde.Platform 6.10 i flathub 392.1 MB")
+        s3 = tr.snapshot()
+        self.assertAlmostEqual(s3["percent"], 100.0, places=1)
+        self.assertFalse(s3["writing"])
 
     def test_bytes_for_the_row_text(self):
         tr, c = tracker()
@@ -213,7 +235,7 @@ class FlatpakLiveTableTests(unittest.TestCase):
         tr.feed(self.GIANT)
         tr.feed("1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub    73.9 MB / 147.8 MB")
         s = tr.snapshot()
-        self.assertEqual((s["mbDone"], s["mbTotal"]), (74, 702))
+        self.assertEqual((s["mbDone"], s["mbTotal"], s["writing"]), (74, 702, False))
         tr.feed("[*] Downloading netsock...")
         self.assertNotIn("mbTotal", tr.snapshot())
 

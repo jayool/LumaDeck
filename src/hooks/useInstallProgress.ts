@@ -47,9 +47,11 @@ export function useInstallProgress(active: boolean) {
           : "";
         // the app phase: flatpak's bytes so far, so the text moves while a
         // 400 MB runtime downloads
-        const mb = typeof s.mbTotal === "number" && s.mbTotal > 0
-          ? " · " + t("installMbOf", s.mbDone ?? 0, s.mbTotal)
-          : "";
+        const mb = s.writing
+          ? " · " + t("installWriting")
+          : typeof s.mbTotal === "number" && s.mbTotal > 0
+            ? " · " + t("installMbOf", s.mbDone ?? 0, s.mbTotal)
+            : "";
         if (phaseText) setLabel(step + phaseText + mb);
         setPercent(typeof s.overall === "number" ? s.overall : null);
       } catch { }

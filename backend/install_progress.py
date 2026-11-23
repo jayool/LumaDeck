@@ -74,6 +74,14 @@ for _id, _label, _w, _t, _trig in PHASES:
     _acc += _w
 assert _acc == 100, _acc
 TIME_FILL_CAP = 0.9
+# A flatpak runtime is half download (its bytes, reported) and half deploy
+# (writing it to disk, silent until the ✓): the deploy half fills by time
+# against DEPLOY_SEC_PER_MB × size (codespace 2026-11-23: 148 MB in ~10 s,
+# 392 MB in ~27 s). Half and half is a choice, not a measurement: on the
+# codespace's 150 MB/s the deploy is 90 % of a runtime's time, on a Deck's
+# wifi the download is; the split errs least without knowing which.
+DEPLOY_SHARE = 0.5
+DEPLOY_SEC_PER_MB = 0.07
 
 
 def phase_for_line(text):
@@ -120,8 +128,9 @@ class InstallProgress:
         self._fp_total = 0
         self._fp_ref_started = None
         self._fp_ref_pct = None
-        # the live table: by row, (MB so far, MB total) once known; a pending
-        # "(partial)" row has no usable total until flatpak reports its bytes
+        # the live table: by row, [MB so far, MB total, when the download
+        # completed (or None), checked ✓]; a pending "(partial)" row has no
+        # usable total until flatpak reports its bytes
         self._fp_live = {}
 
     # ── input ──────────────────────────────────────────────────────────
@@ -203,32 +212,65 @@ class InstallProgress:
 
     def _feed_flatpak_live(self, text: str) -> bool:
         """flatpak's live table rows in `text` (any number of them): bytes so
-        far and total per ref; the phase percent is the sum of the bytes so
-        far over the sum of the totals. True when rows were found."""
+        far and total per ref, when its download completed, and its ✓. The
+        phase percent is computed from them in snapshot() (the deploy half
+        moves with time). True when rows were found."""
         found = False
+        now = self._now()
         for m in FLATPAK_LIVE_ROW_RE.finditer(text):
             found = True
             row = int(m.group(1))
             mark = m.group(2)
+            prev = self._fp_live.get(row)
             if m.group(9):                                   # "x / y": in flight
                 done_mb, total_mb = _mb(m.group(7), m.group(8)), _mb(m.group(9), m.group(10))
             elif mark == "✓":                                # complete: whatever it was, all of it
-                total_mb = self._fp_live.get(row, (0.0, 0.0))[1] or _mb(m.group(7), m.group(8))
+                total_mb = (prev[1] if prev else 0.0) or _mb(m.group(7), m.group(8))
                 done_mb = total_mb
             elif m.group(11):                                # pending "(partial)": size unknown
                 continue
             else:                                            # pending "< y"
                 done_mb, total_mb = 0.0, _mb(m.group(7), m.group(8))
-            prev = self._fp_live.get(row)
             if prev and prev[0] > done_mb and prev[1] == total_mb:
                 continue                                     # a stale redraw
-            self._fp_live[row] = (done_mb, total_mb)
+            completed_at = prev[2] if prev else None
+            if total_mb > 0 and done_mb >= total_mb and completed_at is None:
+                completed_at = now
+            checked = (prev[3] if prev else False) or mark == "✓"
+            self._fp_live[row] = [done_mb, total_mb, completed_at, checked]
         if found:
-            total = sum(t for _, t in self._fp_live.values())
-            if total > 0:
-                self._fp_ref_pct = 0                         # real numbers: no time fill inside
-                self._set_percent(100.0 * sum(d for d, _ in self._fp_live.values()) / total)
+            self._fp_ref_pct = 0                             # real numbers: no ref time fill
+            self._set_percent(self._live_percent())
         return found
+
+    def _live_percent(self) -> float:
+        """The app phase from the live table: each runtime weighs its size;
+        its download half is its bytes, its deploy half is time since the
+        download completed (DEPLOY_SEC_PER_MB × size, capped) or whole at ✓."""
+        rows = [r for r in self._fp_live.values() if r[1] > 0]
+        whole = sum(r[1] for r in rows)
+        if whole <= 0:
+            return 0.0
+        now = self._now()
+        acc = 0.0
+        for done_mb, total_mb, completed_at, checked in rows:
+            dl = min(1.0, done_mb / total_mb)
+            if checked:
+                dep = 1.0
+            elif completed_at is not None:
+                dep = time_fill(now - completed_at, max(1.0, DEPLOY_SEC_PER_MB * total_mb))
+            else:
+                dep = 0.0
+            acc += total_mb * ((1 - DEPLOY_SHARE) * dl + DEPLOY_SHARE * dep)
+        return min(100.0, 100.0 * acc / whole)
+
+    def _writing(self) -> bool:
+        """flatpak has every reported byte and is writing to disk: the text
+        says so instead of the frozen MB count."""
+        rows = [r for r in self._fp_live.values() if r[1] > 0]
+        if not rows or any(0 < r[0] < r[1] for r in rows):
+            return False
+        return any(r[2] is not None and not r[3] for r in rows)
 
     def _flatpak_ref_share(self, ref: int, phase_expected: float):
         """(share of the phase this ref is, 0..1; seconds it should take): by
@@ -266,6 +308,8 @@ class InstallProgress:
         # real number rules, with the fill reached by then as a floor so a
         # low first reading (flatpak's 0 % after a second of fill) does not
         # pull the bar back.
+        if self.phase == "cloudredirect_app" and self._fp_live:
+            self._set_percent(self._live_percent())          # the deploy half moves with time
         if self.percent is None:
             frac = time_fill(self._now() - self.phase_started, expected)
         else:
@@ -288,10 +332,12 @@ class InstallProgress:
                "overall": self._shown,
                "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail}
         # The app phase's bytes (flatpak's live table), for the row's text:
-        # "146 of 710 MB" moves every second where the bar alone would not.
+        # "146/710 MB" moves every second where the bar alone would not, and
+        # "writing" while flatpak deploys a downloaded runtime in silence.
         if self.phase == "cloudredirect_app" and self._fp_live:
-            total = sum(t for _, t in self._fp_live.values())
+            total = sum(r[1] for r in self._fp_live.values())
             if total > 0:
-                done = min(total, sum(d for d, _ in self._fp_live.values()))
+                done = min(total, sum(r[0] for r in self._fp_live.values()))
                 out["mbDone"], out["mbTotal"] = int(round(done)), int(round(total))
+                out["writing"] = self._writing()
         return out

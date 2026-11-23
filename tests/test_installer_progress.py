@@ -39,7 +39,7 @@ class InstallerProgressTests(unittest.TestCase):
         for line in lines:
             note_output_line(state, line)
         v = status_view(state)
-        self.assertAlmostEqual(v["percent"], 100 * 146.8 / 147.8, places=1)
+        self.assertAlmostEqual(v["percent"], 100 * 0.5 * 146.8 / 147.8, places=1)   # the download half
 
     def test_state_view_carries_the_bar(self):
         state = new_install_state()

@@ -894,7 +894,7 @@ def get_quick_install_status() -> dict:
             sub = live_getter()
             # The bar: phase label, overall percent, step N of M, from the
             # running setup.sh (install_progress.py).
-            for k in ("progress", "phase", "percent", "overall", "step", "stepTotal", "detail", "mbDone", "mbTotal"):
+            for k in ("progress", "phase", "percent", "overall", "step", "stepTotal", "detail", "mbDone", "mbTotal", "writing"):
                 if k in sub:
                     state[k] = sub[k]
             if sub.get("status") == "failed" and sub.get("error"):
