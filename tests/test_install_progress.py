@@ -175,6 +175,51 @@ class NeverBackwardsTests(unittest.TestCase):
         self.assertEqual(tr.snapshot()["overall"], 100.0)
 
 
+class FlatpakLiveTableTests(unittest.TestCase):
+    # the rows a real Quick Install printed through the pty (codespace 2026-11-23 14:40),
+    # as they reached the log: several rows in one piece of text, redrawn in place
+    GIANT = ("1. [ ] org.freedesktop.Platform.GL.default   25.08       i  flathub < 147.8 MB "
+             "2. [ ] org.freedesktop.Platform.GL.default   25.08-extra i  flathub < 147.8 MB "
+             "3. [ ] org.freedesktop.Platform.codecs-extra 25.08-extra i  flathub  < 14.6 MB "
+             "4. [ ] org.kde.Platform.Locale               6.10        i  flathub < 401.9 MB (partial) "
+             "5. [ ] org.kde.Platform                      6.10        i  flathub < 392.1 MB "
+             "1. [|] org.freedesktop.Platform.GL.default   25.08       i  flathub < 147.8 MBInstalling 1/5… "
+             "1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub     1.0 kB / 147.8 MB")
+
+    def test_bytes_over_totals_with_partial_rows_left_out(self):
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        tr.feed(self.GIANT)
+        self.assertEqual(set(tr._fp_live), {1, 2, 3, 5})                 # the (partial) Locale has no total yet
+        self.assertAlmostEqual(tr._fp_live[1][0], 1.0 / 1024, places=4)
+        tr.feed("1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub    73.9 MB / 147.8 MB")
+        self.assertAlmostEqual(tr.snapshot()["percent"], 100 * 73.9 / (147.8 * 2 + 14.6 + 392.1), places=1)
+        tr.feed("4. [/] org.kde.Platform.Locale               6.10        i  flathub   0.5 MB / 1.2 MB")
+        self.assertEqual(tr._fp_live[4], (0.5, 1.2))                      # now it counts, with its real size
+        tr.feed("5. [/] org.kde.Platform                      6.10        i  flathub   196.0 MB / 392.1 MB")
+        p1 = tr.snapshot()["percent"]
+        tr.feed("5. [/] org.kde.Platform                      6.10        i  flathub   190.0 MB / 392.1 MB")  # a stale redraw
+        self.assertEqual(tr.snapshot()["percent"], p1)
+        tr.feed("5. [✓] org.kde.Platform                      6.10        i  flathub   392.1 MB")
+        self.assertGreater(tr.snapshot()["percent"], p1)
+        self.assertIsNone(tr._fp_ref_started)                              # no time fill competes with real bytes
+        c.t += 100
+        self.assertEqual(tr.snapshot()["overall"], tr.snapshot()["overall"])
+
+    def test_the_second_table_the_bundle_cannot_pull_the_bar_back(self):
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        tr.feed(self.GIANT)
+        tr.feed("5. [✓] org.kde.Platform                      6.10        i  flathub   392.1 MB / 392.1 MB")
+        for r in (1, 2, 3):
+            tr.feed("%d. [✓] x y i flathub 147.8 MB / 147.8 MB" % r)
+        high = tr.snapshot()["overall"]
+        tr.feed("1. [ ] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytes "
+                "1. [|] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytesInstalling… "
+                "1. [✓] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytesInstalling…bwrap: setuid use of bubblewrap is not supported")
+        self.assertGreaterEqual(tr.snapshot()["overall"], high)
+
+
 class RefTimeFillTests(unittest.TestCase):
     def test_a_silent_ref_moves_by_time_and_stays_short_of_the_next(self):
         # the 29 s plateau at 73 % (org.kde.Platform, ref 6 of 7, no terminal)

@@ -525,8 +525,16 @@ def split_output(buf: bytes) -> tuple[list[str], bytes]:
     progress is \r-separated), and the unterminated tail to keep for the next
     chunk."""
     text = buf.decode("utf-8", errors="replace")
-    parts = re.split(r"\r\n|\r|\n", text)
+    # Cursor-movement and erase codes count as separators too: flatpak
+    # redraws its live table in place with them and no \r or \n for a whole
+    # minute (a real Quick Install, codespace 2026-11-23), which left every
+    # redraw in the tail, unseen, until the install ended.
+    parts = re.split(r"\r\n|\r|\n|\x1b\[[0-9;?]*[A-Za-z]", text)
     tail = parts.pop()
+    k = tail.rfind("\x1b")
+    if k > 0:                                   # text, then an escape still being written
+        parts.append(tail[:k])
+        tail = tail[k:]
     return [p for p in parts if p.strip()], tail.encode("utf-8")
 
 

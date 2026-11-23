@@ -37,6 +37,16 @@ FLATPAK_ROW_RE = re.compile(
     r"^\s*(\d+)\.\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+<?\s*([\d.,]+)\s*([kKMG]?B)\b")
 # flatpak's progress line (pty): "Installing… ████ 45%  5.2 MB/s" or "Installing 3/7… ███ 45%"
 FLATPAK_PROG_RE = re.compile(r"^Installing(?:\s+(\d+)/(\d+))?…\s.*?(\d{1,3})%")
+# flatpak's live table on a pty (what a real Quick Install printed, codespace
+# 2026-11-23): one row per ref, redrawn in place with cursor codes, with the
+# bytes so far once a ref is in flight:
+#   " 1. [ ] org.freedesktop.Platform.GL.default  25.08  i  flathub  < 147.8 MB"
+#   " 1. [/] org.freedesktop.Platform.GL.default  25.08  i  flathub   1.0 kB / 147.8 MB"
+#   " 1. [✓] org.cloudredirect.CloudRedirect      master i  cloudredirect-origin  0 bytes"
+# Several rows can arrive in one piece of text, so this is searched, not matched.
+FLATPAK_LIVE_ROW_RE = re.compile(
+    r"(\d+)\.\s+\[(.)\]\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:<\s*)?([\d.,]+)\s*(bytes|[kKMG]B)"
+    r"(?:\s*/\s*([\d.,]+)\s*(bytes|[kKMG]B))?(\s*\(partial\))?")
 # flatpak without a terminal: one line per ref as it starts
 FLATPAK_REF_RE = re.compile(r"^Installing (?:runtime|app)/\S+")
 
@@ -76,7 +86,8 @@ def phase_for_line(text):
 
 def _mb(value: str, unit: str) -> float:
     n = float(value.replace(",", "."))
-    return {"B": n / 1048576, "kB": n / 1024, "KB": n / 1024, "MB": n, "GB": n * 1024}.get(unit, n)
+    return {"B": n / 1048576, "bytes": n / 1048576, "kB": n / 1024, "KB": n / 1024,
+            "MB": n, "GB": n * 1024}.get(unit, n)
 
 
 def time_fill(elapsed: float, expected: float) -> float:
@@ -109,6 +120,9 @@ class InstallProgress:
         self._fp_total = 0
         self._fp_ref_started = None
         self._fp_ref_pct = None
+        # the live table: by row, (MB so far, MB total) once known; a pending
+        # "(partial)" row has no usable total until flatpak reports its bytes
+        self._fp_live = {}
 
     # ── input ──────────────────────────────────────────────────────────
     def enter(self, phase: str) -> None:
@@ -123,6 +137,7 @@ class InstallProgress:
         self._fill_floor = 0.0
         self._fp_sizes, self._fp_ref, self._fp_total = {}, 0, 0
         self._fp_ref_started, self._fp_ref_pct = None, None
+        self._fp_live = {}
         if phase == "done":
             self.done = True
 
@@ -139,6 +154,8 @@ class InstallProgress:
             # codespace 2026-11-23). Ignored there.
             if self.phase != "cloudredirect_app":
                 self._set_percent(float(m.group(1)))
+            return
+        if self.phase == "cloudredirect_app" and self._feed_flatpak_live(text):
             return
         m = FLATPAK_ROW_RE.match(text)
         if m and "/" not in m.group(2) and m.group(4) in ("i", "u", "r"):
@@ -183,6 +200,35 @@ class InstallProgress:
             self.percent = value
         elif value > self.percent:
             self.percent = value
+
+    def _feed_flatpak_live(self, text: str) -> bool:
+        """flatpak's live table rows in `text` (any number of them): bytes so
+        far and total per ref; the phase percent is the sum of the bytes so
+        far over the sum of the totals. True when rows were found."""
+        found = False
+        for m in FLATPAK_LIVE_ROW_RE.finditer(text):
+            found = True
+            row = int(m.group(1))
+            mark = m.group(2)
+            if m.group(9):                                   # "x / y": in flight
+                done_mb, total_mb = _mb(m.group(7), m.group(8)), _mb(m.group(9), m.group(10))
+            elif mark == "✓":                                # complete: whatever it was, all of it
+                total_mb = self._fp_live.get(row, (0.0, 0.0))[1] or _mb(m.group(7), m.group(8))
+                done_mb = total_mb
+            elif m.group(11):                                # pending "(partial)": size unknown
+                continue
+            else:                                            # pending "< y"
+                done_mb, total_mb = 0.0, _mb(m.group(7), m.group(8))
+            prev = self._fp_live.get(row)
+            if prev and prev[0] > done_mb and prev[1] == total_mb:
+                continue                                     # a stale redraw
+            self._fp_live[row] = (done_mb, total_mb)
+        if found:
+            total = sum(t for _, t in self._fp_live.values())
+            if total > 0:
+                self._fp_ref_pct = 0                         # real numbers: no time fill inside
+                self._set_percent(100.0 * sum(d for d, _ in self._fp_live.values()) / total)
+        return found
 
     def _flatpak_ref_share(self, ref: int, phase_expected: float):
         """(share of the phase this ref is, 0..1; seconds it should take): by

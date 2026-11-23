@@ -21,6 +21,11 @@ class InstallerProgressTests(unittest.TestCase):
         self.assertEqual(tail, b"####")
         lines, tail = split_output(tail + b"  40.0%\r[+] done\n")
         self.assertEqual(lines, ["####  40.0%", "[+] done"])
+        # flatpak redraws its table with cursor codes and no newline for a minute:
+        # every escape sequence is a separator too, so the rows reach the tracker
+        lines, tail = split_output(b"1. [/] a b i f 1.0 kB / 147.8 MB\x1b[1A\x1b[K2. [ ] c d i f < 14.6 MB\x1b[")
+        self.assertEqual(lines, ["1. [/] a b i f 1.0 kB / 147.8 MB", "2. [ ] c d i f < 14.6 MB"])
+        self.assertEqual(tail, b"\x1b[")
 
     def test_state_view_carries_the_bar(self):
         state = new_install_state()

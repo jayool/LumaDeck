@@ -27,13 +27,32 @@ curl_bar() {
     done
     printf '\n'
 }
-# flatpak on a terminal: "Installing N/M… ████ P%  speed", redrawn with \r.
-flatpak_ref() {
-    local n=$1 m=$2 secs=$3 steps=$4 pct
-    for ((i = 1; i <= steps; i++)); do
-        pct=$(( i * 100 / steps ))
-        printf '\rInstalling %d/%d… %-20s %3d%%  %s' "$n" "$m" "$(printf '█%.0s' $(seq 1 $(( pct / 5 ))))" "$pct" "12.4 MB/s"
-        nap "$(awk -v s="$secs" -v k="$steps" 'BEGIN{printf "%.3f", s/k}')"
+# flatpak on a terminal, as a real Quick Install printed it through the pty
+# (codespace 2026-11-23): the plan table redrawn in place, one row per ref
+# with the bytes so far, separated by cursor codes rather than newlines.
+flatpak_table() {   # $1 = row in flight, $2 = MB done of that row; rows: name|branch|total_MB|done(1/0)
+    local cur=$1 done=$2 n=0 line
+    printf '\x1b[5A'
+    for spec in "org.freedesktop.Platform.GL.default|25.08|147.8" "org.freedesktop.Platform.GL.default|25.08-extra|147.8" \
+                "org.freedesktop.Platform.codecs-extra|25.08-extra|14.6" "org.kde.Platform.Locale|6.10|1.2" "org.kde.Platform|6.10|392.1"; do
+        n=$((n+1)); IFS='|' read -r name branch total <<<"$spec"
+        if (( n < cur )); then line=$(printf '%d. [✓] %-40s %-12s i  flathub  %7.1f MB / %7.1f MB' "$n" "$name" "$branch" "$total" "$total")
+        elif (( n == cur )); then line=$(printf '%d. [/] %-40s %-12s i  flathub  %7.1f MB / %7.1f MB' "$n" "$name" "$branch" "$done" "$total")
+        else line=$(printf '%d. [ ] %-40s %-12s i  flathub  < %7.1f MB' "$n" "$name" "$branch" "$total"); fi
+        printf '%s\x1b[K\x1b[1B\r' "$line"
+    done
+}
+flatpak_runtimes() {
+    echo "Looking for matches…"
+    echo "        ID                                    Branch      Op Remote  Download"
+    printf '\n\n\n\n\n'
+    local totals=(147.8 147.8 14.6 1.2 392.1) secs=(3 1 0.5 0.2 7) steps
+    for ((r = 1; r <= 5; r++)); do
+        steps=8
+        for ((i = 0; i <= steps; i++)); do
+            flatpak_table "$r" "$(awk -v t="${totals[r-1]}" -v i="$i" -v k="$steps" 'BEGIN{printf "%.1f", t*i/k}')"
+            nap "$(awk -v s="${secs[r-1]}" -v k="$steps" 'BEGIN{printf "%.3f", s/k}')"
+        done
     done
     printf '\n'
 }
@@ -56,23 +75,10 @@ curl_bar 8
 ok "Deployed /home/deck/.local/share/CloudRedirect/x86_64/cloud_redirect.so (64-bit client)"
 info "Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)..."
 curl_bar 4
-echo "Looking for matches…"
-echo "        ID                                              Branch          Op          Remote          Download"
-echo " 1.     org.freedesktop.Platform.GL.default             25.08           i           flathub         < 147.8 MB"
-echo " 2.     org.freedesktop.Platform.GL.default             25.08-extra     i           flathub         < 147.8 MB"
-echo " 3.     org.freedesktop.Platform.codecs-extra           25.08-extra     i           flathub         <  14.6 MB"
-echo " 4.     org.kde.KStyle.Adwaita                          6.10            i           flathub         <   8.6 MB"
-echo " 5.     org.kde.Platform.Locale                         6.10            i           flathub         <   1.2 MB (partial)"
-echo " 6.     org.kde.Platform                                6.10            i           flathub         < 392.1 MB"
-echo " 7.     org.cloudredirect.CloudRedirect                 master          i           cloudredirect   <   3.0 MB"
-echo
-flatpak_ref 1 7 3 12      # measured: 11 s on the codespace, scaled
-flatpak_ref 2 7 1 6
-flatpak_ref 3 7 1 4
-flatpak_ref 4 7 0.5 3
-flatpak_ref 5 7 0.3 2
-flatpak_ref 6 7 7 20      # measured: 30 s
-flatpak_ref 7 7 0.5 3
+flatpak_runtimes
+echo "        ID                              Branch Op Remote               Download"
+printf '1. [ ] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytes\r1. [✓] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytes\n'
+nap 0.5
 ok "CloudRedirect app installed (sign into your provider from Desktop)."
 ok "Deployed /home/deck/.local/share/CloudRedirect/cloud_redirect_cli (from the flatpak)"
 info "Downloading netsock..."
