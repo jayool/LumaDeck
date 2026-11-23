@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { ACHIEVEMENTS_ENABLED, SLSSTEAM_TAB_ENABLED } from "../features";
+import { useInstallProgress } from "../hooks/useInstallProgress";
+import { InstallProgressRow } from "../components/InstallProgressRow";
 import {
   PanelSection,
   PanelSectionRow,
@@ -210,9 +212,15 @@ export function Settings() {
 
   // Run a fix action (reinject / apply_component / install), then restart Steam
   // to apply and refresh the view. All of these own the steam.sh ordering.
-  const runFix = async (fn: () => Promise<any>) => {
+  // `install` marks the fixes that run setup.sh (Update, Repair, Reinstall):
+  // the progress row shows under the button while they work.
+  const [applyingInstall, setApplyingInstall] = useState(false);
+  const installProgress = useInstallProgress(applyingInstall);
+  const runFix = async (fn: () => Promise<any>, install = false) => {
     setApplyingFix(true);
+    if (install) setApplyingInstall(true);
     const r: any = await fn();
+    setApplyingInstall(false);
     if (r?.success) {
       await restartSteam();
       await reloadStatus();
@@ -1190,7 +1198,7 @@ export function Settings() {
             // Steam moved on and the broken component already shipped support
             // for the new build: Update is the fix, not a downgrade.
             label = t("sysUpdate");
-            fire = () => runFix(() => reinjectInstalled());
+            fire = () => runFix(() => reinjectInstalled(), true);
           } else if (primary === "unpin") {
             // Broken on a client nothing hooks while our pin holds it, and
             // Valve's build is supported: let Steam update.
@@ -1212,7 +1220,7 @@ export function Settings() {
             // Repair re-runs setup.sh (reinject / finish the install) and restarts.
             // "Repair", not "Restart Steam", because a manual restart doesn't fix it.
             label = t("repair");
-            fire = () => runFix(() => reinjectInstalled());
+            fire = () => runFix(() => reinjectInstalled(), true);
           } else if (primary === "restart") {
             label = t("restartSteam");
             busyLabel = t("restartingSteam");
@@ -1223,7 +1231,7 @@ export function Settings() {
             // missing), "Install" only on a fresh device.
             label = coreInstalled ? t("reinstallDeps") : t("installDeps");
             fire = () => runFix(() =>
-              coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
+              coreInstalled ? reinjectInstalled() : applyComponent("core", "install"), true);
           }
           // Reinstalling while the pin holds a client the latest SLSsteam no
           // longer hooks would break Steam (plan_setup refuses it): no button;
@@ -1245,12 +1253,15 @@ export function Settings() {
               ? t(confirmKind === "desktop" ? "confirmContinuesDesktop" : "confirmRestartsSteam")
               : label;
           return (
-            <PanelSectionRow>
-              <ButtonItem layout="below" disabled={applyingFix}
-                description={desc} onClick={onClick}>
-                {shown}
-              </ButtonItem>
-            </PanelSectionRow>
+            <>
+              <PanelSectionRow>
+                <ButtonItem layout="below" disabled={applyingFix}
+                  description={desc} onClick={onClick}>
+                  {shown}
+                </ButtonItem>
+              </PanelSectionRow>
+              {applyingInstall && <InstallProgressRow {...installProgress} />}
+            </>
           );
         })()}
       </PanelSection>

@@ -24,7 +24,7 @@ import {
   checkStuckUpdates,
   getCredentialStatus,
   quickInstall,
-  getQuickInstallStatus,
+
   reinjectInstalled,
   retryInjection,
   runDesktopHandoffReal,
@@ -36,7 +36,8 @@ import {
   ComponentsStatus,
   SystemStatusActions,
 } from "../components/SystemStatus";
-import { formatElapsed } from "../format";
+import { useInstallProgress } from "../hooks/useInstallProgress";
+import { InstallProgressRow } from "../components/InstallProgressRow";
 import { ROUTE_SETTINGS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { setRefreshHandler, setRefreshing } from "../refresh";
 import { ACHIEVEMENTS_ENABLED } from "../features";
@@ -88,13 +89,11 @@ export function GameList() {
   const [sysBusy, setSysBusy] = useState(false);
   const [quickInstalling, setQuickInstalling] = useState(false);
   const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
-  const [quickProgress, setQuickProgress] = useState("");
-  // A download's percent from setup.sh (curl's bar), null between downloads;
-  // and when the run started, so the row visibly moves even while a step
-  // prints nothing (the flatpak runtime pull takes minutes).
-  const [quickPercent, setQuickPercent] = useState<number | null>(null);
-  const [quickStartedAt, setQuickStartedAt] = useState(0);
-  const [quickNow, setQuickNow] = useState(0);
+  // Live progress of the setup.sh run behind Quick Install, and behind the
+  // System status Update / Repair buttons (same backend state).
+  const quickProgress = useInstallProgress(quickInstalling);
+  const [sysInstalling, setSysInstalling] = useState(false);
+  const sysProgress = useInstallProgress(sysInstalling);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
   const [pendingGameInfo, setPendingGameInfo] = useState<any>(null);
   const [cred, setCred] = useState<any>(null);
@@ -119,9 +118,13 @@ export function GameList() {
 
   // Run a system action (restart/repair/update/...), keeping a single busy flag
   // so the rows disable while it works, then refresh the status.
-  const runSysAction = useCallback(async (fn: () => Promise<void>) => {
+  // `install` marks the actions that run setup.sh (Update, Repair): the
+  // progress row shows under the rows while they work.
+  const runSysAction = useCallback(async (fn: () => Promise<void>, install = false) => {
     setSysBusy(true);
+    if (install) setSysInstalling(true);
     try { await fn(); } catch { } finally {
+      setSysInstalling(false);
       setSysBusy(false);
       await refreshStatus();
     }
@@ -474,7 +477,7 @@ export function GameList() {
       const r = await reinjectInstalled();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
-    }),
+    }, true),
     downgrade: () => runSysAction(async () => {
       // Arm the one-shot Desktop autostart (headcrab downgrade + lumalinux
       // re-inject) and switch to Desktop. The script runs there and returns to
@@ -493,7 +496,7 @@ export function GameList() {
       const r = await reinjectInstalled();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
-    }),
+    }, true),
     pluginUpdate: () => runSysAction(async () => {
       const r = await downloadUpdateToDownloads();
       if (r?.success) toast(t("sysPluginUpdate"), t("updateZipSaved", r.path || "Downloads"), 8000);
@@ -521,31 +524,8 @@ export function GameList() {
     // the fix. (Until 2026-10-15 an off-pin Deck was sent to Desktop to run the
     // same setup.sh there, for a downgrade that path no longer includes.)
     setQuickInstalling(true);
-    setQuickProgress(t("quickInstallStarting"));
-    setQuickPercent(null);
-    const startedAt = Date.now();
-    setQuickStartedAt(startedAt);
-    setQuickNow(startedAt);
-
-    const poll = setInterval(async () => {
-      setQuickNow(Date.now());
-      try {
-        const s = await getQuickInstallStatus();
-        // The backend names the phase (installer.INSTALL_PHASES); the label is
-        // ours so it is translated. Its English text is the fallback for a
-        // phase this build does not know.
-        const key = s.phase ? `installPhase_${s.phase}` : "";
-        const label = key && t(key) !== key ? t(key) : (s.progress || "");
-        if (label) setQuickProgress(label);
-        setQuickPercent(typeof s.percent === "number" ? s.percent : null);
-      } catch { }
-    }, 1000);
-
     const result = await quickInstall();
-    clearInterval(poll);
     setQuickInstalling(false);
-    setQuickProgress("");
-    setQuickPercent(null);
 
     // Refresh status so the onboarding entry hides once components land.
     await refreshStatus();
@@ -695,16 +675,7 @@ export function GameList() {
               silent step (the flatpak runtime) still reads as alive. The old
               plain text line froze for the whole download (report 2026-11-21).
               A DIRECT PanelSectionRow child, like the Add Game bar above. */}
-          {quickInstalling && (
-            <PanelSectionRow>
-              <ProgressBarWithInfo
-                indeterminate={quickPercent === null}
-                nProgress={quickPercent ?? 0}
-                sOperationText={quickProgress}
-                sTimeRemaining={quickStartedAt ? formatElapsed(quickNow - quickStartedAt) : ""}
-              />
-            </PanelSectionRow>
-          )}
+          {quickInstalling && <InstallProgressRow {...quickProgress} />}
         </PanelSection>
       )}
 
@@ -713,6 +684,7 @@ export function GameList() {
         stuck={stuckUpdates}
         busy={sysBusy}
         actions={sysActions}
+        progress={sysInstalling ? sysProgress : null}
       />
 
       <PanelSection title={t("addGame")}>

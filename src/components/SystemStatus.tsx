@@ -2,6 +2,7 @@ import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
 import { useRef, useState, useEffect } from "react";
 import { FaExclamationTriangle, FaArrowCircleUp } from "react-icons/fa";
 import { useT } from "../i18n";
+import { InstallProgressRow } from "./InstallProgressRow";
 
 // --- The unified component-status shape (matches backend get_components_status) ---
 // Canonical state set, shared by all three components. not_authed / disabled
@@ -445,12 +446,14 @@ export function buildRows(
 // One native surface for both "something's wrong" and "something's new". Renders
 // nothing when there's nothing to say. Replaces HealthBanner + UpdatesBanner.
 export function SystemStatus({
-  status, stuck, busy, actions,
+  status, stuck, busy, actions, progress = null,
 }: {
   status: ComponentsStatus | null;
   stuck: { appid: number; name: string }[];
   busy: boolean;
   actions: SystemStatusActions;
+  // The setup.sh run behind Update / Repair while it works (useInstallProgress).
+  progress?: { label: string; percent: number | null; elapsed: string } | null;
 }) {
   const t = useT();
   // Which row is mid-confirm (first tap done, waiting for the second).
@@ -520,6 +523,7 @@ export function SystemStatus({
           </PanelSectionRow>
         );
       })}
+      {progress && <InstallProgressRow {...progress} />}
     </PanelSection>
   );
 }
