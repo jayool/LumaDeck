@@ -491,6 +491,36 @@ def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:
     return True, "PlayNotOwnedGames absent (removed in SLSsteam 20260707+): nothing to flip"
 
 
+_BAR_RE = re.compile(r"^[#\s]*(\d{1,3}(?:\.\d+)?)%\s*$")
+
+
+def split_output(buf: bytes) -> tuple[list[str], bytes]:
+    """Complete lines in `buf`, split on \r, \n or \r\n (curl's progress bar
+    is \r-separated), and the unterminated tail to keep for the next chunk."""
+    text = buf.decode("utf-8", errors="replace")
+    parts = re.split(r"\r\n|\r|\n", text)
+    tail = parts.pop()
+    return [p for p in parts if p.strip()], tail.encode("utf-8")
+
+
+def note_output_line(state: dict, text: str) -> None:
+    """Fold one line of setup.sh output into `state`: a curl progress-bar line
+    ("####    42.3%") sets `percent` and leaves the step text alone; any other
+    line is the step text, clears the percent (a new step began) and is kept
+    in the plugin log, the only record of what the script did (which release
+    it fetched, which step failed)."""
+    text = text.strip()
+    if not text:
+        return
+    m = _BAR_RE.match(text)
+    if m:
+        state["percent"] = min(100.0, float(m.group(1)))
+        return
+    state["progress"] = text
+    state["percent"] = None
+    logger.info("setup.sh: %s", text)
+
+
 async def install_via_setup(gamemode: bool = True) -> dict:
     """WS2: install the whole unlock stack via lumalinux/setup.sh (wrapper model).
 
@@ -504,7 +534,7 @@ async def install_via_setup(gamemode: bool = True) -> dict:
     handles both modes itself. Idempotent, so this is also the repair/reinject path.
     """
     global SETUP_INSTALL_STATE
-    SETUP_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
+    SETUP_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None, "percent": None}
     logger.info("LumaDeck: install_via_setup() entered (url=%s)", SETUP_SH_URL)
 
     tmp_dir = None
@@ -591,16 +621,23 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         )
 
         async def _read_output():
+            # Read by chunks and split on \r as well as \n: curl's
+            # --progress-bar (the SLSsteam / CloudRedirect downloads) redraws
+            # one line with carriage returns and no newline, so a readline()
+            # loop saw nothing for the whole download and the QAM looked stuck
+            # (a user's report, 2026-11-21). A bar line becomes the percent;
+            # any other line is the step text and goes to the plugin log.
+            pending = b""
             while True:
-                line = await process.stdout.readline()
-                if not line:
+                chunk = await process.stdout.read(4096)
+                if not chunk:
                     break
-                text = line.decode("utf-8", errors="replace").rstrip()
-                SETUP_INSTALL_STATE["progress"] = text.strip()
-                # The script's own output is the only record of what it did
-                # (which release it fetched, which step failed): keep it in the
-                # plugin log, not just on screen for a second.
-                logger.info("setup.sh: %s", text)
+                pending += chunk
+                lines, pending = split_output(pending)
+                for text in lines:
+                    note_output_line(SETUP_INSTALL_STATE, text)
+            if pending.strip():
+                note_output_line(SETUP_INSTALL_STATE, pending.decode("utf-8", errors="replace"))
 
         asyncio.create_task(_read_output())
         await process.wait()
@@ -754,6 +791,9 @@ def get_quick_install_status() -> dict:
             sub = live_getter()
             if sub.get("progress"):
                 state["progress"] = sub["progress"]
+            # A download's percent (curl's bar), None between downloads: the
+            # QAM shows a real bar for it and an indeterminate one otherwise.
+            state["percent"] = sub.get("percent")
             if sub.get("status") == "failed" and sub.get("error"):
                 state["error"] = sub["error"]
     return state

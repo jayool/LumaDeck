@@ -36,6 +36,7 @@ import {
   ComponentsStatus,
   SystemStatusActions,
 } from "../components/SystemStatus";
+import { formatElapsed } from "../format";
 import { ROUTE_SETTINGS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { setRefreshHandler, setRefreshing } from "../refresh";
 import { ACHIEVEMENTS_ENABLED } from "../features";
@@ -88,6 +89,12 @@ export function GameList() {
   const [quickInstalling, setQuickInstalling] = useState(false);
   const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
   const [quickProgress, setQuickProgress] = useState("");
+  // A download's percent from setup.sh (curl's bar), null between downloads;
+  // and when the run started, so the row visibly moves even while a step
+  // prints nothing (the flatpak runtime pull takes minutes).
+  const [quickPercent, setQuickPercent] = useState<number | null>(null);
+  const [quickStartedAt, setQuickStartedAt] = useState(0);
+  const [quickNow, setQuickNow] = useState(0);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
   const [pendingGameInfo, setPendingGameInfo] = useState<any>(null);
   const [cred, setCred] = useState<any>(null);
@@ -515,14 +522,20 @@ export function GameList() {
     // same setup.sh there, for a downgrade that path no longer includes.)
     setQuickInstalling(true);
     setQuickProgress(t("quickInstallStarting"));
+    setQuickPercent(null);
+    const startedAt = Date.now();
+    setQuickStartedAt(startedAt);
+    setQuickNow(startedAt);
 
     const poll = setInterval(async () => {
+      setQuickNow(Date.now());
       try {
         const s = await getQuickInstallStatus();
         const step = s.step
           ? `[${(s.stepIndex ?? 0) + 1}/${s.totalSteps ?? 2}] ${s.step} — `
           : "";
         if (s.progress) setQuickProgress(`${step}${s.progress}`);
+        setQuickPercent(typeof s.percent === "number" ? s.percent : null);
       } catch { }
     }, 1000);
 
@@ -530,6 +543,7 @@ export function GameList() {
     clearInterval(poll);
     setQuickInstalling(false);
     setQuickProgress("");
+    setQuickPercent(null);
 
     // Refresh status so the onboarding entry hides once components land.
     await refreshStatus();
@@ -673,11 +687,20 @@ export function GameList() {
                   : t("quickInstall")}
             </ButtonItem>
           </PanelSectionRow>
-          {quickInstalling && quickProgress && (
+          {/* Steam's own progress row: a real bar while setup.sh downloads
+              something (curl's percent), an indeterminate one otherwise, with
+              the step text and the elapsed time underneath, so a minutes-long
+              silent step (the flatpak runtime) still reads as alive. The old
+              plain text line froze for the whole download (report 2026-11-21).
+              A DIRECT PanelSectionRow child, like the Add Game bar above. */}
+          {quickInstalling && (
             <PanelSectionRow>
-              <div style={{ fontSize: "11px", color: "#1a9fff", wordBreak: "break-word" }}>
-                {quickProgress}
-              </div>
+              <ProgressBarWithInfo
+                indeterminate={quickPercent === null}
+                nProgress={quickPercent ?? 0}
+                sOperationText={quickProgress}
+                sTimeRemaining={quickStartedAt ? formatElapsed(quickNow - quickStartedAt) : ""}
+              />
             </PanelSectionRow>
           )}
         </PanelSection>
