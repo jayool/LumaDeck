@@ -528,8 +528,12 @@ def split_output(buf: bytes) -> tuple[list[str], bytes]:
     # Cursor-movement and erase codes count as separators too: flatpak
     # redraws its live table in place with them and no \r or \n for a whole
     # minute (a real Quick Install, codespace 2026-11-23), which left every
-    # redraw in the tail, unseen, until the install ended.
-    parts = re.split(r"\r\n|\r|\n|\x1b\[[0-9;?]*[A-Za-z]", text)
+    # redraw in the tail, unseen, until the install ended. Style codes
+    # (ESC[...m: faint, green, reset) are NOT separators: flatpak wraps its
+    # bar, its percent and the ✓ in them, and splitting there handed the
+    # tracker "Installing 1/5…", "████▊", "84%" and "1. [", "✓", "] org…"
+    # as separate pieces that matched nothing (the 14:51 run's log).
+    parts = re.split(r"\r\n|\r|\n|\x1b\[[0-9;?]*[A-LN-Za-ln-z]", text)
     tail = parts.pop()
     k = tail.rfind("\x1b")
     if k > 0:                                   # text, then an escape still being written
