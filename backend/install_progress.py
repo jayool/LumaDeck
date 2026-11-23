@@ -97,12 +97,18 @@ class InstallProgress:
         self.phase = None           # current phase id, "done" at the end
         self.phase_started = self._now()
         self.percent = None         # real progress inside the phase, 0..100, or None
+        self._fill_floor = 0.0      # the time fill shown when the first real reading arrived
+        self._shown = 0.0           # the overall value last reported: the bar never goes below it
         self.detail = ""            # the last script line, for the log / debugging
         self.done = False
-        # flatpak: sizes (MB) by 1-based row from its plan table, and the ref in progress
+        # flatpak: sizes (MB) by 1-based row from its plan table, the ref in
+        # progress, when it began, and whether flatpak reports a percent
+        # inside it (a terminal) or only that it began (no terminal)
         self._fp_sizes = {}
         self._fp_ref = 0
         self._fp_total = 0
+        self._fp_ref_started = None
+        self._fp_ref_pct = None
 
     # ── input ──────────────────────────────────────────────────────────
     def enter(self, phase: str) -> None:
@@ -114,7 +120,9 @@ class InstallProgress:
         self.phase = phase
         self.phase_started = self._now()
         self.percent = None
+        self._fill_floor = 0.0
         self._fp_sizes, self._fp_ref, self._fp_total = {}, 0, 0
+        self._fp_ref_started, self._fp_ref_pct = None, None
         if phase == "done":
             self.done = True
 
@@ -141,13 +149,19 @@ class InstallProgress:
         if m:
             ref = int(m.group(1)) if m.group(1) else max(1, self._fp_ref or 1)
             total = int(m.group(2)) if m.group(2) else max(self._fp_total, ref)
+            if ref != self._fp_ref:
+                self._fp_ref_started = self._now()
             self._fp_ref, self._fp_total = ref, max(total, self._fp_total)
-            self._set_percent(self._flatpak_percent(ref, int(m.group(3))))
+            self._fp_ref_pct = int(m.group(3))
+            self._set_percent(self._flatpak_percent(ref, self._fp_ref_pct))
             return
         if FLATPAK_REF_RE.match(text):
-            # no terminal: a ref began; the previous ones are complete
+            # no terminal: a ref began; the previous ones are complete. Inside
+            # it nothing will be reported: snapshot() fills its share by time.
             self._fp_ref += 1
             self._fp_total = max(self._fp_total, self._fp_ref)
+            self._fp_ref_started = self._now()
+            self._fp_ref_pct = None
             self._set_percent(self._flatpak_percent(self._fp_ref, 0))
             return
         self.detail = text
@@ -160,8 +174,26 @@ class InstallProgress:
         curl bar in the same phase, a flatpak ref count that re-learns its
         total) keeps the higher one."""
         value = max(0.0, min(100.0, value))
-        if self.percent is None or value > self.percent:
+        if self.percent is None:
+            # the first real reading: whatever the time fill showed until now
+            # stays as the floor, so a low first reading does not pull back
+            idx = PHASE_IDS.index(self.phase) if self.phase in PHASE_IDS else None
+            if idx is not None:
+                self._fill_floor = time_fill(self._now() - self.phase_started, PHASES[idx][3])
             self.percent = value
+        elif value > self.percent:
+            self.percent = value
+
+    def _flatpak_ref_share(self, ref: int, phase_expected: float):
+        """(share of the phase this ref is, 0..1; seconds it should take): by
+        size where the plan table gave sizes, by count otherwise."""
+        total = max(self._fp_total, ref)
+        if self._fp_sizes and all(i in self._fp_sizes for i in range(1, total + 1)):
+            whole = sum(self._fp_sizes.values()) or 1.0
+            share = self._fp_sizes[ref] / whole
+        else:
+            share = 1.0 / total
+        return share, max(1.0, phase_expected * share)
 
     def _flatpak_percent(self, ref: int, pct: int) -> float:
         """Progress of the whole flatpak install: refs before `ref` complete,
@@ -184,11 +216,28 @@ class InstallProgress:
                     "overall": 0.0, "step": 0, "stepTotal": TOTAL_STEPS, "detail": self.detail}
         idx = PHASE_IDS.index(self.phase)
         _id, label, weight, expected, _trig = PHASES[idx]
-        # The time fill runs until the first real reading; a first reading
-        # below it (flatpak's 0 % after a second of fill) must not pull the
-        # bar back, so the shown fraction is the higher of the two.
-        fill = time_fill(self._now() - self.phase_started, expected)
-        frac = max(fill, self.percent / 100.0) if self.percent is not None else fill
+        # The time fill runs until the first real reading; from then on the
+        # real number rules, with the fill reached by then as a floor so a
+        # low first reading (flatpak's 0 % after a second of fill) does not
+        # pull the bar back.
+        if self.percent is None:
+            frac = time_fill(self._now() - self.phase_started, expected)
+        else:
+            frac = max(self._fill_floor, self.percent / 100.0)
+        # flatpak without a terminal says only which ref began: inside it the
+        # bar would sit still for the whole download (29 s at 73 % on the
+        # 392 MB org.kde.Platform, measured on the Quick Install video,
+        # codespace 2026-11-23). Fill the ref's own share by time, against
+        # the seconds its size would take at the phase's expected pace,
+        # capped like any silent phase, never reaching the next ref.
+        if (self.phase == "cloudredirect_app" and self._fp_ref and self._fp_ref_pct is None
+                and self._fp_ref_started is not None and self.percent is not None):
+            share, ref_expected = self._flatpak_ref_share(self._fp_ref, expected)
+            ref_fill = time_fill(self._now() - self._fp_ref_started, ref_expected) * share
+            frac = max(frac, min(1.0, self.percent / 100.0 + ref_fill))
+        # Never backwards, whatever the inputs do (a flatpak ref count that
+        # re-learns its total, a repeated line): the reported value only grows.
+        self._shown = max(self._shown, round(_OFFSET[self.phase] + weight * frac, 1))
         return {"phase": self.phase, "progress": label, "percent": self.percent,
-                "overall": round(_OFFSET[self.phase] + weight * frac, 1),
+                "overall": self._shown,
                 "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail}

@@ -175,6 +175,39 @@ class NeverBackwardsTests(unittest.TestCase):
         self.assertEqual(tr.snapshot()["overall"], 100.0)
 
 
+class RefTimeFillTests(unittest.TestCase):
+    def test_a_silent_ref_moves_by_time_and_stays_short_of_the_next(self):
+        # the 29 s plateau at 73 % (org.kde.Platform, ref 6 of 7, no terminal)
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        for ref in ["Installing runtime/org.freedesktop.Platform.GL.default/x86_64/25.08",
+                    "Installing runtime/org.freedesktop.Platform.GL.default/x86_64/25.08-extra",
+                    "Installing runtime/org.freedesktop.Platform.codecs-extra/x86_64/25.08-extra",
+                    "Installing runtime/org.kde.KStyle.Adwaita/x86_64/6.10",
+                    "Installing runtime/org.kde.Platform.Locale/x86_64/6.10",
+                    "Installing runtime/org.kde.Platform/x86_64/6.10"]:
+            tr.feed(ref)
+        start = tr.snapshot()["overall"]
+        self.assertAlmostEqual(start, 9 + 80 * 5 / 6, places=1)     # 6 refs seen: 5 complete
+        c.t += 10
+        mid = tr.snapshot()["overall"]
+        self.assertGreater(mid, start)
+        c.t += 60
+        late = tr.snapshot()["overall"]
+        self.assertGreater(late, mid)
+        self.assertLess(late, 9 + 80 * 6 / 6)                         # never past the ref's end
+        tr.feed("Installing app/org.cloudredirect.CloudRedirect/x86_64/master")
+        self.assertGreaterEqual(tr.snapshot()["overall"], late)         # the next ref: forward only
+
+    def test_a_ref_with_a_real_percent_does_not_get_the_time_fill(self):
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        tr.feed("Installing 1/2… ████                 20%  5.2 MB/s")
+        p = tr.snapshot()["overall"]
+        c.t += 30
+        self.assertEqual(tr.snapshot()["overall"], p)
+
+
 class TimeFillTests(unittest.TestCase):
     def test_silent_phase_moves_with_time_and_never_fills(self):
         tr, c = tracker()
