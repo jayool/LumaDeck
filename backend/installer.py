@@ -492,6 +492,51 @@ def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:
 
 
 _BAR_RE = re.compile(r"^[#\s]*(\d{1,3}(?:\.\d+)?)%\s*$")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+# What the QAM shows while setup.sh runs: one short label per phase, chosen by
+# the line the script prints when the phase starts (lumalinux setup.sh, its
+# info()/ok() calls). Lines between two phase starts ("Seeded config.yaml",
+# "Deployed .../SLSsteam.so", "SLSsteam release: ...") change nothing: the
+# current phase stays on screen, so a raw script line never reaches the panel.
+# The script's full text goes to the plugin log. Order matters only for the
+# first match; needles are plain substrings of the script's messages.
+INSTALL_PHASES = (
+    # (substring of the setup.sh line, phase id, label shown)
+    ("Installing lumalinux unlock stack", "preparing", "Preparing…"),
+    ("Installing .NET 9 runtime", "dotnet", "Installing .NET…"),
+    ("Downloading SLSsteam", "slssteam", "Downloading SLSsteam…"),
+    ("Downloading CloudRedirect", "cloudredirect", "Downloading CloudRedirect…"),
+    ("Installing CloudRedirect app", "cloudredirect_app", "Installing CloudRedirect app"),
+    ("Downloading netsock", "netsock", "Downloading netsock…"),
+    ("Downloading lumalinux", "lumalinux", "Downloading lumalinux…"),
+    ("Runtime tools from", "tools", "Installing tools…"),
+    ("Guardian installed", "gamemode", "Setting up Game Mode…"),
+    ("Game Mode injection installed", "gamemode", "Setting up Game Mode…"),
+)
+# The plugin's own steps around the script, same shape.
+PHASE_LABELS = {
+    "preparing": "Preparing…",
+    "done": "Done",
+}
+PHASE_LABELS.update({pid: label for _, pid, label in INSTALL_PHASES})
+
+
+def phase_for_line(text: str):
+    """The (phase id, label) a setup.sh line starts, or None for a line that is
+    not a phase boundary."""
+    for needle, pid, label in INSTALL_PHASES:
+        if needle in text:
+            return pid, label
+    return None
+
+
+def set_phase(state: dict, phase: str) -> None:
+    """Enter a phase of the plugin's own (preparing, done): label + id, the
+    percent cleared (no download is running at a phase boundary)."""
+    state["phase"] = phase
+    state["progress"] = PHASE_LABELS.get(phase, phase)
+    state["percent"] = None
 
 
 def split_output(buf: bytes) -> tuple[list[str], bytes]:
@@ -504,21 +549,26 @@ def split_output(buf: bytes) -> tuple[list[str], bytes]:
 
 
 def note_output_line(state: dict, text: str) -> None:
-    """Fold one line of setup.sh output into `state`: a curl progress-bar line
-    ("####    42.3%") sets `percent` and leaves the step text alone; any other
-    line is the step text, clears the percent (a new step began) and is kept
-    in the plugin log, the only record of what the script did (which release
-    it fetched, which step failed)."""
-    text = text.strip()
+    """Fold one line of setup.sh output into `state`. A curl progress-bar line
+    ("####    42.3%") sets `percent` and changes nothing else. A line that
+    starts a phase (INSTALL_PHASES) sets `phase` + `progress` (the label) and
+    clears the percent. Any other line only lands in `detail` and the plugin
+    log, the only record of what the script did (which release it fetched,
+    which step failed). The script's colour codes are dropped: it prints them
+    whether or not a terminal is listening."""
+    text = _ANSI_RE.sub("", text).strip()
     if not text:
         return
     m = _BAR_RE.match(text)
     if m:
         state["percent"] = min(100.0, float(m.group(1)))
         return
-    state["progress"] = text
-    state["percent"] = None
+    state["detail"] = text
     logger.info("setup.sh: %s", text)
+    hit = phase_for_line(text)
+    if hit:
+        state["phase"], state["progress"] = hit
+        state["percent"] = None
 
 
 async def install_via_setup(gamemode: bool = True) -> dict:
@@ -534,14 +584,15 @@ async def install_via_setup(gamemode: bool = True) -> dict:
     handles both modes itself. Idempotent, so this is also the repair/reinject path.
     """
     global SETUP_INSTALL_STATE
-    SETUP_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None, "percent": None}
+    SETUP_INSTALL_STATE = {"status": "installing", "error": None, "percent": None, "phase": None, "progress": "", "detail": ""}
+    set_phase(SETUP_INSTALL_STATE, "preparing")
     logger.info("LumaDeck: install_via_setup() entered (url=%s)", SETUP_SH_URL)
 
     tmp_dir = None
     try:
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_setup_")
         script_path = os.path.join(tmp_dir, "setup.sh")
-        SETUP_INSTALL_STATE["progress"] = "Downloading setup.sh..."
+        SETUP_INSTALL_STATE["detail"] = "Downloading setup.sh..."
         if not await _download(SETUP_SH_URL, script_path):
             SETUP_INSTALL_STATE["status"] = "failed"
             SETUP_INSTALL_STATE["error"] = "Failed to download setup.sh"
@@ -575,7 +626,7 @@ async def install_via_setup(gamemode: bool = True) -> dict:
             SETUP_INSTALL_STATE["error"] = plan["refuse"]
             return {"success": False}
 
-        SETUP_INSTALL_STATE["progress"] = "Running installer..."
+        SETUP_INSTALL_STATE["detail"] = "Running installer..."
         # setup.sh is ENTIRELY $HOME-based (SLSsteam, config, wrapper, .dotnet,
         # systemd --user). Decky runs this backend as ROOT, so a plain `bash
         # setup.sh` would (a) install everything under /root — where Steam (uid
@@ -666,7 +717,7 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 # says when that is safe. (Lifting on install was the
                 # lift-and-install move that crash-looped Steam, 2026-10-14.)
                 SETUP_INSTALL_STATE["status"] = "done"
-                SETUP_INSTALL_STATE["progress"] = "Stack installed!"
+                set_phase(SETUP_INSTALL_STATE, "done")
         else:
             SETUP_INSTALL_STATE["status"] = "failed"
             SETUP_INSTALL_STATE["error"] = (
@@ -745,7 +796,8 @@ async def quick_install(gamemode: bool = True) -> dict:
         "step": steps[0][0],
         "stepIndex": 0,
         "totalSteps": len(steps),
-        "progress": "Starting Quick Install...",
+        "progress": PHASE_LABELS["preparing"],
+        "phase": "preparing",
         "error": None,
     }
     logger.info("LumaDeck: quick_install() entered")
@@ -774,7 +826,8 @@ async def quick_install(gamemode: bool = True) -> dict:
 
     QUICK_INSTALL_STATE["status"] = "done"
     QUICK_INSTALL_STATE["stepIndex"] = len(steps)
-    QUICK_INSTALL_STATE["progress"] = "Quick Install complete!"
+    QUICK_INSTALL_STATE["progress"] = PHASE_LABELS["done"]
+    QUICK_INSTALL_STATE["phase"] = "done"
     logger.info("LumaDeck: quick_install finished OK")
     return {"success": True}
 
@@ -791,6 +844,8 @@ def get_quick_install_status() -> dict:
             sub = live_getter()
             if sub.get("progress"):
                 state["progress"] = sub["progress"]
+            if sub.get("phase"):
+                state["phase"] = sub["phase"]
             # A download's percent (curl's bar), None between downloads: the
             # QAM shows a real bar for it and an indeterminate one otherwise.
             state["percent"] = sub.get("percent")
