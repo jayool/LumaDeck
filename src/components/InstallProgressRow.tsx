@@ -1,10 +1,11 @@
 import { Field, PanelSectionRow, ProgressBar } from "@decky/ui";
 
 /**
- * Progress of a setup.sh run in the QAM: the phase label and the elapsed
- * time as a Field's label, and Decky's plain ProgressBar below it, full
- * width (childrenLayout="below" + childrenContainerWidth="max"). A real bar
- * while something downloads (curl's percent), indeterminate otherwise.
+ * Progress of a setup.sh run in the QAM: "Step N of M · phase · elapsed" as
+ * a Field's label, and Decky's plain ProgressBar below it, full width
+ * (childrenLayout="below" + childrenContainerWidth="max"), showing the
+ * overall percent of the run (backend/install_progress.py); indeterminate
+ * only before the first status arrives.
  *
  * Not ProgressBarWithInfo: that one is an Item (label column left, control
  * right) and in the QAM's width the bar landed in the right half, off the

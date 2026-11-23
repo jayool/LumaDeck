@@ -40,21 +40,20 @@ class FakeInstallerTests(unittest.TestCase):
 
         def spy(state, text):
             orig(state, text)
-            if state.get("phase") and (not seen or seen[-1] != state["phase"]):
-                seen.append(state["phase"])
+            ph = state["tracker"].phase
+            if ph and (not seen or seen[-1] != ph):
+                seen.append(ph)
         installer.note_output_line = spy
         try:
             result = asyncio.run(installer.install_via_setup())
         finally:
             installer.note_output_line = orig
         self.assertEqual(result, {"success": True, "fake": True})
-        self.assertEqual(installer.get_setup_status()["status"], "done")
-        self.assertEqual(installer.get_setup_status()["phase"], "done")
+        st = installer.get_setup_status()
+        self.assertEqual((st["status"], st["phase"], st["overall"], st["step"]), ("done", "done", 100.0, 9))
+        # the real script's order (codespace 2026-11-23): .NET after the tools, Game Mode last
         self.assertEqual(seen, ["preparing", "slssteam", "cloudredirect", "cloudredirect_app",
-                                "netsock", "lumalinux", "tools", "gamemode"])
-        # a bar was seen inside a download phase at some point: percent went non-None
-        # (the final state has it cleared by the "done" phase)
-        self.assertIsNone(installer.get_setup_status()["percent"])
+                                "netsock", "lumalinux", "tools", "dotnet", "gamemode"])
 
 
 if __name__ == "__main__":

@@ -7,11 +7,12 @@ import { useT } from "../i18n";
 /**
  * Live progress of a setup.sh run (Quick Install, Update, Repair, Reinstall:
  * they all drive the same backend state, get_quick_install_status). While
- * `active`, polls once a second and returns the translated phase label
- * (installer.INSTALL_PHASES ids → installPhase_* strings, the backend's
- * English text as fallback), curl's percent for the download in flight (null
- * between downloads → indeterminate bar) and the time elapsed, so a silent
- * minutes-long step still reads as alive. Resets when `active` drops.
+ * `active`, polls once a second and returns the text for the row ("Step 4 of
+ * 9 · Installing CloudRedirect app · 2:10": the phase through i18n, the
+ * backend's English label as fallback) and the overall percent of the one bar
+ * (backend/install_progress.py: byte-weighted phases filled by curl's and
+ * flatpak's own numbers, a short capped time fill where nothing reports).
+ * Resets when `active` drops.
  */
 export function useInstallProgress(active: boolean) {
   const t = useT();
@@ -31,14 +32,18 @@ export function useInstallProgress(active: boolean) {
     setStartedAt(began);
     setNow(began);
     setLabel(t("installPhase_preparing"));
+    setPercent(0);
     const poll = setInterval(async () => {
       setNow(Date.now());
       try {
         const s: any = await getQuickInstallStatus();
         const key = s.phase ? `installPhase_${s.phase}` : "";
-        const text = key && t(key) !== key ? t(key) : (s.progress || "");
-        if (text) setLabel(text);
-        setPercent(typeof s.percent === "number" ? s.percent : null);
+        const phaseText = key && t(key) !== key ? t(key) : (s.progress || "");
+        const step = typeof s.step === "number" && s.step > 0 && typeof s.stepTotal === "number"
+          ? t("installStepOf", s.step, s.stepTotal) + "  ·  "
+          : "";
+        if (phaseText) setLabel(step + phaseText);
+        setPercent(typeof s.overall === "number" ? s.overall : null);
       } catch { }
     }, 1000);
     return () => clearInterval(poll);
