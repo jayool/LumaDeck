@@ -1,12 +1,15 @@
-import { PanelSectionRow, ProgressBarWithInfo } from "@decky/ui";
+import { Field, PanelSectionRow, ProgressBar } from "@decky/ui";
 
 /**
- * Steam's own progress row for a setup.sh run: a real bar while something
- * downloads (curl's percent), indeterminate otherwise, the phase label and
- * the elapsed time in the one info line. Exactly the shape of the Add Game
- * bar (GameDetail): a DIRECT PanelSectionRow child and sOperationText only.
- * sTimeRemaining is not used: it adds a second column to the info line that
- * the QAM has no room for.
+ * Progress of a setup.sh run in the QAM: the phase label and the elapsed
+ * time as a Field's label, and Decky's plain ProgressBar below it, full
+ * width (childrenLayout="below" + childrenContainerWidth="max"). A real bar
+ * while something downloads (curl's percent), indeterminate otherwise.
+ *
+ * Not ProgressBarWithInfo: that one is an Item (label column left, control
+ * right) and in the QAM's width the bar landed in the right half, off the
+ * edge, with the text clipped; layout="below" did not move it (codespace
+ * screenshots, 2026-11-23).
  */
 export function InstallProgressRow({ label, percent, elapsed }: {
   label: string;
@@ -16,15 +19,9 @@ export function InstallProgressRow({ label, percent, elapsed }: {
   const text = elapsed ? `${label}  ·  ${elapsed}` : label;
   return (
     <PanelSectionRow>
-      <ProgressBarWithInfo
-        // An Item: without layout="below" it keeps the left half for an empty
-        // label and squeezes the bar into the right half, off the QAM's edge,
-        // with the text clipped top-right (screenshot, codespace 2026-11-23).
-        layout="below"
-        indeterminate={percent === null}
-        nProgress={percent ?? 0}
-        sOperationText={text}
-      />
+      <Field label={text} childrenLayout="below" childrenContainerWidth="max" bottomSeparator="none">
+        <ProgressBar indeterminate={percent === null} nProgress={percent ?? 0} />
+      </Field>
     </PanelSectionRow>
   );
 }
