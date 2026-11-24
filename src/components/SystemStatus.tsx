@@ -274,7 +274,7 @@ export function buildRows(
       label: t("sysRecovery"), description: t("sysRecoveryDesc"),
       actionLabel: t("sysReenable"),
       onAction: actions.retry,
-      confirm: "restart", busyLabel: t("restartingSteam"),
+      confirm: "restart",   // busy label: the default "Working…" (setup.sh runs first; chosen 2026-11-24)
     });
   } else if (anyUnsupported && updateFixesBreak(status)) {
     // The component already shipped support for the new build: Update (one
@@ -326,7 +326,7 @@ export function buildRows(
       label: t("sysRecovery"), description: t("sysRecoveryDesc"),
       actionLabel: t("sysReenable"),
       onAction: actions.retry,
-      confirm: "restart", busyLabel: t("restartingSteam"),
+      confirm: "restart",   // busy label: the default "Working…" (setup.sh runs first; chosen 2026-11-24)
     });
   } else if (anyInjectLost || notComplete || anyNotLoaded) {
     // not_injected and a core half-install (SLSsteam xor lumalinux) need
