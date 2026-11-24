@@ -258,6 +258,21 @@ class FlatpakLiveTableTests(unittest.TestCase):
         self.assertAlmostEqual(s3["percent"], 100.0, places=1)
         self.assertFalse(s3["writing"])
 
+    def test_the_last_megabyte_counts_as_downloaded(self):
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        tr.feed("1. [ ] org.kde.Platform 6.10 i flathub < 392.1 MB")
+        tr.feed("1. [/] org.kde.Platform 6.10 i flathub 391.4 MB / 392.1 MB")   # flatpak's last redraw
+        s0 = tr.snapshot()
+        self.assertTrue(s0["writing"])
+        c.t += 10
+        self.assertGreater(tr.snapshot()["percent"], s0["percent"])             # the deploy half moves
+        tr.feed("1. [/] org.kde.Platform 6.10 i flathub 300.0 MB / 392.1 MB")   # still short of it: no
+        tr2, _ = tracker()
+        tr2.enter("cloudredirect_app")
+        tr2.feed("1. [/] org.kde.Platform 6.10 i flathub 300.0 MB / 392.1 MB")
+        self.assertFalse(tr2.snapshot()["writing"])
+
     def test_bytes_for_the_row_text(self):
         tr, c = tracker()
         tr.enter("cloudredirect_app")

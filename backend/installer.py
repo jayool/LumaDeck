@@ -882,6 +882,27 @@ async def quick_install(gamemode: bool = True) -> dict:
     return {"success": True}
 
 
+_APP_PHASE_LOGGED = None
+
+
+def _log_app_phase(snap: dict) -> None:
+    """One log line per visible change of the app phase (sub-phase, filler,
+    bytes, writing, overall): the plugin log is the only record of what
+    flatpak reported through the pty, and the bar's plateaus on the
+    recordings (2026-11-24) could not be traced without it. Polled once a
+    second, so at most one line a second."""
+    global _APP_PHASE_LOGGED
+    if snap.get("phase") != "cloudredirect_app":
+        _APP_PHASE_LOGGED = None
+        return
+    key = (snap.get("sub"), snap.get("filler"), snap.get("mbDone"), snap.get("mbTotal"),
+           snap.get("writing"), snap.get("overall"))
+    if key != _APP_PHASE_LOGGED:
+        _APP_PHASE_LOGGED = key
+        logger.info("app phase: sub=%s filler=%s mb=%s/%s writing=%s overall=%s",
+                    *key)
+
+
 def get_quick_install_status() -> dict:
     """Quick Install state, enriched with the live progress line of whichever
     sub-installer is running right now (so the UI shows real activity)."""
@@ -894,9 +915,11 @@ def get_quick_install_status() -> dict:
             sub = live_getter()
             # The bar: phase label, overall percent, step N of M, from the
             # running setup.sh (install_progress.py).
-            for k in ("progress", "phase", "percent", "overall", "step", "stepTotal", "detail", "mbDone", "mbTotal", "writing"):
+            for k in ("progress", "phase", "percent", "overall", "step", "stepTotal", "detail",
+                      "mbDone", "mbTotal", "writing", "sub", "filler"):
                 if k in sub:
                     state[k] = sub[k]
+            _log_app_phase(sub)
             if sub.get("status") == "failed" and sub.get("error"):
                 state["error"] = sub["error"]
     return state

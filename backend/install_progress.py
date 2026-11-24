@@ -89,6 +89,7 @@ TIME_FILL_CAP = 0.9
 # wifi the download is; the split errs least without knowing which.
 DEPLOY_SHARE = 0.5
 DEPLOY_SEC_PER_MB = 0.07
+DOWNLOAD_DONE_MB = 1.0
 # The app phase's sub-phases (snapshot()["sub"]; the frontend has the text):
 #   app_download     the bundle's curl bar
 #   runtime_download flatpak's runtime rows (plan table, live table, progress)
@@ -328,7 +329,11 @@ class InstallProgress:
             if prev and prev[0] > done_mb and prev[1] == total_mb:
                 continue                                     # a stale redraw
             completed_at = prev[2] if prev else None
-            if total_mb > 0 and done_mb >= total_mb and completed_at is None:
+            # Download complete at the last MB too: flatpak redraws its
+            # table when it feels like it, and the final "392.1 / 392.1"
+            # may never be printed before it goes silent to write the
+            # runtime; without this the deploy half would not start.
+            if total_mb > 0 and done_mb >= total_mb - DOWNLOAD_DONE_MB and completed_at is None:
                 completed_at = now
             checked = (prev[3] if prev else False) or mark == "✓"
             self._fp_live[key] = [done_mb, total_mb, completed_at, checked]
@@ -362,7 +367,7 @@ class InstallProgress:
         """flatpak has every reported byte and is writing to disk: the text
         says so instead of the frozen MB count."""
         rows = [r for r in self._fp_live.values() if r[1] > 0]
-        if not rows or any(0 < r[0] < r[1] for r in rows):
+        if not rows or any(0 < r[0] < r[1] - DOWNLOAD_DONE_MB for r in rows):
             return False
         return any(r[2] is not None and not r[3] for r in rows)
 
