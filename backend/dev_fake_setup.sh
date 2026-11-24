@@ -30,15 +30,20 @@ curl_bar() {
 # flatpak on a terminal, as a real Quick Install printed it through the pty
 # (codespace 2026-11-23): the plan table redrawn in place, one row per ref
 # with the bytes so far, separated by cursor codes rather than newlines.
-flatpak_table() {   # $1 = row in flight, $2 = MB done of that row; rows: name|branch|total_MB|done(1/0)
+# The Locale row is "(partial)": flatpak lists and reports the whole
+# runtime's size for it (401.9 MB) and fetches a couple of MB (the recording
+# of 2026-11-24: the total jumped by 402 MB when it went in flight). The
+# shape of its ✓ row is inferred from that recording, not captured.
+flatpak_table() {   # $1 = row in flight, $2 = MB done of that row; rows: name|branch|total_MB|shown_MB
     local cur=$1 done=$2 n=0 line
     printf '\x1b[5A'
-    for spec in "org.freedesktop.Platform.GL.default|25.08|147.8" "org.freedesktop.Platform.GL.default|25.08-extra|147.8" \
-                "org.freedesktop.Platform.codecs-extra|25.08-extra|14.6" "org.kde.Platform.Locale|6.10|1.2" "org.kde.Platform|6.10|392.1"; do
-        n=$((n+1)); IFS='|' read -r name branch total <<<"$spec"
-        if (( n < cur )); then line=$(printf '%d. [✓] %-40s %-12s i  flathub  %7.1f MB / %7.1f MB' "$n" "$name" "$branch" "$total" "$total")
-        elif (( n == cur )); then line=$(printf '%d. [/] %-40s %-12s i  flathub  %7.1f MB / %7.1f MB' "$n" "$name" "$branch" "$done" "$total")
-        else line=$(printf '%d. [ ] %-40s %-12s i  flathub  < %7.1f MB' "$n" "$name" "$branch" "$total"); fi
+    for spec in "org.freedesktop.Platform.GL.default|25.08|147.8|147.8" "org.freedesktop.Platform.GL.default|25.08-extra|147.8|147.8" \
+                "org.freedesktop.Platform.codecs-extra|25.08-extra|14.6|14.6" "org.kde.Platform.Locale|6.10|1.2|401.9" "org.kde.Platform|6.10|392.1|392.1"; do
+        n=$((n+1)); IFS='|' read -r name branch total shown <<<"$spec"
+        if (( n < cur )); then line=$(printf '%d. [✓] %-40s %-12s i  flathub  %7.1f MB' "$n" "$name" "$branch" "$shown")
+        elif (( n == cur )); then line=$(printf '%d. [/] %-40s %-12s i  flathub  %7.1f MB / %7.1f MB' "$n" "$name" "$branch" "$done" "$shown")
+        elif [[ "$name" == org.kde.Platform.Locale ]]; then line=$(printf '%d. [ ] %-40s %-12s i  flathub  < %7.1f MB (partial)' "$n" "$name" "$branch" "$shown")
+        else line=$(printf '%d. [ ] %-40s %-12s i  flathub  < %7.1f MB' "$n" "$name" "$branch" "$shown"); fi
         printf '%s\x1b[K\x1b[1B\r' "$line"
     done
 }
@@ -54,6 +59,10 @@ flatpak_runtimes() {
             nap "$(awk -v s="${secs[r-1]}" -v k="$steps" 'BEGIN{printf "%.3f", s/k}')"
         done
     done
+    # flatpak writes the big runtime to disk in silence (14 s on the
+    # codespace, recording 2026-11-24): the fillers rotate here
+    nap 16
+    flatpak_table 6 0
     printf '\n'
 }
 

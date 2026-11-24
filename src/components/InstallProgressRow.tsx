@@ -1,8 +1,8 @@
 import { Field, PanelSectionRow, ProgressBar } from "@decky/ui";
 
 /**
- * Progress of a setup.sh run in the QAM: "Step N of M · phase · elapsed" as
- * a Field's label, and Decky's plain ProgressBar below it, full width
+ * Progress of a setup.sh run in the QAM: "N/M · phase · elapsed" as a
+ * Field's label, and Decky's plain ProgressBar below it, full width
  * (childrenLayout="below" + childrenContainerWidth="max"), showing the
  * overall percent of the run (backend/install_progress.py); indeterminate
  * only before the first status arrives.

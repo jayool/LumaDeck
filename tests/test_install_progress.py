@@ -190,13 +190,25 @@ class FlatpakLiveTableTests(unittest.TestCase):
         tr, c = tracker()
         tr.enter("cloudredirect_app")
         tr.feed(self.GIANT)
-        self.assertEqual(set(tr._fp_live), {1, 2, 3, 5})                 # the (partial) Locale has no total yet
-        self.assertAlmostEqual(tr._fp_live[1][0], 1.0 / 1024, places=4)
+        GL, GLX, CODECS, LOCALE, PLATFORM = (("org.freedesktop.Platform.GL.default", "25.08"),
+                                             ("org.freedesktop.Platform.GL.default", "25.08-extra"),
+                                             ("org.freedesktop.Platform.codecs-extra", "25.08-extra"),
+                                             ("org.kde.Platform.Locale", "6.10"), ("org.kde.Platform", "6.10"))
+        self.assertEqual(set(tr._fp_live), {GL, GLX, CODECS, PLATFORM})    # the (partial) Locale has no total yet
+        self.assertEqual(tr._fp_partial, {LOCALE})
+        self.assertAlmostEqual(tr._fp_live[GL][0], 1.0 / 1024, places=4)
         tr.feed("1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub    73.9 MB / 147.8 MB")
         whole = 147.8 * 2 + 14.6 + 392.1
         self.assertAlmostEqual(tr.snapshot()["percent"], 100 * 0.5 * 73.9 / whole, places=1)   # the download half
-        tr.feed("4. [/] org.kde.Platform.Locale               6.10        i  flathub   0.5 MB / 1.2 MB")
-        self.assertEqual(tr._fp_live[4][:2], [0.5, 1.2])                  # now it counts, with its real size
+        # the partial Locale in flight: flatpak shows the whole runtime's size
+        # (recording 2026-11-24: the total jumped 702 → 1104 MB there); it
+        # weighs its bytes, the total barely moves
+        tr.feed("4. [/] org.kde.Platform.Locale               6.10        i  flathub   0.5 MB / 401.9 MB")
+        self.assertEqual(tr._fp_live[LOCALE][:2], [0.5, 0.5])
+        self.assertEqual(tr.snapshot()["mbTotal"], round(whole + 0.5))
+        tr.feed("4. [✓] org.kde.Platform.Locale               6.10        i  flathub   401.9 MB")
+        self.assertEqual(tr._fp_live[LOCALE][:2], [0.5, 0.5])
+        self.assertEqual(tr.snapshot()["mbTotal"], round(whole + 0.5))
         tr.feed("5. [/] org.kde.Platform                      6.10        i  flathub   196.0 MB / 392.1 MB")
         p1 = tr.snapshot()["percent"]
         tr.feed("5. [/] org.kde.Platform                      6.10        i  flathub   190.0 MB / 392.1 MB")  # a stale redraw
@@ -204,6 +216,24 @@ class FlatpakLiveTableTests(unittest.TestCase):
         tr.feed("5. [✓] org.kde.Platform                      6.10        i  flathub   392.1 MB")
         self.assertGreater(tr.snapshot()["percent"], p1)
         self.assertIsNone(tr._fp_ref_started)                              # no ref time fill competes with real bytes
+
+    def test_the_bar_follows_the_bytes_once_the_live_table_exists(self):
+        # the 30 s at 57 % (recording 2026-11-24): the plan table and the
+        # "Installing N/M… pct" line, in another row order, had sent the
+        # phase ahead of the bytes; now only the live rows count
+        tr, c = tracker()
+        tr.enter("cloudredirect_app")
+        tr.feed(" 1.     org.kde.Platform                6.10            i           flathub         < 392.1 MB")
+        tr.feed(" 2.     org.freedesktop.Platform.GL.default 25.08        i           flathub         < 147.8 MB")
+        tr.feed(self.GIANT)
+        tr.feed("1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub    40.0 MB / 147.8 MB")
+        p0 = tr.snapshot()["percent"]
+        tr.feed("Installing 2/5… ████████████ 95%")                         # would be (392 + 0.95 × 148) / 702
+        self.assertEqual(tr.snapshot()["percent"], p0)
+        tr.feed("1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub    80.0 MB / 147.8 MB")
+        self.assertGreater(tr.snapshot()["percent"], p0)
+        tr.feed("[*] Downloading netsock...")                                 # phase lines still count
+        self.assertEqual(tr.phase, "netsock")
 
     def test_the_deploy_half_moves_by_time_until_the_check(self):
         # the 27 s plateau while flatpak wrote org.kde.Platform to disk (recording 2026-11-23)
@@ -251,6 +281,83 @@ class FlatpakLiveTableTests(unittest.TestCase):
                 "1. [|] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytesInstalling… "
                 "1. [✓] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytesInstalling…bwrap: setuid use of bubblewrap is not supported")
         self.assertGreaterEqual(tr.snapshot()["overall"], high)
+
+
+class AppTextTests(unittest.TestCase):
+    """The app phase's sub-phase and filler lines (snapshot()["sub"],
+    ["filler"]): the text the QAM shows over the one bar during the 80 %
+    of the run that the CloudRedirect app is."""
+    PLAN = " 1.     org.kde.Platform                6.10            i           flathub         < 392.1 MB"
+    LIVE = "1. [/] org.kde.Platform 6.10 i flathub %s MB / 392.1 MB"
+    BUNDLE = ("1. [ ] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytes"
+              "1. [✓] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytes")
+
+    def test_sub_phases_in_order_and_never_back(self):
+        tr, c = tracker()
+        tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")
+        self.assertEqual(tr.snapshot()["sub"], None)                   # the phase label itself
+        tr.feed("######                                                  12.0%")   # the bundle's curl bar
+        self.assertEqual(tr.snapshot()["sub"], "app_download")
+        tr.feed(self.PLAN)
+        self.assertEqual(tr.snapshot()["sub"], "runtime_download")
+        tr.feed(self.LIVE % "10.0")
+        self.assertEqual(tr.snapshot()["sub"], "runtime_download")
+        tr.feed(self.BUNDLE)
+        self.assertEqual(tr.snapshot()["sub"], "app_install")
+        tr.feed(self.LIVE % "392.1")                                   # a late runtime redraw
+        self.assertEqual(tr.snapshot()["sub"], "app_install")
+        tr.feed("[*] Downloading netsock...")
+        self.assertEqual(tr.snapshot()["sub"], None)                   # only the app phase has sub-phases
+
+    def test_curl_in_other_phases_has_no_sub(self):
+        tr, c = tracker()
+        tr.feed("[*] Downloading SLSsteam (latest), release 20261112130346...")
+        tr.feed("######                                                  12.0%")
+        self.assertEqual(tr.snapshot()["sub"], None)
+
+    def test_fillers_after_five_quiet_seconds_then_one_every_five_and_the_last_stays(self):
+        tr, c = tracker()
+        tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")
+        tr.feed(self.PLAN)
+        tr.feed(self.LIVE % "392.1")                                    # download complete, flatpak writes in silence
+        self.assertIsNone(tr.snapshot()["filler"])
+        c.t += 4.9
+        self.assertIsNone(tr.snapshot()["filler"])
+        c.t += 0.1
+        self.assertEqual(tr.snapshot()["filler"], 0)
+        c.t += 5
+        self.assertEqual(tr.snapshot()["filler"], 1)
+        c.t += 5 * (ip.FILLER_COUNT - 2)
+        self.assertEqual(tr.snapshot()["filler"], ip.FILLER_COUNT - 1)
+        c.t += 300
+        self.assertEqual(tr.snapshot()["filler"], ip.FILLER_COUNT - 1)  # the last one stays, no wrap
+        tr.feed("1. [✓] org.kde.Platform 6.10 i flathub 392.1 MB")        # nothing visible changed (bytes the same)
+        tr.feed(self.BUNDLE)                                            # a real change: the bundle's table
+        self.assertIsNone(tr.snapshot()["filler"])
+        self.assertEqual(tr.snapshot()["sub"], "app_install")
+
+    def test_moving_bytes_keep_the_fillers_away(self):
+        tr, c = tracker()
+        tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")
+        tr.feed(self.PLAN)
+        for i in range(1, 8):
+            c.t += 4
+            tr.feed(self.LIVE % ("%.1f" % (i * 10.0)))
+            self.assertIsNone(tr.snapshot()["filler"])
+        c.t += 6
+        self.assertEqual(tr.snapshot()["filler"], 0)                    # the same bytes for 6 s
+        c.t += 1
+        tr.feed(self.LIVE % "90.0")
+        self.assertIsNone(tr.snapshot()["filler"])                      # bytes again: back to the real text
+
+    def test_no_fillers_outside_the_app_phase(self):
+        tr, c = tracker()
+        tr.feed("[*] Installing lumalinux unlock stack (self-contained, wrapper injection)...")
+        c.t += 60
+        self.assertIsNone(tr.snapshot()["filler"])
+        tr.feed("[*] Installing .NET 9 runtime...")
+        c.t += 60
+        self.assertIsNone(tr.snapshot()["filler"])
 
 
 class RefTimeFillTests(unittest.TestCase):

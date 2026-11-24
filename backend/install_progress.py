@@ -24,6 +24,13 @@ Inside a phase the bar fills with:
     codespace's 47 s and the one Deck run on record, 2026-10-14).
 A phase ends when the script prints the next phase's first line; the bar
 then jumps to that phase's start. It never goes back. Done is 100.
+
+The app phase is 80 % of the run, so its text is split too: a sub-phase from
+what is really happening (the bundle's curl bar, flatpak's runtime rows, the
+bundle's own table) and, once nothing has changed for FILLER_SEC seconds, a
+filler line that advances every FILLER_SEC seconds and stays on the last one
+(decoration, chosen 2026-11-24: flatpak writes a 400 MB runtime to disk in
+silence for 15-30 s and the row should not look dead).
 """
 import math
 import re
@@ -82,6 +89,17 @@ TIME_FILL_CAP = 0.9
 # wifi the download is; the split errs least without knowing which.
 DEPLOY_SHARE = 0.5
 DEPLOY_SEC_PER_MB = 0.07
+# The app phase's sub-phases (snapshot()["sub"]; the frontend has the text):
+#   app_download     the bundle's curl bar
+#   runtime_download flatpak's runtime rows (plan table, live table, progress)
+#   app_install      the bundle's own flatpak table / ref
+APP_SUBS = ("app_download", "runtime_download", "app_install")
+APP_BUNDLE_REF = "org.cloudredirect.CloudRedirect"
+# Filler lines (by index; the frontend has the text) once the app phase has
+# been quiet for FILLER_SEC: index 0 at FILLER_SEC, 1 at 2 × FILLER_SEC …
+# and the last one for as long as the silence lasts.
+FILLER_COUNT = 8
+FILLER_SEC = 5.0
 
 
 def phase_for_line(text):
@@ -128,10 +146,23 @@ class InstallProgress:
         self._fp_total = 0
         self._fp_ref_started = None
         self._fp_ref_pct = None
-        # the live table: by row, [MB so far, MB total, when the download
-        # completed (or None), checked ✓]; a pending "(partial)" row has no
-        # usable total until flatpak reports its bytes
+        # the live table: by ref (id, branch), [MB so far, MB total, when the
+        # download completed (or None), checked ✓]. By ref, not by row: the
+        # bundle's table numbers from 1 again.
         self._fp_live = {}
+        # refs the plan table listed "(partial)": flatpak then shows the
+        # whole runtime's size for them ("x / 401.9 MB" for a locale of which
+        # it fetches a couple of MB): their weight is the bytes they really
+        # move, never that size (the recording of 2026-11-24: the total
+        # jumped 702 → 1104 MB when the Locale went in flight, and the bar
+        # sat at 57 % for 30 s)
+        self._fp_partial = set()
+        # the app phase's sub-phase, and the moment anything the user can
+        # see last changed (for the filler lines)
+        self.sub = None
+        self._curl_pct = None
+        self._signal = None
+        self._signal_at = self._now()
 
     # ── input ──────────────────────────────────────────────────────────
     def enter(self, phase: str) -> None:
@@ -147,6 +178,9 @@ class InstallProgress:
         self._fp_sizes, self._fp_ref, self._fp_total = {}, 0, 0
         self._fp_ref_started, self._fp_ref_pct = None, None
         self._fp_live = {}
+        self._fp_partial = set()
+        self.sub = None
+        self._touch()
         if phase == "done":
             self.done = True
 
@@ -163,13 +197,31 @@ class InstallProgress:
             # codespace 2026-11-23). Ignored there.
             if self.phase != "cloudredirect_app":
                 self._set_percent(float(m.group(1)))
+            else:
+                self._set_sub("app_download")
+            self._curl_pct = int(float(m.group(1)))
+            self._touch()
             return
         if self.phase == "cloudredirect_app" and self._feed_flatpak_live(text):
+            self._touch()
+            return
+        if self._fp_live:
+            # the live table is the one source once it exists: the plan
+            # table and the "Installing N/M… pct" line order the refs
+            # differently and their max sent the bar ahead of the bytes
+            self.detail = text
+            pid = phase_for_line(text)
+            if pid:
+                self.enter(pid)
             return
         m = FLATPAK_ROW_RE.match(text)
         if m and "/" not in m.group(2) and m.group(4) in ("i", "u", "r"):
             self._fp_sizes[int(m.group(1))] = _mb(m.group(6), m.group(7))
             self._fp_total = max(self._fp_total, int(m.group(1)))
+            if "(partial)" in text:
+                self._fp_partial.add((m.group(2), m.group(3)))
+            self._set_sub("app_install" if m.group(2) == APP_BUNDLE_REF else "runtime_download")
+            self._touch()
             return
         m = FLATPAK_PROG_RE.match(text)
         if m:
@@ -180,6 +232,8 @@ class InstallProgress:
             self._fp_ref, self._fp_total = ref, max(total, self._fp_total)
             self._fp_ref_pct = int(m.group(3))
             self._set_percent(self._flatpak_percent(ref, self._fp_ref_pct))
+            self._set_sub("runtime_download")
+            self._touch()
             return
         if FLATPAK_REF_RE.match(text):
             # no terminal: a ref began; the previous ones are complete. Inside
@@ -189,11 +243,42 @@ class InstallProgress:
             self._fp_ref_started = self._now()
             self._fp_ref_pct = None
             self._set_percent(self._flatpak_percent(self._fp_ref, 0))
+            self._set_sub("app_install" if APP_BUNDLE_REF in text else "runtime_download")
+            self._touch()
             return
         self.detail = text
         pid = phase_for_line(text)
         if pid:
             self.enter(pid)
+
+    def _set_sub(self, sub: str) -> None:
+        """The app phase's sub-phase, forward only (the bundle's table comes
+        after the runtimes', and a late runtime row must not flip it back)."""
+        if self.phase != "cloudredirect_app" or sub not in APP_SUBS:
+            return
+        if self.sub is None or APP_SUBS.index(sub) > APP_SUBS.index(self.sub):
+            self.sub = sub
+
+    def _touch(self) -> None:
+        """Note the moment the visible state last changed: phase, sub-phase,
+        the bytes so far, a curl or flatpak percent. The filler lines count
+        from there."""
+        done = sum(r[0] for r in self._fp_live.values()) if self._fp_live else 0.0
+        sig = (self.phase, self.sub, int(done), self._fp_ref, self._fp_ref_pct, self._curl_pct)
+        if sig != self._signal:
+            self._signal = sig
+            self._signal_at = self._now()
+
+    def filler(self) -> "int | None":
+        """Index of the filler line to show (0..FILLER_COUNT-1), or None while
+        something real changed in the last FILLER_SEC seconds. Only in the
+        app phase."""
+        if self.phase != "cloudredirect_app" or self.done:
+            return None
+        quiet = self._now() - self._signal_at
+        if quiet < FILLER_SEC:
+            return None
+        return min(FILLER_COUNT - 1, int(quiet // FILLER_SEC) - 1)
 
     def _set_percent(self, value: float) -> None:
         """Inside a phase the bar never goes back: a lower reading (a second
@@ -219,16 +304,25 @@ class InstallProgress:
         now = self._now()
         for m in FLATPAK_LIVE_ROW_RE.finditer(text):
             found = True
-            row = int(m.group(1))
+            key = (m.group(3), m.group(4))
             mark = m.group(2)
-            prev = self._fp_live.get(row)
-            if m.group(9):                                   # "x / y": in flight
+            prev = self._fp_live.get(key)
+            self._set_sub("app_install" if key[0] == APP_BUNDLE_REF else "runtime_download")
+            if m.group(11):                                  # pending "(partial)": size unknown
+                self._fp_partial.add(key)
+                continue
+            if key in self._fp_partial:
+                # a partial ref weighs what it really moves: its bytes so far
+                # (the size flatpak shows is the whole runtime's)
+                done_mb = _mb(m.group(7), m.group(8)) if m.group(9) else (prev[0] if prev else 0.0)
+                total_mb = max(done_mb, prev[1] if prev else 0.0)
+                if mark == "✓":
+                    done_mb = total_mb = max(total_mb, 0.1)
+            elif m.group(9):                                 # "x / y": in flight
                 done_mb, total_mb = _mb(m.group(7), m.group(8)), _mb(m.group(9), m.group(10))
             elif mark == "✓":                                # complete: whatever it was, all of it
                 total_mb = (prev[1] if prev else 0.0) or _mb(m.group(7), m.group(8))
                 done_mb = total_mb
-            elif m.group(11):                                # pending "(partial)": size unknown
-                continue
             else:                                            # pending "< y"
                 done_mb, total_mb = 0.0, _mb(m.group(7), m.group(8))
             if prev and prev[0] > done_mb and prev[1] == total_mb:
@@ -237,7 +331,7 @@ class InstallProgress:
             if total_mb > 0 and done_mb >= total_mb and completed_at is None:
                 completed_at = now
             checked = (prev[3] if prev else False) or mark == "✓"
-            self._fp_live[row] = [done_mb, total_mb, completed_at, checked]
+            self._fp_live[key] = [done_mb, total_mb, completed_at, checked]
         if found:
             self._fp_ref_pct = 0                             # real numbers: no ref time fill
             self._set_percent(self._live_percent())
@@ -328,9 +422,11 @@ class InstallProgress:
         # Never backwards, whatever the inputs do (a flatpak ref count that
         # re-learns its total, a repeated line): the reported value only grows.
         self._shown = max(self._shown, round(_OFFSET[self.phase] + weight * frac, 1))
+        self._touch()
         out = {"phase": self.phase, "progress": label, "percent": self.percent,
                "overall": self._shown,
-               "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail}
+               "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail,
+               "sub": self.sub, "filler": self.filler()}
         # The app phase's bytes (flatpak's live table), for the row's text:
         # "146/710 MB" moves every second where the bar alone would not, and
         # "writing" while flatpak deploys a downloaded runtime in silence.
