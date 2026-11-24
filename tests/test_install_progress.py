@@ -429,6 +429,76 @@ class AppTextTests(unittest.TestCase):
         self.assertIsNone(tr.snapshot()["filler"])
 
 
+class RerunTests(unittest.TestCase):
+    """A rerun (Repair / Update / Reinstall / Re-enable with the stack
+    installed) weighs the phases by what it really spends: the plugin log of
+    the codespace Repair of 2026-11-24 13:30:48-13:31:10."""
+
+    def test_weights_sum_and_offsets(self):
+        self.assertEqual(sum(w for w, _ in ip.WEIGHTS["rerun"].values()), 100)
+        off = ip.offsets("rerun")
+        self.assertEqual(off["preparing"], 0)
+        self.assertEqual(off["cloudredirect_app"], 55)
+        self.assertEqual(off["netsock"], 87)
+        self.assertEqual(ip.offsets("fresh"), ip._OFFSET)          # fresh unchanged
+        self.assertEqual(ip.InstallProgress().kind, "fresh")
+        self.assertEqual(ip.InstallProgress(rerun=True).kind, "rerun")
+
+    def test_the_repair_of_2026_11_24_13_30(self):
+        tr, c = tracker()
+        tr = ip.InstallProgress(now=c, rerun=True)
+        tr.enter("preparing")                                   # install_via_setup() entered, 13:30:48.6
+        bar = []
+        for _ in range(9):                                      # fetching setup.sh, the plan: 9.7 s of silence
+            c.t += 1
+            bar.append(tr.snapshot()["overall"])
+        self.assertGreater(bar[-1], 20)                         # the bar moved through it (45 points, 10 s expected)
+        c.t += 0.7
+        tr.feed("[*] Installing lumalinux unlock stack (self-contained, wrapper injection)...")   # 13:30:58.3
+        c.t += 0.5
+        tr.feed("[*] Downloading SLSsteam (latest), release 20261112130346...")                   # 58.8
+        bar.append(tr.snapshot()["overall"])
+        self.assertAlmostEqual(bar[-1], 45.0, places=0)         # preparing complete
+        c.t += 1.0
+        tr.feed("[*] Downloading CloudRedirect...")                                                # 59.9
+        c.t += 0.9
+        tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")  # 13:31:00.8
+        bar.append(tr.snapshot()["overall"])
+        self.assertAlmostEqual(bar[-1], 55.0, places=0)
+        c.t += 1.0
+        tr.feed("######                                                  100.0%")                # the bundle
+        c.t += 1.0
+        tr.feed("Skipping: org.kde.Platform/x86_64/6.10 is already installed")
+        c.t += 0.8
+        tr.feed("1. [ ] org.cloudredirect.CloudRedirect master i  cloudredirect-origin 0 bytes")  # 03.6
+        s = tr.snapshot(); bar.append(s["overall"])
+        self.assertEqual(s["sub"], "app_install")
+        for _ in range(4):                                      # the bundle's 4.5 s
+            c.t += 1
+            bar.append(tr.snapshot()["overall"])
+        self.assertLess(bar[-1], 87)                            # never ahead of the next phase
+        self.assertGreater(bar[-1], 60)                         # but well into the app phase
+        c.t += 0.5
+        tr.feed("[*] Downloading netsock...")                                                      # 08.1
+        bar.append(tr.snapshot()["overall"]); self.assertAlmostEqual(bar[-1], 87.0, places=0)
+        c.t += 0.5
+        tr.feed("[*] Downloading lumalinux...")                                                    # 08.6
+        c.t += 1.2
+        tr.feed("[*] Runtime tools from v0.22.9 (same ref as the .so)")                            # 09.8
+        c.t += 0.8
+        tr.feed("[*] Writing injection wrapper at /home/deck/.local/share/SLSsteam/path/steam...")  # 10.6 (.NET present: no step)
+        bar.append(tr.snapshot()["overall"]); self.assertAlmostEqual(bar[-1], 98.0, places=0)
+        tr.enter("done")
+        bar.append(tr.snapshot()["overall"]); self.assertEqual(bar[-1], 100.0)
+        self.assertEqual(bar, sorted(bar))                      # never back
+        # the fresh table on the same run: the 9 → 89 jump this replaces
+        tf = ip.InstallProgress(now=c)
+        tf.enter("cloudredirect_app")
+        self.assertEqual(tf.snapshot()["overall"], 9.0)
+        tf.enter("netsock")
+        self.assertEqual(tf.snapshot()["overall"], 89.0)
+
+
 class RefTimeFillTests(unittest.TestCase):
     def test_a_silent_ref_moves_by_time_and_stays_short_of_the_next(self):
         # the 29 s plateau at 73 % (org.kde.Platform, ref 6 of 7, no terminal)

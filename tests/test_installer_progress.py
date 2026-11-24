@@ -58,3 +58,50 @@ class InstallerProgressTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunKindWiringTests(unittest.IsolatedAsyncioTestCase):
+    """Repair / Update / Reinstall / Re-enable (reinject_installed) and a
+    component install with the stack on disk run setup.sh as a rerun; Quick
+    Install and a bare-device install as fresh. The bar's weights follow
+    (install_progress.WEIGHTS)."""
+
+    async def _run(self, installed: bool, call):
+        import installer
+        seen = {}
+
+        async def fake_install_via_setup(gamemode=True, rerun=False):
+            seen["rerun"] = rerun
+            installer.SETUP_INSTALL_STATE = installer.new_install_state(rerun=rerun)
+            installer.SETUP_INSTALL_STATE["status"] = "done"
+            return {"success": True}
+
+        saved = (installer.install_via_setup, installer.stack_installed, installer.fake_installer_active)
+        installer.install_via_setup = fake_install_via_setup
+        installer.stack_installed = lambda: installed
+        installer.fake_installer_active = lambda: False
+        try:
+            await call(installer)
+        finally:
+            installer.install_via_setup, installer.stack_installed, installer.fake_installer_active = saved
+        return seen
+
+    async def test_reinject_is_a_rerun(self):
+        seen = await self._run(True, lambda i: i.reinject_installed())
+        self.assertTrue(seen["rerun"])
+
+    async def test_reinject_with_nothing_installed_skips(self):
+        seen = await self._run(False, lambda i: i.reinject_installed())
+        self.assertEqual(seen, {})
+
+    async def test_component_install_follows_the_disk(self):
+        self.assertTrue((await self._run(True, lambda i: i.apply_component("core", "install")))["rerun"])
+        self.assertFalse((await self._run(False, lambda i: i.apply_component("core", "install")))["rerun"])
+
+    async def test_quick_install_is_fresh(self):
+        seen = await self._run(True, lambda i: i.quick_install())
+        self.assertIs(seen.get("rerun"), False)
+
+    def test_kind_reaches_the_status(self):
+        st = new_install_state(rerun=True)
+        self.assertEqual(status_view(st)["kind"], "rerun")

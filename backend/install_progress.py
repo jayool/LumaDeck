@@ -59,7 +59,11 @@ FLATPAK_LIVE_ROW_RE = re.compile(
 # flatpak without a terminal: one line per ref as it starts
 FLATPAK_REF_RE = re.compile(r"^Installing (?:runtime|app)/\S+")
 
-# (id, label, weight, expected seconds, lines that start it)
+# (id, label, weight, expected seconds, lines that start it) for a FRESH
+# install (Quick Install on a bare device: the weights are bytes moved, the
+# seconds the codespace's). The weight and the seconds of a phase come from
+# the run kind's table below; this tuple keeps the fresh ones for reference
+# and the tests.
 PHASES = (
     ("preparing", "Preparing…", 5, 8.0, ("Installing lumalinux unlock stack",)),
     ("slssteam", "Downloading SLSsteam…", 2, 2.0, ("Downloading SLSsteam",)),
@@ -76,12 +80,41 @@ PHASE_IDS = tuple(p[0] for p in PHASES)
 PHASE_LABELS = {p[0]: p[1] for p in PHASES}
 PHASE_LABELS["done"] = "Done"
 TOTAL_STEPS = len(PHASES)
-_OFFSET = {}
-_acc = 0
-for _id, _label, _w, _t, _trig in PHASES:
-    _OFFSET[_id] = _acc
-    _acc += _w
-assert _acc == 100, _acc
+# Weight (points of the bar) and expected seconds per phase, by run kind.
+#   fresh: Quick Install on a bare device (weights by bytes moved; the
+#          codespace's seconds, the app phase a Deck estimate).
+#   rerun: Repair / Update / Reinstall / Re-enable with the stack already
+#          installed. Measured on the codespace (plugin log 2026-11-24
+#          13:30:48-13:31:10, 22 s): fetching setup.sh and deciding the
+#          plan 9.7 s, SLSsteam 1.0, CloudRedirect 1.0, the app 7.3 (the
+#          runtime is "Skipping: … already installed" in a second, the
+#          bundle is --reinstall'ed, 4.5 s), netsock 0.5, lumalinux 1.2,
+#          tools 0.8, .NET 0 (present: the step is not even printed), Game
+#          Mode 0.1. With the fresh weights that run sat at 9 % and jumped to
+#          89 % in the app phase. Weights proportional to those seconds.
+WEIGHTS = {
+    "fresh": {p[0]: (p[2], p[3]) for p in PHASES},
+    "rerun": {
+        "preparing": (45, 10.0), "slssteam": (5, 1.0), "cloudredirect": (5, 1.0),
+        "cloudredirect_app": (32, 7.0), "netsock": (2, 0.5), "lumalinux": (5, 1.2),
+        "tools": (3, 0.8), "dotnet": (1, 1.0), "gamemode": (2, 0.5),
+    },
+}
+for _kind, _table in WEIGHTS.items():
+    assert sum(w for w, _t in _table.values()) == 100, (_kind, sum(w for w, _t in _table.values()))
+    assert set(_table) == set(PHASE_IDS), _kind
+
+
+def offsets(kind: str = "fresh") -> dict:
+    """Where each phase starts on the bar for a run kind."""
+    out, acc = {}, 0
+    for pid in PHASE_IDS:
+        out[pid] = acc
+        acc += WEIGHTS[kind][pid][0]
+    return out
+
+
+_OFFSET = offsets("fresh")
 TIME_FILL_CAP = 0.9
 # A flatpak runtime is half download (its bytes, reported) and half deploy
 # (writing it to disk, silent until the ✓): the deploy half fills by time
@@ -149,8 +182,11 @@ class InstallProgress:
     """Fed one output line at a time (feed), asked for the QAM's numbers at any
     moment (snapshot). `now` is injectable for the tests."""
 
-    def __init__(self, now=None):
+    def __init__(self, now=None, rerun: bool = False):
         self._now = now or time.monotonic
+        self.kind = "rerun" if rerun else "fresh"
+        self._weights = WEIGHTS[self.kind]
+        self._offset = offsets(self.kind)
         self.phase = None           # current phase id, "done" at the end
         self.phase_started = self._now()
         self.percent = None         # real progress inside the phase, 0..100, or None
@@ -316,9 +352,8 @@ class InstallProgress:
         if self.percent is None:
             # the first real reading: whatever the time fill showed until now
             # stays as the floor, so a low first reading does not pull back
-            idx = PHASE_IDS.index(self.phase) if self.phase in PHASE_IDS else None
-            if idx is not None:
-                self._fill_floor = time_fill(self._now() - self.phase_started, PHASES[idx][3])
+            if self.phase in PHASE_IDS:
+                self._fill_floor = time_fill(self._now() - self.phase_started, self._weights[self.phase][1])
             self.percent = value
         elif value > self.percent:
             self.percent = value
@@ -443,12 +478,15 @@ class InstallProgress:
     def snapshot(self) -> dict:
         if self.done or self.phase == "done":
             return {"phase": "done", "progress": PHASE_LABELS["done"], "percent": None,
-                    "overall": 100.0, "step": TOTAL_STEPS, "stepTotal": TOTAL_STEPS, "detail": self.detail}
+                    "overall": 100.0, "step": TOTAL_STEPS, "stepTotal": TOTAL_STEPS, "detail": self.detail,
+                    "kind": self.kind}
         if self.phase not in PHASE_IDS:
             return {"phase": self.phase, "progress": PHASE_LABELS.get(self.phase or "", ""), "percent": None,
-                    "overall": 0.0, "step": 0, "stepTotal": TOTAL_STEPS, "detail": self.detail}
+                    "overall": 0.0, "step": 0, "stepTotal": TOTAL_STEPS, "detail": self.detail,
+                    "kind": self.kind}
         idx = PHASE_IDS.index(self.phase)
-        _id, label, weight, expected, _trig = PHASES[idx]
+        label = PHASE_LABELS[self.phase]
+        weight, expected = self._weights[self.phase]
         # The time fill runs until the first real reading; from then on the
         # real number rules, with the fill reached by then as a floor so a
         # low first reading (flatpak's 0 % after a second of fill) does not
@@ -472,12 +510,12 @@ class InstallProgress:
             frac = max(frac, min(1.0, self.percent / 100.0 + ref_fill))
         # Never backwards, whatever the inputs do (a flatpak ref count that
         # re-learns its total, a repeated line): the reported value only grows.
-        self._shown = max(self._shown, round(_OFFSET[self.phase] + weight * frac, 1))
+        self._shown = max(self._shown, round(self._offset[self.phase] + weight * frac, 1))
         self._touch()
         out = {"phase": self.phase, "progress": label, "percent": self.percent,
                "overall": self._shown,
                "step": idx + 1, "stepTotal": TOTAL_STEPS, "detail": self.detail,
-               "sub": self.sub, "filler": self.filler()}
+               "sub": self.sub, "filler": self.filler(), "kind": self.kind}
         # The app phase's bytes (flatpak's live table), for the row's text:
         # "146/710 MB" moves every second where the bar alone would not, and
         # "writing" while flatpak deploys a downloaded runtime in silence.

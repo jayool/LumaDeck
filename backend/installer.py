@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import re
 import tempfile
@@ -509,11 +510,22 @@ def fake_installer_active() -> bool:
         return False
 
 
-def new_install_state() -> dict:
+def new_install_state(rerun: bool = False) -> dict:
     """A fresh SETUP_INSTALL_STATE: the tracker (install_progress) owns the
     phase, the percent and the bar; get_setup_status() copies its snapshot
-    into the flat keys the frontend reads."""
-    return {"status": "installing", "error": None, "tracker": InstallProgress()}
+    into the flat keys the frontend reads. `rerun`: the stack is already
+    installed (Repair / Update / Reinstall / Re-enable), so the bar weighs
+    the phases by what a rerun really spends (install_progress.WEIGHTS)."""
+    return {"status": "installing", "error": None, "tracker": InstallProgress(rerun=rerun)}
+
+
+def stack_installed() -> bool:
+    """Any component of the stack on disk: setup.sh will find the runtime,
+    .NET and the libraries in place and run as a rerun."""
+    from paths import STEAM_CLIENT_32, STEAM_CLIENT_64
+    return bool(check_slssteam_installed(STEAM_CLIENT_32) or check_slssteam_installed(STEAM_CLIENT_64)
+                or check_cloudredirect_installed(STEAM_CLIENT_32) or check_cloudredirect_installed(STEAM_CLIENT_64)
+                or check_lumalinux_installed())
 
 
 def set_phase(state: dict, phase: str) -> None:
@@ -566,7 +578,7 @@ def status_view(state: dict) -> dict:
     return out
 
 
-async def install_via_setup(gamemode: bool = True) -> dict:
+async def install_via_setup(gamemode: bool = True, rerun: bool = False) -> dict:
     """WS2: install the whole unlock stack via lumalinux/setup.sh (wrapper model).
 
     Replaces the headcrab install_dependencies + install_lumalinux pair with ONE
@@ -579,9 +591,10 @@ async def install_via_setup(gamemode: bool = True) -> dict:
     handles both modes itself. Idempotent, so this is also the repair/reinject path.
     """
     global SETUP_INSTALL_STATE
-    SETUP_INSTALL_STATE = new_install_state()
+    SETUP_INSTALL_STATE = new_install_state(rerun=rerun)
     set_phase(SETUP_INSTALL_STATE, "preparing")
-    logger.info("LumaDeck: install_via_setup() entered (url=%s)", SETUP_SH_URL)
+    logger.info("LumaDeck: install_via_setup() entered (url=%s, %s)", SETUP_SH_URL,
+                "rerun: the stack is installed" if rerun else "fresh install")
 
     fake = fake_installer_active()
     if fake:
@@ -916,7 +929,7 @@ def get_quick_install_status() -> dict:
             # The bar: phase label, overall percent, step N of M, from the
             # running setup.sh (install_progress.py).
             for k in ("progress", "phase", "percent", "overall", "step", "stepTotal", "detail",
-                      "mbDone", "mbTotal", "writing", "sub", "filler"):
+                      "mbDone", "mbTotal", "writing", "sub", "filler", "kind"):
                 if k in sub:
                     state[k] = sub[k]
             _log_app_phase(sub)
@@ -938,12 +951,10 @@ async def reinject_installed() -> dict:
     """
     steps = []
     # WS2: setup.sh re-installs and re-injects the WHOLE stack idempotently, so run
-    # it if any component is present (reinject = re-run setup.sh).
-    from paths import STEAM_CLIENT_32, STEAM_CLIENT_64
-    if (check_slssteam_installed(STEAM_CLIENT_32) or check_slssteam_installed(STEAM_CLIENT_64)
-            or check_cloudredirect_installed(STEAM_CLIENT_32) or check_cloudredirect_installed(STEAM_CLIENT_64)
-            or check_lumalinux_installed()):
-        steps.append(("stack", install_via_setup, get_setup_status))
+    # it if any component is present (reinject = re-run setup.sh). A rerun for
+    # the bar: the runtime and .NET are in place, the phases weigh differently.
+    if stack_installed():
+        steps.append(("stack", functools.partial(install_via_setup, rerun=True), get_setup_status))
 
     if not steps and fake_installer_active():
         # the fake installer installs nothing, so a rehearsal of Repair /
@@ -1018,7 +1029,7 @@ async def apply_component(component_id: str, op: str = "repair") -> dict:
     # SLSsteam + CloudRedirect + netsock + lumalinux + .NET and re-asserts the
     # wrapper + Game Mode drop-in). Per-component granularity collapses into it.
     if component_id in ("slssteam", "cloudredirect", "lumalinux", "core"):
-        return await _run_install_steps(
-            [("stack", install_via_setup, get_setup_status)], "Installing")
+        runner = functools.partial(install_via_setup, rerun=stack_installed())
+        return await _run_install_steps([("stack", runner, get_setup_status)], "Installing")
 
     return {"success": False, "error": f"unknown component '{component_id}'"}
