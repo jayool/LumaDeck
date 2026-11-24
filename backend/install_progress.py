@@ -190,7 +190,10 @@ class InstallProgress:
         self._fp_ref_started, self._fp_ref_pct = None, None
         self._fp_live = {}
         self._fp_partial = set()
-        self.sub = None
+        # the app phase begins by fetching the bundle: its first text is
+        # "Downloading CloudRedirect app", not the phase's own label (which
+        # showed for a second before curl's bar, recording 2026-11-24 10:42)
+        self.sub = "app_download" if phase == "cloudredirect_app" else None
         self._filler_since = None
         self._touch()
         if phase == "done":

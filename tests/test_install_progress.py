@@ -310,7 +310,7 @@ class AppTextTests(unittest.TestCase):
     def test_sub_phases_in_order_and_never_back(self):
         tr, c = tracker()
         tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")
-        self.assertEqual(tr.snapshot()["sub"], None)                   # the phase label itself
+        self.assertEqual(tr.snapshot()["sub"], "app_download")         # from the first second: the bundle comes first
         tr.feed("######                                                  12.0%")   # the bundle's curl bar
         self.assertEqual(tr.snapshot()["sub"], "app_download")
         tr.feed(self.PLAN)
