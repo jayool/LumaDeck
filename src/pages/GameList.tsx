@@ -467,12 +467,14 @@ export function GameList() {
       else toast(t("toastError"), r?.error || "", 4000);
     }),
     retry: () => runSysAction(async () => {
-      // Crash guard latched: clear its state files, then restart so the
-      // launcher injects again (a bare restart would go vanilla once more).
+      // Crash guard latched: clear its state files, run setup.sh once (the
+      // backend's retry_injection does, to bring the guard library up to
+      // date), then restart so the launcher injects again (a bare restart
+      // would go vanilla once more). An install: the progress row shows.
       const r = await retryInjection();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
-    }),
+    }, true),
     repair: () => runSysAction(async () => {
       const r = await reinjectInstalled();
       if (r?.success) await restartSteam();

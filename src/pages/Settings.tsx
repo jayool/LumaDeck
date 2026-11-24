@@ -1222,8 +1222,10 @@ export function Settings() {
             // Crash guard latched: Steam runs with no injection until its state
             // is cleared. Retry removes the guard's state files and restarts.
             label = t("sysReenable");
-            busyLabel = t("restartingSteam");
-            fire = () => runFix(() => retryInjection());
+            busyLabel = t("sysWorking");
+            // retry_injection runs setup.sh once before the restart: the
+            // progress row shows (it did not, 2026-11-24).
+            fire = () => runFix(() => retryInjection(), true);
           } else if (primary === "reinject") {
             // not_injected, or a core half-install: a plain restart won't help.
             // Repair re-runs setup.sh (reinject / finish the install) and restarts.
