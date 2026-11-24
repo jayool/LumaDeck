@@ -939,7 +939,7 @@ export function getLanguage(): Lang {
   return currentLang;
 }
 
-function translate(key: string, ...args: (string | number)[]): string {
+export function translate(key: string, ...args: (string | number)[]): string {
   let s = strings[currentLang]?.[key] || strings.en[key] || key;
   args.forEach((arg, i) => {
     s = s.replace(`{${i}}`, String(arg));
