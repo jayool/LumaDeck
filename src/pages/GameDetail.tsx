@@ -1166,6 +1166,17 @@ export function GameDetail({ appid }: GameDetailProps) {
             </Field>
           </PanelSectionRow>
         )}
+        {/* Straight to Steam's own page for the game (install/play from
+            there), the one the library grid opens. Only once Steam lists
+            the app; before that the page would be empty. Last row of
+            Status, under the AppID / version rows (moved here from Updates,
+            2026-11-24). */}
+        {inSteamLibrary && (
+          <ActionButton
+            label={t("openInSteamLibrary")}
+            onClick={() => Navigation.Navigate(steamLibraryRoute(appid))}
+          />
+        )}
       </PanelSection>
         </>
       ),
@@ -1207,15 +1218,6 @@ export function GameDetail({ appid }: GameDetailProps) {
               label={hasLua ? t("redownloadManifest") : t("downloadManifest")}
               onClick={handleDownload}
             />
-            {/* Straight to Steam's own page for the game (install/play from
-                there), the one the library grid opens. Only once Steam lists
-                the app; before that the page would be empty. */}
-            {inSteamLibrary && (
-              <ActionButton
-                label={t("openInSteamLibrary")}
-                onClick={() => Navigation.Navigate(steamLibraryRoute(appid))}
-              />
-            )}
             {hasLua && installPath && !isOwned ? (
               <PanelSectionRow>
                 <ToggleField
