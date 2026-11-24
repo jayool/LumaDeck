@@ -90,6 +90,12 @@ TIME_FILL_CAP = 0.9
 DEPLOY_SHARE = 0.5
 DEPLOY_SEC_PER_MB = 0.07
 DOWNLOAD_DONE_MB = 1.0
+# A ref in flight whose bytes have not moved for STALL_SEC is downloaded:
+# flatpak's "< 392.1 MB" is a ceiling, not the size (the log of 2026-11-24
+# 10:28: org.kde.Platform stopped at 199 of 392 MB and got its ✓ 24 s
+# later, the bar frozen at 55 % in between). The deploy half then fills by
+# time from the last byte; bytes resuming put the row back in flight.
+STALL_SEC = 3.0
 # The app phase's sub-phases (snapshot()["sub"]; the frontend has the text):
 #   app_download     the bundle's curl bar
 #   runtime_download flatpak's runtime rows (plan table, live table, progress)
@@ -98,7 +104,10 @@ APP_SUBS = ("app_download", "runtime_download", "app_install")
 APP_BUNDLE_REF = "org.cloudredirect.CloudRedirect"
 # Filler lines (by index; the frontend has the text) once the app phase has
 # been quiet for FILLER_SEC: index 0 at FILLER_SEC, 1 at 2 × FILLER_SEC …
-# and the last one for as long as the silence lasts.
+# and the last one for as long as the sub-phase lasts. Sticky: flatpak
+# downloads a runtime, writes it in silence, downloads the next (the log of
+# 2026-11-24 10:28), and bytes resuming must not flip the text back to
+# "Downloading" and restart the sequence (the recording of the same run).
 FILLER_COUNT = 8
 FILLER_SEC = 5.0
 
@@ -148,8 +157,8 @@ class InstallProgress:
         self._fp_ref_started = None
         self._fp_ref_pct = None
         # the live table: by ref (id, branch), [MB so far, MB total, when the
-        # download completed (or None), checked ✓]. By ref, not by row: the
-        # bundle's table numbers from 1 again.
+        # download completed (or None), checked ✓, when the bytes last
+        # moved]. By ref, not by row: the bundle's table numbers from 1 again.
         self._fp_live = {}
         # refs the plan table listed "(partial)": flatpak then shows the
         # whole runtime's size for them ("x / 401.9 MB" for a locale of which
@@ -164,6 +173,7 @@ class InstallProgress:
         self._curl_pct = None
         self._signal = None
         self._signal_at = self._now()
+        self._filler_since = None
 
     # ── input ──────────────────────────────────────────────────────────
     def enter(self, phase: str) -> None:
@@ -181,6 +191,7 @@ class InstallProgress:
         self._fp_live = {}
         self._fp_partial = set()
         self.sub = None
+        self._filler_since = None
         self._touch()
         if phase == "done":
             self.done = True
@@ -259,6 +270,7 @@ class InstallProgress:
             return
         if self.sub is None or APP_SUBS.index(sub) > APP_SUBS.index(self.sub):
             self.sub = sub
+            self._filler_since = None
 
     def _touch(self) -> None:
         """Note the moment the visible state last changed: phase, sub-phase,
@@ -276,10 +288,12 @@ class InstallProgress:
         app phase."""
         if self.phase != "cloudredirect_app" or self.done:
             return None
-        quiet = self._now() - self._signal_at
-        if quiet < FILLER_SEC:
-            return None
-        return min(FILLER_COUNT - 1, int(quiet // FILLER_SEC) - 1)
+        now = self._now()
+        if self._filler_since is None:
+            if now - self._signal_at < FILLER_SEC:
+                return None
+            self._filler_since = self._signal_at
+        return min(FILLER_COUNT - 1, int((now - self._filler_since) // FILLER_SEC) - 1)
 
     def _set_percent(self, value: float) -> None:
         """Inside a phase the bar never goes back: a lower reading (a second
@@ -336,7 +350,8 @@ class InstallProgress:
             if total_mb > 0 and done_mb >= total_mb - DOWNLOAD_DONE_MB and completed_at is None:
                 completed_at = now
             checked = (prev[3] if prev else False) or mark == "✓"
-            self._fp_live[key] = [done_mb, total_mb, completed_at, checked]
+            moved_at = now if (prev is None or done_mb != prev[0]) else prev[4]
+            self._fp_live[key] = [done_mb, total_mb, completed_at, checked, moved_at]
         if found:
             self._fp_ref_pct = 0                             # real numbers: no ref time fill
             self._set_percent(self._live_percent())
@@ -352,24 +367,42 @@ class InstallProgress:
             return 0.0
         now = self._now()
         acc = 0.0
-        for done_mb, total_mb, completed_at, checked in rows:
+        for done_mb, total_mb, completed_at, checked, moved_at in rows:
             dl = min(1.0, done_mb / total_mb)
+            since = self._downloaded_at(done_mb, total_mb, completed_at, moved_at, now)
             if checked:
                 dep = 1.0
-            elif completed_at is not None:
-                dep = time_fill(now - completed_at, max(1.0, DEPLOY_SEC_PER_MB * total_mb))
+            elif since is not None:
+                dep = time_fill(now - since, max(1.0, DEPLOY_SEC_PER_MB * total_mb))
             else:
                 dep = 0.0
             acc += total_mb * ((1 - DEPLOY_SHARE) * dl + DEPLOY_SHARE * dep)
         return min(100.0, 100.0 * acc / whole)
 
+    @staticmethod
+    def _downloaded_at(done_mb, total_mb, completed_at, moved_at, now):
+        """When this ref's download ended, or None while it is in flight: the
+        moment its bytes reached the total, or, bytes short of it but still
+        for STALL_SEC, the moment they stopped (flatpak's total is a
+        ceiling)."""
+        if completed_at is not None:
+            return completed_at
+        if done_mb > 0 and now - moved_at >= STALL_SEC:
+            return moved_at
+        return None
+
     def _writing(self) -> bool:
-        """flatpak has every reported byte and is writing to disk: the text
-        says so instead of the frozen MB count."""
+        """flatpak has every byte it is going to fetch for now and is writing
+        to disk: the text says so instead of the frozen MB count."""
         rows = [r for r in self._fp_live.values() if r[1] > 0]
-        if not rows or any(0 < r[0] < r[1] - DOWNLOAD_DONE_MB for r in rows):
+        if not rows:
             return False
-        return any(r[2] is not None and not r[3] for r in rows)
+        now = self._now()
+        in_flight = [r for r in rows if 0 < r[0] < r[1] - DOWNLOAD_DONE_MB
+                     and self._downloaded_at(r[0], r[1], r[2], r[4], now) is None]
+        if in_flight:
+            return False
+        return any(self._downloaded_at(r[0], r[1], r[2], r[4], now) is not None and not r[3] for r in rows)
 
     def _flatpak_ref_share(self, ref: int, phase_expected: float):
         """(share of the phase this ref is, 0..1; seconds it should take): by

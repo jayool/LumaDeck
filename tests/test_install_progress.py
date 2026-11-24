@@ -351,7 +351,7 @@ class AppTextTests(unittest.TestCase):
         self.assertIsNone(tr.snapshot()["filler"])
         self.assertEqual(tr.snapshot()["sub"], "app_install")
 
-    def test_moving_bytes_keep_the_fillers_away(self):
+    def test_moving_bytes_keep_the_fillers_away_until_they_start_then_they_stick(self):
         tr, c = tracker()
         tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")
         tr.feed(self.PLAN)
@@ -363,7 +363,61 @@ class AppTextTests(unittest.TestCase):
         self.assertEqual(tr.snapshot()["filler"], 0)                    # the same bytes for 6 s
         c.t += 1
         tr.feed(self.LIVE % "90.0")
-        self.assertIsNone(tr.snapshot()["filler"])                      # bytes again: back to the real text
+        self.assertEqual(tr.snapshot()["filler"], 0)                    # bytes again: the sequence goes on
+        c.t += 4
+        self.assertEqual(tr.snapshot()["filler"], 1)
+        tr.feed(self.BUNDLE)                                            # the next sub-phase: real text again
+        self.assertIsNone(tr.snapshot()["filler"])
+        self.assertEqual(tr.snapshot()["sub"], "app_install")
+        c.t += 5
+        self.assertEqual(tr.snapshot()["filler"], 0)                    # and its own fillers from 0
+
+    def test_the_run_of_2026_11_24_10_28(self):
+        # the plugin log of that Quick Install (codespace): flatpak fetched
+        # the GL runtime, wrote it in silence for 15 s, fetched the rest to
+        # 509 of 702 MB and went silent for 24 s before the ✓ and the bundle.
+        # The text must not flip between the sub-phase and the fillers, and
+        # the bar must rise through both silences.
+        tr, c = tracker()
+        tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")
+        tr.feed("######                                                  12.0%")
+        tr.feed(FlatpakLiveTableTests.GIANT)
+        GL = "1. [/] org.freedesktop.Platform.GL.default   25.08       i  flathub   %s MB / 147.8 MB"
+        PLAT = "5. [/] org.kde.Platform                      6.10        i  flathub   %s MB / 392.1 MB"
+        for mb in ("50.0", "95.0", "147.8"):
+            c.t += 1.5
+            tr.feed(GL % mb)
+        s = tr.snapshot()
+        self.assertTrue(s["writing"]); self.assertIsNone(s["filler"])
+        bar = [s["overall"]]; fillers = []
+        for _ in range(15):                                             # the first silence
+            c.t += 1
+            s = tr.snapshot(); bar.append(s["overall"]); fillers.append(s["filler"])
+        self.assertGreater(bar[-1], bar[0] + 3)
+        self.assertEqual(fillers[:4], [None, None, None, None]); self.assertEqual(fillers[-1], 2)   # 15 s: 0, 1, 2
+        tr.feed("1. [✓] org.freedesktop.Platform.GL.default   25.08       i  flathub   147.8 MB")
+        tr.feed("2. [✓] org.freedesktop.Platform.GL.default   25.08-extra i  flathub   147.8 MB")
+        tr.feed("3. [✓] org.freedesktop.Platform.codecs-extra 25.08-extra i  flathub   14.6 MB")
+        for mb in ("20.0", "120.0", "199.0"):                           # bytes again: the text sticks
+            c.t += 1
+            tr.feed(PLAT % mb)
+            s = tr.snapshot(); bar.append(s["overall"])
+            self.assertEqual(s["filler"], 2)
+        self.assertFalse(s["writing"])
+        before = s["overall"]
+        for i in range(24):                                             # the second silence, short of the total
+            c.t += 1
+            s = tr.snapshot(); bar.append(s["overall"])
+            if i >= 3:
+                self.assertTrue(s["writing"])
+        self.assertGreater(s["overall"], before + 5)
+        self.assertEqual(s["filler"], 7)                                # 42 s since it began: the last one, no restart
+        self.assertEqual(bar, sorted(bar))                              # never back
+        tr.feed("5. [✓] org.kde.Platform                      6.10        i  flathub   392.1 MB")
+        tr.feed(self.BUNDLE)
+        s = tr.snapshot()
+        self.assertEqual((s["sub"], s["filler"]), ("app_install", None))
+        self.assertGreaterEqual(s["overall"], bar[-1])
 
     def test_no_fillers_outside_the_app_phase(self):
         tr, c = tracker()

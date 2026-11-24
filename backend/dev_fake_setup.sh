@@ -51,7 +51,9 @@ flatpak_runtimes() {
     echo "Looking for matches…"
     echo "        ID                                    Branch      Op Remote  Download"
     printf '\n\n\n\n\n'
-    local totals=(147.8 147.8 14.6 1.2 392.1) secs=(3 1 0.5 0.2 7) steps
+    # the big runtime stops at 199 of its "< 392.1 MB" ceiling (the log of
+    # 2026-11-24 10:28): the rest of its time is the silent write
+    local totals=(147.8 147.8 14.6 1.2 199.0) secs=(3 1 0.5 0.2 7) steps
     for ((r = 1; r <= 5; r++)); do
         steps=8
         for ((i = 0; i <= steps; i++)); do
@@ -59,8 +61,8 @@ flatpak_runtimes() {
             nap "$(awk -v s="${secs[r-1]}" -v k="$steps" 'BEGIN{printf "%.3f", s/k}')"
         done
     done
-    # flatpak writes the big runtime to disk in silence (14 s on the
-    # codespace, recording 2026-11-24): the fillers rotate here
+    # flatpak writes the big runtime to disk in silence (24 s on the
+    # codespace, log of 2026-11-24 10:28): the fillers rotate here
     nap 16
     flatpak_table 6 0
     printf '\n'
