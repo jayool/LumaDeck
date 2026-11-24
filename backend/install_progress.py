@@ -91,13 +91,17 @@ TOTAL_STEPS = len(PHASES)
 #          bundle is --reinstall'ed, 4.5 s), netsock 0.5, lumalinux 1.2,
 #          tools 0.8, .NET 0 (present: the step is not even printed), Game
 #          Mode 0.1. With the fresh weights that run sat at 9 % and jumped to
-#          89 % in the app phase. Weights proportional to those seconds.
+#          89 % in the app phase. A second Repair right after (13:38:11-20,
+#          9.3 s) spent 1.6 s preparing (setup.sh and the feeds cached) and
+#          3.8 s on the app: the weights sit between the two runs so that
+#          neither jumps more than ~25 points at a phase change (chosen
+#          2026-11-24; a rerun is 9-22 s and its steps vary that much).
 WEIGHTS = {
     "fresh": {p[0]: (p[2], p[3]) for p in PHASES},
     "rerun": {
-        "preparing": (45, 10.0), "slssteam": (5, 1.0), "cloudredirect": (5, 1.0),
-        "cloudredirect_app": (32, 7.0), "netsock": (2, 0.5), "lumalinux": (5, 1.2),
-        "tools": (3, 0.8), "dotnet": (1, 1.0), "gamemode": (2, 0.5),
+        "preparing": (25, 5.0), "slssteam": (7, 1.0), "cloudredirect": (7, 1.0),
+        "cloudredirect_app": (42, 5.0), "netsock": (3, 0.5), "lumalinux": (8, 1.2),
+        "tools": (4, 0.8), "dotnet": (1, 1.0), "gamemode": (3, 0.5),
     },
 }
 for _kind, _table in WEIGHTS.items():

@@ -438,8 +438,8 @@ class RerunTests(unittest.TestCase):
         self.assertEqual(sum(w for w, _ in ip.WEIGHTS["rerun"].values()), 100)
         off = ip.offsets("rerun")
         self.assertEqual(off["preparing"], 0)
-        self.assertEqual(off["cloudredirect_app"], 55)
-        self.assertEqual(off["netsock"], 87)
+        self.assertEqual(off["cloudredirect_app"], 39)
+        self.assertEqual(off["netsock"], 81)
         self.assertEqual(ip.offsets("fresh"), ip._OFFSET)          # fresh unchanged
         self.assertEqual(ip.InstallProgress().kind, "fresh")
         self.assertEqual(ip.InstallProgress(rerun=True).kind, "rerun")
@@ -452,19 +452,19 @@ class RerunTests(unittest.TestCase):
         for _ in range(9):                                      # fetching setup.sh, the plan: 9.7 s of silence
             c.t += 1
             bar.append(tr.snapshot()["overall"])
-        self.assertGreater(bar[-1], 20)                         # the bar moved through it (45 points, 10 s expected)
+        self.assertGreater(bar[-1], 15)                         # the bar moved through it (25 points, 5 s expected)
         c.t += 0.7
         tr.feed("[*] Installing lumalinux unlock stack (self-contained, wrapper injection)...")   # 13:30:58.3
         c.t += 0.5
         tr.feed("[*] Downloading SLSsteam (latest), release 20261112130346...")                   # 58.8
         bar.append(tr.snapshot()["overall"])
-        self.assertAlmostEqual(bar[-1], 45.0, places=0)         # preparing complete
+        self.assertAlmostEqual(bar[-1], 25.0, places=0)         # preparing complete
         c.t += 1.0
         tr.feed("[*] Downloading CloudRedirect...")                                                # 59.9
         c.t += 0.9
         tr.feed("[*] Installing CloudRedirect app (flatpak bundle; may pull the KDE runtime)...")  # 13:31:00.8
         bar.append(tr.snapshot()["overall"])
-        self.assertAlmostEqual(bar[-1], 55.0, places=0)
+        self.assertAlmostEqual(bar[-1], 39.0, places=0)
         c.t += 1.0
         tr.feed("######                                                  100.0%")                # the bundle
         c.t += 1.0
@@ -476,18 +476,18 @@ class RerunTests(unittest.TestCase):
         for _ in range(4):                                      # the bundle's 4.5 s
             c.t += 1
             bar.append(tr.snapshot()["overall"])
-        self.assertLess(bar[-1], 87)                            # never ahead of the next phase
-        self.assertGreater(bar[-1], 60)                         # but well into the app phase
+        self.assertLess(bar[-1], 81)                            # never ahead of the next phase
+        self.assertGreater(bar[-1], 55)                         # but well into the app phase
         c.t += 0.5
         tr.feed("[*] Downloading netsock...")                                                      # 08.1
-        bar.append(tr.snapshot()["overall"]); self.assertAlmostEqual(bar[-1], 87.0, places=0)
+        bar.append(tr.snapshot()["overall"]); self.assertAlmostEqual(bar[-1], 81.0, places=0)
         c.t += 0.5
         tr.feed("[*] Downloading lumalinux...")                                                    # 08.6
         c.t += 1.2
         tr.feed("[*] Runtime tools from v0.22.9 (same ref as the .so)")                            # 09.8
         c.t += 0.8
         tr.feed("[*] Writing injection wrapper at /home/deck/.local/share/SLSsteam/path/steam...")  # 10.6 (.NET present: no step)
-        bar.append(tr.snapshot()["overall"]); self.assertAlmostEqual(bar[-1], 98.0, places=0)
+        bar.append(tr.snapshot()["overall"]); self.assertAlmostEqual(bar[-1], 97.0, places=0)
         tr.enter("done")
         bar.append(tr.snapshot()["overall"]); self.assertEqual(bar[-1], 100.0)
         self.assertEqual(bar, sorted(bar))                      # never back
