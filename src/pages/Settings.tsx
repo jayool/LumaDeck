@@ -219,15 +219,24 @@ export function Settings() {
   const runFix = async (fn: () => Promise<any>, install = false) => {
     setApplyingFix(true);
     if (install) setApplyingInstall(true);
-    const r: any = await fn();
-    setApplyingInstall(false);
-    if (r?.success) {
-      await restartSteam();
-      await reloadStatus();
-    } else {
-      toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
+    // finally: a throw out of the call, the restart or the reload left the
+    // button on "Working…" and the progress row on screen for good
+    // (Settings, 2026-11-24).
+    try {
+      const r: any = await fn();
+      setApplyingInstall(false);
+      if (r?.success) {
+        await restartSteam();
+        await reloadStatus();
+      } else {
+        toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
+      }
+    } catch (e: any) {
+      toast(t("toastError"), String(e?.message || e || ""), 4000);
+    } finally {
+      setApplyingInstall(false);
+      setApplyingFix(false);
     }
-    setApplyingFix(false);
   };
 
   useEffect(() => {

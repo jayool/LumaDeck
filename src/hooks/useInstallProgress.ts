@@ -40,6 +40,10 @@ export function useInstallProgress(active: boolean) {
       setNow(Date.now());
       try {
         const s: any = await getQuickInstallStatus();
+        // Until this run is on, the backend still answers with the previous
+        // one (done, 100 %): the row would open on Steam's grey "Complete!"
+        // bar (Settings, 2026-11-24). Keep "Preparing…" / 0 until then.
+        if (s.status !== "installing") return;
         const text = installRowText(s, t);
         if (text) setLabel(text);
         setPercent(typeof s.overall === "number" ? s.overall : null);

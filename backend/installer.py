@@ -945,6 +945,11 @@ async def reinject_installed() -> dict:
             or check_lumalinux_installed()):
         steps.append(("stack", install_via_setup, get_setup_status))
 
+    if not steps and fake_installer_active():
+        # the fake installer installs nothing, so a rehearsal of Repair /
+        # Update / Reinstall would skip here and the row never show
+        # (Settings, 2026-11-24): rehearse the run anyway
+        steps.append(("stack", install_via_setup, get_setup_status))
     if not steps:
         return {"success": True, "skipped": "nothing installed"}
     return await _run_install_steps(steps, "Re-injecting")
