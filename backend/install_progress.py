@@ -20,8 +20,10 @@ Inside a phase the bar fills with:
     runtime/…" per ref, which still advances the phase ref by ref;
   - otherwise time: 1 - e^(-t/T) against the phase's expected seconds,
     capped at 90 % of the phase, so a silent step moves and never pretends
-    to be done. T comes from the codespace run (the app: 90 s, between the
-    codespace's 47 s and the one Deck run on record, 2026-10-14).
+    to be done. T for the app phase is 100 s: the codespace's 47 s and a
+    Deck ESTIMATED at 90-110 s (wifi at 20-50 MB/s for the ~510 MB flatpak
+    really fetches, and about half the codespace's CPU for the unpacking;
+    no Deck log with seconds exists yet, 2026-11-24).
 A phase ends when the script prints the next phase's first line; the bar
 then jumps to that phase's start. It never goes back. Done is 100.
 
@@ -62,7 +64,7 @@ PHASES = (
     ("preparing", "Preparing…", 5, 8.0, ("Installing lumalinux unlock stack",)),
     ("slssteam", "Downloading SLSsteam…", 2, 2.0, ("Downloading SLSsteam",)),
     ("cloudredirect", "Downloading CloudRedirect…", 2, 2.0, ("Downloading CloudRedirect",)),
-    ("cloudredirect_app", "Installing CloudRedirect app", 80, 90.0, ("Installing CloudRedirect app",)),
+    ("cloudredirect_app", "Installing CloudRedirect app", 80, 100.0, ("Installing CloudRedirect app",)),
     ("netsock", "Downloading netsock…", 1, 1.0, ("Downloading netsock",)),
     ("lumalinux", "Downloading lumalinux…", 3, 2.0, ("Downloading lumalinux",)),
     ("tools", "Installing tools…", 1, 1.0, ("Runtime tools from",)),
@@ -83,12 +85,20 @@ assert _acc == 100, _acc
 TIME_FILL_CAP = 0.9
 # A flatpak runtime is half download (its bytes, reported) and half deploy
 # (writing it to disk, silent until the ✓): the deploy half fills by time
-# against DEPLOY_SEC_PER_MB × size (codespace 2026-11-23: 148 MB in ~10 s,
-# 392 MB in ~27 s). Half and half is a choice, not a measurement: on the
-# codespace's 150 MB/s the deploy is 90 % of a runtime's time, on a Deck's
-# wifi the download is; the split errs least without knowing which.
+# against DEPLOY_SEC_PER_MB × size. Half and half is a choice, not a
+# measurement: on the codespace's 150 MB/s the deploy is 90 % of a
+# runtime's time, on a Deck's wifi the download is; the split errs least
+# without knowing which.
+# 0.05 s/MB = 20 s supposed for the 392 MB org.kde.Platform. Measured on
+# the codespace (plugin log 2026-11-24 10:28): 24 s, CPU-bound (flatpak
+# unpacking and laying out the files, not the disk). A Deck is ESTIMATED
+# at 40-50 s (about half the codespace's CPU; no Deck log with seconds
+# exists yet, 2026-11-24). With 20 s the deploy half is at 70 % when the
+# codespace's ✓ lands (a small jump) and at ~89 % on the estimated Deck,
+# just under the cap. Replace with the Deck's own number once a real
+# Quick Install there has logged the app phase.
 DEPLOY_SHARE = 0.5
-DEPLOY_SEC_PER_MB = 0.07
+DEPLOY_SEC_PER_MB = 0.05
 DOWNLOAD_DONE_MB = 1.0
 # A ref in flight whose bytes have not moved for STALL_SEC is downloaded:
 # flatpak's "< 392.1 MB" is a ceiling, not the size (the log of 2026-11-24
