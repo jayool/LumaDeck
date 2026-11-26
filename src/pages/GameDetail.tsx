@@ -1147,7 +1147,7 @@ export function GameDetail({ appid }: GameDetailProps) {
         <PanelSectionRow>
           <Field label={`AppID ${appid}`} description={installPath || undefined}>
             {hasLua && (
-              <span style={{ color: installPath ? "#00cc00" : "#ffaa00" }}>
+              <span style={installPath ? { color: "#00cc00" } : undefined}>
                 {isOwned ? t("ownedDlcOnly") : (installPath ? t("installed") : t("manifestOnly"))}
                 {gameSize > 0 && ` · ${formatSize(gameSize)}`}
               </span>
@@ -1360,7 +1360,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 tab in Settings. Show why it's not ready and send the user there. */}
             <PanelSectionRow>
               <Field
-                icon={<FaExclamationTriangle color="#ffaa00" />}
+                icon={<FaExclamationTriangle color="#ff8c00" />}
                 label={t("achievementStatusNotConfigured")}
               />
             </PanelSectionRow>

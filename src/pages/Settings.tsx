@@ -909,7 +909,7 @@ export function Settings() {
       <PanelSection title={t("achievementsSetup")}>
         <PanelSectionRow>
           <Field focusable highlightOnFocus={false} label={t("apiKeyLabel")}>
-            <span style={{ color: keySet ? "#00cc00" : "#ffaa00" }}>
+            <span style={{ color: keySet ? "#00cc00" : "#ff8c00" }}>
               {keySet ? t("apiKeySet") : t("apiKeyMissing")}
             </span>
           </Field>
