@@ -279,6 +279,15 @@ class Plugin:
         systemd (a codespace), fall back to closing Steam as before."""
         import subprocess, os, shutil
         from paths import real_home, real_user
+        # Dev preview (Settings ▸ Dev ▸ Installer: fake): the install was a
+        # rehearsal, so is the restart. Nothing closes, nothing reboots.
+        try:
+            from installer import fake_installer_active
+            if fake_installer_active():
+                logger.info("LumaDeck: restart requested in FAKE installer mode -> no-op")
+                return _j({"success": True, "fake": True})
+        except Exception:
+            pass
         systemctl = shutil.which("systemctl") or next(
             (p for p in ("/usr/bin/systemctl", "/bin/systemctl") if os.path.exists(p)), None)
         if systemctl and os.geteuid() == 0:

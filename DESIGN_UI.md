@@ -346,20 +346,19 @@ Reinstall button is hidden.
   (debounced `getGameNotices` on `addAppId`); By name stages it by picking a
   search result. It lives as one `gameCard` const built just before `return`,
   rendered in both branches — no duplicated card JSX.
-- **How shown:** a native **`Field`**: `label` = game name, `description` = a
-  trimmed fact line *"dev · size · Metacritic NN · ProtonDB Tier"*. The
-  description is a `ReactNode`, so Metacritic and ProtonDB keep their **colour as
-  inline text**. **`bottomSeparator="none"`** — the card is grouped with the
+- **How shown:** a native **`Field`**: `label` = game name, `description` =
+  one thing per line (2026-11-26; the earlier single "dev · size · Metacritic ·
+  ProtonDB" line wrapped where it liked in the QAM): *"dev · size"* in Steam's
+  grey, then *"ProtonDB Tier"* in the tier's colour (`PROTONDB_TIER_COLOR` in
+  `GameList.tsx`; "Unknown" shows too), then the owned line in green, then the
+  **notices** (Denuvo / launcher), one `<div>` per note with an inline ⚠
+  `#ff8c00` icon and plain text. No Metacritic: a score does not help decide
+  whether to add. **`bottomSeparator="none"`** — the card is grouped with the
   Add-game button below it (the closing divider §4d draws the one section line),
-  not fenced off by its own separator. The game **notices** (Denuvo / launcher)
-  render **inside** this same `description`, one `<div>` per note with an inline
-  ⚠ `#ff8c00` icon, so they read as part of the card. Metacritic colours:
-  `#7ed36f` ≥ 75 / `#c8a84b` ≥ 50 / `#e06060` below; ProtonDB tiers use a medal
-  map (`PROTONDB_TIER_COLOR` in `GameList.tsx`). The achievements hint (11px
-  gold `#c8a84b` ⚡ line below the card) only renders when
-  `ACHIEVEMENTS_ENABLED` is on (currently off).
+  not fenced off by its own separator. The achievements hint (11px ⚡ line below
+  the card) only renders when `ACHIEVEMENTS_ENABLED` is on (currently off).
 - **Owned game:** if Steam already owns the game (`isOwnedBySteam`,
-  `src/steamOwnership.ts`), a green `#7ed36f` line *"Owned game: Only its DLC
+  `src/steamOwnership.ts`), a green `#00cc00` line *"Owned game: Only its DLC
   will be added."* rides in the same description, above the notices. It is a
   hint from Steam's own library model; the backend decides for itself.
 - **Native or custom:** 🟢 native `Field`. Replaces the custom `Notice` card +
@@ -403,8 +402,8 @@ Reinstall button is hidden.
 - **Status (`addStatus`):** a plain aligned `<div>` in a `PanelSectionRow`
   (inherits the native content inset — do **not** wrap it in a `Field`, which
   knocks it out of horizontal alignment). `textAlign:"left"`, `12px`, three-way
-  colour: red `#ff6b6b` on error (`error*` / `invalidAppId` / `downloadFailed`),
-  green `#00cc00` on `doneRestartSteam`, grey `#8b929a` otherwise — including
+  colour: red `#ff4444` on error (`error*` / `invalidAppId` / `downloadFailed`),
+  green `#00cc00` on `doneRestartSteam`, Steam's grey `#b8bcbf` otherwise — including
   `downloadCancelled` and the owned-game result `ownedDlcNextStart` ("DLC added.
   They install the next time Steam starts.", shown when the owned game was
   already installed). `ownedDlcNextStart` is a success message rendered grey
@@ -445,10 +444,10 @@ Reinstall button is hidden.
     the native line like the result rows. Singular/plural via `result`/`results`.
   - **Results** → native `ButtonItem` each (`label` = name, `description` =
     `AppID: …`). **Show More** → native `ButtonItem` (`+N`), capping 5 → 15.
-  The count label is `12px #8b929a`. The search is the Steam store search and
+  The count label is `12px #b8bcbf` (Steam's grey). The search is the Steam store search and
   needs no credential.
 - **Native or custom:** 🟢 native field / buttons / count `Field`. `searchError`
-  stays a raw aligned `<div>` (`12px #ff6b6b`; the text-primitive exception, 🔴).
+  stays a raw aligned `<div>` (`12px #ff4444`; the text-primitive exception, 🔴).
 
 **Add Game is box-free:** native tab toggle, label-less fields, one shared
 `Field` game card (notices inline), a single top blocked row, native progress,
@@ -508,7 +507,7 @@ no doubled lines.
     is never called, see Drift in code.)
   - **Settings ▸ Achievements tab** (global setup): an intro `<div>`
     (`12px`, opacity 0.8), the API-key status `Field` (value `#00cc00` set /
-    `#ffaa00` not set), a key-help `<div>` with a monospace URL, the key
+    `#ff8c00` not set), a key-help `<div>` with a monospace URL, the key
     `TextField` + Save + Get key, a ready `Field`, **Sync All** (`ButtonItem`,
     `disabled` while running, native **`ProgressBarWithInfo`** below it,
     `nProgress` = `done/total·100`, `sOperationText` = `"3 / 12"`), a restart
@@ -577,7 +576,7 @@ Downloads/Workshop page is gone — see §10.)
     (green/amber/blue phase text), whose custom `ProgressBar` branch was dead
     code (`downloadProgress`/`downloadTotal` were never assigned — Steam does
     the download natively).
-- **Loading / empty:** centred `#8b929a` `<div>`s (`loadingGames`,
+- **Loading / empty:** centred `#b8bcbf` `<div>`s (`loadingGames`,
   `noGamesMatch` / `noGamesYet`), no font size set.
 - **`Help` relocated.** `Help.tsx` was a fully-built page wired to **nothing**
   (no route, no import). Its content is general plugin help, so it now lives as
@@ -632,7 +631,7 @@ There is no `primary` blue variant any more. Kept as-is.
   - **One** `Field`: `label` = `AppID <n>` (AppID is a technical literal used
     across the codebase, not display prose, so no `t()` — consistent with
     search results), the coloured install status as the value child (green
-    `#00cc00` Installed / amber `#ffaa00` Manifest only; for an owned game the
+    `#00cc00` Installed / plain, uncoloured "Ready to download" (manifest only, no "pending" colour since 2026-11-26); for an owned game the
     text is `ownedDlcOnly` "DLC added (owned game)", same colours; `+ size`),
     and the **install path as the Field's `description`** sub-line (one Field
     does all three; no separate path `<div>`).
@@ -725,7 +724,7 @@ There is no `primary` blue variant any more. Kept as-is.
   any more.
 - **How shown:** every state is a native `Field`; colour is carried by
   **icons**:
-  - **not_configured** → ⚠ `FaExclamationTriangle #ffaa00` `Field` ("Set up
+  - **not_configured** → ⚠ `FaExclamationTriangle #ff8c00` `Field` ("Set up
     achievements first") + an `ActionButton` "Set up achievements" that
     deep-links Settings ▸ Achievements (`setPendingSettingsTab` +
     `Navigate(ROUTE_SETTINGS)`).
@@ -836,7 +835,7 @@ There is no `primary` blue variant any more. Kept as-is.
   (`label` = `uninstallWillRemove` "Permanently removes:", `description` = the
   items joined with ` · ` — 7 for an added game: files, lua config, ACF, depot
   manifests, Steam config entries, keys, achievement schema), with a ⚠
-  `FaExclamationTriangle #e07070` icon for the destructive signal. For an
+  `FaExclamationTriangle #ff4444` icon for the destructive signal (the danger red, same as the buttons). For an
   **owned game** the list starts with `uninstallItemOwnedKeeps` ("Only the DLC.
   The game itself stays") and covers only the DLC side (6 items, no game files,
   no achievements); the uninstall first unticks the DLC in Steam
@@ -933,7 +932,7 @@ The dense "advanced 1%" per-component breakdown, one untitled `PanelSection`.
     `current_build_supported_by_latest === false`).
 - **Sub-line:** the `description` is a single coloured line, only when there is
   something to say (nothing when healthy and up to date). It is a text glyph in
-  a `<span>`, not a `Field` icon: ⚠ `#ff8c00` problem, ↑ `#9cc4ff` update, •
+  a `<span>`, not a `Field` icon: ⚠ `#ff8c00` problem, ↑ `#5b9eff` update, •
   `#888` benign. For Steam: the build mismatch (⚠) or "update available" when
   Steam is behind a pin lumalinux is ready for (↑). The install path is not
   shown.
@@ -974,8 +973,8 @@ The dense "advanced 1%" per-component breakdown, one untitled `PanelSection`.
 - **Was:** a gray blurb `<div>`, a version `<div>` (installed + a colored
   `<span>` latest), and a blue plugin-message `<div>`.
 - **Now:** blurb → `Field description`; version → `Field label={installed}` with
-  the latest as a colored value child (`#9cc4ff` when an update exists,
-  `#8b929a` otherwise); plugin message
+  the latest as a colored value child (`#5b9eff` when an update exists,
+  `#b8bcbf` otherwise); plugin message
   → plain `Field`. Update buttons were already native.
 - **Native or custom:** 🟢 native; only the latest-version value span keeps its
   colour (allowed).
@@ -1017,13 +1016,13 @@ The dense "advanced 1%" per-component breakdown, one untitled `PanelSection`.
 
 - **What:** developer-only state forcing and the SteamDB reader probe.
 - **How shown:** a `PanelSection` "Dev — force UI states": an intro `<div>`
-  (`12px #8b929e`); one `DropdownItem` per forced UI state (SLSsteam /
+  (`12px #b8bcbf`); one `DropdownItem` per forced UI state (SLSsteam /
   lumalinux / CloudRedirect health, Quick Install onboarding, crash guard,
   Hubcap key, Ryuu cookie, fake games), backed by `backend/dev.py` — it only
   forges what the UI reads, nothing real is touched; **Reset all to real**;
   then the SteamDB probe: a second intro `<div>`, an `appid` `TextField`, a
   probe button, an "open SteamDB" button (for the Cloudflare check) and a
-  result `<div>` (`12px #c7d5e0`, `pre-wrap`).
+  result `<div>` (`12px #b8bcbf`, `pre-wrap`).
 - **Native or custom:** 🟢 native controls; 🔴 free-text `<div>`s.
 - **Rule:** Dev-only UI is exempt from `t()`. It is not behind a flag today and
   should be gated (flag) before release; its strings are partly Spanish (see
@@ -1387,12 +1386,26 @@ for the advanced 1%.
 - Icons come from `react-icons/fa` only.
 - **Header actions** live in the native `titleView` (1–2 icons), not a custom
   row in `content`. Native `DialogButton`, size-only styling, native focus.
-- **Text tokens observed so far** (inline hex, no CSS framework):
-  | Role | Value |
-  |---|---|
-  | Primary text | `#dcdedf` |
-  | Secondary / muted | `#8b929a` |
-  | Accent / progress | `#1a9fff` |
+- **Palette** (closed 2026-11-26, one value per meaning; inline hex, no CSS
+  framework). Colour goes on an icon or on a status value in a row's control
+  slot, never on whole sentences; information (developer, size) carries no
+  colour. Anything in a `Field` **description** slot writes no colour at all:
+  Steam paints it.
+  | Meaning | Value | Where | Source |
+  |---|---|---|---|
+  | Good | `#00cc00` | "Installed", "Active", "Done!", "Supported", check icons, "Owned game" | ours |
+  | Warning | `#ff8c00` | every ⚠ icon, "Not supported", not-healthy component, warn notes (`WARN`) | ours |
+  | Error / danger | `#ff4444` | danger buttons, error ⚠ icons, "Not installed", Add game's error text | ours |
+  | Info / new | `#5b9eff` | ↑ icons of System status, update notes, "Latest: vX" when newer (`INFO`) | ours |
+  | Secondary text | `#b8bcbf` | the plugin's own `<span>`/`<div>` texts: progress row, Add game's count and status, Library's empty texts, "Disabled", "Latest: vX" when current, the Dev tab's paragraphs and probe output | Steam's Game Mode `Field` description colour (`color:#b8bcbf`, 12px/16px; read from `steamui` CSS 2026-11-24; the Desktop UI uses `#8b929a`) |
+  | Primary text | `#dcdedf` | GameCard's name and cloud icon, Help's text | Steam's Game Mode `Field` label colour (same CSS read) |
+  | Card background | `#1a2129` | GameCard's cover rectangle | ours |
+  | ProtonDB tiers | `#5fd0e0` platinum, `#c8a84b` gold, `#9aa4b2` silver / unknown, `#c87a3a` bronze, `#e06060` borked | the ProtonDB line of the Add game card only (`PROTONDB_TIER_COLOR`) | ProtonDB's own; never reused for anything else |
+  Gone with the review: `#7ed36f`, `#ffaa00`, `#ff6b6b`, `#e07070`, `#9cc4ff`,
+  `#888`, `#8b929a`, `#8b929e`, `#c7d5e0`, and Metacritic's three. No "pending"
+  colour: "Ready to download" is plain text. (Steam's own semantic colours, read
+  the same day for reference, are green `#59bf40`, warning `#ffc82c`, error
+  `#de3618`, blue `#1a9fff`; the plugin keeps its own four.)
   - Sizes: `12px` standard body, `11px` secondary sub-line.
 - **Two-click confirm** is the standard for install/destructive actions
   (`confirm<Action>` state + `ButtonItem` `description`).
@@ -1473,18 +1486,11 @@ them. They add to the principles above and change none of them.
   "ProtonDB", "Goldberg", "Linux Native"); and language names shown in their own
   language ("Português (BR)", "English"). Dev-only UI (Settings ▸ Dev, §9g) is
   exempt.
-- **Status palette observed in use** (inline hex, alongside the text tokens):
-  | Role | Value |
-  |---|---|
-  | Success | `#00cc00` |
-  | Warning | `#ff8c00` (icons) / `#ffaa00` (value text) |
-  | Danger | `#ff4444` |
-  | Error text | `#ff6b6b` |
-  | Info / update | `#5b9eff` (icon) / `#9cc4ff` (text) |
-  Also present for data, not status: `#7ed36f` (owned line, Metacritic ≥ 75),
-  `#c8a84b` (gold: Metacritic mid, ProtonDB gold, hints), `#e06060`
-  (Metacritic low, ProtonDB borked), the ProtonDB medal map
-  (`PROTONDB_TIER_COLOR`, `GameList.tsx:54-60`), and the library tile background
+- **Status palette:** the one table under *Principles › Palette* (closed
+  2026-11-26). Success `#00cc00`, warning `#ff8c00`, danger `#ff4444`, info
+  `#5b9eff`, one value each for icons and value text alike; ProtonDB's medal
+  map (`PROTONDB_TIER_COLOR`, `GameList.tsx:54-60`) is ProtonDB's and is used
+  nowhere else; and the library tile background
   `#1a2129`. Sizes seen beyond the 12/11px tokens: `13px` (Help),
   `14px` (GameCard name), `15px` (title-bar icons).
 
@@ -1511,14 +1517,9 @@ code fixes. Line numbers as of 2026-10-09.
     should at least be one language.
 - **Keys missing in pt-BR** (help* keys are en-only by design, §9f):
   `showMoreResults`, `sysAlignUpSwitching`, `sysAlignUpManual`.
-- **Off-token colours:** muted greys `#888` (`Settings.tsx:571`, :1094),
-  `#8b929e` (`Settings.tsx:1343`, :1380 — a near-duplicate of `#8b929a`),
-  `#c7d5e0` (`Settings.tsx:1391`); `opacity: 0.8` instead of a muted colour
-  (`Settings.tsx:867`, :898); `#e07070` on the Uninstall ⚠ instead of the
-  warning/danger value (`GameDetail.tsx:1536`). Off-value warning icons also appear as
-  `#ffaa00` (`GameDetail.tsx:1344`) and `#c8a84b` (`Settings.tsx:952`). The
-  comment at `GameList.tsx:53` points to a "DESIGN_UI.md palette" for the
-  ProtonDB medals; only the observed list above exists.
+- **Off-token colours:** fixed 2026-11-26 (the palette review: one value per
+  meaning, Steam's grey for secondary text). Left as is: `opacity: 0.8` instead
+  of a muted colour (`Settings.tsx:867`, :898).
 - **Layout spacer `<div>`s:** `<div style={{ height: "12px" }} />` between the
   label-less `TextField` and Save (`Settings.tsx:774`, :817) — contradicts
   "native rows space themselves" (§9c).

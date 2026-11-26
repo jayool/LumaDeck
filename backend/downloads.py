@@ -296,8 +296,17 @@ GAMES_DB_LOADED = False
 
 def _set_download_state(appid: int, update: dict) -> None:
     state = DOWNLOAD_STATE.get(appid) or {}
+    before = (state.get("status"), state.get("currentApi"))
     state.update(update)
     DOWNLOAD_STATE[appid] = state
+    # One log line per phase change of an add (status, provider, bytes): the
+    # only record with seconds of what an add spends where, for the progress
+    # row (the bytes change every read and are not logged on their own).
+    after = (state.get("status"), state.get("currentApi"))
+    if after != before:
+        logger.info("add phase: appid=%s status=%s api=%s bytes=%s/%s%s", appid, after[0], after[1],
+                    state.get("bytesRead"), state.get("totalBytes"),
+                    f" error={state.get('error')}" if state.get("error") else "")
 
 
 def _get_download_state(appid: int) -> dict:

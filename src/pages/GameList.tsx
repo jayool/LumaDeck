@@ -24,7 +24,7 @@ import {
   checkStuckUpdates,
   getCredentialStatus,
   quickInstall,
-  getQuickInstallStatus,
+
   reinjectInstalled,
   retryInjection,
   runDesktopHandoffReal,
@@ -36,6 +36,8 @@ import {
   ComponentsStatus,
   SystemStatusActions,
 } from "../components/SystemStatus";
+import { useInstallProgress } from "../hooks/useInstallProgress";
+import { InstallProgressRow } from "../components/InstallProgressRow";
 import { ROUTE_SETTINGS, ROUTE_LIBRARY, ROUTE_GAME_DETAIL, SETTINGS_TAB_ACHIEVEMENTS, setPendingSettingsTab } from "../routes";
 import { setRefreshHandler, setRefreshing } from "../refresh";
 import { ACHIEVEMENTS_ENABLED } from "../features";
@@ -87,7 +89,11 @@ export function GameList() {
   const [sysBusy, setSysBusy] = useState(false);
   const [quickInstalling, setQuickInstalling] = useState(false);
   const [confirmQuickInstall, setConfirmQuickInstall] = useState(false);
-  const [quickProgress, setQuickProgress] = useState("");
+  // Live progress of the setup.sh run behind Quick Install, and behind the
+  // System status Update / Repair buttons (same backend state).
+  const quickProgress = useInstallProgress(quickInstalling);
+  const [sysInstalling, setSysInstalling] = useState(false);
+  const sysProgress = useInstallProgress(sysInstalling);
   const [pendingNotices, setPendingNotices] = useState<string[]>([]);
   const [pendingGameInfo, setPendingGameInfo] = useState<any>(null);
   const [cred, setCred] = useState<any>(null);
@@ -112,9 +118,13 @@ export function GameList() {
 
   // Run a system action (restart/repair/update/...), keeping a single busy flag
   // so the rows disable while it works, then refresh the status.
-  const runSysAction = useCallback(async (fn: () => Promise<void>) => {
+  // `install` marks the actions that run setup.sh (Update, Repair): the
+  // progress row shows under the rows while they work.
+  const runSysAction = useCallback(async (fn: () => Promise<void>, install = false) => {
     setSysBusy(true);
+    if (install) setSysInstalling(true);
     try { await fn(); } catch { } finally {
+      setSysInstalling(false);
       setSysBusy(false);
       await refreshStatus();
     }
@@ -457,17 +467,19 @@ export function GameList() {
       else toast(t("toastError"), r?.error || "", 4000);
     }),
     retry: () => runSysAction(async () => {
-      // Crash guard latched: clear its state files, then restart so the
-      // launcher injects again (a bare restart would go vanilla once more).
+      // Crash guard latched: clear its state files, run setup.sh once (the
+      // backend's retry_injection does, to bring the guard library up to
+      // date), then restart so the launcher injects again (a bare restart
+      // would go vanilla once more). An install: the progress row shows.
       const r = await retryInjection();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
-    }),
+    }, true),
     repair: () => runSysAction(async () => {
       const r = await reinjectInstalled();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
-    }),
+    }, true),
     downgrade: () => runSysAction(async () => {
       // Arm the one-shot Desktop autostart (headcrab downgrade + lumalinux
       // re-inject) and switch to Desktop. The script runs there and returns to
@@ -486,7 +498,7 @@ export function GameList() {
       const r = await reinjectInstalled();
       if (r?.success) await restartSteam();
       else toast(t("toastError"), r?.error || "", 4000);
-    }),
+    }, true),
     pluginUpdate: () => runSysAction(async () => {
       const r = await downloadUpdateToDownloads();
       if (r?.success) toast(t("sysPluginUpdate"), t("updateZipSaved", r.path || "Downloads"), 8000);
@@ -514,22 +526,8 @@ export function GameList() {
     // the fix. (Until 2026-10-15 an off-pin Deck was sent to Desktop to run the
     // same setup.sh there, for a downgrade that path no longer includes.)
     setQuickInstalling(true);
-    setQuickProgress(t("quickInstallStarting"));
-
-    const poll = setInterval(async () => {
-      try {
-        const s = await getQuickInstallStatus();
-        const step = s.step
-          ? `[${(s.stepIndex ?? 0) + 1}/${s.totalSteps ?? 2}] ${s.step} — `
-          : "";
-        if (s.progress) setQuickProgress(`${step}${s.progress}`);
-      } catch { }
-    }, 1000);
-
     const result = await quickInstall();
-    clearInterval(poll);
     setQuickInstalling(false);
-    setQuickProgress("");
 
     // Refresh status so the onboarding entry hides once components land.
     await refreshStatus();
@@ -587,26 +585,19 @@ export function GameList() {
 
   // The game info card (name + facts + notices). Shared by both Add-Game modes:
   // By AppID (staged via the field) and By name (staged by picking a result).
-  // Native Field: name as the label, "dev · size · Metacritic · ProtonDB" as
-  // the description (colours kept inline), notices merged in below.
+  // Native Field: name as the label; the description one thing per line
+  // ("dev · size", then "ProtonDB <tier>" in the tier's colour, then the
+  // owned line, then the notices): the QAM is narrow and one long line with
+  // three colours broke where it liked (chosen 2026-11-26). No Metacritic: a
+  // score does not help decide whether to add.
   const gameCard = pendingGameInfo ? (() => {
-    const mc: number | null = pendingGameInfo.metacritic;
-    const mcColor = mc == null ? "" : mc >= 75 ? "#7ed36f" : mc >= 50 ? "#c8a84b" : "#e06060";
     const size = pendingGameInfo.sizeBytes > 0
       ? (pendingGameInfo.sizeBytes >= 1073741824
         ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
         : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`)
       : "";
-    const facts: any[] = [];
-    if (pendingGameInfo.developer) facts.push(pendingGameInfo.developer);
-    if (size) facts.push(size);
-    if (mc != null) facts.push(<span key="mc" style={{ color: mcColor }}>Metacritic {mc}</span>);
-    if (pendingGameInfo.protondb) facts.push(
-      <span key="proton" style={{ color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2" }}>
-        ProtonDB {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
-      </span>,
-    );
-    const desc = facts.flatMap((f, i) => (i === 0 ? [f] : [" · ", f]));
+    const facts = [pendingGameInfo.developer, size].filter(Boolean).join(" · ");
+    const proton = pendingGameInfo.protondb;
     // Hint from Steam's own library model (steamOwnership.ts); the backend
     // decides for itself. One short line: the QAM is narrow.
     const pendingOwned = isOwnedBySteam(parseInt(addAppId, 10));
@@ -617,9 +608,14 @@ export function GameList() {
             label={pendingGameInfo.name || `AppID ${addAppId}`}
             description={
               <>
-                <span>{desc}</span>
+                {facts && <div>{facts}</div>}
+                {proton && (
+                  <div style={{ marginTop: "4px", color: PROTONDB_TIER_COLOR[proton] || "#9aa4b2" }}>
+                    ProtonDB {proton.charAt(0).toUpperCase() + proton.slice(1)}
+                  </div>
+                )}
                 {pendingOwned && (
-                  <div style={{ marginTop: "4px", color: "#7ed36f" }}>
+                  <div style={{ marginTop: "4px", color: "#00cc00" }}>
                     {t("ownedGameTitle")}: {t("ownedGameDesc")}
                   </div>
                 )}
@@ -673,13 +669,13 @@ export function GameList() {
                   : t("quickInstall")}
             </ButtonItem>
           </PanelSectionRow>
-          {quickInstalling && quickProgress && (
-            <PanelSectionRow>
-              <div style={{ fontSize: "11px", color: "#1a9fff", wordBreak: "break-word" }}>
-                {quickProgress}
-              </div>
-            </PanelSectionRow>
-          )}
+          {/* Steam's own progress row: a real bar while setup.sh downloads
+              something (curl's percent), an indeterminate one otherwise, with
+              the step text and the elapsed time underneath, so a minutes-long
+              silent step (the flatpak runtime) still reads as alive. The old
+              plain text line froze for the whole download (report 2026-11-21).
+              A DIRECT PanelSectionRow child, like the Add Game bar above. */}
+          {quickInstalling && <InstallProgressRow {...quickProgress} />}
         </PanelSection>
       )}
 
@@ -688,6 +684,7 @@ export function GameList() {
         stuck={stuckUpdates}
         busy={sysBusy}
         actions={sysActions}
+        progress={sysInstalling ? sysProgress : null}
       />
 
       <PanelSection title={t("addGame")}>
@@ -809,7 +806,7 @@ export function GameList() {
               style={{
                 width: "100%",
                 textAlign: "left",
-                color: "#ff6b6b",
+                color: "#ff4444",
                 fontSize: "12px",
               }}
             >
@@ -824,7 +821,7 @@ export function GameList() {
             <PanelSectionRow>
               <Field
                 label={
-                  <span style={{ fontSize: "12px", color: "#8b929a" }}>
+                  <span style={{ fontSize: "12px", color: "#b8bcbf" }}>
                     {searchResults.length} {searchResults.length === 1 ? t("result") : t("results")}
                   </span>
                 }
@@ -870,10 +867,10 @@ export function GameList() {
                 addStatus.startsWith(t("error")) ||
                   addStatus === t("invalidAppId") ||
                   addStatus === t("downloadFailed")
-                  ? "#ff6b6b"                               // error → red
+                  ? "#ff4444"                               // error → red
                   : addStatus === t("doneRestartSteam")
                     ? "#00cc00"                             // done → green
-                    : "#8b929a",                            // in-progress / neutral → grey
+                    : "#b8bcbf",                            // in-progress / neutral → Steam's grey
               fontSize: "12px",
             }}>
               {addStatus}

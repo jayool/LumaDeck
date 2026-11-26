@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { ACHIEVEMENTS_ENABLED, SLSSTEAM_TAB_ENABLED } from "../features";
+import { useInstallProgress } from "../hooks/useInstallProgress";
+import { InstallProgressRow } from "../components/InstallProgressRow";
 import {
   PanelSection,
   PanelSectionRow,
@@ -210,16 +212,31 @@ export function Settings() {
 
   // Run a fix action (reinject / apply_component / install), then restart Steam
   // to apply and refresh the view. All of these own the steam.sh ordering.
-  const runFix = async (fn: () => Promise<any>) => {
+  // `install` marks the fixes that run setup.sh (Update, Repair, Reinstall):
+  // the progress row shows under the button while they work.
+  const [applyingInstall, setApplyingInstall] = useState(false);
+  const installProgress = useInstallProgress(applyingInstall);
+  const runFix = async (fn: () => Promise<any>, install = false) => {
     setApplyingFix(true);
-    const r: any = await fn();
-    if (r?.success) {
-      await restartSteam();
-      await reloadStatus();
-    } else {
-      toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
+    if (install) setApplyingInstall(true);
+    // finally: a throw out of the call, the restart or the reload left the
+    // button on "Working…" and the progress row on screen for good
+    // (Settings, 2026-11-24).
+    try {
+      const r: any = await fn();
+      setApplyingInstall(false);
+      if (r?.success) {
+        await restartSteam();
+        await reloadStatus();
+      } else {
+        toast(t("toastError"), r?.error || r?.failedStep || "", 4000);
+      }
+    } catch (e: any) {
+      toast(t("toastError"), String(e?.message || e || ""), 4000);
+    } finally {
+      setApplyingInstall(false);
+      setApplyingFix(false);
     }
-    setApplyingFix(false);
   };
 
   useEffect(() => {
@@ -581,9 +598,10 @@ export function Settings() {
   // (update available — same subtext slot as the warnings, per component).
   const warnDesc = (line: string | null | undefined, kind: "warn" | "muted" | "info" = "warn") => {
     if (!line) return undefined;
-    const color = kind === "muted" ? "#888" : kind === "info" ? "#9cc4ff" : "#ff8c00";
+    // muted: no colour of ours, Steam's description grey (one grey, 2026-11-26)
+    const color = kind === "muted" ? undefined : kind === "info" ? "#5b9eff" : "#ff8c00";
     const marker = kind === "muted" ? "•" : kind === "info" ? "↑" : "⚠";
-    return <span style={{ color }}>{marker} {line}</span>;
+    return <span style={color ? { color } : undefined}>{marker} {line}</span>;
   };
 
   // "Installed" for the three hook components is derived from their (Dev-aware)
@@ -704,6 +722,10 @@ export function Settings() {
     { key: "lumalinux_health", label: "lumalinux health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_supported"] },
     { key: "cloudredirect_health", label: "CloudRedirect health", opts: ["real", "healthy", "not_installed", "not_loaded", "not_injected", "not_hooked", "not_authed", "disabled"] },
     { key: "quick_install", label: "Quick Install onboarding", opts: ["real", "show", "hide"] },
+    // "fake": Quick Install / Update / Repair / Reinstall run a bundled script
+    // that prints setup.sh's phases and installs nothing; Restart Steam is a
+    // no-op too. For watching the progress row (backend/dev_fake_setup.sh).
+    { key: "installer", label: "Installer (setup.sh)", opts: ["real", "fake"] },
     { key: "crash_guard", label: "Crash guard", opts: ["real", "active"] },
     { key: "hubcap_cred", label: "Hubcap key", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
     { key: "ryuu_cred", label: "Ryuu cookie", opts: ["real", "ok", "soon", "expired", "none", "unknown"] },
@@ -888,7 +910,7 @@ export function Settings() {
       <PanelSection title={t("achievementsSetup")}>
         <PanelSectionRow>
           <Field focusable highlightOnFocus={false} label={t("apiKeyLabel")}>
-            <span style={{ color: keySet ? "#00cc00" : "#ffaa00" }}>
+            <span style={{ color: keySet ? "#00cc00" : "#ff8c00" }}>
               {keySet ? t("apiKeySet") : t("apiKeyMissing")}
             </span>
           </Field>
@@ -1093,7 +1115,7 @@ export function Settings() {
               <Field focusable highlightOnFocus={false} label="CloudRedirect" description={crHealthDesc()}>
                 {crHealth?.state === "disabled" ? (
                   // Off by choice, not broken → grey "Disabled", no amber alarm.
-                  <span style={{ color: "#888" }}>{t("statusDisabled")}</span>
+                  <span style={{ color: "#b8bcbf" }}>{t("statusDisabled")}</span>
                 ) : (
                   <span style={{ color: compColor(crPresent, crHealth?.state === "healthy") }}>
                     {compStatus(crPresent, crHealth?.state === "healthy")}
@@ -1186,7 +1208,7 @@ export function Settings() {
             // Steam moved on and the broken component already shipped support
             // for the new build: Update is the fix, not a downgrade.
             label = t("sysUpdate");
-            fire = () => runFix(() => reinjectInstalled());
+            fire = () => runFix(() => reinjectInstalled(), true);
           } else if (primary === "unpin") {
             // Broken on a client nothing hooks while our pin holds it, and
             // Valve's build is supported: let Steam update.
@@ -1201,14 +1223,16 @@ export function Settings() {
             // Crash guard latched: Steam runs with no injection until its state
             // is cleared. Retry removes the guard's state files and restarts.
             label = t("sysReenable");
-            busyLabel = t("restartingSteam");
-            fire = () => runFix(() => retryInjection());
+            busyLabel = t("sysWorking");
+            // retry_injection runs setup.sh once before the restart: the
+            // progress row shows (it did not, 2026-11-24).
+            fire = () => runFix(() => retryInjection(), true);
           } else if (primary === "reinject") {
             // not_injected, or a core half-install: a plain restart won't help.
             // Repair re-runs setup.sh (reinject / finish the install) and restarts.
             // "Repair", not "Restart Steam", because a manual restart doesn't fix it.
             label = t("repair");
-            fire = () => runFix(() => reinjectInstalled());
+            fire = () => runFix(() => reinjectInstalled(), true);
           } else if (primary === "restart") {
             label = t("restartSteam");
             busyLabel = t("restartingSteam");
@@ -1219,7 +1243,7 @@ export function Settings() {
             // missing), "Install" only on a fresh device.
             label = coreInstalled ? t("reinstallDeps") : t("installDeps");
             fire = () => runFix(() =>
-              coreInstalled ? reinjectInstalled() : applyComponent("core", "install"));
+              coreInstalled ? reinjectInstalled() : applyComponent("core", "install"), true);
           }
           // Reinstalling while the pin holds a client the latest SLSsteam no
           // longer hooks would break Steam (plan_setup refuses it): no button;
@@ -1241,12 +1265,15 @@ export function Settings() {
               ? t(confirmKind === "desktop" ? "confirmContinuesDesktop" : "confirmRestartsSteam")
               : label;
           return (
-            <PanelSectionRow>
-              <ButtonItem layout="below" disabled={applyingFix}
-                description={desc} onClick={onClick}>
-                {shown}
-              </ButtonItem>
-            </PanelSectionRow>
+            <>
+              <PanelSectionRow>
+                <ButtonItem layout="below" disabled={applyingFix}
+                  description={desc} onClick={onClick}>
+                  {shown}
+                </ButtonItem>
+              </PanelSectionRow>
+              {applyingInstall && <InstallProgressRow {...installProgress} />}
+            </>
           );
         })()}
       </PanelSection>
@@ -1326,7 +1353,7 @@ export function Settings() {
           <PanelSectionRow>
             <Field label={t("pluginInstalled", pluginUpdate?.installed || "?")}>
               {pluginUpdate?.latest && (
-                <span style={{ color: pluginUpdate.has_update ? "#9cc4ff" : "#8b929a" }}>
+                <span style={{ color: pluginUpdate.has_update ? "#5b9eff" : "#b8bcbf" }}>
                   {t("pluginLatest", pluginUpdate.latest)}
                 </span>
               )}
@@ -1375,7 +1402,7 @@ export function Settings() {
       content: (
         <PanelSection title="Dev — force UI states">
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#8b929e", lineHeight: 1.4 }}>
+            <div style={{ fontSize: "12px", color: "#b8bcbf", lineHeight: 1.4 }}>
               Forge what the UI reads (health + credentials) to preview banners,
               System Status and credential rows. Nothing real is touched. Reopen
               the QAM after changing a value to see the main-page banners update.
@@ -1397,7 +1424,7 @@ export function Settings() {
             </ButtonItem>
           </PanelSectionRow>
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#8b929e", lineHeight: 1.4, marginTop: "12px" }}>
+            <div style={{ fontSize: "12px", color: "#b8bcbf", lineHeight: 1.4, marginTop: "12px" }}>
               Lector SteamDB: lee el feed de builds, el historial de cada depot
               instalado y la página de la build más antigua, y pasa el traductor.
               Resultado completo en el log del plugin y en
@@ -1423,7 +1450,7 @@ export function Settings() {
           </PanelSectionRow>
           {devProbeMsg && (
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#c7d5e0", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              <div style={{ fontSize: "12px", color: "#b8bcbf", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {devProbeMsg}
               </div>
             </PanelSectionRow>

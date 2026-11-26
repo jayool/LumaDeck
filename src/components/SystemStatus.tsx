@@ -1,7 +1,8 @@
 import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
-import { useRef, useState, useEffect } from "react";
+import { Fragment, useRef, useState, useEffect } from "react";
 import { FaExclamationTriangle, FaArrowCircleUp } from "react-icons/fa";
 import { useT } from "../i18n";
+import { InstallProgressRow } from "./InstallProgressRow";
 
 // --- The unified component-status shape (matches backend get_components_status) ---
 // Canonical state set, shared by all three components. not_authed / disabled
@@ -273,7 +274,7 @@ export function buildRows(
       label: t("sysRecovery"), description: t("sysRecoveryDesc"),
       actionLabel: t("sysReenable"),
       onAction: actions.retry,
-      confirm: "restart", busyLabel: t("restartingSteam"),
+      confirm: "restart",   // busy label: the default "Working…" (setup.sh runs first; chosen 2026-11-24)
     });
   } else if (anyUnsupported && updateFixesBreak(status)) {
     // The component already shipped support for the new build: Update (one
@@ -325,7 +326,7 @@ export function buildRows(
       label: t("sysRecovery"), description: t("sysRecoveryDesc"),
       actionLabel: t("sysReenable"),
       onAction: actions.retry,
-      confirm: "restart", busyLabel: t("restartingSteam"),
+      confirm: "restart",   // busy label: the default "Working…" (setup.sh runs first; chosen 2026-11-24)
     });
   } else if (anyInjectLost || notComplete || anyNotLoaded) {
     // not_injected and a core half-install (SLSsteam xor lumalinux) need
@@ -445,16 +446,23 @@ export function buildRows(
 // One native surface for both "something's wrong" and "something's new". Renders
 // nothing when there's nothing to say. Replaces HealthBanner + UpdatesBanner.
 export function SystemStatus({
-  status, stuck, busy, actions,
+  status, stuck, busy, actions, progress = null,
 }: {
   status: ComponentsStatus | null;
   stuck: { appid: number; name: string }[];
   busy: boolean;
   actions: SystemStatusActions;
+  // The setup.sh run behind Update / Repair while it works (useInstallProgress).
+  progress?: { label: string; percent: number | null; elapsed: string } | null;
 }) {
   const t = useT();
   // Which row is mid-confirm (first tap done, waiting for the second).
   const [confirming, setConfirming] = useState<string | null>(null);
+  // The row whose action is running: the progress row renders right under
+  // it (it sat under the last row, "Cloud saves need sign-in", while Repair
+  // ran two rows up; screenshot 2026-11-24 10:48). Cleared when busy drops.
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  useEffect(() => { if (!busy) setActiveKey(null); }, [busy]);
   // Auto-revert the two-tap confirm, mirroring the Quick Install button: a first
   // tap arms the row, and if the second tap doesn't come within 5s the label
   // reverts to the action instead of staying "Press again to confirm" forever.
@@ -494,6 +502,7 @@ export function SystemStatus({
             return;
           }
           clearConfirm();
+          setActiveKey(r.key);
           r.onAction();
         };
         const buttonLabel = busy
@@ -502,24 +511,28 @@ export function SystemStatus({
             ? t(r.confirm === "desktop" ? "confirmContinuesDesktop" : "confirmRestartsSteam")
             : r.actionLabel;
         return (
-          <PanelSectionRow key={r.key}>
-            {r.actionLabel && r.onAction ? (
-              <ButtonItem
-                layout="below"
-                icon={icon}
-                label={r.label}
-                description={r.description}
-                onClick={handleClick}
-                disabled={busy}
-              >
-                {buttonLabel}
-              </ButtonItem>
-            ) : (
-              <Field icon={icon} label={r.label} description={r.description} />
-            )}
-          </PanelSectionRow>
+          <Fragment key={r.key}>
+            <PanelSectionRow>
+              {r.actionLabel && r.onAction ? (
+                <ButtonItem
+                  layout="below"
+                  icon={icon}
+                  label={r.label}
+                  description={r.description}
+                  onClick={handleClick}
+                  disabled={busy}
+                >
+                  {buttonLabel}
+                </ButtonItem>
+              ) : (
+                <Field icon={icon} label={r.label} description={r.description} />
+              )}
+            </PanelSectionRow>
+            {progress && activeKey === r.key && <InstallProgressRow {...progress} />}
+          </Fragment>
         );
       })}
+      {progress && !rows.some((r) => r.key === activeKey) && <InstallProgressRow {...progress} />}
     </PanelSection>
   );
 }

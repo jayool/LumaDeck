@@ -100,6 +100,7 @@ const strings: Record<Lang, Record<string, string>> = {
     steamdbNeedsCheck: "SteamDB asks for a browser check",
     steamdbNeedsCheckDesc: "Open SteamDB once, wait for the page to load, then try again.",
     openSteamdb: "Open SteamDB",
+    openInSteamLibrary: "Open in Steam library",
     installBuild: "Install build {0}",
     installingBuild: "Setting build {0}…",
     buildInstalled: "installed",
@@ -387,6 +388,33 @@ const strings: Record<Lang, Record<string, string>> = {
     quickInstallIntro: "LumaDeck isn't set up yet. Quick Install gets everything ready.",
     quickInstalling: "Setting up...",
     quickInstallStarting: "Starting...",
+    // Quick Install / Update / Repair progress row: one label per setup.sh
+    // phase (backend installer.INSTALL_PHASES ids).
+    installPhase_preparing: "Preparing…",
+    installPhase_dotnet: "Installing .NET…",
+    installPhase_slssteam: "Downloading SLSsteam…",
+    installPhase_cloudredirect: "Downloading CloudRedirect…",
+    installPhase_cloudredirect_app: "Installing CloudRedirect app",
+    installPhase_netsock: "Downloading netsock…",
+    installPhase_lumalinux: "Downloading lumalinux…",
+    installPhase_tools: "Installing tools…",
+    installPhase_gamemode: "Setting up Game Mode…",
+    installPhase_done: "Done",
+    installStepOf: "{0}/{1}",
+    // the app phase, by what is really happening (backend/install_progress.py: sub)
+    installSub_app_download: "Downloading CloudRedirect app",
+    installSub_runtime_download: "Downloading KDE runtime",
+    installSub_app_install: "Installing CloudRedirect app",
+    // …and after five quiet seconds, one of these every five seconds, the
+    // last one for as long as the silence lasts (decoration, chosen 2026-11-24)
+    installFiller_0: "Unpacking files…",
+    installFiller_1: "Writing to disk…",
+    installFiller_2: "Verifying files…",
+    installFiller_3: "Preparing the app…",
+    installFiller_4: "Still working…",
+    installFiller_5: "Setting up cloud saves…",
+    installFiller_6: "Almost there…",
+    installFiller_7: "Finishing up…",
     toastQuickInstallDone: "Setup complete!",
     toastQuickInstallFailed: "Setup failed at:",
     platform: "Platform",
@@ -514,6 +542,7 @@ const strings: Record<Lang, Record<string, string>> = {
     steamdbNeedsCheck: "O SteamDB pede uma verificação no navegador",
     steamdbNeedsCheckDesc: "Abra o SteamDB uma vez, espere a página carregar e tente de novo.",
     openSteamdb: "Abrir SteamDB",
+    openInSteamLibrary: "Abrir na biblioteca da Steam",
     installBuild: "Instalar build {0}",
     installingBuild: "Definindo build {0}…",
     buildInstalled: "instalada",
@@ -786,6 +815,28 @@ const strings: Record<Lang, Record<string, string>> = {
     quickInstallIntro: "O LumaDeck ainda não está configurado. A Instalação Rápida configura tudo o que ele precisa para baixar e rodar seus jogos — saves na nuvem incluídos — em uma única etapa.",
     quickInstalling: "Instalação Rápida em andamento...",
     quickInstallStarting: "Iniciando Instalação Rápida...",
+    installPhase_preparing: "Preparando…",
+    installPhase_dotnet: "Instalando .NET…",
+    installPhase_slssteam: "Baixando SLSsteam…",
+    installPhase_cloudredirect: "Baixando CloudRedirect…",
+    installPhase_cloudredirect_app: "Instalando o app CloudRedirect",
+    installPhase_netsock: "Baixando netsock…",
+    installPhase_lumalinux: "Baixando lumalinux…",
+    installPhase_tools: "Instalando ferramentas…",
+    installPhase_gamemode: "Configurando o Game Mode…",
+    installPhase_done: "Pronto",
+    installStepOf: "{0}/{1}",
+    installSub_app_download: "Baixando o app CloudRedirect",
+    installSub_runtime_download: "Baixando o runtime KDE",
+    installSub_app_install: "Instalando o app CloudRedirect",
+    installFiller_0: "Descompactando arquivos…",
+    installFiller_1: "Gravando no disco…",
+    installFiller_2: "Verificando arquivos…",
+    installFiller_3: "Preparando o app…",
+    installFiller_4: "Ainda trabalhando…",
+    installFiller_5: "Configurando saves na nuvem…",
+    installFiller_6: "Quase lá…",
+    installFiller_7: "Finalizando…",
     toastQuickInstallDone: "Instalação Rápida concluída!",
     toastQuickInstallFailed: "Instalação Rápida falhou na etapa:",
     platform: "Plataforma",
@@ -888,7 +939,7 @@ export function getLanguage(): Lang {
   return currentLang;
 }
 
-function translate(key: string, ...args: (string | number)[]): string {
+export function translate(key: string, ...args: (string | number)[]): string {
   let s = strings[currentLang]?.[key] || strings.en[key] || key;
   args.forEach((arg, i) => {
     s = s.replace(`{${i}}`, String(arg));

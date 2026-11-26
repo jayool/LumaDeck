@@ -66,7 +66,7 @@ import {
 } from "../api";
 import { errorText, useT } from "../i18n";
 
-import { isOwnedBySteam } from "../steamOwnership";
+import { isOwnedBySteam, isInSteamLibrary, steamLibraryRoute } from "../steamOwnership";
 import { disableDlcs, enableDlcs } from "../steamDlc";
 interface GameDetailProps {
   appid: number;
@@ -161,6 +161,14 @@ export function GameDetail({ appid }: GameDetailProps) {
   // The account owns the base game and LumaDeck only manages its DLC
   // (backend pins.json `owned`, set at Add time from Steam's own answer).
   const [isOwned, setIsOwned] = useState(false);
+  // Steam has a library entry for the app: the "Open in Steam library" button
+  // only makes sense then. Re-asked whenever the page's own picture of the game
+  // changes (added, re-downloaded), since the entry appears with SLSsteam's hot
+  // reload a moment after Add game.
+  const [inSteamLibrary, setInSteamLibrary] = useState(false);
+  useEffect(() => {
+    setInSteamLibrary(isInSteamLibrary(appid));
+  }, [appid, hasLua, downloadState?.status]);
   // Game version (Status row + the Updates picker; backend/game_versions.py).
   // pinVersion: the build we pinned the game to (pins.json: buildid/date/label,
   // any may be null); acfBuildid: the .acf's buildid, right only while Steam
@@ -1139,7 +1147,7 @@ export function GameDetail({ appid }: GameDetailProps) {
         <PanelSectionRow>
           <Field label={`AppID ${appid}`} description={installPath || undefined}>
             {hasLua && (
-              <span style={{ color: installPath ? "#00cc00" : "#ffaa00" }}>
+              <span style={installPath ? { color: "#00cc00" } : undefined}>
                 {isOwned ? t("ownedDlcOnly") : (installPath ? t("installed") : t("manifestOnly"))}
                 {gameSize > 0 && ` · ${formatSize(gameSize)}`}
               </span>
@@ -1157,6 +1165,17 @@ export function GameDetail({ appid }: GameDetailProps) {
               <span>{versionRow.value}</span>
             </Field>
           </PanelSectionRow>
+        )}
+        {/* Straight to Steam's own page for the game (install/play from
+            there), the one the library grid opens. Only once Steam lists
+            the app; before that the page would be empty. Last row of
+            Status, under the AppID / version rows (moved here from Updates,
+            2026-11-24). */}
+        {inSteamLibrary && (
+          <ActionButton
+            label={t("openInSteamLibrary")}
+            onClick={() => Navigation.Navigate(steamLibraryRoute(appid))}
+          />
         )}
       </PanelSection>
         </>
@@ -1341,7 +1360,7 @@ export function GameDetail({ appid }: GameDetailProps) {
                 tab in Settings. Show why it's not ready and send the user there. */}
             <PanelSectionRow>
               <Field
-                icon={<FaExclamationTriangle color="#ffaa00" />}
+                icon={<FaExclamationTriangle color="#ff8c00" />}
                 label={t("achievementStatusNotConfigured")}
               />
             </PanelSectionRow>
@@ -1533,7 +1552,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             the severity. (DESIGN_UI.md §8f.) */}
         <PanelSectionRow>
           <Field
-            icon={<FaExclamationTriangle color="#e07070" />}
+            icon={<FaExclamationTriangle color="#ff4444" />}
             label={t("uninstallWillRemove")}
             description={(isOwned ? [
               t("uninstallItemOwnedKeeps"),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import re
 import tempfile
@@ -491,7 +492,93 @@ def _set_playnotowned_no(config_path: str) -> tuple[bool, str]:
     return True, "PlayNotOwnedGames absent (removed in SLSsteam 20260707+): nothing to flip"
 
 
-async def install_via_setup(gamemode: bool = True) -> dict:
+from install_progress import InstallProgress, PHASE_LABELS  # noqa: E402
+
+FAKE_SETUP_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dev_fake_setup.sh")
+
+
+def fake_installer_active() -> bool:
+    """Dev preview (Settings ▸ Dev ▸ Installer: fake, backend/dev.py key
+    "installer"): every setup.sh run (Quick Install, Update, Repair,
+    Reinstall) executes dev_fake_setup.sh instead, which prints the real
+    script's phases and installs nothing; restart_steam is a no-op meanwhile.
+    Off on a normal install (no override file)."""
+    try:
+        import dev
+        return dev.get("installer") == "fake"
+    except Exception:
+        return False
+
+
+def new_install_state(rerun: bool = False) -> dict:
+    """A fresh SETUP_INSTALL_STATE: the tracker (install_progress) owns the
+    phase, the percent and the bar; get_setup_status() copies its snapshot
+    into the flat keys the frontend reads. `rerun`: the stack is already
+    installed (Repair / Update / Reinstall / Re-enable), so the bar weighs
+    the phases by what a rerun really spends (install_progress.WEIGHTS)."""
+    return {"status": "installing", "error": None, "tracker": InstallProgress(rerun=rerun)}
+
+
+def stack_installed() -> bool:
+    """Any component of the stack on disk: setup.sh will find the runtime,
+    .NET and the libraries in place and run as a rerun."""
+    from paths import STEAM_CLIENT_32, STEAM_CLIENT_64
+    return bool(check_slssteam_installed(STEAM_CLIENT_32) or check_slssteam_installed(STEAM_CLIENT_64)
+                or check_cloudredirect_installed(STEAM_CLIENT_32) or check_cloudredirect_installed(STEAM_CLIENT_64)
+                or check_lumalinux_installed())
+
+
+def set_phase(state: dict, phase: str) -> None:
+    state["tracker"].enter(phase)
+
+
+def split_output(buf: bytes) -> tuple[list[str], bytes]:
+    """Complete lines in `buf`, split on \r, \n or \r\n (curl's and flatpak's
+    progress is \r-separated), and the unterminated tail to keep for the next
+    chunk."""
+    text = buf.decode("utf-8", errors="replace")
+    # Cursor-movement and erase codes count as separators too: flatpak
+    # redraws its live table in place with them and no \r or \n for a whole
+    # minute (a real Quick Install, codespace 2026-11-23), which left every
+    # redraw in the tail, unseen, until the install ended. Style codes
+    # (ESC[...m: faint, green, reset) are NOT separators: flatpak wraps its
+    # bar, its percent and the ✓ in them, and splitting there handed the
+    # tracker "Installing 1/5…", "████▊", "84%" and "1. [", "✓", "] org…"
+    # as separate pieces that matched nothing (the 14:51 run's log).
+    parts = re.split(r"\r\n|\r|\n|\x1b\[[0-9;?]*[A-LN-Za-ln-z]", text)
+    tail = parts.pop()
+    k = tail.rfind("\x1b")
+    if k > 0:                                   # text, then an escape still being written
+        parts.append(tail[:k])
+        tail = tail[k:]
+    return [p for p in parts if p.strip()], tail.encode("utf-8")
+
+
+def note_output_line(state: dict, text: str) -> None:
+    """One line of setup.sh output into the tracker (phase, percent) and, if
+    it is not a progress redraw, into the plugin log: the only record of what
+    the script did (which release it fetched, which step failed)."""
+    tracker = state["tracker"]
+    before = tracker.detail
+    tracker.feed(text)
+    if tracker.detail != before:
+        logger.info("setup.sh: %s", tracker.detail)
+
+
+def status_view(state: dict) -> dict:
+    """The flat status the frontend reads: status/error plus the tracker's
+    snapshot (phase, progress label, percent, overall, step, stepTotal,
+    detail)."""
+    out = {k: v for k, v in state.items() if k != "tracker"}
+    tracker = state.get("tracker")
+    if tracker is not None:
+        out.update(tracker.snapshot())
+    else:
+        out.setdefault("progress", "")
+    return out
+
+
+async def install_via_setup(gamemode: bool = True, rerun: bool = False) -> dict:
     """WS2: install the whole unlock stack via lumalinux/setup.sh (wrapper model).
 
     Replaces the headcrab install_dependencies + install_lumalinux pair with ONE
@@ -504,18 +591,29 @@ async def install_via_setup(gamemode: bool = True) -> dict:
     handles both modes itself. Idempotent, so this is also the repair/reinject path.
     """
     global SETUP_INSTALL_STATE
-    SETUP_INSTALL_STATE = {"status": "installing", "progress": "Starting installer...", "error": None}
-    logger.info("LumaDeck: install_via_setup() entered (url=%s)", SETUP_SH_URL)
+    SETUP_INSTALL_STATE = new_install_state(rerun=rerun)
+    set_phase(SETUP_INSTALL_STATE, "preparing")
+    logger.info("LumaDeck: install_via_setup() entered (url=%s, %s)", SETUP_SH_URL,
+                "rerun: the stack is installed" if rerun else "fresh install")
+
+    fake = fake_installer_active()
+    if fake:
+        logger.info("LumaDeck: install_via_setup in FAKE mode (dev override): running %s, installing nothing",
+                    FAKE_SETUP_SCRIPT)
 
     tmp_dir = None
     try:
         tmp_dir = tempfile.mkdtemp(prefix="lumadeck_setup_")
         script_path = os.path.join(tmp_dir, "setup.sh")
-        SETUP_INSTALL_STATE["progress"] = "Downloading setup.sh..."
-        if not await _download(SETUP_SH_URL, script_path):
-            SETUP_INSTALL_STATE["status"] = "failed"
-            SETUP_INSTALL_STATE["error"] = "Failed to download setup.sh"
-            return {"success": False}
+        if fake:
+            import shutil as _sh
+            _sh.copyfile(FAKE_SETUP_SCRIPT, script_path)
+        else:
+            logger.info("LumaDeck: downloading setup.sh")
+            if not await _download(SETUP_SH_URL, script_path):
+                SETUP_INSTALL_STATE["status"] = "failed"
+                SETUP_INSTALL_STATE["error"] = "Failed to download setup.sh"
+                return {"success": False}
         os.chmod(script_path, 0o700)
 
         try:
@@ -535,17 +633,20 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         # (Let Steam update first, or wait). Never the 2026-10-14 combination
         # (new SLSsteam on the pinned client), which crash-looped Steam.
         plan = {"refuse": None, "reason": "not evaluated"}
-        try:
-            plan = await _plan_this_run()
-        except Exception as exc:
-            logger.warning("LumaDeck: setup plan failed (%s); installing latest as before", exc)
+        if fake:
+            plan = {"refuse": None, "reason": "fake installer (dev override)"}
+        else:
+            try:
+                plan = await _plan_this_run()
+            except Exception as exc:
+                logger.warning("LumaDeck: setup plan failed (%s); installing latest as before", exc)
         logger.info("LumaDeck: setup plan: %s", plan)
         if plan.get("refuse"):
             SETUP_INSTALL_STATE["status"] = "failed"
             SETUP_INSTALL_STATE["error"] = plan["refuse"]
             return {"success": False}
 
-        SETUP_INSTALL_STATE["progress"] = "Running installer..."
+        logger.info("LumaDeck: running setup.sh")
         # setup.sh is ENTIRELY $HOME-based (SLSsteam, config, wrapper, .dotnet,
         # systemd --user). Decky runs this backend as ROOT, so a plain `bash
         # setup.sh` would (a) install everything under /root — where Steam (uid
@@ -582,30 +683,79 @@ async def install_via_setup(gamemode: bool = True) -> dict:
         else:
             argv = ["bash", script_path]
             proc_env = clean_env(HOME=real_home())
-        process = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            cwd=tmp_dir,
-            env=proc_env,
-        )
+        if fake and os.environ.get("LUMADECK_FAKE_SETUP_FAST"):
+            # The tests: no pauses. Through sudo's `env` too, sudo resets the
+            # environment otherwise.
+            proc_env["LUMADECK_FAKE_SETUP_FAST"] = "1"
+            if argv[0] == "sudo":
+                argv.insert(argv.index("env") + 1, "LUMADECK_FAKE_SETUP_FAST=1")
+        # A pseudo-terminal, not a pipe: flatpak prints its progress bar
+        # ("Installing 3/7… ████ 45%", the 710 MB of the CloudRedirect app's
+        # runtimes) only when it sees a terminal, and that bar is what drives
+        # most of the QAM's progress (install_progress.py). curl's bar needs
+        # no terminal. The child gets a plain TERM/COLUMNS; its one terminal
+        # query (cursor position, ESC[6n) is answered so it never waits.
+        import pty
+        master, slave = pty.openpty()
+        term_env = {"TERM": "xterm", "COLUMNS": "100", "LINES": "40"}
+        if argv[0] == "sudo":
+            at = argv.index("env") + 1
+            for k, v in term_env.items():
+                argv.insert(at, f"{k}={v}")
+        proc_env = dict(proc_env, **term_env)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdin=slave, stdout=slave, stderr=slave,
+                cwd=tmp_dir,
+                env=proc_env,
+                start_new_session=True,
+            )
+        finally:
+            os.close(slave)
 
         async def _read_output():
+            # Read by chunks and split on \r as well as \n: the progress bars
+            # redraw one line with carriage returns and no newline, so a
+            # readline() loop saw nothing for a whole download and the QAM
+            # looked stuck (a user's report, 2026-11-21).
+            loop = asyncio.get_running_loop()
+            pending = b""
             while True:
-                line = await process.stdout.readline()
-                if not line:
+                try:
+                    chunk = await loop.run_in_executor(None, os.read, master, 4096)
+                except OSError:            # EIO: the child closed its end
+                    chunk = b""
+                if not chunk:
                     break
-                text = line.decode("utf-8", errors="replace").rstrip()
-                SETUP_INSTALL_STATE["progress"] = text.strip()
-                # The script's own output is the only record of what it did
-                # (which release it fetched, which step failed): keep it in the
-                # plugin log, not just on screen for a second.
-                logger.info("setup.sh: %s", text)
+                if b"\x1b[6n" in chunk:
+                    try:
+                        os.write(master, b"\x1b[1;1R")
+                    except OSError:
+                        pass
+                pending += chunk
+                lines, pending = split_output(pending)
+                for text in lines:
+                    note_output_line(SETUP_INSTALL_STATE, text)
+            if pending.strip():
+                note_output_line(SETUP_INSTALL_STATE, pending.decode("utf-8", errors="replace"))
 
-        asyncio.create_task(_read_output())
+        reader = asyncio.create_task(_read_output())
         await process.wait()
+        try:
+            await asyncio.wait_for(reader, timeout=5)
+        except Exception:
+            pass
+        try:
+            os.close(master)
+        except OSError:
+            pass
 
-        if process.returncode == 0:
+        if process.returncode == 0 and fake:
+            # Nothing was installed, nothing to verify: the run is the point.
+            SETUP_INSTALL_STATE["status"] = "done"
+            set_phase(SETUP_INSTALL_STATE, "done")
+        elif process.returncode == 0:
             # Verify the post-condition instead of trusting the exit code: the
             # wrapper + the two load-bearing .so's must be on disk.
             # SLSsteam of either architecture counts here: setup.sh installs
@@ -629,12 +779,12 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 # says when that is safe. (Lifting on install was the
                 # lift-and-install move that crash-looped Steam, 2026-10-14.)
                 SETUP_INSTALL_STATE["status"] = "done"
-                SETUP_INSTALL_STATE["progress"] = "Stack installed!"
+                set_phase(SETUP_INSTALL_STATE, "done")
         else:
             SETUP_INSTALL_STATE["status"] = "failed"
             SETUP_INSTALL_STATE["error"] = (
                 f"Installer exited with code {process.returncode} — "
-                f"last line: {SETUP_INSTALL_STATE['progress']}"
+                f"last line: {SETUP_INSTALL_STATE['tracker'].detail}"
             )
 
     except Exception as exc:
@@ -650,11 +800,11 @@ async def install_via_setup(gamemode: bool = True) -> dict:
                 pass
 
     logger.info("LumaDeck: install_via_setup finished, state=%s", SETUP_INSTALL_STATE)
-    return {"success": SETUP_INSTALL_STATE["status"] == "done"}
+    return {"success": SETUP_INSTALL_STATE["status"] == "done", "fake": fake}
 
 
 def get_setup_status() -> dict:
-    return SETUP_INSTALL_STATE.copy()
+    return status_view(SETUP_INSTALL_STATE)
 
 
 async def _plan_this_run() -> dict:
@@ -708,7 +858,8 @@ async def quick_install(gamemode: bool = True) -> dict:
         "step": steps[0][0],
         "stepIndex": 0,
         "totalSteps": len(steps),
-        "progress": "Starting Quick Install...",
+        "progress": PHASE_LABELS["preparing"],
+        "phase": "preparing",
         "error": None,
     }
     logger.info("LumaDeck: quick_install() entered")
@@ -737,9 +888,32 @@ async def quick_install(gamemode: bool = True) -> dict:
 
     QUICK_INSTALL_STATE["status"] = "done"
     QUICK_INSTALL_STATE["stepIndex"] = len(steps)
-    QUICK_INSTALL_STATE["progress"] = "Quick Install complete!"
+    QUICK_INSTALL_STATE["progress"] = PHASE_LABELS["done"]
+    QUICK_INSTALL_STATE["phase"] = "done"
+    QUICK_INSTALL_STATE["overall"] = 100.0
     logger.info("LumaDeck: quick_install finished OK")
     return {"success": True}
+
+
+_APP_PHASE_LOGGED = None
+
+
+def _log_app_phase(snap: dict) -> None:
+    """One log line per visible change of the app phase (sub-phase, filler,
+    bytes, writing, overall): the plugin log is the only record of what
+    flatpak reported through the pty, and the bar's plateaus on the
+    recordings (2026-11-24) could not be traced without it. Polled once a
+    second, so at most one line a second."""
+    global _APP_PHASE_LOGGED
+    if snap.get("phase") != "cloudredirect_app":
+        _APP_PHASE_LOGGED = None
+        return
+    key = (snap.get("sub"), snap.get("filler"), snap.get("mbDone"), snap.get("mbTotal"),
+           snap.get("writing"), snap.get("overall"))
+    if key != _APP_PHASE_LOGGED:
+        _APP_PHASE_LOGGED = key
+        logger.info("app phase: sub=%s filler=%s mb=%s/%s writing=%s overall=%s",
+                    *key)
 
 
 def get_quick_install_status() -> dict:
@@ -752,8 +926,13 @@ def get_quick_install_status() -> dict:
         }.get(state.get("step"))
         if live_getter:
             sub = live_getter()
-            if sub.get("progress"):
-                state["progress"] = sub["progress"]
+            # The bar: phase label, overall percent, step N of M, from the
+            # running setup.sh (install_progress.py).
+            for k in ("progress", "phase", "percent", "overall", "step", "stepTotal", "detail",
+                      "mbDone", "mbTotal", "writing", "sub", "filler", "kind"):
+                if k in sub:
+                    state[k] = sub[k]
+            _log_app_phase(sub)
             if sub.get("status") == "failed" and sub.get("error"):
                 state["error"] = sub["error"]
     return state
@@ -772,13 +951,16 @@ async def reinject_installed() -> dict:
     """
     steps = []
     # WS2: setup.sh re-installs and re-injects the WHOLE stack idempotently, so run
-    # it if any component is present (reinject = re-run setup.sh).
-    from paths import STEAM_CLIENT_32, STEAM_CLIENT_64
-    if (check_slssteam_installed(STEAM_CLIENT_32) or check_slssteam_installed(STEAM_CLIENT_64)
-            or check_cloudredirect_installed(STEAM_CLIENT_32) or check_cloudredirect_installed(STEAM_CLIENT_64)
-            or check_lumalinux_installed()):
-        steps.append(("stack", install_via_setup, get_setup_status))
+    # it if any component is present (reinject = re-run setup.sh). A rerun for
+    # the bar: the runtime and .NET are in place, the phases weigh differently.
+    if stack_installed():
+        steps.append(("stack", functools.partial(install_via_setup, rerun=True), get_setup_status))
 
+    if not steps and fake_installer_active():
+        # the fake installer installs nothing, so a rehearsal of Repair /
+        # Update / Reinstall would skip here and the row never show
+        # (Settings, 2026-11-24): rehearse the run anyway
+        steps.append(("stack", install_via_setup, get_setup_status))
     if not steps:
         return {"success": True, "skipped": "nothing installed"}
     return await _run_install_steps(steps, "Re-injecting")
@@ -847,7 +1029,7 @@ async def apply_component(component_id: str, op: str = "repair") -> dict:
     # SLSsteam + CloudRedirect + netsock + lumalinux + .NET and re-asserts the
     # wrapper + Game Mode drop-in). Per-component granularity collapses into it.
     if component_id in ("slssteam", "cloudredirect", "lumalinux", "core"):
-        return await _run_install_steps(
-            [("stack", install_via_setup, get_setup_status)], "Installing")
+        runner = functools.partial(install_via_setup, rerun=stack_installed())
+        return await _run_install_steps([("stack", runner, get_setup_status)], "Installing")
 
     return {"success": False, "error": f"unknown component '{component_id}'"}
