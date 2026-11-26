@@ -585,25 +585,19 @@ export function GameList() {
 
   // The game info card (name + facts + notices). Shared by both Add-Game modes:
   // By AppID (staged via the field) and By name (staged by picking a result).
-  // Native Field: name as the label, "dev · size · ProtonDB" as the
-  // description (ProtonDB's tier colour inline; no Metacritic: a score does
-  // not help decide whether to add, dropped 2026-11-26), notices merged in
-  // below.
+  // Native Field: name as the label; the description one thing per line
+  // ("dev · size", then "ProtonDB <tier>" in the tier's colour, then the
+  // owned line, then the notices): the QAM is narrow and one long line with
+  // three colours broke where it liked (chosen 2026-11-26). No Metacritic: a
+  // score does not help decide whether to add.
   const gameCard = pendingGameInfo ? (() => {
     const size = pendingGameInfo.sizeBytes > 0
       ? (pendingGameInfo.sizeBytes >= 1073741824
         ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
         : `${Math.round(pendingGameInfo.sizeBytes / 1048576)} MB`)
       : "";
-    const facts: any[] = [];
-    if (pendingGameInfo.developer) facts.push(pendingGameInfo.developer);
-    if (size) facts.push(size);
-    if (pendingGameInfo.protondb) facts.push(
-      <span key="proton" style={{ color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2" }}>
-        ProtonDB {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
-      </span>,
-    );
-    const desc = facts.flatMap((f, i) => (i === 0 ? [f] : [" · ", f]));
+    const facts = [pendingGameInfo.developer, size].filter(Boolean).join(" · ");
+    const proton = pendingGameInfo.protondb;
     // Hint from Steam's own library model (steamOwnership.ts); the backend
     // decides for itself. One short line: the QAM is narrow.
     const pendingOwned = isOwnedBySteam(parseInt(addAppId, 10));
@@ -614,7 +608,12 @@ export function GameList() {
             label={pendingGameInfo.name || `AppID ${addAppId}`}
             description={
               <>
-                <span>{desc}</span>
+                {facts && <div>{facts}</div>}
+                {proton && (
+                  <div style={{ marginTop: "4px", color: PROTONDB_TIER_COLOR[proton] || "#9aa4b2" }}>
+                    ProtonDB {proton.charAt(0).toUpperCase() + proton.slice(1)}
+                  </div>
+                )}
                 {pendingOwned && (
                   <div style={{ marginTop: "4px", color: "#00cc00" }}>
                     {t("ownedGameTitle")}: {t("ownedGameDesc")}
