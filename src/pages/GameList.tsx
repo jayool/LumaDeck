@@ -589,7 +589,7 @@ export function GameList() {
   // the description (colours kept inline), notices merged in below.
   const gameCard = pendingGameInfo ? (() => {
     const mc: number | null = pendingGameInfo.metacritic;
-    const mcColor = mc == null ? "" : mc >= 75 ? "#7ed36f" : mc >= 50 ? "#c8a84b" : "#e06060";
+    const mcColor = mc == null ? "" : mc >= 75 ? "#00cc00" : mc >= 50 ? "#c8a84b" : "#e06060";
     const size = pendingGameInfo.sizeBytes > 0
       ? (pendingGameInfo.sizeBytes >= 1073741824
         ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
@@ -617,7 +617,7 @@ export function GameList() {
               <>
                 <span>{desc}</span>
                 {pendingOwned && (
-                  <div style={{ marginTop: "4px", color: "#7ed36f" }}>
+                  <div style={{ marginTop: "4px", color: "#00cc00" }}>
                     {t("ownedGameTitle")}: {t("ownedGameDesc")}
                   </div>
                 )}
