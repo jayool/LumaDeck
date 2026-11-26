@@ -806,7 +806,7 @@ export function GameList() {
               style={{
                 width: "100%",
                 textAlign: "left",
-                color: "#ff6b6b",
+                color: "#ff4444",
                 fontSize: "12px",
               }}
             >
@@ -867,7 +867,7 @@ export function GameList() {
                 addStatus.startsWith(t("error")) ||
                   addStatus === t("invalidAppId") ||
                   addStatus === t("downloadFailed")
-                  ? "#ff6b6b"                               // error → red
+                  ? "#ff4444"                               // error → red
                   : addStatus === t("doneRestartSteam")
                     ? "#00cc00"                             // done → green
                     : "#8b929a",                            // in-progress / neutral → grey

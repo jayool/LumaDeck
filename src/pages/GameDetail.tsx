@@ -1552,7 +1552,7 @@ export function GameDetail({ appid }: GameDetailProps) {
             the severity. (DESIGN_UI.md §8f.) */}
         <PanelSectionRow>
           <Field
-            icon={<FaExclamationTriangle color="#e07070" />}
+            icon={<FaExclamationTriangle color="#ff4444" />}
             label={t("uninstallWillRemove")}
             description={(isOwned ? [
               t("uninstallItemOwnedKeeps"),
