@@ -585,11 +585,11 @@ export function GameList() {
 
   // The game info card (name + facts + notices). Shared by both Add-Game modes:
   // By AppID (staged via the field) and By name (staged by picking a result).
-  // Native Field: name as the label, "dev · size · Metacritic · ProtonDB" as
-  // the description (colours kept inline), notices merged in below.
+  // Native Field: name as the label, "dev · size · ProtonDB" as the
+  // description (ProtonDB's tier colour inline; no Metacritic: a score does
+  // not help decide whether to add, dropped 2026-11-26), notices merged in
+  // below.
   const gameCard = pendingGameInfo ? (() => {
-    const mc: number | null = pendingGameInfo.metacritic;
-    const mcColor = mc == null ? "" : mc >= 75 ? "#00cc00" : mc >= 50 ? "#c8a84b" : "#e06060";
     const size = pendingGameInfo.sizeBytes > 0
       ? (pendingGameInfo.sizeBytes >= 1073741824
         ? `${(pendingGameInfo.sizeBytes / 1073741824).toFixed(1)} GB`
@@ -598,7 +598,6 @@ export function GameList() {
     const facts: any[] = [];
     if (pendingGameInfo.developer) facts.push(pendingGameInfo.developer);
     if (size) facts.push(size);
-    if (mc != null) facts.push(<span key="mc" style={{ color: mcColor }}>Metacritic {mc}</span>);
     if (pendingGameInfo.protondb) facts.push(
       <span key="proton" style={{ color: PROTONDB_TIER_COLOR[pendingGameInfo.protondb] || "#9aa4b2" }}>
         ProtonDB {pendingGameInfo.protondb.charAt(0).toUpperCase() + pendingGameInfo.protondb.slice(1)}
