@@ -18,12 +18,13 @@ export function InstallProgressRow({ label, percent, elapsed }: {
   elapsed: string;
 }) {
   const text = elapsed ? `${label} · ${elapsed}` : label;
-  // Description-sized text (the small grey of "LumaDeck isn't set up yet…"),
-  // not the Field's label size: at label size the line wrapped in the QAM
-  // ("Step 4 of 9 · Installing" / "CloudRedirect app · 0:14", recordings
+  // Description-sized text, in Steam's own description grey for Game Mode
+  // (#b8bcbf, read from its CSS 2026-11-24: the plugin writes no grey of its
+  // own), not the Field's label size: at label size the line wrapped in the
+  // QAM ("Step 4 of 9 · Installing" / "CloudRedirect app · 0:14", recordings
   // 2026-11-23).
   const small = (
-    <span style={{ fontSize: "12px", fontWeight: "normal", color: "#8b929a", whiteSpace: "nowrap" }}>
+    <span style={{ fontSize: "12px", fontWeight: "normal", color: "#b8bcbf", whiteSpace: "nowrap" }}>
       {text}
     </span>
   );

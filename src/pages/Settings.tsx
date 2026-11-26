@@ -598,9 +598,10 @@ export function Settings() {
   // (update available — same subtext slot as the warnings, per component).
   const warnDesc = (line: string | null | undefined, kind: "warn" | "muted" | "info" = "warn") => {
     if (!line) return undefined;
-    const color = kind === "muted" ? "#888" : kind === "info" ? "#5b9eff" : "#ff8c00";
+    // muted: no colour of ours, Steam's description grey (one grey, 2026-11-26)
+    const color = kind === "muted" ? undefined : kind === "info" ? "#5b9eff" : "#ff8c00";
     const marker = kind === "muted" ? "•" : kind === "info" ? "↑" : "⚠";
-    return <span style={{ color }}>{marker} {line}</span>;
+    return <span style={color ? { color } : undefined}>{marker} {line}</span>;
   };
 
   // "Installed" for the three hook components is derived from their (Dev-aware)
@@ -1114,7 +1115,7 @@ export function Settings() {
               <Field focusable highlightOnFocus={false} label="CloudRedirect" description={crHealthDesc()}>
                 {crHealth?.state === "disabled" ? (
                   // Off by choice, not broken → grey "Disabled", no amber alarm.
-                  <span style={{ color: "#888" }}>{t("statusDisabled")}</span>
+                  <span style={{ color: "#b8bcbf" }}>{t("statusDisabled")}</span>
                 ) : (
                   <span style={{ color: compColor(crPresent, crHealth?.state === "healthy") }}>
                     {compStatus(crPresent, crHealth?.state === "healthy")}
@@ -1352,7 +1353,7 @@ export function Settings() {
           <PanelSectionRow>
             <Field label={t("pluginInstalled", pluginUpdate?.installed || "?")}>
               {pluginUpdate?.latest && (
-                <span style={{ color: pluginUpdate.has_update ? "#5b9eff" : "#8b929a" }}>
+                <span style={{ color: pluginUpdate.has_update ? "#5b9eff" : "#b8bcbf" }}>
                   {t("pluginLatest", pluginUpdate.latest)}
                 </span>
               )}
@@ -1401,7 +1402,7 @@ export function Settings() {
       content: (
         <PanelSection title="Dev — force UI states">
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#8b929e", lineHeight: 1.4 }}>
+            <div style={{ fontSize: "12px", color: "#b8bcbf", lineHeight: 1.4 }}>
               Forge what the UI reads (health + credentials) to preview banners,
               System Status and credential rows. Nothing real is touched. Reopen
               the QAM after changing a value to see the main-page banners update.
@@ -1423,7 +1424,7 @@ export function Settings() {
             </ButtonItem>
           </PanelSectionRow>
           <PanelSectionRow>
-            <div style={{ fontSize: "12px", color: "#8b929e", lineHeight: 1.4, marginTop: "12px" }}>
+            <div style={{ fontSize: "12px", color: "#b8bcbf", lineHeight: 1.4, marginTop: "12px" }}>
               Lector SteamDB: lee el feed de builds, el historial de cada depot
               instalado y la página de la build más antigua, y pasa el traductor.
               Resultado completo en el log del plugin y en
@@ -1449,7 +1450,7 @@ export function Settings() {
           </PanelSectionRow>
           {devProbeMsg && (
             <PanelSectionRow>
-              <div style={{ fontSize: "12px", color: "#c7d5e0", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              <div style={{ fontSize: "12px", color: "#b8bcbf", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {devProbeMsg}
               </div>
             </PanelSectionRow>

@@ -97,11 +97,11 @@ export function Library() {
       </PanelSection>
 
       {loading ? (
-        <div style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}>
+        <div style={{ textAlign: "center", padding: "20px", color: "#b8bcbf" }}>
           {t("loadingGames")}
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "20px", color: "#8b929a" }}>
+        <div style={{ textAlign: "center", padding: "20px", color: "#b8bcbf" }}>
           {search ? t("noGamesMatch") : t("noGamesYet")}
         </div>
       ) : (

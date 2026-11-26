@@ -821,7 +821,7 @@ export function GameList() {
             <PanelSectionRow>
               <Field
                 label={
-                  <span style={{ fontSize: "12px", color: "#8b929a" }}>
+                  <span style={{ fontSize: "12px", color: "#b8bcbf" }}>
                     {searchResults.length} {searchResults.length === 1 ? t("result") : t("results")}
                   </span>
                 }
@@ -870,7 +870,7 @@ export function GameList() {
                   ? "#ff4444"                               // error → red
                   : addStatus === t("doneRestartSteam")
                     ? "#00cc00"                             // done → green
-                    : "#8b929a",                            // in-progress / neutral → grey
+                    : "#b8bcbf",                            // in-progress / neutral → Steam's grey
               fontSize: "12px",
             }}>
               {addStatus}
