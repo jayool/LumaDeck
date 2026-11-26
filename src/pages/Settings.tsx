@@ -598,7 +598,7 @@ export function Settings() {
   // (update available — same subtext slot as the warnings, per component).
   const warnDesc = (line: string | null | undefined, kind: "warn" | "muted" | "info" = "warn") => {
     if (!line) return undefined;
-    const color = kind === "muted" ? "#888" : kind === "info" ? "#9cc4ff" : "#ff8c00";
+    const color = kind === "muted" ? "#888" : kind === "info" ? "#5b9eff" : "#ff8c00";
     const marker = kind === "muted" ? "•" : kind === "info" ? "↑" : "⚠";
     return <span style={{ color }}>{marker} {line}</span>;
   };
@@ -1352,7 +1352,7 @@ export function Settings() {
           <PanelSectionRow>
             <Field label={t("pluginInstalled", pluginUpdate?.installed || "?")}>
               {pluginUpdate?.latest && (
-                <span style={{ color: pluginUpdate.has_update ? "#9cc4ff" : "#8b929a" }}>
+                <span style={{ color: pluginUpdate.has_update ? "#5b9eff" : "#8b929a" }}>
                   {t("pluginLatest", pluginUpdate.latest)}
                 </span>
               )}
